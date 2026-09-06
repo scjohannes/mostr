@@ -1,0 +1,266 @@
+---
+title: "Many Outcome Levels with a Previous-State Spline"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Many Outcome Levels with a Previous-State Spline}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.8,
+  out.width = "100%",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+When the outcome has many ordered levels, a categorical previous-state effect can become too large. We can instead model the previous state effect using a restricted cubic spline to allow for non-linear effects.
+
+This vignette simulates a 30-level quality-of-life outcome and fits an
+`orm_markov()` transition model with `rms::rcs(yprev, 5)`.
+
+## Simulate Many Ordered States
+
+```{r setup}
+library(mostr)
+library(ggplot2)
+library(rms)
+
+N_PATIENTS <- 220
+FOLLOW_UP <- 14
+N_QOL <- 30
+STATE_LEVELS <- as.character(seq_len(N_QOL))
+ABSORB <- NULL
+SEED <- 20260530
+
+set.seed(SEED)
+baseline <- data.frame(
+  id = seq_len(N_PATIENTS),
+  yprev = sample(12:28, N_PATIENTS, replace = TRUE),
+  tx = rbinom(N_PATIENTS, 1, 0.5)
+)
+raw_data <- sim_trajectories_markov(
+  baseline_data = baseline,
+  follow_up_time = FOLLOW_UP,
+  intercepts = qlogis(seq_len(N_QOL - 1L) / N_QOL),
+  absorbing_states = integer(),
+  covariate_names = "tx",
+  parameter = -0.25,
+  lp_function = function(yprev, t, tx, parameter, extra_params) {
+    0.08 * (as.numeric(as.character(yprev)) - 15) - 0.03 * t +
+      parameter * tx
+  },
+  seed = SEED
+)
+
+plot_sops(raw_data, geom = "bar")
+```
+
+The generator conditions each transition on the previous observed state, time,
+and treatment. It uses 29 ordered logistic thresholds and no absorbing state.
+
+## Fit `rcs(yprev, 5)`
+
+`prepare_markov_data(..., factor_previous = FALSE)` keeps `yprev` numeric so it
+can enter the model as a smooth previous-state effect.
+
+```{r fit-model}
+model_data <- prepare_markov_data(
+  raw_data,
+  absorbing_state = NULL,
+  factor_previous = FALSE
+)
+model_data$y <- ordered(model_data$y, levels = STATE_LEVELS)
+
+dd <- rms::datadist(model_data)
+options(datadist = "dd")
+
+fit_many <- orm_markov(
+  y ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 5),
+  data = model_data,
+  id_var = "id",
+  opt_method = "LM",
+  scale = TRUE,
+  penalty = 0.1,
+  maxit = 100
+)
+
+fit_many
+```
+
+## Diagnostics
+
+```{r}
+ec <- plot_correlation(
+  raw_data,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y")
+
+mc <- plot_correlation(
+  fit_many,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y",
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_many$yunique,
+  absorb = ABSORB)
+
+ec
+mc
+```
+
+```{r}
+# et <- plot_transitions(
+#   raw_data,
+#   id_var = "id",
+#   time_var = "time",
+#   y_var = "y")
+
+# mt <- plot_transitions(
+#   fit_many,
+#   id_var = "id",
+#   time_var = "time",
+#   y_var = "y",
+#   times = seq_len(FOLLOW_UP),
+#   y_levels = fit_many$yunique,
+#   absorb = ABSORB)
+
+# et
+# mt
+
+# td <- plot_transitions(
+#   fit_many,
+#   comparison = "difference",
+#   variables = list(tx = c(0, 1)),
+#   id_var = "id",
+#   time_var = "time",
+#   y_var = "y",
+#   times = seq_len(FOLLOW_UP),
+#   y_levels = fit_many$yunique,
+#   absorb = ABSORB)
+# td
+```
+
+```{r}
+plot_variogram(
+  raw_data,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y"
+  )
+
+plot_variogram(
+  fit_many,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y",
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_many$yunique,
+  absorb = ABSORB)
+```
+
+## SOPs
+
+```{r avg-sops}
+sop_many <- avg_sops(
+  fit_many,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_many$yunique,
+  p_var = "yprev"
+) |> 
+  inferences(method = "delta", vcov = "conditional")
+```
+
+The analytical delta method propagates the complete fitted ORM covariance
+through the previous-state spline and Markov recursion. Here the empirical
+target treats the observed standardization profiles as fixed.
+
+With many states, a stacked distribution is usually easier to read than one
+line per state.
+
+```{r plot-sops}
+plot_sops(
+  sop_many,
+  geom = "bar",
+  facet_var = "tx"
+) +
+  scale_x_continuous(breaks = c(1, 7, 14)) +
+  labs(
+    x = "Week",
+    y = "State occupancy probability"
+  )
+
+plot_sops(
+  sop_many,
+  geom = "line",
+  facet_var = "state",
+  linetype_var = "tx"
+) +
+  scale_x_continuous(breaks = c(1, 7, 14)) +
+  labs(
+    x = "Week",
+    y = "State occupancy probability"
+  )
+```
+
+## Contrasts
+
+We can show the difference in the SOPs from above over time.
+
+```{r}
+sc <- avg_comparisons(
+  fit_many, 
+  times = seq_len(FOLLOW_UP),
+  variables = list(tx = c(0, 1)),
+  estimand = "sop"
+) |> 
+  inferences(
+    method = "delta",
+    vcov = "conditional"
+  )
+
+plot_comparisons(sc, facet_var = "state_set")
+```
+
+We can calculate contrasts for time in state or weeks benefit.
+
+```{r}
+c <- avg_comparisons(
+  fit_many, 
+  times = seq_len(FOLLOW_UP),
+  variables = list(tx = c(0, 1)), 
+  estimand = "time_in_state"
+  # state_sets = list(good = 1:10, average = 11:20, bad = 21:30)
+) |> 
+  inferences(
+    method = "delta",
+    vcov = "conditional"
+  )
+
+plot_comparisons(c)
+```
+
+Analytical delta intervals do not yet support `time_benefit`, so this contrast
+continues to use coefficient draws.
+
+```{r}
+tb <- avg_comparisons(
+  fit_many, 
+  times = seq_len(FOLLOW_UP),
+  variables = list(tx = c(0, 1)),
+  estimand = "time_benefit"
+) |> 
+  inferences(
+    method = "mvn",
+    n_draws = 50
+  )
+
+plot_comparisons(tb)
+```

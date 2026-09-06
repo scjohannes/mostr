@@ -1,0 +1,222 @@
+---
+title: "Partial Proportional-Odds SOPs with vglm_markov()"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Partial Proportional-Odds SOPs with vglm_markov()}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.8,
+  out.width = "100%",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+Partial proportional-odds models can relax the proportional-odds assumption for selected predictors while keeping the rest of the transition model parsimonious. This vignette fits such a model with `vglm_markov()`, allowing the linear time basis to deviate from
+proportional odds while treatment and previous state remain proportional.
+
+## Simulate Data
+
+We collapse the 8 state data into 6 states the make the linear deviation from proportional odds more stable.
+
+```{r setup}
+library(mostr)
+library(ggplot2)
+library(rms)
+library(VGAM)
+
+N_PATIENTS <- 200
+FOLLOW_UP <- 14
+SEED <- 20260528
+STATE_LEVELS <- as.character(1:6)
+ABSORB <- "6"
+
+collapse_actt2_states <- function(data) {
+  data$y <- ifelse(
+    data$y %in% c(1L, 2L),
+    1L,
+    ifelse(data$y %in% c(3L, 4L), 2L, data$y - 2L)
+  )
+  data$yprev <- ifelse(
+    data$yprev %in% c(1L, 2L),
+    1L,
+    ifelse(data$yprev %in% c(3L, 4L), 2L, data$yprev - 2L)
+  )
+  data
+}
+
+raw_data <- sim_actt2_markov(
+  n_patients = N_PATIENTS,
+  follow_up_time = FOLLOW_UP,
+  treatment_effect = -0.03,
+  seed = SEED
+) |>
+  collapse_actt2_states()
+
+model_data <- prepare_markov_data(raw_data, absorbing_state = 6)
+```
+
+## Constraint
+```{r fit-ppo}
+form <- ordered(y) ~ tx + rms::rcs(time, 4) + yprev
+
+fit_po <- vglm_markov(
+  form,
+  family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+  data = model_data,
+  id_var = "id"
+)
+
+constraints <- fit_po$vglm_fit@constraints
+linear_time_term <- grep(
+  "^rms::rcs\\(time, 4\\).*time$",
+  names(constraints),
+  value = TRUE
+)[[1]]
+n_thresholds <- nrow(constraints[[linear_time_term]])
+
+yprev_terms <- grep("^yprev", names(constraints), value = TRUE)
+constraints[yprev_terms] <- NULL
+constraints[["yprev"]] <- cbind(PO_effect = rep(1, n_thresholds))
+constraints[[linear_time_term]] <- cbind(
+  PO_effect = rep(1, n_thresholds),
+  linear_deviation = seq_len(n_thresholds) - 1
+)
+
+fit_ppo <- vglm_markov(
+  form,
+  family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
+  data = model_data,
+  id_var = "id",
+  constraints = constraints,
+  etastart = fit_po$vglm_fit@predictors
+)
+fit_ppo$vglm_fit@call$constraints <- constraints
+
+data.frame(
+  model = c("Full PO", "Linear-time PPO"),
+  log_likelihood = c(
+    as.numeric(stats::logLik(fit_po$vglm_fit)),
+    as.numeric(stats::logLik(fit_ppo$vglm_fit))
+  ),
+  coefficients = c(length(stats::coef(fit_po)), length(stats::coef(fit_ppo)))
+)
+```
+
+## SOPs
+
+```{r avg-sops}
+sop_ppo <- avg_sops(
+  fit_ppo,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = factor(STATE_LEVELS, levels = STATE_LEVELS),
+  absorb = ABSORB
+) |> 
+  inferences(n_draws = 100)
+```
+
+```{r plot-ppo}
+plot_sops(
+  sop_ppo,
+  geom = "line",
+  facet_var = NULL,
+  linetype_var = "tx"
+) +
+  labs(
+    x = "Day",
+    y = "State occupancy probability"
+  )
+```
+
+## Model Diagnostics
+
+These diagnostics compare empirical trajectory features with corresponding
+features implied by the partial proportional-odds transition model.
+
+```{r diagnostics-transitions-observed}
+diagnostic_times <- 1:FOLLOW_UP
+
+plot_transitions(
+  raw_data,
+  times = diagnostic_times,
+  y_levels = STATE_LEVELS,
+  show_values = FALSE
+) +
+  labs(title = "Observed transition proportions")
+```
+
+```{r diagnostics-transitions-model}
+plot_transitions(
+  fit_ppo,
+  times = diagnostic_times,
+  y_levels = STATE_LEVELS,
+  absorb = ABSORB,
+  show_values = FALSE
+) +
+  labs(title = "Model-based transition proportions")
+```
+
+```{r diagnostics-correlation-observed}
+plot_correlation(
+  raw_data,
+  times = seq_len(FOLLOW_UP),
+  show_values = FALSE
+) +
+  labs(title = "Observed state correlations")
+```
+
+```{r diagnostics-correlation-model}
+plot_correlation(
+  fit_ppo,
+  times = seq_len(FOLLOW_UP),
+  y_levels = STATE_LEVELS,
+  absorb = ABSORB,
+  show_values = FALSE
+) +
+  labs(title = "Model-based state correlations")
+```
+
+```{r diagnostics-variogram-observed}
+plot_variogram(
+  raw_data,
+  times = seq_len(FOLLOW_UP)
+) +
+  labs(title = "Observed correlation variogram")
+```
+
+```{r diagnostics-variogram-model}
+plot_variogram(
+  fit_ppo,
+  times = seq_len(FOLLOW_UP),
+  y_levels = STATE_LEVELS,
+  absorb = ABSORB
+) +
+  labs(title = "Model-based correlation variogram")
+```
+
+## Contrast
+
+
+```{r}
+t1 <- Sys.time()
+c <- avg_comparisons(
+  fit_ppo,
+  estimand = "time_in_state",
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = factor(STATE_LEVELS, levels = STATE_LEVELS),
+  absorb = ABSORB) |> 
+  inferences(n_draws = 1000)
+t2 <- Sys.time()
+t2 - t1
+
+plot_comparisons(c)
+```

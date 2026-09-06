@@ -1,0 +1,291 @@
+---
+title: "Second-Order SOPs with orm_markov()"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Second-Order SOPs with orm_markov()}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.8,
+  out.width = "100%",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+For a second-order transition model, the transition probability depends on the
+two previous states. The recursion therefore tracks a joint distribution over
+the last two states, then marginalizes it back to SOPs.
+
+This example uses `orm_markov()` with `yprev` and `ypprev`.
+
+## Data
+
+```{r setup}
+library(mostr)
+library(ggplot2)
+library(rms)
+
+N_PATIENTS <- 200
+FOLLOW_UP <- 14
+SEED <- 20260529
+STATE_LEVELS <- as.character(1:8)
+ABSORB <- "8"
+
+raw_data <- sim_actt2_markov(
+  n_patients = N_PATIENTS,
+  follow_up_time = FOLLOW_UP,
+  treatment_effect = -0.03,
+  seed = SEED
+)
+
+model_data <- prepare_markov_data(
+  raw_data,
+  absorbing_state = as.integer(ABSORB),
+  factor_previous = TRUE
+)
+model_data <- model_data[order(model_data$id, model_data$time), ]
+model_data$ypprev <- ave(
+  model_data$yprev,
+  model_data$id,
+  FUN = function(x) c(x[1], head(x, -1))
+)
+model_data$ypprev <- factor(model_data$ypprev, levels = levels(model_data$yprev))
+
+head(model_data[c("id", "time", "tx", "ypprev", "yprev", "y")])
+```
+
+## Second-Order Recursion
+
+For a second-order transition model, the SOP for state $l$ at time $t$ is
+
+$$
+S_{it}(l) =
+  \Pr(Y_{it} = l \mid \mathbf{X}_{i1}, \ldots, \mathbf{X}_{it},
+  Y_{i,-1}, Y_{i0}),
+\qquad t \geq 1,
+$$
+
+where $Y_{i,-1}$ and $Y_{i0}$ are the two observed initial states. The
+conditional transition probability at time $t$ is
+
+$$
+T_{it}(l \mid h, k) =
+  \Pr(Y_{it} = l \mid Y_{i,t-2} = h, Y_{i,t-1} = k, \mathbf{X}_{it}).
+$$
+
+These probabilities are predicted directly from the fitted ordinal transition
+model by setting `ypprev` to $h$, `yprev` to $k$, and `time` to $t$.
+Because the next state depends on two previous states, the recursion tracks the
+joint probability matrix of the last two outcomes:
+
+$$
+J_{it}(k,l) =
+  \Pr(Y_{i,t-1} = k, Y_{it} = l \mid \mathbf{X}_i, Y_{i,-1}, Y_{i0}).
+$$
+
+Equivalently, one can initialize
+$J_{i0}(h,k) = \mathbb{1}\{h = Y_{i,-1}, k = Y_{i0}\}$ and update from there.
+The code
+uses the same recursion, with a small computational shortcut: it first predicts
+the distribution of $Y_{i1}$ and stores
+
+$$
+J_{i1}(k,l) =
+  \mathbb{1}\{k = Y_{i0}\} T_{i1}(l \mid Y_{i,-1}, Y_{i0}).
+$$
+
+For later times, the joint distribution is updated by marginalizing over the
+older state $h$:
+
+$$
+J_{it}(k,l) =
+  \sum_{h=1}^{K}
+    J_{i,t-1}(h,k) T_{it}(l \mid h,k),
+\qquad t = 2,\ldots,d.
+$$
+
+The SOP is then the column margin of the joint matrix:
+
+$$
+S_{it}(l) =
+  \sum_{k=1}^{K} J_{it}(k,l).
+$$
+
+In matrix/tensor notation, define the transition tensor
+$\mathcal{T}_{it}$ with entries
+$\mathcal{T}_{it,hkl} = T_{it}(l \mid h,k)$. The update is a tensor
+contraction over the oldest-state index:
+
+$$
+J_{it,kl} =
+  \sum_{h=1}^{K}
+    J_{i,t-1,hk} \mathcal{T}_{it,hkl},
+\qquad
+s_{it,l} =
+  \sum_{k=1}^{K} J_{it,kl}.
+$$
+
+Batched over patients, this is the elementwise tensor calculation used by
+`soprob_markov()`:
+
+$$
+\mathbf{J}_{t,kl} =
+  \sum_{h=1}^{K}
+    \mathbf{J}_{t-1,hk} \odot \mathbf{T}_{t,hkl},
+\qquad
+\mathbf{S}_{t,l} =
+  \sum_{k=1}^{K} \mathbf{J}_{t,kl}.
+$$
+
+If $k$ is absorbing, the implementation skips model prediction from $k$ and
+carries the joint mass forward to $J_{it}(k,k)$. Thus for absorbing
+$k \in \mathcal{A}$,
+
+$$
+J_{it}(k,k) \leftarrow
+  J_{it}(k,k) + \sum_{h=1}^{K} J_{i,t-1}(h,k).
+$$
+
+`avg_sops(..., p2_var = "ypprev")` uses this array recursion instead of
+simulating individual trajectories.
+
+## Fit And Predict
+
+```{r fit-model}
+dd <- rms::datadist(model_data)
+options(datadist = "dd")
+
+fit_second <- orm_markov(
+  y ~ tx + rms::rcs(time, 4) + yprev + ypprev + time%ia%yprev + time%ia%ypprev,
+  data = model_data,
+  id_var = "id",
+  opt_method = "LM",
+  scale = TRUE,
+  maxit = 100
+)
+
+fit_second
+```
+
+```{r avg-sops}
+sop_second <- avg_sops(
+  fit_second,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_second$yunique,
+  absorb = ABSORB,
+  p2_var = "ypprev"
+) |> 
+  inferences(n_draws = 50)
+
+head(sop_second)
+```
+
+```{r plot-sops}
+plot_sops(
+  sop_second,
+  geom = "line",
+  facet_var = NULL,
+  linetype_var = "tx"
+) +
+  labs(
+    x = "Day",
+    y = "State occupancy probability"
+  )
+```
+
+## Model Diagnostics
+
+These diagnostics compare empirical trajectory features with the corresponding
+features implied by the second-order transition model. The model-based plots
+pass `p2_var = "ypprev"` so the deterministic recursions condition on both
+previous states.
+
+```{r diagnostics-transitions-observed}
+diagnostic_times <- c(1, 3, 5, 7, 11, 13)
+
+plot_transitions(
+  raw_data,
+  times = diagnostic_times,
+  y_levels = STATE_LEVELS,
+  show_values = FALSE
+) +
+  labs(title = "Observed transition proportions")
+```
+
+```{r diagnostics-transitions-model}
+plot_transitions(
+  fit_second,
+  times = diagnostic_times,
+  y_levels = fit_second$yunique,
+  absorb = ABSORB,
+  p2_var = "ypprev",
+  show_values = FALSE
+) +
+  labs(title = "Model-based transition proportions")
+```
+
+```{r diagnostics-correlation-observed}
+plot_correlation(
+  raw_data,
+  times = seq_len(FOLLOW_UP),
+  show_values = FALSE
+) +
+  labs(title = "Observed state correlations")
+```
+
+```{r diagnostics-correlation-model}
+plot_correlation(
+  fit_second,
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_second$yunique,
+  absorb = ABSORB,
+  p2_var = "ypprev",
+  show_values = FALSE
+) +
+  labs(title = "Model-based state correlations")
+```
+
+```{r diagnostics-variogram-observed}
+plot_variogram(
+  raw_data,
+  times = seq_len(FOLLOW_UP)
+) +
+  labs(title = "Observed correlation variogram")
+```
+
+```{r diagnostics-variogram-model}
+plot_variogram(
+  fit_second,
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_second$yunique,
+  absorb = ABSORB,
+  p2_var = "ypprev"
+) +
+  labs(title = "Model-based correlation variogram")
+```
+
+## Contrast
+
+```{r}
+c <- avg_comparisons(
+  fit_second,
+  estimand = "time_in_state",
+  state_sets = list(1:2, 3:5, 6:7, 8),
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_second$yunique,
+  absorb = ABSORB,
+  p2_var = "ypprev"
+) |> 
+  inferences(n_draws = 100)
+
+plot_comparisons(c)
+```

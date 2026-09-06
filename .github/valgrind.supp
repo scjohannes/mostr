@@ -1,0 +1,7 @@
+# Arrow triggers this conditional-value report while its shared library is
+# initialized, before mostr native tests run.
+{
+  arrow-shared-library-initialization
+  Memcheck:Cond
+  obj:*/arrow/libs/arrow.so
+}

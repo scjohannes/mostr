@@ -1,0 +1,192 @@
+---
+title: "Bayesian SOPs with blrm_markov()"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Bayesian SOPs with blrm_markov()}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.8,
+  out.width = "100%",
+  message = FALSE,
+  warning = FALSE
+)
+RUN_BAYESIAN <- identical(
+  Sys.getenv("MOSTR_RUN_BAYESIAN_VIGNETTE"),
+  "true"
+) && requireNamespace("rmsb", quietly = TRUE)
+```
+
+`mostr` also supports Bayesian transition models fitted with `blrm_markov()`, a stored-data wrapper around `rmsb::blrm()`. In this vignette we use a small number of MCMC iterations and SOP draws for demonstration.
+
+## Data
+
+```{r setup}
+library(mostr)
+library(ggplot2)
+library(rms)
+library(rmsb)
+
+N_PATIENTS <- 200
+FOLLOW_UP <- 14
+SEED <- 20260601
+STATE_LEVELS <- as.character(1:8)
+ABSORB <- "8"
+SOP_DRAWS <- 200
+
+raw_data <- sim_actt2_markov(
+  n_patients = N_PATIENTS,
+  follow_up_time = FOLLOW_UP,
+  treatment_effect = -0.03,
+  seed = SEED
+)
+
+model_data <- prepare_markov_data(raw_data, absorbing_state = 8)
+```
+
+As usual, we plot the raw data.
+
+```{r}
+plot_sops(raw_data)
+```
+
+## Fit `blrm_markov()`
+
+The `ppo = ~ time` term marks `time` as non-proportional. The `cppo` function
+constrains that deviation to be linear in the numeric ordinal score.
+
+```{r fit-blrm, eval = RUN_BAYESIAN}
+dd <- rms::datadist(model_data)
+options(datadist = "dd")
+
+fit_blrm <- blrm_markov(
+  y ~ yprev + rms::rcs(time, 4) * tx + cluster(id),
+  ppo = ~ time,
+  cppo = function(y) as.numeric(y),
+  data = model_data,
+  id_var = "id",
+  iter = 300,
+  warmup = 150,
+  chains = 2,
+  method = "sampling",
+  refresh = 0,
+  seed = SEED
+)
+```
+
+## Posterior SOPs
+
+For Bayesian fits, `avg_sops()` evaluates the SOP recursion on posterior draws.
+There is no separate `inferences()` step. Setting
+`options(mostr.blrm_avg_chunk_size = 100)` processes posterior draws in groups
+of 100 to limit memory use when averaging over patients.
+
+```{r avg-sops, eval = RUN_BAYESIAN}
+options(mostr.blrm_avg_chunk_size = 100)
+
+sop_blrm <- avg_sops(
+  fit_blrm,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_blrm$ylevels,
+  absorb = ABSORB,
+  include_re = TRUE,
+  n_draws = NULL,
+  seed = SEED,
+  posterior_summary = "mean",
+  conf_level = 0.90,
+  return_draws = TRUE
+)
+
+head(sop_blrm)
+```
+
+```{r plot-sops, eval = RUN_BAYESIAN}
+plot_sops(
+  sop_blrm,
+  geom = "line",
+  facet_var = NULL,
+  linetype_var = "tx"
+) +
+  labs(
+    x = "Day",
+    y = "Posterior state occupancy probability"
+  )
+```
+
+## Model Diagnostics
+
+These diagnostics compare empirical trajectory features with features implied
+by the fitted transition model. For `blrm_markov()` plots, posterior draws are
+kept separate through the transition, correlation, and variogram summaries;
+`seed` controls posterior-draw selection.
+
+```{r diagnostics-transitions-observed, eval = RUN_BAYESIAN}
+diagnostic_times <- c(1, 7, FOLLOW_UP)
+
+plot_transitions(
+  raw_data,
+  times = diagnostic_times,
+  y_levels = STATE_LEVELS,
+  show_values = FALSE
+) +
+  labs(title = "Observed transition proportions")
+```
+
+```{r diagnostics-transitions-model, eval = RUN_BAYESIAN}
+plot_transitions(
+  fit_blrm,
+  times = diagnostic_times,
+  y_levels = fit_blrm$ylevels,
+  absorb = ABSORB,
+  seed = SEED,
+  show_values = FALSE
+) +
+  labs(title = "Model-based transition proportions")
+```
+
+```{r diagnostics-correlation-observed, eval = RUN_BAYESIAN}
+plot_correlation(
+  raw_data,
+  times = seq_len(FOLLOW_UP),
+  show_values = FALSE
+) +
+  labs(title = "Observed state correlations")
+```
+
+```{r diagnostics-correlation-model, eval = RUN_BAYESIAN}
+plot_correlation(
+  fit_blrm,
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_blrm$ylevels,
+  absorb = ABSORB,
+  seed = SEED,
+  show_values = FALSE
+) +
+  labs(title = "Model-based state correlations")
+```
+
+```{r diagnostics-variogram-observed, eval = RUN_BAYESIAN}
+plot_variogram(
+  raw_data,
+  times = seq_len(FOLLOW_UP)
+) +
+  labs(title = "Observed correlation variogram")
+```
+
+```{r diagnostics-variogram-model, eval = RUN_BAYESIAN}
+plot_variogram(
+  fit_blrm,
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_blrm$ylevels,
+  absorb = ABSORB,
+  seed = SEED
+) +
+  labs(title = "Model-based correlation variogram")
+```

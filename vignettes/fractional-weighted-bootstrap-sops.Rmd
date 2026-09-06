@@ -1,0 +1,145 @@
+---
+title: "Fractional Weighted Bootstrap for SOPs"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Fractional Weighted Bootstrap for SOPs}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.8,
+  out.width = "100%",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+This vignette shows the fractional weighted bootstrap (FWB) engine for grouped
+state occupancy probabilities.
+
+The ordinary refit bootstrap samples patients with replacement, refits the
+transition model, and recomputes SOPs. The FWB keeps every patient in every
+bootstrap replicate, draws one positive exponential weight per patient, refits
+the model with those row-expanded weights, and uses the same patient weights
+when averaging SOPs. With `by`, the weights are normalized within each subgroup.
+This can be useful when ordinary bootstrap resamples occasionally create sparse
+or degenerate refit samples.
+
+The number of bootstrap replicates is deliberately tiny for vignette runtime.
+
+## Fit The Model
+
+```{r setup}
+library(mostr)
+library(ggplot2)
+library(dplyr)
+library(rms)
+
+N_PATIENTS <- 160
+FOLLOW_UP <- 10
+N_BOOT <- 30
+SEED <- 20260606
+STATE_LEVELS <- as.character(1:8)
+ABSORB <- "8"
+
+raw_data <- sim_actt2_markov(
+  n_patients = N_PATIENTS,
+  follow_up_time = FOLLOW_UP,
+  treatment_effect = -0.03,
+  seed = SEED
+)
+
+model_data <- prepare_markov_data(
+  raw_data,
+  absorbing_state = as.integer(ABSORB),
+  factor_previous = TRUE
+) |> 
+  group_by(id) |> 
+  mutate(initial_y = first(y)) |> 
+  ungroup()
+
+fit <- orm_markov(
+  y ~ tx + rcs(time, 4) + yprev,
+  data = model_data,
+  id_var = "id",
+  opt_method = "LM",
+  scale = TRUE,
+  maxit = 100
+)
+```
+
+## Define Grouped SOPs
+
+Because `fit` was created with `orm_markov(id_var = "id")`, `sops()` can
+use the stored longitudinal transition data for refits while automatically
+extracting one prediction row per patient for the SOP target. The `by` argument
+asks for subgroup averages by initial observed state.
+
+```{r avg-sops}
+# marginalize, but the average within each subgroup
+# weights from FWB are used when averaging
+s <- avg_sops(
+  fit,
+  variables = "tx",
+  by = "initial_y",
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit$yunique,
+  absorb = ABSORB
+)
+
+head(s)
+```
+
+## Fractional Bootstrap
+
+Use `method = "fwb"` for fractional weighted refits. In this grouped `sops()`
+example, each draw's `initial_y` subgroup average uses the corresponding
+patient-level FWB weights internally.
+
+```{r run-bootstrap}
+set.seed(SEED)
+t1 <- Sys.time()
+sop_fwb <- inferences(
+  s,
+  method = "fwb",
+  n_draws = N_BOOT,
+  workers = 1,
+  return_draws = TRUE
+)
+t2 <- Sys.time()
+t2 - t1
+```
+
+## Plot
+
+```{r compare}
+plot_sops(
+  sop_fwb,
+  facet_var = "initial_y",
+  linetype_var = "tx"
+)
+```
+
+## Contrasts
+
+```{r}
+c <- avg_comparisons(
+  fit, 
+  times = seq_len(FOLLOW_UP),
+  variables = list(tx = c(0, 1)),
+  estimand = "time_benefit",
+  absorb = ABSORB,
+  by = "initial_y"
+) |> 
+  inferences(method = "fwb",
+  n_draws = N_BOOT,
+  workers = 1,
+  return_draws = TRUE)
+
+plot_comparisons(c, color_var = "initial_y")
+```
