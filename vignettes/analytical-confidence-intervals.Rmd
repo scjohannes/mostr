@@ -339,9 +339,7 @@ sqrt(diag(unconditional_covariance))
 For readers interested in the derivatives used in the calculation, the
 internal function below shows how each selected estimate changes with each
 model coefficient. Each row corresponds to an estimate and each column to a
-coefficient. These derivatives alone are not standard errors and do not
-include the additional patient-sampling contribution to unconditional variance.
-Use `inferences()` and `vcov()` for the uncertainty calculations.
+coefficient. These derivatives do not include the additional patient-sampling contribution to unconditional variance.
 
 ```{r coefficient-derivatives}
 coefficient_derivatives <- mostr:::get_jacobian(avg_conditional, rows = rows)
@@ -353,7 +351,7 @@ This can require substantial memory: doubling the number of estimates
 quadruples the number of entries. Request only the rows you need for large
 results. The option `mostr.delta_max_bytes`, which defaults to 256 MiB,
 limits the main memory allocations used by analytical inference and covariance
-extraction. It is not a limit on the total memory used by R.
+extraction.
 
 ## Supported Models and Comparisons
 
@@ -369,23 +367,3 @@ Analytical confidence intervals are available for:
 - difference comparisons for `estimand = "sop"` and
   `estimand = "time_in_state"`; and
 - numeric and factor visit times.
-
-The following requests are not supported and return an error:
-
-| Request | Current status |
-| --- | --- |
-| Individual `sops()` with `vcov = "unconditional"` | Unsupported; omit `vcov` or use `vcov = "conditional"`. |
-| Ratio comparison | Use differences for analytical intervals. |
-| `estimand = "time_benefit"` | Analytical intervals are not available for this comparison. |
-| Analytical intervals for groups specified with `by` | Not currently supported. |
-| Partial/nonproportional odds | Only full proportional-odds models are supported. |
-| Analytical intervals for second-order Markov models | Use simulation or bootstrap inference where supported. |
-| Analytical intervals for `blrm` models | Unsupported; use the model's posterior SOP intervals. |
-| Unconditional variance with user `newdata` | Unsupported; use `vcov = "conditional"`. |
-| Unconditional variance with a weighted or penalized ORM fit | Use conditional variance. |
-| Random or independent external population | Intentionally unsupported and out of scope. |
-| Intervals intended to cover all estimates jointly | The confidence level applies to each interval separately. |
-
-Analytical intervals use an approximation based on small changes in the model
-coefficients. Simulation and bootstrap intervals can differ because they
-recalculate predictions over larger changes in coefficients or refitted data.

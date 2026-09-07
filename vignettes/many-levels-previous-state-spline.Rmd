@@ -21,9 +21,6 @@ knitr::opts_chunk$set(
 
 When the outcome has many ordered levels, a categorical previous-state effect can become too large. We can instead model the previous state effect using a restricted cubic spline to allow for non-linear effects.
 
-This vignette simulates a 30-level quality-of-life outcome and fits an
-`orm_markov()` transition model with `rms::rcs(yprev, 5)`.
-
 ## Simulate Many Ordered States
 
 ```{r setup}
@@ -75,7 +72,6 @@ model_data <- prepare_markov_data(
   absorbing_state = NULL,
   factor_previous = FALSE
 )
-model_data$y <- ordered(model_data$y, levels = STATE_LEVELS)
 
 dd <- rms::datadist(model_data)
 options(datadist = "dd")
@@ -86,7 +82,7 @@ fit_many <- orm_markov(
   id_var = "id",
   opt_method = "LM",
   scale = TRUE,
-  penalty = 0.1,
+  penalty = 0,
   maxit = 100
 )
 
@@ -115,37 +111,6 @@ ec
 mc
 ```
 
-```{r}
-# et <- plot_transitions(
-#   raw_data,
-#   id_var = "id",
-#   time_var = "time",
-#   y_var = "y")
-
-# mt <- plot_transitions(
-#   fit_many,
-#   id_var = "id",
-#   time_var = "time",
-#   y_var = "y",
-#   times = seq_len(FOLLOW_UP),
-#   y_levels = fit_many$yunique,
-#   absorb = ABSORB)
-
-# et
-# mt
-
-# td <- plot_transitions(
-#   fit_many,
-#   comparison = "difference",
-#   variables = list(tx = c(0, 1)),
-#   id_var = "id",
-#   time_var = "time",
-#   y_var = "y",
-#   times = seq_len(FOLLOW_UP),
-#   y_levels = fit_many$yunique,
-#   absorb = ABSORB)
-# td
-```
 
 ```{r}
 plot_variogram(
@@ -175,15 +140,8 @@ sop_many <- avg_sops(
   y_levels = fit_many$yunique,
   p_var = "yprev"
 ) |> 
-  inferences(method = "delta", vcov = "conditional")
+  inferences(method = "delta", vcov = "unconditional")
 ```
-
-The analytical delta method propagates the complete fitted ORM covariance
-through the previous-state spline and Markov recursion. Here the empirical
-target treats the observed standardization profiles as fixed.
-
-With many states, a stacked distribution is usually easier to read than one
-line per state.
 
 ```{r plot-sops}
 plot_sops(
@@ -223,7 +181,7 @@ sc <- avg_comparisons(
 ) |> 
   inferences(
     method = "delta",
-    vcov = "conditional"
+    vcov = "unconditional"
   )
 
 plot_comparisons(sc, facet_var = "state_set")
@@ -241,14 +199,13 @@ c <- avg_comparisons(
 ) |> 
   inferences(
     method = "delta",
-    vcov = "conditional"
+    vcov = "unconditional"
   )
 
 plot_comparisons(c)
 ```
 
-Analytical delta intervals do not yet support `time_benefit`, so this contrast
-continues to use coefficient draws.
+Analytical delta intervals do not yet support `time_benefit`, so one needs to use bootstrapping or coefficient draws here.
 
 ```{r}
 tb <- avg_comparisons(

@@ -26,11 +26,7 @@ The ordinary refit bootstrap samples patients with replacement, refits the
 transition model, and recomputes SOPs. The FWB keeps every patient in every
 bootstrap replicate, draws one positive exponential weight per patient, refits
 the model with those row-expanded weights, and uses the same patient weights
-when averaging SOPs. With `by`, the weights are normalized within each subgroup.
-This can be useful when ordinary bootstrap resamples occasionally create sparse
-or degenerate refit samples.
-
-The number of bootstrap replicates is deliberately tiny for vignette runtime.
+when averaging SOPs.
 
 ## Fit The Model
 
@@ -60,7 +56,7 @@ model_data <- prepare_markov_data(
   factor_previous = TRUE
 ) |> 
   group_by(id) |> 
-  mutate(initial_y = first(y)) |> 
+  mutate(starting_state = first(yprev)) |> 
   ungroup()
 
 fit <- orm_markov(
@@ -86,7 +82,7 @@ asks for subgroup averages by initial observed state.
 s <- avg_sops(
   fit,
   variables = "tx",
-  by = "initial_y",
+  by = "starting_state",
   times = seq_len(FOLLOW_UP),
   y_levels = fit$yunique,
   absorb = ABSORB
@@ -103,7 +99,6 @@ patient-level FWB weights internally.
 
 ```{r run-bootstrap}
 set.seed(SEED)
-t1 <- Sys.time()
 sop_fwb <- inferences(
   s,
   method = "fwb",
@@ -111,8 +106,6 @@ sop_fwb <- inferences(
   workers = 1,
   return_draws = TRUE
 )
-t2 <- Sys.time()
-t2 - t1
 ```
 
 ## Plot
@@ -120,7 +113,7 @@ t2 - t1
 ```{r compare}
 plot_sops(
   sop_fwb,
-  facet_var = "initial_y",
+  facet_var = "starting_state",
   linetype_var = "tx"
 )
 ```
@@ -134,12 +127,12 @@ c <- avg_comparisons(
   variables = list(tx = c(0, 1)),
   estimand = "time_benefit",
   absorb = ABSORB,
-  by = "initial_y"
+  by = "starting_state"
 ) |> 
   inferences(method = "fwb",
   n_draws = N_BOOT,
   workers = 1,
   return_draws = TRUE)
 
-plot_comparisons(c, color_var = "initial_y")
+plot_comparisons(c, color_var = "starting_state")
 ```

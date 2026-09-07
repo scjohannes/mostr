@@ -37,8 +37,8 @@ library(ggplot2)
 library(rms)
 library(VGAM)
 
-N_PATIENTS <- 200
-FOLLOW_UP <- 14
+N_PATIENTS <- 400
+FOLLOW_UP <- 28
 SEED <- 20260527
 STATE_LEVELS <- as.character(1:8)
 ABSORB <- "8"
@@ -46,7 +46,7 @@ ABSORB <- "8"
 raw_data <- sim_actt2_markov(
   n_patients = N_PATIENTS,
   follow_up_time = FOLLOW_UP,
-  treatment_effect = -0.03,
+  treatment_effect = log(0.8),
   seed = SEED
 )
 
@@ -55,6 +55,10 @@ model_data <- prepare_markov_data(
   absorbing_state = as.integer(ABSORB),
   factor_previous = TRUE
 )
+```
+
+```{r}
+plot_sops(raw_data, facet_var = NULL, linetype_var = "tx")
 ```
 
 ## Recursion
@@ -128,17 +132,17 @@ $$
 
 ```{r fit-models}
 fit_vglm <- vglm_markov(
-  ordered(y) ~ tx + rms::rcs(time, 4) + yprev,
-  family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+  ordered(y) ~ tx + rcs(time, 4) + yprev,
+  family = cumulative(reverse = TRUE, parallel = TRUE),
   data = model_data,
   id_var = "id"
 )
 
-dd <- rms::datadist(model_data)
+dd <- datadist(model_data)
 options(datadist = "dd")
 
 fit_orm <- orm_markov(
-  y ~ tx + rms::rcs(time, 4) + yprev,
+  y ~ tx + rcs(time, 4) + yprev,
   data = model_data,
   id_var = "id",
   opt_method = "LM",
@@ -146,14 +150,8 @@ fit_orm <- orm_markov(
   maxit = 100
 )
 
-data.frame(
-  backend = c("VGAM vglm", "rms orm"),
-  log_likelihood = c(
-    as.numeric(stats::logLik(fit_vglm$vglm_fit)),
-    as.numeric(stats::logLik(fit_orm))
-  ),
-  coefficients = c(length(stats::coef(fit_vglm)), length(stats::coef(fit_orm)))
-)
+summary(fit_vglm)
+fit_orm
 ```
 
 ## Compute And Plot SOPs
@@ -167,7 +165,8 @@ sop_vglm <- avg_sops(
   absorb = ABSORB
 ) |> 
   inferences(
-    method = "delta"
+    method = "delta",
+    vcov = "unconditional"
   )
 
 sop_orm <- avg_sops(
@@ -177,7 +176,9 @@ sop_orm <- avg_sops(
   y_levels = fit_orm$yunique,
   absorb = ABSORB
 ) |> 
-  inferences(method = "delta")
+  inferences(
+    method = "delta", 
+    vcov = "unconditional")
 
 combined_sops <- rbind(
   data.frame(backend = "VGAM vglm", as.data.frame(sop_vglm)),
@@ -271,10 +272,3 @@ plot_variogram(
   absorb = ABSORB) +
   coord_cartesian(ylim = c(0, 1))
 ```
-
-
-## References
-
-Rohde MD, French B, Stewart TG, Harrell FE. Bayesian transition models for
-ordinal longitudinal outcomes. *Statistics in Medicine*. 2024. doi:
-10.1002/sim.10133.

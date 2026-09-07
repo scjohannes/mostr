@@ -1,5 +1,5 @@
 ---
-title: "MVN Simulation Versus Bootstrap for orm_markov() SOPs"
+title: "Simulation from MVN vs Bootstrapping"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{MVN Simulation Versus Bootstrap for orm_markov() SOPs}
@@ -25,12 +25,13 @@ compares two uncertainty routes for marginal SOPs:
 1. Multivariate-normal (MVN) simulation from the fitted coefficient covariance.
 2. Patient bootstrap with model refitting.
 
-Simulation from MVN keeps the standardization sample fixed and varies the model coefficients. 
-The nonparametric patient bootstrap resamples the empirical covariate and baseline-state distribution.
+Simulation from MVN trets the covariates (this the paths of the individual patients) as fixed and varies the model coefficients.
 
-The number of draws is deliberately tiny for vignette runtime.
+The nonparametric patient bootstrap resamples the empirical covariate and previous state distribution.
 
-## Fit The Model
+The number of draws is deliberately tiny for vignette runtime and should be much larger for any real work.
+
+## Simulate Data
 
 ```{r setup}
 library(mostr)
@@ -47,39 +48,32 @@ ABSORB <- "8"
 raw_data <- sim_actt2_markov(
   n_patients = N_PATIENTS,
   follow_up_time = FOLLOW_UP,
-  treatment_effect = -0.03,
+  treatment_effect = log(0.8),
   seed = SEED
 )
 
-set.seed(SEED)
-age_lookup <- data.frame(
-  id = sort(unique(raw_data$id)),
-  age = stats::rnorm(length(unique(raw_data$id)), mean = 65, sd = 12)
-)
-raw_data <- merge(raw_data, age_lookup, by = "id", sort = FALSE)
-raw_data <- raw_data[order(raw_data$id, raw_data$time), ]
-
 model_data <- prepare_markov_data(raw_data, absorbing_state = as.integer(ABSORB))
+```
 
+## Fit Model
+
+```{r}
 dd <- rms::datadist(model_data)
 options(datadist = "dd")
 
 fit_orm <- orm_markov(
-  y ~ tx + age + rms::rcs(time, 4) + yprev,
+  y ~ tx + rms::rcs(time, 4) + yprev,
   data = model_data,
   id_var = "id",
   opt_method = "LM",
   scale = TRUE,
   maxit = 100
 )
-
-robust_vcov <- as.matrix(fit_orm$var)
-robust_vcov <- (robust_vcov + t(robust_vcov)) / 2
 ```
 
 ## Create SOP Targets
 
-The wrapper stores the full transition data for bootstrap refits and lets
+The wrapper `orm_markov` stores the full transition data for bootstrap refits and lets
 `avg_sops()` extract the baseline prediction rows automatically. MVN simulation
 uses the cluster-robust covariance returned by `orm_markov(id_var = "id")`.
 
@@ -91,14 +85,6 @@ avg <- avg_sops(
   y_levels = fit_orm$yunique,
   absorb = ABSORB
 )
-
-# avg_boot <- avg_sops(
-#   fit_orm,
-#   variables = list(tx = c(0, 1)),
-#   times = seq_len(FOLLOW_UP),
-#   y_levels = fit_orm$yunique,
-#   absorb = ABSORB
-# )
 ```
 
 ## Run Both Methods
@@ -109,7 +95,6 @@ sop_mvn <- inferences(
   avg,
   method = "mvn",
   n_draws = N_DRAWS,
-  vcov = robust_vcov,
   workers = 1,
   return_draws = TRUE
 )
@@ -122,17 +107,9 @@ sop_boot <- inferences(
   workers = 1,
   return_draws = TRUE
 )
-
-data.frame(
-  method = c("MVN simulation", "Patient bootstrap"),
-  successful_draws = c(
-    attr(sop_mvn, "n_successful"),
-    attr(sop_boot, "n_successful")
-  )
-)
 ```
 
-## Compare
+## Compare Both Methods
 
 ```{r compare}
 comparison <- rbind(
@@ -143,7 +120,8 @@ comparison <- rbind(
 plot_sops(
   comparison,
   geom = "line",
-  facet_var = c("method", "tx")
+  facet_var = c("method"),
+  linetype_var = "tx"
 ) +
   labs(
     x = "Day",
@@ -151,7 +129,7 @@ plot_sops(
   )
 ```
 
-The point estimates are based on the same transition model. The confidence-band widths differ (especially close to baseline) because the two procedures target the variance of different estimands.
+The point estimates are based on the same transition model. The confidence-band widths differ (especially close to baseline) because the two procedures target the variance of different estimands (conditional population average treatment effects vs population average treatment effect). For more information, see Magirr et al. 
 
 ## References
 

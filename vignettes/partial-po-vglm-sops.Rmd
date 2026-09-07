@@ -64,8 +64,11 @@ model_data <- prepare_markov_data(raw_data, absorbing_state = 6)
 ```
 
 ## Constraint
+
+It's often helpful to fit a full PO model first and incoroporate the deviations from PO from there.
+
 ```{r fit-ppo}
-form <- ordered(y) ~ tx + rms::rcs(time, 4) + yprev
+form <- ordered(y) ~ tx + rcs(time, 4) + yprev
 
 fit_po <- vglm_markov(
   form,
@@ -75,21 +78,38 @@ fit_po <- vglm_markov(
 )
 
 constraints <- fit_po$vglm_fit@constraints
+
+# find linear basis function of time
 linear_time_term <- grep(
-  "^rms::rcs\\(time, 4\\).*time$",
+  "^rcs\\(time, 4\\).*time$",
   names(constraints),
   value = TRUE
 )[[1]]
+
+# our model has 5 intercept (6 states)
 n_thresholds <- nrow(constraints[[linear_time_term]])
 
+# need to change yprev back to one matrix, because it's not in the formula as dummy variables
 yprev_terms <- grep("^yprev", names(constraints), value = TRUE)
 constraints[yprev_terms] <- NULL
 constraints[["yprev"]] <- cbind(PO_effect = rep(1, n_thresholds))
+
+# build full list of constraints
 constraints[[linear_time_term]] <- cbind(
   PO_effect = rep(1, n_thresholds),
   linear_deviation = seq_len(n_thresholds) - 1
 )
+```
 
+We now have linear devtion from proportional odds for the linear basis function of time. 
+
+```{r}
+constraints
+```
+
+We can now refit the model with the custom constraints.
+
+```{r}
 fit_ppo <- vglm_markov(
   form,
   family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
@@ -100,30 +120,88 @@ fit_ppo <- vglm_markov(
 )
 fit_ppo$vglm_fit@call$constraints <- constraints
 
-data.frame(
-  model = c("Full PO", "Linear-time PPO"),
-  log_likelihood = c(
-    as.numeric(stats::logLik(fit_po$vglm_fit)),
-    as.numeric(stats::logLik(fit_ppo$vglm_fit))
-  ),
-  coefficients = c(length(stats::coef(fit_po)), length(stats::coef(fit_ppo)))
-)
+summary(fit_ppo)
 ```
 
+## Model Diagnostics
+
+These diagnostics compare empirical trajectory features with corresponding
+features implied by the partial proportional-odds transition model.
+
+```{r diagnostics-transitions-observed}
+plot_transitions(
+  raw_data,
+  times = 1:FOLLOW_UP,
+  y_levels = STATE_LEVELS,
+  show_values = FALSE
+) +
+  labs(title = "Observed transition proportions")
+```
+
+```{r diagnostics-transitions-model}
+plot_transitions(
+  fit_ppo,
+  times = 1:FOLLOW_UP,
+  y_levels = STATE_LEVELS,
+  absorb = ABSORB,
+  show_values = FALSE
+) +
+  labs(title = "Model-based transition proportions")
+```
+
+```{r diagnostics-correlation-observed}
+plot_correlation(
+  raw_data,
+  times = 1:FOLLOW_UP,
+  show_values = FALSE
+) +
+  labs(title = "Observed state correlations")
+```
+
+```{r diagnostics-correlation-model}
+plot_correlation(
+  fit_ppo,
+  times = 1:FOLLOW_UP,
+  y_levels = STATE_LEVELS,
+  absorb = ABSORB,
+  show_values = FALSE
+) +
+  labs(title = "Model-based state correlations")
+```
+
+```{r diagnostics-variogram-observed}
+plot_variogram(
+  raw_data,
+  times = 1:FOLLOW_UP
+) +
+  labs(title = "Observed correlation variogram")
+```
+
+```{r diagnostics-variogram-model}
+plot_variogram(
+  fit_ppo,
+  times = 1:FOLLOW_UP,
+  y_levels = STATE_LEVELS,
+  absorb = ABSORB
+) +
+  labs(title = "Model-based correlation variogram")
+```
+
+
 ## SOPs
+
+Analytical confidence interals are not supported for partial proportional odds models, so we have use simulation based confidence intervals. 
 
 ```{r avg-sops}
 sop_ppo <- avg_sops(
   fit_ppo,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = factor(STATE_LEVELS, levels = STATE_LEVELS),
+  y_levels = STATE_LEVELS,
   absorb = ABSORB
 ) |> 
   inferences(n_draws = 100)
-```
 
-```{r plot-ppo}
 plot_sops(
   sop_ppo,
   geom = "line",
@@ -136,87 +214,17 @@ plot_sops(
   )
 ```
 
-## Model Diagnostics
-
-These diagnostics compare empirical trajectory features with corresponding
-features implied by the partial proportional-odds transition model.
-
-```{r diagnostics-transitions-observed}
-diagnostic_times <- 1:FOLLOW_UP
-
-plot_transitions(
-  raw_data,
-  times = diagnostic_times,
-  y_levels = STATE_LEVELS,
-  show_values = FALSE
-) +
-  labs(title = "Observed transition proportions")
-```
-
-```{r diagnostics-transitions-model}
-plot_transitions(
-  fit_ppo,
-  times = diagnostic_times,
-  y_levels = STATE_LEVELS,
-  absorb = ABSORB,
-  show_values = FALSE
-) +
-  labs(title = "Model-based transition proportions")
-```
-
-```{r diagnostics-correlation-observed}
-plot_correlation(
-  raw_data,
-  times = seq_len(FOLLOW_UP),
-  show_values = FALSE
-) +
-  labs(title = "Observed state correlations")
-```
-
-```{r diagnostics-correlation-model}
-plot_correlation(
-  fit_ppo,
-  times = seq_len(FOLLOW_UP),
-  y_levels = STATE_LEVELS,
-  absorb = ABSORB,
-  show_values = FALSE
-) +
-  labs(title = "Model-based state correlations")
-```
-
-```{r diagnostics-variogram-observed}
-plot_variogram(
-  raw_data,
-  times = seq_len(FOLLOW_UP)
-) +
-  labs(title = "Observed correlation variogram")
-```
-
-```{r diagnostics-variogram-model}
-plot_variogram(
-  fit_ppo,
-  times = seq_len(FOLLOW_UP),
-  y_levels = STATE_LEVELS,
-  absorb = ABSORB
-) +
-  labs(title = "Model-based correlation variogram")
-```
-
 ## Contrast
 
-
 ```{r}
-t1 <- Sys.time()
 c <- avg_comparisons(
   fit_ppo,
   estimand = "time_in_state",
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  y_levels = factor(STATE_LEVELS, levels = STATE_LEVELS),
+  times = 1:FOLLOW_UP,
+  y_levels = STATE_LEVELS,
   absorb = ABSORB) |> 
-  inferences(n_draws = 1000)
-t2 <- Sys.time()
-t2 - t1
+  inferences(n_draws = 100)
 
 plot_comparisons(c)
 ```

@@ -40,9 +40,11 @@ ABSORB <- 8L
 
 raw_data <- sim_actt2_markov(
   n_patients = N_PATIENTS,
-  treatment_effect = -0.5,
+  treatment_effect = log(0.8),
   seed = SEED
 )
+
+plot_sops(raw_data, facet_var = NULL, linetype_var = "tx")
 
 baseline_state <- raw_data[raw_data$time == 1, c("id", "yprev")]
 names(baseline_state)[2] <- "baseline_yprev"
