@@ -658,6 +658,7 @@ describe("avg_sops() and inferences() pipeline", {
         draws = draw_signature(draws)
       ),
       style = "json2",
+      tolerance = 1e-7,
       cran = TRUE
     )
   })
@@ -741,6 +742,7 @@ describe("avg_sops() and inferences() pipeline", {
         draws = draw_signature(draws)
       ),
       style = "json2",
+      tolerance = 1e-7,
       cran = TRUE
     )
   })
@@ -861,6 +863,7 @@ describe("avg_sops() and inferences() pipeline", {
         draws = draw_signature(draws)
       ),
       style = "json2",
+      tolerance = 1e-7,
       cran = TRUE
     )
   })

@@ -6,6 +6,23 @@
 ## Architecture Documentation
 When making code changes, update `ARCHITECTURE.md` in the same work so it stays aligned with the package design. Use the `describe-design` skill for architecture updates, especially when changes affect module boundaries, public APIs, data contracts, model backends, inference workflows, simulation behavior, endpoint summaries, or diagnostic workflows.
 
+## Required R Version
+
+Always use **R 4.6.1** for development and validation of this package. Do not rely
+on whichever R version happens to be on `PATH`. On this Windows machine, use
+`C:\Program Files\R\R-4.6.1\bin\x64\Rscript.exe` (or `R.exe` from the same
+installation for `R CMD` commands).
+
+For compilation, package builds, and checks, use the matching Rtools45 installation
+at `C:\rtools45`. Set both environment variables in the same PowerShell command
+as the R invocation:
+
+```powershell
+$env:MAKEFLAGS = 'PATH=/x86_64-w64-mingw32.static.posix/bin:/usr/bin'
+$env:LC_ALL = 'C'
+& 'C:\Program Files\R\R-4.6.1\bin\x64\Rscript.exe' -e "devtools::check(vignettes = FALSE)"
+```
+
 ## Build, Test, and Development Commands
 Use standard R package workflows from the repository root:
 

@@ -71,3 +71,6 @@ Shared synthetic fixtures use explicit proportional-odds Markov transitions.
 Native analytical tests retain an independent test-only R oracle. GitHub Actions
 runs R CMD check, address/undefined sanitizers, and Valgrind. The nine vignettes
 demonstrate Markov-generated data, including a custom 30-state generator.
+
+Numerical inference snapshots use a relative tolerance of 1e-7 to accommodate
+platform-dependent rounding while preserving the stored regression baselines.
