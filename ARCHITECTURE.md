@@ -34,6 +34,15 @@ package vignette builds retain the existing opt-in for this longer calculation.
 Vignette transition heatmaps use up to sixteen evenly spaced visits in grids of
 at most four rows and four columns. Observed, fitted, and difference plots share
 the same visits, with tile labels omitted for readability.
+Vignette correlation heatmaps omit tile labels. `plot_correlation_heatmap()`
+chooses a 0-1 fill scale for nonnegative finite correlations and -1 to 1 when
+negative values occur or no finite values are available; explicit `fill_limits`
+override this choice for both observed and model-based plots.
+The introductory vignette documents the ACTT-2 population, NIAID eight-point
+health-state scale, and data-access acknowledgment; its 400-patient, 28-day
+description matches the simulation code.
+Its plot chunks have descriptive names so inserting or renaming other chunks
+cannot reuse a previous diagnostic's image URL for a different plot.
 
 ## Data flow
 

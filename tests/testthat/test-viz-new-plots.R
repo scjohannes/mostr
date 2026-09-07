@@ -440,6 +440,20 @@ test_that("plot_correlation creates ordinal correlation heatmaps", {
   expect_s3_class(plot$layers[[1]]$geom, "GeomTile")
   expect_equal(nrow(plot$data), 3L)
   expect_equal(levels(plot$data$time_1), c("1", "2", "3"))
+  expect_equal(plot$scales$get_scales("fill")$limits, c(0, 1))
+  explicit <- plot_correlation(data, fill_limits = c(-1, 1))
+  expect_equal(explicit$scales$get_scales("fill")$limits, c(-1, 1))
+})
+
+test_that("correlation color limits handle zero and missing correlations", {
+  data <- data.frame(time_1 = 1:2, time_2 = 2:3, correlation = c(0, NA_real_))
+  plot <- plot_correlation_heatmap(data, FALSE, 2, NULL)
+  expect_equal(plot$scales$get_scales("fill")$limits, c(0, 1))
+
+  data$correlation <- NA_real_
+  plot <- plot_correlation_heatmap(data, FALSE, 2, NULL)
+  expect_equal(plot$scales$get_scales("fill")$limits, c(-1, 1))
+  expect_equal(ggplot2::ggplot_build(plot)$data[[1]]$fill, rep("grey90", 2))
 })
 
 test_that("plot_variogram plots correlations by time difference", {

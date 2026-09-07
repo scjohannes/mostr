@@ -13,9 +13,12 @@ source("_setup.R", local = TRUE)
 
 Outcome assessments may happen at scheduled visits rather than a regular daily
 grid, without the possibility of accurately reconstructing daily states. This
-vignette starts from simulated daily ACTT-2-style trajectories, keeps only days
-3, 7, 14, and 21, and fits an `orm_markov()` transition model where `time` is
-a visit factor.
+vignette simulates daily health states for 220 patients using a model based on
+the [ACTT-2 clinical trial](https://doi.org/10.1056/NEJMoa2031994), which enrolled
+adults hospitalized with moderate to severe COVID-19. Health states use the
+[NIAID eight-point ordinal scale](https://www.fda.gov/media/144473/download#page=10),
+from unrestricted activities outside hospital (1) to death (8). We keep only
+days 3, 7, 14, and 21 and fit an `orm_markov()` model with `time` as a visit factor.
 
 ## Visit Data
 

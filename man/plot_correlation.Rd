@@ -24,7 +24,7 @@ plot_correlation(
   triangle = c("upper", "full"),
   show_values = TRUE,
   digits = 2,
-  fill_limits = c(-1, 1)
+  fill_limits = NULL
 )
 }
 \arguments{
@@ -77,7 +77,10 @@ off-diagonal triangles.}
 
 \item{digits}{Number of digits used for tile labels.}
 
-\item{fill_limits}{Fill-scale limits. Defaults to \code{c(-1, 1)}.}
+\item{fill_limits}{Optional fill-scale limits. By default (\code{NULL}), use
+\code{c(0, 1)} when all available correlations are nonnegative, and \code{c(-1, 1)}
+when any are negative or all are missing. Supply limits explicitly to use
+the same color scale across several plots.}
 }
 \value{
 A ggplot object.

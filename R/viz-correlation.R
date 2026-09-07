@@ -46,7 +46,10 @@
 #'   off-diagonal triangles.
 #' @param show_values Logical. If `TRUE`, print rounded correlations in tiles.
 #' @param digits Number of digits used for tile labels.
-#' @param fill_limits Fill-scale limits. Defaults to `c(-1, 1)`.
+#' @param fill_limits Optional fill-scale limits. By default (`NULL`), use
+#'   `c(0, 1)` when all available correlations are nonnegative, and `c(-1, 1)`
+#'   when any are negative or all are missing. Supply limits explicitly to use
+#'   the same color scale across several plots.
 #'
 #' @return A ggplot object.
 #'
@@ -76,7 +79,7 @@ plot_correlation <- function(
   triangle = c("upper", "full"),
   show_values = TRUE,
   digits = 2,
-  fill_limits = c(-1, 1)
+  fill_limits = NULL
 ) {
   object <- x
   triangle <- match.arg(triangle)
@@ -215,6 +218,14 @@ plot_correlation_heatmap <- function(
   digits,
   fill_limits
 ) {
+  if (is.null(fill_limits)) {
+    correlations <- data$correlation[is.finite(data$correlation)]
+    fill_limits <- if (length(correlations) > 0L && all(correlations >= 0)) {
+      c(0, 1)
+    } else {
+      c(-1, 1)
+    }
+  }
   data$.label <- plot_correlation_label(data$correlation, digits)
   p <- ggplot2::ggplot(data) +
     ggplot2::aes(x = .data$time_1, y = .data$time_2, fill = .data$correlation) +

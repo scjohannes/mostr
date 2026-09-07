@@ -85,12 +85,14 @@ fit_many
 
 ```{r}
 ec <- plot_correlation(
+  show_values = FALSE,
   raw_data,
   id_var = "id",
   time_var = "time",
   y_var = "y")
 
 mc <- plot_correlation(
+  show_values = FALSE,
   fit_many,
   id_var = "id",
   time_var = "time",

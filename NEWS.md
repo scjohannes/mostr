@@ -1,5 +1,9 @@
 # mostr 0.1.0
 
+* `plot_correlation()` now uses a 0-1 color scale when all available correlations
+  are nonnegative, retaining -1 to 1 when negative correlations are present.
+  Set `fill_limits` explicitly to keep a common scale across plots.
+
 * Speed up row assembly, grouped summaries, patient bootstrap materialization,
   and baseline selection using data.table internally. Results remain data frames.
 

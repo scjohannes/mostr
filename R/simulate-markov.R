@@ -344,10 +344,15 @@ sim_trajectories_markov <- function(
 
 #' Simulate ACTT-2 Markov Trajectories
 #'
-#' Generates ACTT-2-like eight-state ordinal trajectories from a fitted
-#' proportional-odds transition model. The wrapper samples baseline states and
-#' treatment assignments, evaluates the model's restricted cubic spline in day,
-#' and delegates trajectory generation to [sim_trajectories_markov()].
+#' Generates synthetic daily health states using a proportional-odds model
+#' based on data from the
+#' [Adaptive COVID-19 Treatment Trial 2 (ACTT-2)](https://doi.org/10.1056/NEJMoa2031994),
+#' a clinical trial in adults hospitalized with moderate to severe COVID-19.
+#' States follow the trial's
+#' [NIAID eight-point ordinal scale](https://www.fda.gov/media/144473/download#page=10),
+#' from unrestricted activities outside hospital (1) to death (8).
+#' Use `n_patients` to choose the sample size and `treatment_effect` to choose
+#' the treatment effect in the simulated data.
 #'
 #' @param n_patients Integer. Number of patients to simulate (default: 1000).
 #' @param treatment_prob Numeric. Probability of assignment to Baricitinib plus

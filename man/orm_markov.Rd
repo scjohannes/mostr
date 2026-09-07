@@ -79,8 +79,9 @@ package-owned robust covariance and the object records its cluster,
 correction, bread, weighting, and covariance-integrity metadata.
 }
 \description{
-\code{orm_markov()} is a thin package-aware wrapper around \code{\link[rms:orm]{rms::orm()}} for
-Markov SOP workflows. It fits with \code{x = TRUE} and \code{y = TRUE} by default,
+\code{orm_markov()} fits a model using \code{\link[rms:orm]{rms::orm()}} and stores the data needed
+by subsequent SOP and inference functions. It uses \code{x = TRUE} and
+\code{y = TRUE} by default,
 rejects offsets, stores separate likelihood, refit, and designated-start
 profile data on the returned model, and computes cluster-robust standard
 errors automatically when \code{id_var} is supplied.

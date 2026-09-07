@@ -42,10 +42,15 @@ A data frame with the same columns returned by
 patient and states numbered 1 through 8.
 }
 \description{
-Generates ACTT-2-like eight-state ordinal trajectories from a fitted
-proportional-odds transition model. The wrapper samples baseline states and
-treatment assignments, evaluates the model's restricted cubic spline in day,
-and delegates trajectory generation to \code{\link[=sim_trajectories_markov]{sim_trajectories_markov()}}.
+Generates synthetic daily health states using a proportional-odds model
+based on data from the
+\href{https://doi.org/10.1056/NEJMoa2031994}{Adaptive COVID-19 Treatment Trial 2 (ACTT-2)},
+a clinical trial in adults hospitalized with moderate to severe COVID-19.
+States follow the trial's
+\href{https://www.fda.gov/media/144473/download#page=10}{NIAID eight-point ordinal scale},
+from unrestricted activities outside hospital (1) to death (8).
+Use \code{n_patients} to choose the sample size and \code{treatment_effect} to choose
+the treatment effect in the simulated data.
 }
 \details{
 Initial previous states are sampled from states 4 through 7 with

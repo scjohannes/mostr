@@ -45,11 +45,13 @@ categorical time contracts.}
 \item{y}{set to \code{FALSE} to not store the response variable in the fit}
 }
 \value{
-A fitted \code{blrm} object with \code{mostr} stored-data metadata.
+A fitted \code{blrm} object retaining the data needed by subsequent
+SOP and inference functions.
 }
 \description{
-\code{blrm_markov()} is a thin package-aware wrapper around \code{\link[rmsb:blrm]{rmsb::blrm()}} for
-Markov SOP workflows. It fits with \code{x = TRUE} and \code{y = TRUE} by default,
+\code{blrm_markov()} fits a model using \code{\link[rmsb:blrm]{rmsb::blrm()}} and stores the data needed
+by subsequent SOP and inference functions. It uses \code{x = TRUE} and
+\code{y = TRUE} by default,
 rejects offsets, and stores separate likelihood, refit, and designated-start
 profile data plus the optional patient ID on the returned model. Bayesian
 fits do not receive

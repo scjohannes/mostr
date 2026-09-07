@@ -6,11 +6,14 @@
 \alias{mostr-package}
 \title{mostr native routines}
 \description{
+\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
+
 Estimate state occupancy probabilities and treatment contrasts for longitudinal ordinal outcomes using discrete-time Markov transition models. Supports (partial) proportional-odds model backends from 'VGAM', 'rms', and 'rmsb'.
 }
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://scjohannes.github.io/mostr/}
   \item \url{https://github.com/scjohannes/mostr}
   \item Report bugs at \url{https://github.com/scjohannes/mostr/issues}
 }

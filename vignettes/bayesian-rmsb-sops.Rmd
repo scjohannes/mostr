@@ -15,7 +15,9 @@ RUN_BAYESIAN <- identical(
 ) && requireNamespace("rmsb", quietly = TRUE)
 ```
 
-`mostr` also supports Bayesian transition models fitted with `blrm_markov()`, a stored-data wrapper around `rmsb::blrm()`. In this vignette we use a small number of MCMC iterations and SOP draws for demonstration.
+`blrm_markov()` fits Bayesian transition models using `rmsb::blrm()` and stores
+the data needed by subsequent SOP and inference functions. In this vignette we
+use a small number of MCMC iterations and SOP draws for demonstration.
 
 ## Data
 

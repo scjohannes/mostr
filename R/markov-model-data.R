@@ -2,8 +2,9 @@
 
 #' Fit an rms Markov Model
 #'
-#' `orm_markov()` is a thin package-aware wrapper around [rms::orm()] for
-#' Markov SOP workflows. It fits with `x = TRUE` and `y = TRUE` by default,
+#' `orm_markov()` fits a model using [rms::orm()] and stores the data needed
+#' by subsequent SOP and inference functions. It uses `x = TRUE` and
+#' `y = TRUE` by default,
 #' rejects offsets, stores separate likelihood, refit, and designated-start
 #' profile data on the returned model, and computes cluster-robust standard
 #' errors automatically when `id_var` is supplied.
@@ -190,8 +191,9 @@ orm_markov <- function(
 
 #' Fit an rmsb Markov Model
 #'
-#' `blrm_markov()` is a thin package-aware wrapper around [rmsb::blrm()] for
-#' Markov SOP workflows. It fits with `x = TRUE` and `y = TRUE` by default,
+#' `blrm_markov()` fits a model using [rmsb::blrm()] and stores the data needed
+#' by subsequent SOP and inference functions. It uses `x = TRUE` and
+#' `y = TRUE` by default,
 #' rejects offsets, and stores separate likelihood, refit, and designated-start
 #' profile data plus the optional patient ID on the returned model. Bayesian
 #' fits do not receive
@@ -214,7 +216,8 @@ orm_markov <- function(
 #'   at the starting row may be missing when that patient contributes another
 #'   usable likelihood transition.
 #'
-#' @return A fitted `blrm` object with `mostr` stored-data metadata.
+#' @return A fitted `blrm` object retaining the data needed by subsequent
+#'   SOP and inference functions.
 #'
 #' @examples
 #' \dontrun{

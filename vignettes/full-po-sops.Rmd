@@ -1,25 +1,53 @@
 ---
-title: "Full Proportional-Odds SOPs with Markov Fit Wrappers"
+title: "State Occupancy Probabilities with Proportional-Odds Models"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Full Proportional-Odds SOPs with Markov Fit Wrappers}
+  %\VignetteIndexEntry{State Occupancy Probabilities with Proportional-Odds Models}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r vignette-options, include = FALSE}
 source("_setup.R", local = TRUE)
 ```
 
-We fit the same full proportional-odds first-order transition model using two
-backends:
+This vignette simulates daily health-state trajectories for **400 patients over
+28 days**, using a model based on data from the
+[Adaptive COVID-19 Treatment Trial 2 (ACTT-2)](https://doi.org/10.1056/NEJMoa2031994).
+The trial enrolled adults hospitalized with moderate to severe COVID-19.[^niaid]
+The simulated trajectories resemble patterns in the trial data, with the
+treatment effect chosen for this example using `treatment_effect = log(0.8)`.
 
-1. `vglm_markov()`, the package-aware VGAM wrapper.
-2. `orm_markov()`, the package-aware rms wrapper.
+We estimate the probability of being in each health state on each day, called
+a *state occupancy probability* (SOP). We fit a proportional-odds model in which
+the next day's state depends on the current state, treatment, and time, using
+`vglm_markov()` (which uses VGAM) and `orm_markov()` (which uses rms).
 
-The vignette uses 200 simulated ACTT-2-style patients on the simulator's native
-8-state outcome scale and a shortened follow-up window to keep computation time
-short.
+## Health-state scale
+
+The states follow the trial's
+[NIAID eight-point ordinal scale](https://www.fda.gov/media/144473/download#page=10).
+Higher numbers indicate worse health:
+
+| State | Meaning |
+|---|---|
+| 1 | Outside hospital, with usual activities unrestricted |
+| 2 | Outside hospital, with restricted activities, oxygen at home, or both |
+| 3 | In hospital, without oxygen and no further medical care needed |
+| 4 | In hospital, without oxygen but still needing medical care |
+| 5 | In hospital, needing supplemental oxygen |
+| 6 | In hospital, needing high-flow oxygen or noninvasive ventilation |
+| 7 | In hospital, needing invasive ventilation or extracorporeal membrane oxygenation (ECMO) |
+| 8 | Death |
+
+State 8 is absorbing: once a simulated patient reaches this state, they remain
+there for the rest of follow-up.
+
+[^niaid]: We thank the National Institute of Allergy and Infectious Diseases
+    (NIAID) for sharing the ACTT-2 data, which enabled us to create synthetic
+    trajectories that mimic patterns observed in real patients. Researchers
+    can apply for access through the
+    [NIAID clinical-trial data portal](https://accessclinicaldata.niaid.nih.gov/study-viewer/clinical_trials/NCT04401579).
 
 ## Data
 
@@ -49,7 +77,7 @@ model_data <- prepare_markov_data(
 )
 ```
 
-```{r}
+```{r observed-sops}
 plot_sops(raw_data, facet_var = NULL, linetype_var = "tx")
 ```
 
@@ -193,14 +221,16 @@ plot_sops(
 
 ## Diagnostics
 
-```{r}
+```{r correlation-diagnostics}
 ec <- plot_correlation(
+  show_values = FALSE,
   raw_data, 
   id_var = "id",
   time_var = "time",
   y_var = "y")
 
 mc <- plot_correlation(
+  show_values = FALSE,
   fit_orm, 
   id_var = "id",
   time_var = "time",
@@ -254,7 +284,7 @@ td <- plot_transitions(
 td
 ```
 
-```{r}
+```{r variogram-diagnostics}
 plot_variogram(
   raw_data, 
   id_var = "id",
