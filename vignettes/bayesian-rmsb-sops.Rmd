@@ -8,15 +8,7 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  fig.width = 7,
-  fig.height = 4.8,
-  out.width = "100%",
-  message = FALSE,
-  warning = FALSE
-)
+source("_setup.R", local = TRUE)
 RUN_BAYESIAN <- identical(
   Sys.getenv("MOSTR_RUN_BAYESIAN_VIGNETTE"),
   "true"
@@ -78,6 +70,7 @@ fit_blrm <- blrm_markov(
   refresh = 0,
   seed = SEED
 )
+fit_blrm
 ```
 
 ## Posterior SOPs
@@ -126,9 +119,11 @@ These diagnostics compare empirical trajectory features with features implied
 by the fitted transition model. For `blrm_markov()` plots, posterior draws are
 kept separate through the transition, correlation, and variogram summaries;
 `seed` controls posterior-draw selection.
+The transition plots use up to sixteen evenly spaced visits, shared between
+observed and fitted results.
 
-```{r diagnostics-transitions-observed, eval = RUN_BAYESIAN}
-diagnostic_times <- c(1, 7, FOLLOW_UP)
+```{r diagnostics-transitions-observed, eval = RUN_BAYESIAN, fig.width = 9, fig.height = 9}
+diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
 
 plot_transitions(
   raw_data,
@@ -139,7 +134,7 @@ plot_transitions(
   labs(title = "Observed transition proportions")
 ```
 
-```{r diagnostics-transitions-model, eval = RUN_BAYESIAN}
+```{r diagnostics-transitions-model, eval = RUN_BAYESIAN, fig.width = 9, fig.height = 9}
 plot_transitions(
   fit_blrm,
   times = diagnostic_times,

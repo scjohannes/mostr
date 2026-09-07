@@ -24,6 +24,17 @@ GitHub Pages artifact and deployment actions. In repository Settings > Pages,
 the source must be set to GitHub Actions. Local previews use
 `pkgdown::build_site()` with Pandoc available; this executes the vignette articles.
 
+`man/figures/logo.png` supplies the README and pkgdown logo. All vignettes source
+`vignettes/_setup.R`, which keeps code and figures visible and wraps text output
+longer than ten lines in native HTML `details` elements. Non-HTML output retains
+the usual knitr formatting. The website workflow sets
+`MOSTR_RUN_BAYESIAN_VIGNETTE=true` to execute the Bayesian model and its posterior
+predictions; set the same variable for a complete local website build. Routine
+package vignette builds retain the existing opt-in for this longer calculation.
+Vignette transition heatmaps use up to sixteen evenly spaced visits in grids of
+at most four rows and four columns. Observed, fitted, and difference plots share
+the same visits, with tile labels omitted for readability.
+
 ## Data flow
 
 ```mermaid

@@ -8,15 +8,7 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  fig.width = 7,
-  fig.height = 4.8,
-  out.width = "100%",
-  message = FALSE,
-  warning = FALSE
-)
+source("_setup.R", local = TRUE)
 ```
 
 When the outcome has many ordered levels, a categorical previous-state effect can become too large. We can instead model the previous state effect using a restricted cubic spline to allow for non-linear effects.

@@ -8,15 +8,7 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  fig.width = 7,
-  fig.height = 4.8,
-  out.width = "100%",
-  message = FALSE,
-  warning = FALSE
-)
+source("_setup.R", local = TRUE)
 ```
 
 We fit the same full proportional-odds first-order transition model using two
@@ -221,21 +213,29 @@ ec
 mc
 ```
 
-```{r}
+We show up to sixteen evenly spaced visits so each transition heatmap remains readable.
+The observed, fitted, and treatment-difference plots use the same visits.
+
+```{r transition-diagnostics, fig.width = 9, fig.height = 9}
+diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
+
 et <- plot_transitions(
   raw_data, 
   id_var = "id",
   time_var = "time",
-  y_var = "y")
+  y_var = "y",
+  times = diagnostic_times,
+  show_values = FALSE)
 
 mt <- plot_transitions(
   fit_orm, 
   id_var = "id",
   time_var = "time",
   y_var = "y",
-  times = seq_len(FOLLOW_UP), 
+  times = diagnostic_times,
   y_levels = fit_orm$yunique,
-  absorb = ABSORB)
+  absorb = ABSORB,
+  show_values = FALSE)
 
 et
 mt
@@ -247,9 +247,10 @@ td <- plot_transitions(
   id_var = "id",
   time_var = "time",
   y_var = "y",
-  times = seq_len(FOLLOW_UP), 
+  times = diagnostic_times,
   y_levels = fit_orm$yunique,
-  absorb = ABSORB)
+  absorb = ABSORB,
+  show_values = FALSE)
 td
 ```
 

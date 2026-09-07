@@ -21,6 +21,7 @@ jobs:
       OMP_NUM_THREADS: 1
       OPENBLAS_NUM_THREADS: 1
       MKL_NUM_THREADS: 1
+      MOSTR_RUN_BAYESIAN_VIGNETTE: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-pandoc@v2
@@ -41,6 +42,7 @@ jobs:
       - name: Build website
         shell: Rscript {0}
         run: |
+          source(".github/check-vignette-output.R")
           pkgdown::check_pkgdown()
           pkgdown::build_site_github_pages(new_process = FALSE, install = FALSE)
       - uses: actions/upload-pages-artifact@v3

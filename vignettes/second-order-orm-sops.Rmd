@@ -8,15 +8,7 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  fig.width = 7,
-  fig.height = 4.8,
-  out.width = "100%",
-  message = FALSE,
-  warning = FALSE
-)
+source("_setup.R", local = TRUE)
 ```
 
 For a second-order transition model, the transition probability depends on the
@@ -232,9 +224,11 @@ These diagnostics compare empirical trajectory features with the corresponding
 features implied by the second-order transition model. The model-based plots
 pass `p2_var = "ypprev"` so the deterministic recursions condition on both
 previous states.
+The transition plots use up to sixteen evenly spaced visits, shared between
+observed and fitted results.
 
-```{r diagnostics-transitions-observed}
-diagnostic_times <- c(1, 3, 5, 7, 11, 13)
+```{r diagnostics-transitions-observed, fig.width = 9, fig.height = 9}
+diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
 
 plot_transitions(
   raw_data,
@@ -245,7 +239,7 @@ plot_transitions(
   labs(title = "Observed transition proportions")
 ```
 
-```{r diagnostics-transitions-model}
+```{r diagnostics-transitions-model, fig.width = 9, fig.height = 9}
 plot_transitions(
   fit_second,
   times = diagnostic_times,

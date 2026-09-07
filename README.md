@@ -1,4 +1,4 @@
-# mostr
+# mostr <img src="man/figures/logo.png" align="right" width="150" alt="mostr logo: a hexagon with stacked state-probability bars" />
 
 Markov Ordinal State Transition models.
 

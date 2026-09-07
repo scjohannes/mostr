@@ -8,15 +8,7 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  fig.width = 7,
-  fig.height = 4.8,
-  out.width = "100%",
-  message = FALSE,
-  warning = FALSE
-)
+source("_setup.R", local = TRUE)
 ```
 
 This vignette fits one full proportional-odds `orm_markov()` transition model and
