@@ -963,15 +963,13 @@ resolve_markov_prediction_data <- function(
   }
 
   if (time_var %in% names(data)) {
-    split_idx <- split(seq_len(nrow(data)), id)
-    baseline_idx <- vapply(
-      split_idx,
-      function(idx) {
-        time_values <- data[[time_var]][idx]
-        idx[order(time_values, na.last = TRUE)[1]]
-      },
-      integer(1)
+    work <- data.table::data.table(
+      group = factor(id),
+      time = data[[time_var]],
+      row = seq_along(id)
     )
+    data.table::setorderv(work, c("group", "time"), na.last = TRUE)
+    baseline_idx <- work$row[!is.na(work$group) & !duplicated(work$group)]
     return(data[baseline_idx, , drop = FALSE])
   }
 

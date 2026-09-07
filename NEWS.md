@@ -1,5 +1,8 @@
 # mostr 0.1.0
 
+* Speed up row assembly, grouped summaries, patient bootstrap materialization,
+  and baseline selection using data.table internally. Results remain data frames.
+
 * Initial release of Markov Ordinal State Transition modeling tools, migrated
   from markov.misc with its original authorship and GPL license preserved.
 * Retain Markov data generation, first- and second-order transition models,

@@ -42,25 +42,14 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
     NULL
   }
 
-  agg_formula <- stats::as.formula(
-    paste(value_col, "~", paste(c(group_cols, "time"), collapse = " + "))
-  )
-  by_time <- stats::aggregate(agg_formula, data = x, FUN = sum, na.rm = TRUE)
+  by_time <- aggregate_value(x, value_col, c(group_cols, "time"), sum)
 
   if (!real_time) {
     if (length(group_cols) == 0) {
       out <- data.frame(total_time = sum(by_time[[value_col]], na.rm = TRUE))
       return(out)
     }
-    total_formula <- stats::as.formula(
-      paste(value_col, "~", paste(group_cols, collapse = " + "))
-    )
-    out <- stats::aggregate(
-      total_formula,
-      data = by_time,
-      FUN = sum,
-      na.rm = TRUE
-    )
+    out <- aggregate_value(by_time, value_col, group_cols, sum)
     names(out)[names(out) == value_col] <- "total_time"
     if (!is.null(weight_metadata)) {
       out <- left_join_preserve_order(out, weight_metadata, by = group_cols)

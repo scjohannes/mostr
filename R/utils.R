@@ -18,6 +18,10 @@ validate_conf_level <- function(conf_level, arg = "conf_level") {
   conf_level
 }
 
+has_nested_columns <- function(data) {
+  any(vapply(data, function(x) is.list(x) || !is.null(dim(x)), logical(1)))
+}
+
 # Bind data frames row-wise while filling columns missing from individual inputs.
 # This scoped helper is not a drop-in replacement for dplyr::bind_rows().
 bind_rows_fill <- function(x) {
@@ -28,42 +32,63 @@ bind_rows_fill <- function(x) {
   }
 
   x <- lapply(x, as.data.frame, stringsAsFactors = FALSE, optional = TRUE)
-  all_cols <- unique(unlist(lapply(x, names), use.names = FALSE))
-
-  x <- lapply(x, function(df) {
-    missing_cols <- setdiff(all_cols, names(df))
-    for (col in missing_cols) {
-      df[[col]] <- NA
-    }
-    df[, all_cols, drop = FALSE]
-  })
-
-  out <- do.call(rbind, x)
-  rownames(out) <- NULL
-  out
+  # Keep matrix-valued predictors intact and preserve base list-column filling.
+  if (any(vapply(x, has_nested_columns, logical(1)))) {
+    all_cols <- unique(unlist(lapply(x, names), use.names = FALSE))
+    x <- lapply(x, function(df) {
+      for (col in setdiff(all_cols, names(df))) {
+        df[[col]] <- rep(NA, nrow(df))
+      }
+      df[, all_cols, drop = FALSE]
+    })
+    out <- do.call(rbind, x)
+    rownames(out) <- NULL
+    return(out)
+  }
+  as.data.frame(data.table::rbindlist(x, use.names = TRUE, fill = TRUE))
 }
 
 # Left join while preserving left-hand order and repeated-key expansion.
 # This scoped helper is not a drop-in replacement for dplyr::left_join().
 left_join_preserve_order <- function(x, y, by) {
-  y_cols <- setdiff(names(y), by)
-  key_frame <- function(df) {
-    do.call(paste, c(df[, by, drop = FALSE], sep = "\r"))
+  if (
+    length(by) == 0L ||
+      has_nested_columns(x) ||
+      has_nested_columns(y) ||
+      any(setdiff(names(y), by) %in% names(x))
+  ) {
+    left <- as.data.frame(x)[, by, drop = FALSE]
+    right <- as.data.frame(y)[, by, drop = FALSE]
+    key_names <- if (length(by)) paste0("key", seq_along(by)) else character()
+    names(left) <- names(right) <- key_names
+    left$.left <- seq_len(nrow(x))
+    right$.right <- seq_len(nrow(y))
+    rows <- if (length(by)) {
+      merge(left, right, by = key_names, all.x = TRUE, sort = FALSE)
+    } else {
+      expand.grid(
+        .right = if (nrow(y)) seq_len(nrow(y)) else NA_integer_,
+        .left = seq_len(nrow(x))
+      )
+    }
+    rows <- rows[order(rows$.left, rows$.right), , drop = FALSE]
+    out <- cbind(
+      x[rows$.left, , drop = FALSE],
+      y[rows$.right, setdiff(names(y), by), drop = FALSE]
+    )
+    rownames(out) <- NULL
+    return(out)
   }
-  x_key <- key_frame(x)
-  y_key <- key_frame(y)
-  y_split <- split(seq_len(nrow(y)), y_key, drop = TRUE)
-  y_rows <- lapply(x_key, function(key) y_split[[key]] %||% NA_integer_)
-  counts <- lengths(y_rows)
-  left_rows <- rep.int(seq_len(nrow(x)), counts)
-  right_rows <- unlist(y_rows, use.names = FALSE)
-  left <- x[left_rows, , drop = FALSE]
-  right <- y[right_rows, y_cols, drop = FALSE]
-  rownames(left) <- NULL
-  rownames(right) <- NULL
-  out <- cbind(left, right)
-  rownames(out) <- NULL
-  out
+  out <- merge(
+    data.table::as.data.table(x),
+    data.table::as.data.table(y),
+    by = by,
+    all.x = TRUE,
+    sort = FALSE,
+    allow.cartesian = TRUE
+  )
+  data.table::setcolorder(out, c(names(x), setdiff(names(y), by)))
+  as.data.frame(out)
 }
 
 matrix_to_long <- function(

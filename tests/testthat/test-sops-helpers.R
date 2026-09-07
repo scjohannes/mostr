@@ -1,3 +1,20 @@
+test_that("baseline selection keeps factor id order, earliest visits and ties", {
+  data <- data.frame(
+    id = factor(
+      c("a", "z", "a", "z", "a", "m", "m"),
+      levels = c("z", "a", "m")
+    ),
+    visit = c(NA, 2, 1, 2, 1, NA, NA),
+    value = 1:7
+  )
+  before <- serialize(data, NULL)
+  expect_identical(
+    resolve_markov_prediction_data(data, "id", "visit"),
+    data[c(2, 3, 6), ]
+  )
+  expect_identical(serialize(data, NULL), before)
+})
+
 test_that("sops() validates inputs and supports stratified aggregation", {
   model <- structure(list(), class = "mock_model")
   newdata <- data.frame(

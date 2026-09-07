@@ -12,6 +12,7 @@ License: GPL (>= 2)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Imports: 
+    data.table (>= 1.15.0),
     furrr,
     future,
     future.callr,

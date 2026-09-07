@@ -45,6 +45,27 @@ test_that("materialize_bootstrap_sample preserves sampled copies and row data", 
   expect_equal(result$y, c(1, 0, 0, 1, 1, 0))
 })
 
+test_that("indexed bootstrap keeps factor levels and unmatched sampled ids", {
+  data <- data.frame(
+    id = c(1, 2, 1),
+    y = ordered(c("low", "high", "high"), levels = c("low", "high"))
+  )
+  ids <- data.frame(
+    original_id = c("1", "missing", "1"),
+    new_id = c("a", "b", "c"),
+    boot_id = 1L
+  )
+  before <- serialize(list(data, ids), NULL)
+  out <- materialize_bootstrap_sample(ids, data, "id")
+  expect_identical(out$id, c("1", "1", "missing", "1", "1"))
+  expect_identical(
+    out$y,
+    ordered(c("low", "high", NA, "low", "high"), levels = c("low", "high"))
+  )
+  expect_identical(class(out), "data.frame")
+  expect_identical(serialize(list(data, ids), NULL), before)
+})
+
 test_that("fractional bootstrap weights are mean-one cluster weights", {
   data <- data.frame(
     id = c("a", "a", "b", "c", "c"),

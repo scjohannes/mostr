@@ -165,6 +165,8 @@ materialize_bootstrap_sample_indexed <- function(
   id_var,
   row_plan
 ) {
+  # This function is also serialized to workers independently of the namespace.
+  .datatable.aware <- TRUE
   required <- c("original_id", "new_id", "boot_id")
   if (!all(required %in% names(boot_ids))) {
     stop("`boot_ids` must contain original_id, new_id, and boot_id columns.")
@@ -183,13 +185,28 @@ materialize_bootstrap_sample_indexed <- function(
 
   boot_ids_renamed <- boot_ids
   names(boot_ids_renamed)[names(boot_ids_renamed) == "original_id"] <- id_var
-  left <- boot_ids_renamed[boot_rows, , drop = FALSE]
-  right <- data[data_rows, setdiff(names(data), id_var), drop = FALSE]
-  rownames(left) <- NULL
-  rownames(right) <- NULL
-  out <- cbind(left, right)
-  rownames(out) <- NULL
-  out
+  # A matrix column can be a model predictor; as.data.table would split it.
+  nested <- function(x) {
+    any(vapply(x, function(col) is.list(col) || !is.null(dim(col)), logical(1)))
+  }
+  if (nested(data) || nested(boot_ids_renamed)) {
+    left <- as.data.frame(boot_ids_renamed)[boot_rows, , drop = FALSE]
+    right <- as.data.frame(data)[
+      data_rows,
+      setdiff(names(data), id_var),
+      drop = FALSE
+    ]
+    out <- cbind(left, right)
+    rownames(out) <- NULL
+    return(out)
+  }
+  left <- data.table::as.data.table(boot_ids_renamed)[boot_rows]
+  right <- data.table::as.data.table(data)[
+    data_rows,
+    setdiff(names(data), id_var),
+    with = FALSE
+  ]
+  as.data.frame(cbind(left, right))
 }
 
 generate_fwb_bootstrap_weights <- function(

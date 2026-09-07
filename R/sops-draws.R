@@ -19,6 +19,8 @@ compute_ci_from_draws <- function(
   conf_type = "perc",
   point_estimates = NULL
 ) {
+  .datatable.aware <- TRUE
+  draws_df <- as.data.frame(draws_df)
   conf_level <- validate_conf_level(conf_level)
   if (
     !is.character(conf_type) ||
@@ -67,43 +69,23 @@ compute_ci_from_draws <- function(
     return(out)
   }
 
-  # Aggregate to get summary statistics
-  agg_formula <- stats::as.formula(
-    paste("estimate ~", paste(group_cols, collapse = " + "))
+  work <- data.table::as.data.table(
+    draws_df[, c(group_cols, "estimate"), drop = FALSE]
   )
-
-  if (conf_type == "perc") {
-    # Percentile confidence intervals
-    summary_stats <- stats::aggregate(
-      agg_formula,
-      data = draws_df,
-      FUN = function(x) {
-        summarize_values(x)
-      }
-    )
-  } else if (conf_type == "wald") {
-    # Wald confidence intervals
-    summary_stats <- stats::aggregate(
-      agg_formula,
-      data = draws_df,
-      FUN = function(x) {
-        summarize_values(x)
-      }
-    )
-  } else {
-    stop("conf_type must be 'perc' or 'wald'")
+  work <- work[stats::complete.cases(work)]
+  if (nrow(work) == 0L) {
+    stop("no rows to aggregate")
   }
-
-  # Fix aggregate's matrix column output
-  mat <- summary_stats$estimate
-  summary_stats$estimate <- NULL
-  summary_stats$conf.low <- mat[, 1]
-  summary_stats$conf.high <- mat[, 2]
-  summary_stats$std.error <- mat[, 3]
-
+  summary_stats <- as.data.frame(work[,
+    as.list(summarize_values(estimate)),
+    by = group_cols
+  ])
+  rows <- do.call(order, lapply(summary_stats[rev(group_cols)], as.factor))
+  summary_stats <- summary_stats[rows, , drop = FALSE]
+  rownames(summary_stats) <- NULL
   if (conf_type == "wald") {
     if (is.null(point_estimates)) {
-      centers <- stats::aggregate(agg_formula, data = draws_df, FUN = mean)
+      centers <- aggregate_value(draws_df, "estimate", group_cols, mean)
     } else {
       centers <- point_estimates[, c(group_cols, "estimate"), drop = FALSE]
     }

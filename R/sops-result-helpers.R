@@ -240,38 +240,32 @@ weighted_sop_mean <- function(x, weights) {
 }
 
 aggregate_sops_estimates <- function(result, group_cols, weight_col = NULL) {
+  .datatable.aware <- TRUE
+  result <- as.data.frame(result)
   missing_vars <- setdiff(group_cols, names(result))
   if (length(missing_vars) > 0) {
     stop("Grouping variables missing: ", paste(missing_vars, collapse = ", "))
   }
 
   if (is.null(weight_col)) {
-    agg_formula <- stats::as.formula(
-      paste("estimate ~", paste(group_cols, collapse = " + "))
-    )
-    return(stats::aggregate(
-      agg_formula,
-      data = result,
-      FUN = mean,
-      na.rm = TRUE
-    ))
+    return(aggregate_value(result, "estimate", group_cols, mean))
   }
 
   if (!weight_col %in% names(result)) {
     stop("Weight column '", weight_col, "' not found in result.")
   }
 
-  split_key <- interaction(result[, group_cols, drop = FALSE], drop = TRUE)
-  groups <- split(seq_len(nrow(result)), split_key, drop = TRUE)
-  first_rows <- vapply(groups, `[`, integer(1), 1L)
-  out <- result[first_rows, group_cols, drop = FALSE]
-  out$estimate <- vapply(
-    groups,
-    function(idx) {
-      weighted_sop_mean(result$estimate[idx], result[[weight_col]][idx])
-    },
-    numeric(1)
+  work <- data.table::as.data.table(
+    result[, c(group_cols, "estimate", weight_col), drop = FALSE]
   )
+  work <- work[stats::complete.cases(result[, group_cols, drop = FALSE])]
+  out <- as.data.frame(work[,
+    list(estimate = weighted_sop_mean(estimate, .SD[[1L]])),
+    by = group_cols,
+    .SDcols = weight_col
+  ])
+  rows <- do.call(order, lapply(out[rev(group_cols)], as.factor))
+  out <- out[rows, , drop = FALSE]
   rownames(out) <- NULL
   out
 }

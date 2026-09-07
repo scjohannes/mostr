@@ -241,6 +241,8 @@ reduce_time_in_state_comparison_df <- function(
 }
 
 aggregate_value <- function(data, value_col, group_cols, fun) {
+  .datatable.aware <- TRUE
+  data <- as.data.frame(data)
   if (nrow(data) == 0L) {
     stop("No rows are available for the requested state set.")
   }
@@ -251,10 +253,25 @@ aggregate_value <- function(data, value_col, group_cols, fun) {
     return(out)
   }
 
-  f <- stats::as.formula(
-    paste(value_col, "~", paste(group_cols, collapse = " + "))
+  work <- data.table::as.data.table(
+    data[, c(group_cols, value_col), drop = FALSE]
   )
-  stats::aggregate(f, data = data, FUN = fun, na.rm = TRUE)
+  # Match aggregate.formula: omit missing values and grouping keys, including
+  # groups with no observed values. The first grouping column varies fastest.
+  work <- work[stats::complete.cases(work)]
+  if (nrow(work) == 0L) {
+    stop("no rows to aggregate")
+  }
+  out <- work[,
+    lapply(.SD, fun, na.rm = TRUE),
+    by = group_cols,
+    .SDcols = value_col
+  ]
+  out <- as.data.frame(out)
+  rows <- do.call(order, lapply(out[rev(group_cols)], as.factor))
+  out <- out[rows, , drop = FALSE]
+  rownames(out) <- NULL
+  out
 }
 
 aggregate_auc <- function(data, value_col, group_cols) {
