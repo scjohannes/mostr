@@ -126,9 +126,14 @@ errors for \code{blrm} objects.
 \code{method = "delta"} differentiates the first-order full
 proportional-odds SOP recursion on the model's complete raw-coefficient
 scale. With \code{vcov = "conditional"}, covariance is propagated as
-\eqn{J V J^\top}, where \eqn{J} contains derivatives of the reported
-estimates with respect to the model coefficients and \eqn{V} is their
-complete named covariance matrix. An explicit covariance matrix passed
+\eqn{G V_\beta G^\top}, where \eqn{\beta} contains all model coefficients,
+\eqn{G} contains derivatives of the reported estimates with respect to
+\eqn{\beta^\top}, evaluated at the fitted coefficients \eqn{\hat\beta},
+and \eqn{V_\beta} is their estimated covariance matrix. Rows of \eqn{G}
+correspond to estimates and columns to coefficients. For a simple patient
+average, \eqn{G = \bar G = n^{-1}\sum_{i=1}^n G_i}, where \eqn{G_i}
+contains patient \eqn{i}'s prediction derivatives and \eqn{n} is the number
+of patients. An explicit covariance matrix passed
 as \code{vcov} overrides the model covariance for conditional inference.
 
 \code{vcov = "conditional"} accounts for uncertainty in the estimated model
@@ -170,11 +175,13 @@ transition model, informative observation process, or Markov assumption.
 
 The simulation method works as follows:
 \enumerate{
-\item Extract coefficient vector beta_hat and (robust) variance-covariance Sigma
-\item Generate n_draws coefficient vectors via the selected engine:
+\item Extract the fitted coefficient vector \eqn{\hat\beta} and its estimated
+covariance matrix \eqn{V_\beta}.
+\item Generate \code{n_draws} coefficient vectors using the selected method:
 \itemize{
-\item \code{engine = "mvn"}: MVN draws from \code{N(beta_hat, Sigma)}.
-\item \code{engine = "score_bootstrap"}: one-step score perturbation with
+\item \code{method = "mvn"}: Multivariate-normal draws from
+\eqn{\mathcal{N}(\hat\beta, V_\beta)}.
+\item \code{method = "score_bootstrap"}: one-step score perturbation with
 cluster-level exponential multipliers.
 }
 \item For each draw, replace model coefficients and compute SOPs
@@ -182,8 +189,8 @@ cluster-level exponential multipliers.
 }
 \itemize{
 \item Works for both individual-level (\code{sops()}) and averaged (\code{avg_sops()}) SOPs
-for \code{engine = "mvn"}
-\item \code{engine = "score_bootstrap"} supports \code{avg_sops()} and \code{sops()} with
+for \code{method = "mvn"}
+\item \code{method = "score_bootstrap"} supports \code{avg_sops()} and \code{sops()} with
 \code{robcov_vglm} models and with \code{orm} models when \code{cluster} is supplied.
 When the prediction rows are the stored patients, the same
 cluster-level weights used for the score perturbation are used for every

@@ -10,24 +10,27 @@ compute_scores_vglm(fit)
 \item{fit}{A fitted vglm object.}
 }
 \value{
-An n x p matrix of score contributions, where n is the number of
-observations and p is the number of parameters.
+An \eqn{m \times p} matrix of score contributions, where \eqn{m}
+is the number of fitting rows and \eqn{p} is the number of coefficients.
 }
 \description{
 Internal function to compute the score (gradient of log-likelihood)
 contributions for each observation in a vglm model.
 }
 \details{
-The score for observation i is computed as:
-\deqn{\psi_i = X_i' \cdot \frac{\partial \ell_i}{\partial \eta}}
-where \eqn{X_i} is the portion of the VLM model matrix for observation i
-(an M x p submatrix where M is the number of linear predictors), and
-\eqn{\frac{\partial \ell_i}{\partial \eta}} is the derivative of the
-log-likelihood with respect to the linear predictors for observation i.
+Let \eqn{\beta} contain all model coefficients, with fitted value
+\eqn{\hat\beta}. For fitting row \eqn{r}, the column score vector is:
+\deqn{\psi_r = \frac{\partial \ell_r}{\partial\beta}
+      = X_r^\top \frac{\partial \ell_r}{\partial \eta_r}}
+where \eqn{\ell_r} is the row's log likelihood, \eqn{\eta_r} is its column
+vector of \eqn{L} linear predictors, and \eqn{X_r} is the corresponding
+\eqn{L \times p} block of the VLM model matrix. Derivatives are evaluated
+at \eqn{\hat\beta}; \eqn{\top} denotes transpose.
 
 The VLM (vector linear model) structure in VGAM means that for an ordinal
-model with M cutpoints, each observation contributes M rows to the design
-matrix. The score for each observation is computed by multiplying the
-M x p design matrix portion by the M x 1 derivative vector.
+model with \eqn{K} states, \eqn{L = K - 1} cutpoints give each observation
+\eqn{L} rows in the design matrix. Multiplying the transposed design block
+(\eqn{p \times L}) by the derivative vector (\eqn{L \times 1}) gives the
+length-\eqn{p} score vector. Its transpose forms row \eqn{r} of the output.
 }
 \keyword{internal}

@@ -7,12 +7,13 @@
 lp_to_probs(eta, M)
 }
 \arguments{
-\item{eta}{Matrix of linear predictors with dimensions N x M (N observations by M thresholds)}
+\item{eta}{Matrix with one row per prediction and one column per ordinal
+threshold.}
 
 \item{M}{Number of thresholds (one less than the number of categories)}
 }
 \value{
-Matrix of probabilities with dimensions N x (M+1)
+Matrix with one row per prediction and one column per outcome state.
 }
 \description{
 Converts a matrix of cumulative log-odds to category probabilities.

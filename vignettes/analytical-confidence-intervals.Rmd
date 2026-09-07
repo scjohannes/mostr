@@ -84,13 +84,19 @@ their standard errors and confidence intervals can differ.
 Averaged SOPs and comparisons default to unconditional variance; individual
 `sops()` results support only conditional variance.
 
-For conditional variance, let $h_i(\theta)$ contain patient $i$'s predicted
-probabilities and $G_i$ their derivatives with respect to the model coefficients
-$\theta$. The derivative of the average is $\bar G = n^{-1}\sum_i G_i$.
-With coefficient covariance $V_\theta$, the covariance of the average is
-$\bar G V_\theta \bar G^{\mathsf T}$.
+For conditional variance, let $i = 1,\ldots,n$ index patients and let
+$\beta$ contain all $p$ model coefficients, with fitted value $\hat\beta$.
+The column vector $h_i(\beta)$ contains patient $i$'s predicted probabilities
+$S_{it}(l)$ for the requested visits $t$ and states $l$.
+Write $h_i = h_i(\hat\beta)$ and $\bar h = n^{-1}\sum_{i=1}^n h_i$.
+Let $G_i$ be the matrix of derivatives of $h_i(\beta)$ with respect to
+$\beta^\top$, evaluated at $\hat\beta$; its rows correspond to predictions
+and its columns to coefficients. The derivative of the average is
+$\bar G = n^{-1}\sum_{i=1}^n G_i$.
+With estimated coefficient covariance $V_\beta$, the estimated conditional
+covariance of the average is $\bar G V_\beta \bar G^\top$.
 
-By default, $V_\theta$ is the patient-cluster robust covariance from the fit.
+By default, $V_\beta$ is the patient-cluster robust covariance from the fit.
 For `orm_markov()` and `vglm_markov()`, `type = "HC1"` multiplies that
 covariance by $(m - 1) / (m - p)$, where $m$ is the number of fitting rows
 (positive-weight rows for ORM) and $p$ is the number of coefficients.
@@ -146,11 +152,25 @@ $$
 \phi_i = h_i - \bar h + \bar G A^{-1}s_i,
 $$
 
-where $n$ is the number of patients, $\bar h$ is their average prediction,
-$s_i$ is the sum of the derivatives of patient $i$'s log likelihood with
-respect to the coefficients, and $A$ is the negative derivative of the average
-patient score. Thus $A^{-1}s_i$ describes patient $i$'s contribution to
-coefficient estimation. It uses `stats::cov(phi) / n`, retaining the
+where $s_i = \sum_{r \in \mathcal{I}_i}\psi_r$ sums the score vectors
+over patient $i$'s fitting rows $\mathcal{I}_i$. The score
+$\psi_r = \partial\ell_r/\partial\beta$ is the derivative of row $r$'s
+log likelihood, evaluated at $\hat\beta$.
+Let $B$ be the fit's inverse total information before any HC1 or finite-cluster
+correction, and set $A^{-1} = nB$. With the default observed-information
+calculation, $A$ is the negative derivative of the average patient score;
+a fit using working information retains that choice instead.
+Thus $A^{-1}s_i$ describes patient $i$'s contribution to coefficient estimation.
+The estimated unconditional covariance is
+
+$$
+V_{\mathrm{unconditional}} =
+  \frac{1}{n(n-1)} \sum_{i=1}^n
+    (\phi_i - \bar\phi)(\phi_i - \bar\phi)^\top,
+\qquad \bar\phi = n^{-1}\sum_{i=1}^n \phi_i.
+$$
+
+This is `stats::cov(phi) / n`, retaining the
 association between these two contributions in the observed sample.
 Here `stats::cov()` uses the usual sample-covariance divisor, $n - 1$.
 The fitting options `type` and `cadjust` do not apply an additional correction

@@ -45,6 +45,14 @@ jobs:
           source(".github/check-vignette-output.R")
           pkgdown::check_pkgdown()
           pkgdown::build_site_github_pages(new_process = FALSE, install = FALSE)
+          for (rd in list.files("man", pattern = "[.]Rd$", full.names = TRUE)) {
+            if (!any(grepl("\\\\(eqn|deqn)\\{", readLines(rd)))) next
+            page <- file.path("docs/reference", sub("[.]Rd$", ".html", basename(rd)))
+            scripts <- xml2::xml_attr(
+              xml2::xml_find_all(xml2::read_html(page), "//script[@src]"), "src"
+            )
+            stopifnot(any(grepl("mathjax", scripts, ignore.case = TRUE)))
+          }
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with:

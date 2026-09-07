@@ -354,7 +354,8 @@ markov_msm_build_batched <- function(
 #' coefficient vector.
 #'
 #' @param components List returned by `markov_msm_build`
-#' @param Gamma Effective coefficient matrix with dimensions M x P (M thresholds by P predictors)
+#' @param Gamma Effective coefficient matrix with one row per linear predictor
+#'   and one column per small-design column, including the intercept.
 #' @param times Vector of time points
 #' @param absorb Absorbing state(s). Can be NULL for no absorbing states.
 #'
@@ -480,9 +481,10 @@ markov_po_structure <- function(Gamma, col_names, X_init) {
 #'
 #' Converts a matrix of cumulative log-odds to category probabilities.
 #'
-#' @param eta Matrix of linear predictors with dimensions N x M (N observations by M thresholds)
+#' @param eta Matrix with one row per prediction and one column per ordinal
+#'   threshold.
 #' @param M Number of thresholds (one less than the number of categories)
-#' @return Matrix of probabilities with dimensions N x (M+1)
+#' @return Matrix with one row per prediction and one column per outcome state.
 #'
 #' @keywords internal
 lp_to_probs <- function(eta, M) {
@@ -521,7 +523,8 @@ normalize_probability_array <- function(probs) {
 #'
 #' @param beta Coefficient vector from a VGLM fit
 #' @param C_list Constraint matrices list from VGAM::constraints()
-#' @return Effective coefficient matrix with dimensions M x P (M linear predictors by P terms)
+#' @return Effective coefficient matrix with one row per linear predictor and
+#'   one column per small-design column, including the intercept.
 #'
 #' @keywords internal
 compute_Gamma <- function(beta, C_list) {

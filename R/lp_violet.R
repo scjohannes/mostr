@@ -25,18 +25,27 @@
 #' @return Numeric vector of linear predictor values, one per patient.
 #'
 #' @details
-#' The linear predictor is calculated as:
-#'
-#' LP = β_tx × tx + β_age × age + β_sofa × sofa +
-#'      β_time × t + β_time' × max(t-2, 0) +
-#'      β_yprev + β_yprev×time × t
-#'
-#' where:
-#' - Treatment effect (β_tx) comes from the `parameter` argument
-#' - Covariate effects (β_age, β_sofa) come from `extra_params`
-#' - Time has a linear effect plus a spline knot at t=2
-#' - Previous state effects are relative to state 2 (reference)
-#' - Previous state can have time-varying effects
+#' For patient \eqn{i} at time \eqn{t}, write \eqn{k = Y_{i,t-1}} for the
+#' previous state. The function returns the common covariate contribution to
+#' the linear predictors, before adding the ordinal thresholds:
+#' \deqn{\eta^{\mathrm{common}}_{it} =
+#'   \beta_{\mathrm{tx}}\mathrm{tx}_i +
+#'   \beta_{\mathrm{age}}\mathrm{age}_i +
+#'   \beta_{\mathrm{sofa}}\mathrm{sofa}_i +
+#'   \beta_{\mathrm{time}}t + \beta_{\mathrm{hinge}}\max(t-2,0) +
+#'   \beta_{\mathrm{prev},k} + \beta_{\mathrm{interaction},k}t.}
+#' Here the \eqn{\beta} symbols denote coefficients. Treatment
+#' \eqn{\mathrm{tx}_i}, age \eqn{\mathrm{age}_i}, and SOFA score
+#' \eqn{\mathrm{sofa}_i} come from the corresponding arguments.
+#' The treatment coefficient \eqn{\beta_{\mathrm{tx}}} is `parameter`.
+#' The age, SOFA, and linear-time coefficients are `extra_params["age"]`,
+#' `extra_params["sofa"]`, and `extra_params["time"]`.
+#' The hinge coefficient \eqn{\beta_{\mathrm{hinge}}} is `extra_params["time'"]`.
+#' The previous-state coefficients \eqn{\beta_{\mathrm{prev},k}} and
+#' \eqn{\beta_{\mathrm{interaction},k}} are the entries named `"yprev=k"`
+#' and `"yprev=k * time"`, replacing `k` by the state label. Both are zero
+#' for the reference state \eqn{k=2}; omitted previous-state coefficients also
+#' contribute zero.
 #'
 #' **State 2 as reference**: The model uses state 2 (Hospital - mild) as the
 #' reference category for previous state. This means:
@@ -44,9 +53,8 @@
 #' - yprev=2 (Hospital mild): No effect (reference = 0)
 #' - yprev=3-5 (Sicker states): Positive effects (harder transitions)
 #'
-#' **Time spline**: The function uses a linear spline with a knot at t=2,
-#' implemented as: β_time × t + β_time' × max(t-2, 0). This allows the time
-#' effect to change slope after day 2.
+#' **Time spline**: The term \eqn{\max(t-2,0)} is zero through day 2 and
+#' equals \eqn{t-2} afterward, allowing the slope to change after day 2.
 #'
 #' @examples
 #' # Example with default VIOLET parameters

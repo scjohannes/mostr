@@ -9,7 +9,8 @@ markov_msm_run(components, Gamma, times, absorb = NULL)
 \arguments{
 \item{components}{List returned by \code{markov_msm_build}}
 
-\item{Gamma}{Effective coefficient matrix with dimensions M x P (M thresholds by P predictors)}
+\item{Gamma}{Effective coefficient matrix with one row per linear predictor
+and one column per small-design column, including the intercept.}
 
 \item{times}{Vector of time points}
 

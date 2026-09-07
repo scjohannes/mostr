@@ -12,7 +12,8 @@ compute_Gamma(beta, C_list)
 \item{C_list}{Constraint matrices list from VGAM::constraints()}
 }
 \value{
-Effective coefficient matrix with dimensions M x P (M linear predictors by P terms)
+Effective coefficient matrix with one row per linear predictor and
+one column per small-design column, including the intercept.
 }
 \description{
 Transforms a vector of VGLM coefficients into an effective coefficient matrix

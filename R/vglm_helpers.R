@@ -30,6 +30,19 @@
 #' rejects both `offset()` terms and the `offset` argument.
 #'
 #' @inheritParams VGAM::vglm
+#' @param weights Optional positive prior weights. A vector supplies one weight
+#'   per observation. For families with multiple responses, a matrix can supply
+#'   one column per response; a vector is recycled across response columns.
+#'   See [VGAM::vglm()] for family-specific weighting behavior.
+#' @param etastart Optional starting linear predictors: a matrix with one row
+#'   per observation and \eqn{L} columns, where \eqn{L} is the number of linear
+#'   predictors (\eqn{K - 1} for an ordinal model with \eqn{K} states).
+#'   A vector is allowed when \eqn{L = 1}.
+#' @param mustart Optional starting fitted values, with the same structure as
+#'   `fitted(fit)`. If a matrix, it must have one row per observation. Whether
+#'   these values can initialize all linear predictors depends on the family;
+#'   many families do not use this argument.
+#' @param offset Not supported. Supplying offsets raises an error.
 #' @param family A VGAM family object, e.g. `VGAM::cumulative()`.
 #' @param id_var Optional character scalar naming the patient or cluster ID
 #'   column in `data`. When supplied, [robcov_vglm()] is applied automatically.
@@ -37,7 +50,7 @@
 #'   supplied: `"HC0"` (the default) or `"HC1"`.
 #' @param cadjust Optional logical cluster correction passed to [robcov_vglm()]
 #'   when `id_var` is supplied. `NULL` uses the clustered default, which applies
-#'   the `G / (G - 1)` correction.
+#'   correction \eqn{n / (n - 1)}, where \eqn{n} is the number of patient clusters.
 #' @param time_var Character scalar naming the modeled time column used to
 #'   identify the designated starting-profile row.
 #' @param first_followup_time First scheduled post-baseline outcome time used to

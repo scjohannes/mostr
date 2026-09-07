@@ -10,6 +10,8 @@
 #' errors automatically when `id_var` is supplied.
 #'
 #' @inheritParams rms::orm
+#' @param formula A model formula specifying the ordinal response and predictor
+#'   terms. Offsets are not supported.
 #' @param id_var Optional character scalar naming the patient or cluster ID
 #'   column in `data`. When supplied, the returned object receives the
 #'   package-owned patient-cluster sandwich covariance using this column.
@@ -17,11 +19,11 @@
 #'   warning is issued.
 #' @param type Character scalar selecting the empirical sandwich correction.
 #'   `"HC0"` applies no observation degrees-of-freedom correction. `"HC1"`
-#'   multiplies the sandwich meat by `(n - 1) / (n - p)`, where `n` is the
-#'   number of positive-weight fitted likelihood rows and `p` is the complete
+#'   multiplies the sandwich meat by \eqn{(m - 1) / (m - p)}, where \eqn{m} is the
+#'   number of positive-weight fitted likelihood rows and \eqn{p} is the complete
 #'   raw coefficient count.
-#' @param cadjust Logical. Apply the finite-cluster correction `G / (G - 1)`,
-#'   where `G` is the number of represented patient clusters? `NULL` (the
+#' @param cadjust Logical. Apply the finite-cluster correction \eqn{n / (n - 1)},
+#'   where \eqn{n} is the number of represented patient clusters? `NULL` (the
 #'   default) resolves to `TRUE` when `id_var` is supplied. This correction is
 #'   independent of `type`, so selecting HC1 with `cadjust = TRUE` applies both
 #'   factors.

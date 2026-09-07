@@ -18,14 +18,8 @@ orm_markov(
 )
 }
 \arguments{
-\item{formula}{
-a formula object. An \code{offset} term can be included. The offset causes
-fitting of a model such as \eqn{logit(Y=1) = X\beta + W}, where \eqn{W} is the
-offset variable having no estimated coefficient.
-The response variable can be any data type; \code{orm} converts it
-in alphabetic or numeric order to a factor variable and
-recodes it 1,2,\dots internally.
-}
+\item{formula}{A model formula specifying the ordinal response and predictor
+terms. Offsets are not supported.}
 
 \item{data}{
 data frame to use. Default is the current frame.
@@ -43,12 +37,12 @@ warning is issued.}
 
 \item{type}{Character scalar selecting the empirical sandwich correction.
 \code{"HC0"} applies no observation degrees-of-freedom correction. \code{"HC1"}
-multiplies the sandwich meat by \code{(n - 1) / (n - p)}, where \code{n} is the
-number of positive-weight fitted likelihood rows and \code{p} is the complete
+multiplies the sandwich meat by \eqn{(m - 1) / (m - p)}, where \eqn{m} is the
+number of positive-weight fitted likelihood rows and \eqn{p} is the complete
 raw coefficient count.}
 
-\item{cadjust}{Logical. Apply the finite-cluster correction \code{G / (G - 1)},
-where \code{G} is the number of represented patient clusters? \code{NULL} (the
+\item{cadjust}{Logical. Apply the finite-cluster correction \eqn{n / (n - 1)},
+where \eqn{n} is the number of represented patient clusters? \code{NULL} (the
 default) resolves to \code{TRUE} when \code{id_var} is supplied. This correction is
 independent of \code{type}, so selecting HC1 with \code{cadjust = TRUE} applies both
 factors.}

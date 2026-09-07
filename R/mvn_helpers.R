@@ -207,8 +207,11 @@ set_coef.vglm <- function(model, new_coefs) {
 #' NOT the length of any new prediction data.
 #'
 #' ORM and VGLM HC1 and finite-cluster corrections use the same definitions.
-#' `type = "HC1"` applies `(n - 1) / (n - p)` and `cadjust = TRUE`
-#' independently applies `G / (G - 1)`. An explicit cluster or correction
+#' `type = "HC1"` applies \eqn{(m - 1) / (m - p)}, where \eqn{m} is the
+#' number of fitting rows (positive-weight rows for ORM) and \eqn{p} is the
+#' number of coefficients. `cadjust = TRUE` independently applies
+#' \eqn{n / (n - 1)}, where \eqn{n} is the number of clusters (or fitting rows
+#' when no cluster is supplied). An explicit cluster or correction
 #' request recomputes the ORM covariance; otherwise a valid covariance stored by
 #' [orm_markov()] is returned unchanged.
 #'

@@ -114,7 +114,7 @@
       Bread: observed 
       HC type: HC0 
       Number of clusters: 10 
-      Cluster adjustment: applied (G/(G-1))
+      Cluster adjustment: applied (n/(n-1))
       Combined adjustment factor: 1.11111 
       
       Coefficients (Robust SE):

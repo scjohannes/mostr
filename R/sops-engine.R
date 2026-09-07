@@ -1,8 +1,8 @@
 # SOP Markov recursion engines.
 
-#' Calculate State Occupation Probabilities for First-Order Markov Models
+#' Calculate State Occupancy Probabilities for Markov Models
 #'
-#' Estimates state occupation probabilities over time by iterating a transition
+#' Estimates state occupancy probabilities over time by iterating a transition
 #' matrix derived from a fitted model object (e.g., `vglm`, `rms`, or `rmsb`).
 #' This function supports linear time iteration as well as complex, non-linear
 #' time specifications (e.g., splines) via a covariate lookup table.
@@ -36,7 +36,7 @@
 #'   \itemize{
 #'     \item **Structure:** The number of rows in \code{time_covariates} must exactly match the length of \code{times}.
 #'     \item **Columns:** Column names must match the specific basis variables used in the model formula (e.g., \code{t1}, \code{t2}).
-#'     \item **Usage:** At step \code{i}, the values from the \code{i}-th row of \code{time_covariates} are injected into the prediction data.
+#'     \item **Usage:** At step \eqn{t}, the values from row \eqn{t} of \code{time_covariates} are injected into the prediction data.
 #'   }
 #'   Registered inline terms such as \code{rms::rcs(time, 4)} and
 #'   \code{rms::lsp(time, c(3, 7))} do not require
@@ -56,42 +56,36 @@
 #'
 #' @details
 #'
-#' \strong{1. Data Expansion:}
-#' We construct a "long" expansion dataset at every time point. For \eqn{N} patients
-#' and \eqn{K} non-absorbing states, the expansion dataset contains \eqn{N \times K} rows.
-#' \itemize{
-#'   \item Rows \eqn{1 \dots N}: All patients assuming \eqn{y_{prev} = \text{State } 1}
-#'   \item Rows \eqn{(N+1) \dots 2N}: All patients assuming \eqn{y_{prev} = \text{State } 2}
-#'   \item ... and so on.
-#' }
-#' This allows a single \code{predict()} call to generate transition probabilities for the entire
-#' cohort for all possible previous states in one step.
+#' Let \eqn{i = 1,\ldots,n} index patients and \eqn{t = 1,\ldots,d} index
+#' follow-up visits. The outcome \eqn{Y_{it}} takes one of \eqn{K} states,
+#' numbered \eqn{1,\ldots,K}, and \eqn{\mathcal{A}} is the set of absorbing
+#' states. The covariate row \eqn{\mathbf{x}_{it}} contains treatment, time,
+#' and other predictors. Write \eqn{\mathbf{x}_{i,1:t}} for the sequence of
+#' these rows through visit \eqn{t}.
 #'
-#' \strong{2. Element-wise weighted sum}
-#' We use an element-wise weighted sum approach based on the
-#' Law of Total Probability:
-#' \deqn{P(S_t = k) = \sum_{j} P(S_{t-1} = j) \times P(S_t = k | S_{t-1} = j)}
+#' For first-order models, the SOP and transition probability are
+#' \deqn{S_{it}(l) = \Pr(Y_{it}=l \mid \mathbf{x}_{i,1:t}, Y_{i0}), \qquad
+#'       T_{it}(l \mid k) = \Pr(Y_{it}=l \mid Y_{i,t-1}=k, \mathbf{x}_{it}).}
+#' Here \eqn{Y_{i0}} is the observed starting state, \eqn{k} is the previous
+#' state, and \eqn{l} is the current state. Starting with probability one in
+#' \eqn{Y_{i0}}, the update is
+#' \deqn{S_{it}(l) = \sum_{k \notin \mathcal{A}}
+#'       S_{i,t-1}(k) T_{it}(l \mid k)
+#'       + \mathbb{1}\{l \in \mathcal{A}\} S_{i,t-1}(l).}
+#' The indicator \eqn{\mathbb{1}\{\cdot\}} is one when its condition holds
+#' and zero otherwise. The last term retains probability already in an
+#' absorbing state, exactly once.
 #'
-#' where:
-#' \itemize{
-#'   \item \eqn{S_t}: State occupied at time \eqn{t}.
-#'   \item \eqn{S_{t-1}}: State occupied at time \eqn{t-1}.
-#'   \item \eqn{k}: The target state at time \eqn{t}.
-#'   \item \eqn{j}: The origin state at time \eqn{t-1}.
-#' }
+#' Predictions are batched over all patients and non-absorbing previous states.
+#' With \eqn{K} total states, the first-order expansion has
+#' \eqn{n(K - |\mathcal{A}|)} rows. Each previous state contributes a block
+#' of \eqn{n} rows, one per patient.
 #'
-#' Let \eqn{\mathbf{v}_{prev, j}} be a vector of length \eqn{N} containing the probability that each
-#' patient was in state \eqn{j} at time \eqn{t-1}.
-#' Let \eqn{\mathbf{M}_{trans, j \to k}} be a vector of length \eqn{N} containing the transition
-#' probability from \eqn{j} to \eqn{k} for each patient (derived from the batched prediction).
-#'
-#' The probability of being in state \eqn{k} at time \eqn{t} is updated as:
-#' \deqn{\mathbf{v}_{curr, k} = \sum_{j} (\mathbf{v}_{prev, j} \odot \mathbf{M}_{trans, j \to k})}
-#' where \eqn{\odot} denotes element-wise multiplication.
-#'
-#' \strong{3. Absorbing States:}
-#' If an absorbing state \eqn{a} is present, the update logic handles the accumulation of probability mass:
-#' \deqn{P(S_t = a) = P(S_{t-1} = a) + \sum_{j \neq a} P(S_{t-1} = j) \times P(S_t = a | S_{t-1} = j)}
+#' With `p2_var`, the recursion instead tracks the joint probability
+#' \eqn{J_{it}(k,l)} of the previous and current states, conditional on the
+#' covariates and both supplied starting states \eqn{Y_{i,-1},Y_{i0}}.
+#' It uses \eqn{T_{it}(l \mid h,k)}, where \eqn{h} is the state two visits
+#' earlier, and sums \eqn{J_{it}(k,l)} over \eqn{k} to obtain \eqn{S_{it}(l)}.
 #'
 #' @return
 #' An array of state probabilities.
@@ -346,7 +340,7 @@ soprob_markov_reference <- function(
     check_transition_probabilities(trans_probs, paste0("SOP time point ", it))
 
     # --- 5. The Update Step (Markov) ---
-    # Formula: P(S_t = k) = Sum_over_j [ P(S_t-1 = j) * P(S_t=k | S_t-1=j) ]
+    # S_it(l) sums S_i,t-1(k) * T_it(l | k) over previous states k.
 
     if (nd == 0) {
       # Initialize current time probabilities with 0

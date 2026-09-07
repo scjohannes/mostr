@@ -11,21 +11,27 @@
 #' @param beta Optional coefficient vector to use instead of `coef(model)`.
 #'   This is used internally for simulation draws.
 #'
-#' @return A matrix with dimensions `[M x P]`, where:
-#'   \item{M}{Number of linear predictors (e.g., number of states - 1)}
-#'   \item{P}{Number of columns in the small design matrix (covariates)}
+#' @return A matrix \eqn{\Gamma} with dimensions \eqn{L \times q}, where
+#'   \eqn{L} is the number of linear predictors (\eqn{K - 1} for an ordinal
+#'   model with \eqn{K} states) and \eqn{q} is the number of columns in the
+#'   small design matrix, including its intercept column.
 #'
 #' @details
-#' For a `vglm` term \eqn{j} with constraint matrix \eqn{C_j} and coefficient
-#' vector \eqn{\beta_j}, the contribution to the linear predictor vector
-#' \eqn{\eta} is \eqn{x_j \cdot (C_j \times \beta_j)}. This function
-#' pre-calculates \eqn{\Gamma_j = C_j \times \beta_j} for all terms and
-#' assembles them into a single matrix \eqn{\Gamma}. For `orm` models, only full
+#' Let \eqn{\beta} contain all model coefficients. For small-design column
+#' \eqn{j = 1,\ldots,q}, let \eqn{C_j} be its \eqn{L \times p_j} constraint
+#' matrix and \eqn{\beta_j} its block of \eqn{p_j} coefficients from \eqn{\beta}.
+#' The complete coefficient count is \eqn{p = \sum_{j=1}^q p_j}.
+#' The contribution to the column vector of linear predictors \eqn{\eta}
+#' is \eqn{x_j C_j \beta_j}, where \eqn{x_j} is that design-column value.
+#' This function calculates \eqn{\Gamma_j = C_j \beta_j} and places this
+#' length-\eqn{L} vector in column \eqn{j} of \eqn{\Gamma}.
+#' For `orm` models, only full
 #' proportional odds models are supported, so each slope coefficient contributes
 #' equally to every threshold-specific linear predictor.
 #'
-#' Then, prediction for a new observation with design vector \eqn{x} is simply:
-#' \eqn{\eta = \Gamma \times x^T}
+#' For a new observation with length-\eqn{q} design row \eqn{\mathbf{x}},
+#' prediction is \eqn{\eta = \Gamma \mathbf{x}^\top}, where \eqn{\top}
+#' denotes transpose. The dimensions are \eqn{(L \times q)(q \times 1)}.
 #'
 #' @examplesIf rlang::is_installed("rms")
 #' trial <- sim_actt2_markov(n_patients = 40, follow_up_time = 6, seed = 1)

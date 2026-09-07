@@ -32,9 +32,11 @@ supply both \code{adjust} and \code{cadjust}.}
 
 \item{type}{Character string selecting an HC correction. \code{"HC0"} applies no
 observation degrees-of-freedom correction. \code{"HC1"} multiplies the meat by
-\code{(n - 1) / (n - p)}.}
+\eqn{(m - 1) / (m - p)}, where \eqn{m} is the number of fitting rows and
+\eqn{p} is the number of coefficients.}
 
-\item{cadjust}{Logical. Apply the cluster correction \code{G / (G - 1)}? The
+\item{cadjust}{Logical. Apply the cluster correction \eqn{n / (n - 1)},
+where \eqn{n} is the number of clusters? The
 default is \code{TRUE} when \code{cluster} is supplied and \code{FALSE} otherwise. When
 explicitly \code{TRUE} without \code{cluster}, each fitted row is treated as its own
 cluster for this scalar correction.}
@@ -77,9 +79,11 @@ information plus robust covariance estimates:
 \item{original_se}{Original model-based standard errors}
 
 \strong{Sandwich components:}
-\item{scores}{Matrix of observation-level score contributions (n x p)}
+\item{scores}{Matrix of observation-level score contributions
+(\eqn{m \times p})}
 \item{influence_beta_obs}{Matrix of observation-level influence
-contributions for \eqn{\beta} (n x p), computed as the scores times the
+contributions for the coefficient vector \eqn{\beta}
+(\eqn{m \times p}), computed as the scores times the
 selected bread}
 \item{bread}{The selected covariance-scale bread}
 \item{bread_type}{The requested bread type}
@@ -102,10 +106,15 @@ functionality for vglm models using the same HC1 and finite-cluster scalar
 corrections as the package-owned ORM sandwich.
 }
 \details{
-The sandwich estimator has the form:
-\deqn{V = B \cdot M \cdot B}
-where B is the selected covariance-scale bread and M is the score
-crossproduct. By default, B is the inverse observed information obtained from
+Let \eqn{\beta} be the vector of all \eqn{p} model coefficients and
+\eqn{\hat\beta} its fitted value. Before optional scalar corrections,
+the estimated coefficient covariance has the form:
+\deqn{V_\beta = B^\top M B}
+where \eqn{B} is the selected inverse total information (the sandwich
+"bread") and \eqn{M} is the score crossproduct (the "meat").
+Both are \eqn{p \times p} matrices, and \eqn{\top} denotes transpose.
+The selected bread is symmetric, so this also equals \eqn{B M B}.
+By default, \eqn{B} is the inverse observed information obtained from
 the numerical Jacobian of the summed analytic scores. This keeps the meat and
 bread tied to the same estimating equations and provides misspecification-
 robust inference. Set \code{bread = "vglm"} to use VGAM's final fitted
@@ -117,18 +126,23 @@ constraint matrices use the same implementation. Perturbation steps are
 reduced adaptively when a candidate produces invalid fitted values.
 
 For unclustered data, the meat matrix is:
-\deqn{M = \sum_{i=1}^{n} \psi_i \psi_i'}
-where \eqn{\psi_i} is the score (gradient of log-likelihood) for observation i.
+\deqn{M = \sum_{r=1}^{m} \psi_r \psi_r^\top}
+where \eqn{m} is the number of fitting rows and
+\eqn{\psi_r = \partial\ell_r / \partial\beta} is the length-\eqn{p}
+column score vector for row \eqn{r}, evaluated at \eqn{\hat\beta}.
+Here \eqn{\ell_r} is that row's log likelihood.
 
 For clustered data, scores are summed within clusters before computing the
 meat matrix:
-\deqn{M = \sum_{g=1}^{G} \left(\sum_{i \in g} \psi_i\right)
-      \left(\sum_{i \in g} \psi_i\right)'}
+\deqn{s_i = \sum_{r \in \mathcal{I}_i} \psi_r, \qquad
+      M = \sum_{i=1}^{n} s_i s_i^\top}
+where \eqn{i = 1,\ldots,n} indexes patients (or other independent clusters)
+and \eqn{\mathcal{I}_i} contains the fitting-row indices for cluster \eqn{i}.
 
 The \code{type} and \code{cadjust} corrections are separate, matching the controls used
 by \code{sandwich::meatCL()}. For clustered data, \code{cadjust = TRUE} multiplies the
-meat by G/(G-1). \code{type = "HC1"} independently multiplies it by
-(n-1)/(n-p). Set \code{cadjust = FALSE} and \code{type = "HC0"} for an unadjusted
+meat by \eqn{n / (n - 1)}. \code{type = "HC1"} independently multiplies it by
+\eqn{(m - 1) / (m - p)}. Set \code{cadjust = FALSE} and \code{type = "HC0"} for an unadjusted
 sandwich.
 
 \strong{Z-statistics and p-values}: The returned object includes z-statistics
@@ -160,7 +174,7 @@ fit <- vglm(y ~ x1 + x2,
 robust_vcov <- robcov_vglm(fit)
 robust_vcov$se
 
-# Compute cluster-robust standard errors, with G/(G-1) correction by default
+# Compute cluster-robust standard errors, with n/(n-1) correction by default
 robust_vcov_cl <- robcov_vglm(fit, cluster = mydata$cluster_id)
 robust_vcov_cl$se
 

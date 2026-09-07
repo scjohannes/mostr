@@ -83,13 +83,16 @@ plot_sops(raw_data, facet_var = NULL, linetype_var = "tx")
 
 ## Recursion
 
-Let $Y_{it}$ be the ordinal outcome for patient $i$ at prediction time
-$t$, and let $\mathbf{X}_{it}$ collect treatment, time, and other covariates.
-The state occupancy probability (SOP) for state $l$ is
+Let $i = 1,\ldots,n$ index patients and $t = 1,\ldots,d$ index follow-up
+visits. The ordinal outcome $Y_{it}$ takes one of $K$ states, numbered
+$1,\ldots,K$; $Y_{i0}$ is the observed starting state. Let
+$\mathbf{x}_{it}$ collect treatment, time, and other covariates, and write
+$\mathbf{x}_{i,1:t} = (\mathbf{x}_{i1},\ldots,\mathbf{x}_{it})$ for their
+values through visit $t$. The state occupancy probability (SOP) for state $l$ is
 
 $$
 S_{it}(l) =
-  \Pr(Y_{it} = l \mid \mathbf{X}_{i1}, \ldots, \mathbf{X}_{it}, Y_{i0}).
+  \Pr(Y_{it} = l \mid \mathbf{x}_{i,1:t}, Y_{i0}).
 $$
 
 For a first-order transition model, the conditional probability of moving from
@@ -97,10 +100,15 @@ state $k$ at time $t - 1$ to state $l$ at time $t$ is
 
 $$
 T_{it}(l \mid k) =
-  \Pr(Y_{it} = l \mid Y_{i,t-1} = k, \mathbf{X}_{it}).
+  \Pr(Y_{it} = l \mid Y_{i,t-1} = k, \mathbf{x}_{it}).
 $$
 
-For a single patient, collect these probabilities in the transition matrix
+Let $\mathcal{A}$ be the set of absorbing states. For $k \in \mathcal{A}$,
+define $T_{it}(l \mid k) = \mathbb{1}\{l = k\}$, where the indicator
+$\mathbb{1}\{\cdot\}$ is one when its condition holds and zero otherwise.
+This keeps a patient in the same absorbing state at every later visit.
+
+For a single patient, collect these probabilities in the $K \times K$ transition matrix
 $\mathbf{P}_{it}$, where row $k$, column $l$ is
 $P_{it,kl} = T_{it}(l \mid k)$. If
 $\mathbf{s}_{it}$ is the row vector with entries $S_{it}(l)$, then the
@@ -111,41 +119,43 @@ $$
 \mathbf{s}_{it} = \mathbf{s}_{i,t-1} \mathbf{P}_{it}, \quad t = 1,\ldots,d.
 $$
 
-The implementation batches this same calculation across patients. For each
-possible previous state $k$, it predicts an $n \times K$ matrix
-$\mathbf{P}^{(k)}_t$ whose $i,l$ entry is $T_{it}(l \mid k)$. The
-batched update is
+Here $\mathbf{e}_{Y_{i0}}$ is a row vector with one in the starting state's
+position and zero elsewhere.
+
+The implementation batches this same calculation across patients. Write
+$\mathbf{S}_t$ for the $n \times K$ matrix with entry $S_{it}(l)$ in row $i$,
+column $l$. For each
+non-absorbing previous state $k$, it predicts an $n \times K$ matrix
+$\mathbf{P}^{(k)}_t$ whose $i,l$ entry is $T_{it}(l \mid k)$. Without
+predicting transitions from absorbing states, the update is
 
 $$
-S_{t,il} =
+S_{it}(l) =
   \sum_{k \notin \mathcal{A}}
-    S_{t-1,ik} P^{(k)}_{t,il}.
+    S_{i,t-1}(k) T_{it}(l \mid k)
+  + \mathbb{1}\{l \in \mathcal{A}\} S_{i,t-1}(l).
 $$
 
-Equivalently, in vector form over patients,
+Equivalently, let $\mathbf{S}_{t,l}$ and $\mathbf{P}^{(k)}_{t,l}$ denote
+column $l$ of the corresponding matrices. In vector form over patients,
 
 $$
 \mathbf{S}_{t,l} =
   \sum_{k \notin \mathcal{A}}
-    \mathbf{S}_{t-1,k} \odot \mathbf{P}^{(k)}_{t,l},
+    \mathbf{S}_{t-1,k} \odot \mathbf{P}^{(k)}_{t,l}
+  + \mathbb{1}\{l \in \mathcal{A}\} \mathbf{S}_{t-1,l},
 $$
 
-where $\odot$ denotes elementwise multiplication and $\mathcal{A}$ is the set
-of absorbing states. For an absorbing state $a \in \mathcal{A}$, the code
-does not need a model prediction from $a$; it carries that probability mass
-forward:
-
-$$
-\mathbf{S}_{t,a} \leftarrow
-  \mathbf{S}_{t,a} + \mathbf{S}_{t-1,a}.
-$$
+where $\odot$ denotes elementwise multiplication. The last term carries forward
+probability already in an absorbing state, adding it exactly once.
 
 The marginal arm-specific SOP used below is the average of these patient-level
-SOPs after setting treatment to the desired counterfactual arm:
+SOPs after setting treatment to the desired counterfactual arm $z$. Write
+$S_{it}(l; z)$ for the SOP calculated with `tx` set to $z$ at every visit:
 
 $$
-\bar{S}_t(l; a) =
-  n^{-1} \sum_{i=1}^n S_{it}(l; \operatorname{tx}=a).
+\bar{S}_t(l; z) =
+  n^{-1} \sum_{i=1}^n S_{it}(l; z).
 $$
 
 ## Fit Models

@@ -57,31 +57,43 @@ head(model_data[c("id", "time", "tx", "ypprev", "yprev", "y")])
 
 ## Second-Order Recursion
 
-For a second-order transition model, the SOP for state $l$ at time $t$ is
+Let $i = 1,\ldots,n$ index patients, $t = 1,\ldots,d$ index follow-up
+visits, and $Y_{it}$ denote the outcome among $K$ states numbered $1,\ldots,K$.
+Let $\mathbf{x}_{it}$ collect treatment, time, and other covariates, with
+$\mathbf{x}_{i,1:t} = (\mathbf{x}_{i1},\ldots,\mathbf{x}_{it})$ denoting
+their values through visit $t$. For a second-order transition model, the SOP
+for state $l$ at time $t$ is
 
 $$
 S_{it}(l) =
-  \Pr(Y_{it} = l \mid \mathbf{X}_{i1}, \ldots, \mathbf{X}_{it},
+  \Pr(Y_{it} = l \mid \mathbf{x}_{i,1:t},
   Y_{i,-1}, Y_{i0}),
 \qquad t \geq 1,
 $$
 
-where $Y_{i,-1}$ and $Y_{i0}$ are the two observed initial states. The
-conditional transition probability at time $t$ is
+where $Y_{i,-1}$ and $Y_{i0}$ are the two supplied starting states. The data
+construction above sets $Y_{i,-1} = Y_{i0}$ for the first prediction because
+the simulation supplies only one starting state. The conditional transition
+probability at time $t$ is
 
 $$
 T_{it}(l \mid h, k) =
-  \Pr(Y_{it} = l \mid Y_{i,t-2} = h, Y_{i,t-1} = k, \mathbf{X}_{it}).
+  \Pr(Y_{it} = l \mid Y_{i,t-2} = h, Y_{i,t-1} = k, \mathbf{x}_{it}).
 $$
 
 These probabilities are predicted directly from the fitted ordinal transition
 model by setting `ypprev` to $h$, `yprev` to $k$, and `time` to $t$.
+Let $\mathcal{A}$ be the set of absorbing states. For $k \in \mathcal{A}$,
+define $T_{it}(l \mid h,k) = \mathbb{1}\{l = k\}$ for every $h$.
+The indicator $\mathbb{1}\{\cdot\}$ is one when its condition holds and zero
+otherwise; this makes an absorbing state persist without a model prediction.
+
 Because the next state depends on two previous states, the recursion tracks the
 joint probability matrix of the last two outcomes:
 
 $$
 J_{it}(k,l) =
-  \Pr(Y_{i,t-1} = k, Y_{it} = l \mid \mathbf{X}_i, Y_{i,-1}, Y_{i0}).
+  \Pr(Y_{i,t-1} = k, Y_{it} = l \mid \mathbf{x}_{i,1:t}, Y_{i,-1}, Y_{i0}).
 $$
 
 Equivalently, one can initialize
@@ -112,22 +124,10 @@ S_{it}(l) =
   \sum_{k=1}^{K} J_{it}(k,l).
 $$
 
-In matrix/tensor notation, define the transition tensor
-$\mathcal{T}_{it}$ with entries
-$\mathcal{T}_{it,hkl} = T_{it}(l \mid h,k)$. The update is a tensor
-contraction over the oldest-state index:
-
-$$
-J_{it,kl} =
-  \sum_{h=1}^{K}
-    J_{i,t-1,hk} \mathcal{T}_{it,hkl},
-\qquad
-s_{it,l} =
-  \sum_{k=1}^{K} J_{it,kl}.
-$$
-
-Batched over patients, this is the elementwise tensor calculation used by
-`soprob_markov()`:
+For the calculation across all patients, let $\mathbf{J}_{t,kl}$,
+$\mathbf{T}_{t,hkl}$, and $\mathbf{S}_{t,l}$ be length-$n$ column vectors
+whose $i$th entries are $J_{it}(k,l)$, $T_{it}(l \mid h,k)$, and $S_{it}(l)$,
+respectively. The same recursion used by `soprob_markov()` becomes
 
 $$
 \mathbf{J}_{t,kl} =
@@ -138,16 +138,17 @@ $$
   \sum_{k=1}^{K} \mathbf{J}_{t,kl}.
 $$
 
-If $k$ is absorbing, the implementation skips model prediction from $k$ and
-carries the joint mass forward to $J_{it}(k,k)$. Thus for absorbing
-$k \in \mathcal{A}$,
+where $\odot$ denotes elementwise multiplication. For absorbing
+$k \in \mathcal{A}$, the deterministic transition defined above reduces the
+update to
 
 $$
-J_{it}(k,k) \leftarrow
-  J_{it}(k,k) + \sum_{h=1}^{K} J_{i,t-1}(h,k).
+J_{it}(k,l) =
+  \mathbb{1}\{l = k\} \sum_{h=1}^{K} J_{i,t-1}(h,k).
 $$
 
-`avg_sops(..., p2_var = "ypprev")` uses this array recursion instead of
+This equation already includes the probability carried forward from the
+absorbing state. `avg_sops(..., p2_var = "ypprev")` uses this array recursion instead of
 simulating individual trajectories.
 
 ## Fit

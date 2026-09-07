@@ -66,66 +66,12 @@ supplied: \code{"HC0"} (the default) or \code{"HC1"}.}
 
 \item{cadjust}{Optional logical cluster correction passed to \code{\link[=robcov_vglm]{robcov_vglm()}}
 when \code{id_var} is supplied. \code{NULL} uses the clustered default, which applies
-the \code{G / (G - 1)} correction.}
+correction \eqn{n / (n - 1)}, where \eqn{n} is the number of patient clusters.}
 
-\item{weights}{
-  an optional vector or matrix of (prior fixed and known) weights
-  to be used in the fitting process.
-  If the \pkg{VGAM} family function handles multiple responses
-  (\eqn{Q > 1} of them, say) then
-  \code{weights} can be a matrix with \eqn{Q} columns.
-  Each column matches the respective response.
-  If it is a vector (the usually case) then it is recycled into a
-  matrix with \eqn{Q} columns.
-  The values of \code{weights} must be positive; try setting
-  a very small value such as \code{1.0e-8} to effectively
-  delete an observation.
-
-
-
-% 20201215:
-
-  Currently the \code{weights} argument supports sampling
-  weights from complex sampling designs
-  via \pkg{svyVGAM}.
-  Some details can be found at
-  \url{https://CRAN.R-project.org/package=svyVGAM}.
-
-
-
-% Creates CRAN problems:
-% \url{cran.r-project.org/web/packages/
-%      svyVGAM/vignettes/theory.html}.
-
-
-
-
-
-% 20140507:
-% Currently the \code{weights} argument does not support
-% sampling weights from complex sampling designs.
-% And currently sandwich estimators are not computed in any
-% shape or form.
-% The present weights are multiplied by the corresponding
-% log-likelihood contributions and added to form the
-% overall log-likelihood.
-
-
-
-
-
-
-% If \code{weights} is a matrix,
-% then it should be must be in \emph{matrix-band} form,
-% whereby the
-% first \eqn{M} columns of the matrix are the diagonals,
-% followed by the upper-diagonal band, followed by the
-% band above that, etc. In this case, there can be up to
-% \eqn{M(M+1)} columns, with the last column corresponding
-% to the (1,\eqn{M}) elements of the weight matrices.
-
-
-  }
+\item{weights}{Optional positive prior weights. A vector supplies one weight
+per observation. For families with multiple responses, a matrix can supply
+one column per response; a vector is recycled across response columns.
+See \code{\link[VGAM:vglm]{VGAM::vglm()}} for family-specific weighting behavior.}
 
 \item{subset}{
   an optional logical vector specifying a subset of
@@ -154,36 +100,15 @@ the \code{G / (G - 1)} correction.}
 
   }
 
-\item{etastart}{
-  optional starting values for the linear predictors.
-  It is a \eqn{M}-column matrix with the same
-  number of rows as
-  the response.
-  If \eqn{M = 1} then it may be a vector.
-  Note that \code{etastart} and the output
-  of \code{predict(fit)}
-  should be comparable.
-  Here, \code{fit} is the fitted object.
-  Almost all \pkg{VGAM} family functions are self-starting.
-  
-  
+\item{etastart}{Optional starting linear predictors: a matrix with one row
+per observation and \eqn{L} columns, where \eqn{L} is the number of linear
+predictors (\eqn{K - 1} for an ordinal model with \eqn{K} states).
+A vector is allowed when \eqn{L = 1}.}
 
-  }
-
-\item{mustart}{
-  optional starting values for the fitted values.
-  It can be a vector or a matrix;
-  if a matrix, then it has the same number of rows
-  as the response.
-  Usually \code{mustart} and the output of \code{fitted(fit)}
-  should be comparable.
-  Most family functions do not make use of this argument
-  because it is not possible to compute all \eqn{M} columns of
-  \code{eta} from \code{mu}.
-  
-  
-
-  }
+\item{mustart}{Optional starting fitted values, with the same structure as
+\code{fitted(fit)}. If a matrix, it must have one row per observation. Whether
+these values can initialize all linear predictors depends on the family;
+many families do not use this argument.}
 
 \item{coefstart}{
   optional starting values for the coefficient vector.
@@ -199,13 +124,7 @@ the \code{G / (G - 1)} correction.}
 
   }
 
-\item{offset}{
-   a vector or \eqn{M}-column matrix of offset values.
-   These are \emph{a priori} known and are added to the
-   linear/additive predictors during fitting.
-
-
-  }
+\item{offset}{Not supported. Supplying offsets raises an error.}
 
 \item{model}{
   a logical value indicating whether the

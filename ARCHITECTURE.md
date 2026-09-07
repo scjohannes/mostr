@@ -17,6 +17,9 @@ the navigation for https://scjohannes.github.io/mostr/. pkgdown builds the homep
 from `README.md`, the reference from `man/`, articles from `vignettes/`, and release
 notes from `NEWS.md`. Generated files in `docs/` are ignored by Git and excluded
 from the R package build.
+The template selects MathJax so the TeX emitted for reference-page equations is
+rendered, along with equations in vignette articles. The website workflow checks
+that every reference page containing equations loads the renderer.
 
 `.github/workflows/pkgdown.yaml` builds the site with R 4.6.1 on pull requests,
 pushes to `main`, and manual runs. Only pushes and manual runs publish, using the
@@ -137,6 +140,35 @@ output ordering, check old/new equivalence before timing, and distinguish helper
 speedups from whole model fitting or inference performance.
 
 ## Validation
+
+### Mathematical notation in documentation
+
+Vignettes and roxygen descriptions use the same symbols, defined locally so each
+page can be read independently:
+
+- `i = 1,...,n` indexes patients or independent clusters; `r = 1,...,m` indexes
+  fitting rows. `p` counts all model coefficients. HC1 uses `(m-1)/(m-p)`;
+  the finite-cluster correction uses `n/(n-1)`.
+- `t = 1,...,d` indexes follow-up visits, with supplied starting states at 0
+  (and -1 for second-order models). `K` counts all states, including absorbing
+  states in `\mathcal{A}`. Older, previous, and current states are `h`, `k`, and `l`.
+- `Y` denotes the outcome; `S` denotes occupancy probabilities, `T` transition
+  probabilities, and `J` second-order joint probabilities. Bold symbols denote
+  explicitly defined vectors or arrays; scalar entries retain `S_it(l)` and
+  `J_it(k,l)`. Treatment scenarios use `z`.
+- Coefficients are `beta`, fitted coefficients `beta-hat`, their estimated
+  covariance `V_beta`, and prediction derivatives `G` (`G-bar` for an average).
+  Use `\top` for transpose. Scores are column vectors: `psi_r` for a fitting
+  row and `s_i` for their sum within a patient. The sandwich uses inverse total
+  information `B`; unconditional inference uses `A^{-1} = n B`.
+- `L` counts linear predictors (`K-1` for ordinal models) and `q` counts small
+  design-matrix columns. `Gamma` is `L x q`; it is distinct from the coefficient
+  covariance and from the sandwich score crossproduct `M`.
+
+These conventions govern mathematical prose, not existing R argument names,
+result fields, or local implementation variables.
+
+### Package checks
 
 `tests/testthat` retains model, recursion, inference, and diagnostic coverage.
 Shared synthetic fixtures use explicit proportional-odds Markov transitions.
