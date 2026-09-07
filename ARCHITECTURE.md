@@ -10,6 +10,20 @@ Non-Markov data generators, endpoint analyses, and repeated simulation-study
 orchestration are outside this package. Coefficient draws and patient bootstrap
 refits remain part of inference for a single fitted model.
 
+## Package website
+
+`_pkgdown.yml` groups the function reference and vignette articles and configures
+the navigation for https://scjohannes.github.io/mostr/. pkgdown builds the homepage
+from `README.md`, the reference from `man/`, articles from `vignettes/`, and release
+notes from `NEWS.md`. Generated files in `docs/` are ignored by Git and excluded
+from the R package build.
+
+`.github/workflows/pkgdown.yaml` builds the site with R 4.6.1 on pull requests,
+pushes to `main`, and manual runs. Only pushes and manual runs publish, using the
+GitHub Pages artifact and deployment actions. In repository Settings > Pages,
+the source must be set to GitHub Actions. Local previews use
+`pkgdown::build_site()` with Pandoc available; this executes the vignette articles.
+
 ## Data flow
 
 ```mermaid

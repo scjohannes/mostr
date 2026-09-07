@@ -69,6 +69,9 @@ wrapper provenance and stored-data contracts those workflows require.
 
 ## Learn More
 
+Read the [package website](https://scjohannes.github.io/mostr/) for tutorials
+and the function reference.
+
 After installation, see:
 
 ```r

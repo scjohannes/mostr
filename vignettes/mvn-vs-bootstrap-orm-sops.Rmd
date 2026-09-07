@@ -1,5 +1,5 @@
 ---
-title: "Simulation from MVN vs Bootstrapping"
+title: "MVN Simulation Versus Bootstrap for orm_markov() SOPs"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{MVN Simulation Versus Bootstrap for orm_markov() SOPs}

@@ -1,0 +1,83 @@
+url: https://scjohannes.github.io/mostr/
+
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, articles, news]
+    right: [search, github]
+  components:
+    intro:
+      text: Get started
+      href: articles/full-po-sops.html
+
+reference:
+  - title: Prepare data and fit models
+    contents:
+      - prepare_markov_data
+      - relevel_factors_consecutive
+      - orm_markov
+      - vglm_markov
+      - blrm_markov
+  - title: Estimate probabilities and treatment contrasts
+    contents:
+      - sops
+      - avg_sops
+      - avg_comparisons
+      - inferences
+      - time_in_state
+      - interpolate_sops
+      - vcov.markov_sops
+      - mostr.delta_max_bytes
+      - soprob_markov
+  - title: Plot results and diagnose models
+    contents:
+      - plot_sops
+      - plot_comparisons
+      - plot_transitions
+      - plot_correlation
+      - plot_variogram
+      - plot_lp_difference
+      - compare_se_orm_vglm
+  - title: Simulate trajectories
+    contents:
+      - sim_trajectories_markov
+      - sim_actt1_markov
+      - sim_actt2_markov
+      - lp_violet
+      - violet_baseline
+  - title: Bootstrap and coefficient utilities
+    contents:
+      - bootstrap_model_coefs
+      - bootstrap_analysis_wrapper
+      - apply_to_bootstrap
+      - fast_group_bootstrap
+      - materialize_bootstrap_sample
+      - get_draws
+      - get_effective_coefs
+      - get_vcov_robust
+      - set_coef
+      - robcov_vglm
+      - coef.robcov_vglm
+      - vcov.robcov_vglm
+      - print.robcov_vglm
+      - summary.robcov_vglm
+
+articles:
+  - title: Get started
+    navbar: ~
+    contents:
+      - full-po-sops
+  - title: Model specifications
+    contents:
+      - partial-po-vglm-sops
+      - second-order-orm-sops
+      - factor-time-orm-sops
+      - many-levels-previous-state-spline
+  - title: Uncertainty
+    contents:
+      - analytical-confidence-intervals
+      - mvn-vs-bootstrap-orm-sops
+      - fractional-weighted-bootstrap-sops
+      - bayesian-rmsb-sops
