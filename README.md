@@ -89,3 +89,7 @@ vignette("mvn-vs-bootstrap-orm-sops", package = "mostr")
 
 The included `violet_baseline` dataset is derived from `Hmisc::simlongord`,
 created by Frank Harrell and based on the VIOLET trial.
+
+## Funding
+
+This project has received funding from the European Union’s Horizon Europe research and innovation program under grant agreement No 101156304.
