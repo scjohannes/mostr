@@ -782,3 +782,98 @@ test_that("plot_lp_difference supports blrm posterior median linear predictors",
   expect_equal(unique(eta1), 1)
   expect_equal(unique(eta2), 1)
 })
+
+
+test_that("correlation methods match R with ties and pairwise missing values", {
+  mat <- cbind(c(1, 1, 2, 3, 3, NA), c(1, 2, 2, 2, 3, 1), c(3, 2, 1, 1, NA, 2))
+  data <- data.frame(id = rep(1:6, 3), time = rep(1:3, each = 6), y = c(mat))
+  for (method in c("spearman", "pearson")) {
+    expected <- cor(mat, method = method, use = "pairwise.complete.obs")
+    heatmap <- plot_correlation(data, method = method)
+    variogram <- plot_variogram(data, method = method, smooth = FALSE)
+    expect_equal(heatmap$data$correlation, expected[upper.tri(expected)])
+    expect_equal(variogram$data$correlation, heatmap$data$correlation)
+  }
+  expect_equal(
+    plot_correlation(data)$data,
+    plot_correlation(data, method = "spearman")$data
+  )
+})
+
+test_that("model correlations match exact trajectories for both Markov orders", {
+  model <- structure(list(), class = "vglm")
+  for (second_order in c(FALSE, TRUE)) {
+    probabilities <- function(time, previous, second_previous) {
+      if (time == 1) {
+        return(c(0.2, 0.3, 0.5))
+      }
+      if (previous == 3) {
+        return(c(0, 0, 1))
+      }
+      if (second_order && second_previous == 2) {
+        return(c(0.5, 0.1, 0.4))
+      }
+      if (previous == 1) c(0.6, 0.3, 0.1) else c(0.1, 0.6, 0.3)
+    }
+    paths <- expand.grid(t1 = 1:3, t2 = 1:3, t3 = 1:3)
+    weights <- apply(paths, 1, function(y) {
+      probabilities(1, 1, 1)[y[1]] *
+        probabilities(2, y[1], 1)[y[2]] *
+        probabilities(3, y[2], y[1])[y[3]]
+    })
+    mat <- as.matrix(paths[rep(seq_len(nrow(paths)), round(1000 * weights)), ])
+    newdata <- data.frame(
+      time = 0,
+      yprev = factor(1, levels = 1:3),
+      ypprev = factor(1, levels = 1:3)
+    )
+    with_mocked_bindings(
+      validate_markov_model = function(object) NULL,
+      predict_vglm_response_markov = function(object, newdata) {
+        out <- t(vapply(
+          seq_len(nrow(newdata)),
+          function(i) {
+            probabilities(
+              newdata$time[i],
+              as.integer(newdata$yprev[i]),
+              as.integer(newdata$ypprev[i])
+            )
+          },
+          numeric(3)
+        ))
+        colnames(out) <- as.character(1:3)
+        out
+      },
+      {
+        for (method in c("spearman", "pearson")) {
+          args <- list(
+            x = model,
+            newdata = newdata,
+            times = 1:3,
+            y_levels = 1:3,
+            absorb = 3,
+            p2_var = if (second_order) "ypprev" else NULL,
+            method = method
+          )
+          expected <- cor(mat, method = method)
+          plot <- do.call(plot_correlation, args)
+          expect_equal(
+            plot$data$correlation,
+            expected[upper.tri(expected)],
+            tolerance = 1e-10
+          )
+          expect_equal(
+            do.call(plot_variogram, args)$data$correlation,
+            plot$data$correlation
+          )
+          args$method <- NULL
+          expect_equal(
+            do.call(plot_correlation, args)$data$correlation,
+            cor(mat, method = "spearman")[upper.tri(expected)],
+            tolerance = 1e-10
+          )
+        }
+      }
+    )
+  }
+})

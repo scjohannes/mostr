@@ -17,7 +17,8 @@ plot_correlation_input_data <- function(
   time_covariates,
   seed,
   n_draws,
-  triangle
+  triangle,
+  method
 ) {
   if (markov_supported_model(object)) {
     return(plot_correlation_model_data(
@@ -36,7 +37,8 @@ plot_correlation_input_data <- function(
       time_covariates = time_covariates,
       seed = seed,
       n_draws = n_draws,
-      triangle = triangle
+      triangle = triangle,
+      method = method
     ))
   }
 
@@ -69,7 +71,8 @@ plot_correlation_input_data <- function(
     y_var = y_var,
     facet_var = facet_var,
     y_levels = y_levels,
-    triangle = triangle
+    triangle = triangle,
+    method = method
   )
 }
 
@@ -89,7 +92,8 @@ plot_correlation_model_data <- function(
   time_covariates,
   seed,
   n_draws,
-  triangle
+  triangle,
+  method
 ) {
   setup <- plot_transition_model_setup(
     model = model,
@@ -117,7 +121,8 @@ plot_correlation_model_data <- function(
     time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
-    triangle = triangle
+    triangle = triangle,
+    method = method
   )
 }
 
@@ -131,7 +136,8 @@ plot_correlation_model_summary <- function(
   time_covariates,
   seed,
   n_draws,
-  triangle
+  triangle,
+  method
 ) {
   second_order <- !is.null(p2_var)
 
@@ -156,7 +162,8 @@ plot_correlation_model_summary <- function(
         facet_var = facet_var,
         draw = draw,
         second_order = second_order,
-        triangle = triangle
+        triangle = triangle,
+        method = method
       )
     },
     summarize_draws = function(data) {
@@ -178,7 +185,8 @@ plot_correlation_trace_summary <- function(
   facet_var,
   draw,
   second_order,
-  triangle
+  triangle,
+  method
 ) {
   groups <- plot_facet_groups(data, facet_var)
   out <- vector("list", nrow(groups))
@@ -199,7 +207,8 @@ plot_correlation_trace_summary <- function(
       facet_var = facet_var,
       draw = draw,
       second_order = second_order,
-      triangle = triangle
+      triangle = triangle,
+      method = method
     )
   }
 
@@ -217,7 +226,8 @@ plot_correlation_trace_group_summary <- function(
   facet_var,
   draw,
   second_order,
-  triangle
+  triangle,
+  method
 ) {
   if (isTRUE(draw)) {
     draw_ids <- dimnames(trace$sops)[[1]]
@@ -237,7 +247,8 @@ plot_correlation_trace_group_summary <- function(
         rows = rows,
         time_indices = time_indices,
         scores = scores,
-        second_order = second_order
+        second_order = second_order,
+        method = method
       )
       out[[i]] <- plot_correlation_matrix_long(
         corr,
@@ -257,7 +268,8 @@ plot_correlation_trace_group_summary <- function(
     rows = rows,
     time_indices = time_indices,
     scores = scores,
-    second_order = second_order
+    second_order = second_order,
+    method = method
   )
   plot_correlation_matrix_long(
     corr,
@@ -282,7 +294,8 @@ plot_correlation_matrix_from_trace <- function(
   rows,
   time_indices,
   scores,
-  second_order
+  second_order,
+  method
 ) {
   n_plot_times <- length(time_indices)
   time_keys <- dimnames(sops)[[2]][time_indices]
@@ -294,6 +307,20 @@ plot_correlation_matrix_from_trace <- function(
   )
   if (length(rows) == 0L) {
     return(corr)
+  }
+
+  scores <- matrix(rep(scores, each = n_plot_times), nrow = n_plot_times)
+  if (method == "spearman") {
+    for (i in seq_len(n_plot_times)) {
+      prob <- matrix(
+        sops[rows, time_indices[i], , drop = FALSE],
+        nrow = length(rows),
+        ncol = ncol(scores)
+      )
+      marginal <- colMeans(prob)
+      # Mid-distribution scores are affine-equivalent to average tied ranks.
+      scores[i, ] <- cumsum(marginal) - marginal / 2
+    }
   }
 
   means <- plot_trace_state_means(sops, rows, time_indices, scores)
@@ -325,7 +352,8 @@ plot_correlation_matrix_from_trace <- function(
           rows = rows,
           start = time_indices[i],
           end = time_indices[j],
-          scores = scores
+          scores = scores[i, ],
+          end_scores = scores[j, ]
         )
       }
       denom <- sqrt(variances[i] * variances[j])
@@ -345,12 +373,11 @@ plot_correlation_matrix_from_trace <- function(
 plot_trace_state_means <- function(sops, rows, time_indices, scores) {
   mean <- numeric(length(time_indices))
   mean2 <- numeric(length(time_indices))
-  scores2 <- scores^2
   for (i in seq_along(time_indices)) {
     prob <- sops[rows, time_indices[i], , drop = FALSE]
-    prob <- matrix(prob, nrow = length(rows), ncol = length(scores))
-    mean[i] <- mean(as.vector(prob %*% scores), na.rm = TRUE)
-    mean2[i] <- mean(as.vector(prob %*% scores2), na.rm = TRUE)
+    prob <- matrix(prob, nrow = length(rows), ncol = ncol(scores))
+    mean[i] <- mean(as.vector(prob %*% scores[i, ]), na.rm = TRUE)
+    mean2[i] <- mean(as.vector(prob %*% scores[i, ]^2), na.rm = TRUE)
   }
   list(mean = mean, mean2 = mean2)
 }
@@ -361,12 +388,13 @@ plot_first_order_cross_moment <- function(
   rows,
   start,
   end,
-  scores
+  scores,
+  end_scores
 ) {
   values <- numeric(length(rows))
   for (i in seq_along(rows)) {
     row <- rows[i]
-    future <- scores
+    future <- end_scores
     for (time in seq.int(end, start + 1L)) {
       future <- as.numeric(kernels[row, time, , ] %*% future)
     }
@@ -394,7 +422,7 @@ plot_second_order_cross_moment_matrix <- function(
     max_end <- max(time_indices[end_positions])
     anchor_pair <- plot_second_order_anchor_pair_array(
       pair_history = transitions[rows, start, , , drop = FALSE],
-      n_states = length(scores)
+      n_states = ncol(scores)
     )
     for (time in seq.int(start + 1L, max_end)) {
       anchor_pair <- plot_second_order_anchor_step_array(
@@ -405,7 +433,8 @@ plot_second_order_cross_moment_matrix <- function(
       if (!is.na(end_pos) && end_pos > start_pos) {
         out[start_pos, end_pos] <- plot_second_order_anchor_cross_moment(
           anchor_pair,
-          scores
+          scores[start_pos, ],
+          scores[end_pos, ]
         )
       }
     }
@@ -472,10 +501,14 @@ plot_second_order_anchor_step_array <- function(anchor_pair, kernel) {
   out
 }
 
-plot_second_order_anchor_cross_moment <- function(anchor_pair, scores) {
+plot_second_order_anchor_cross_moment <- function(
+  anchor_pair,
+  scores,
+  end_scores
+) {
   n_rows <- dim(anchor_pair)[1]
   n_states <- length(scores)
-  score_product <- outer(scores, scores)
+  score_product <- outer(scores, end_scores)
   values <- numeric(n_rows)
 
   for (anchor_state in seq_len(n_states)) {
@@ -516,7 +549,8 @@ plot_correlation_data <- function(
   y_var,
   facet_var,
   y_levels,
-  triangle
+  triangle,
+  method
 ) {
   plot_validate_columns(data, c(id_var, time_var, y_var), "`data`")
   plot_validate_facets(data, facet_var)
@@ -532,7 +566,7 @@ plot_correlation_data <- function(
       y_var = y_var,
       y_levels = y_levels
     )
-    corr <- stats::cor(mat, method = "pearson", use = "pairwise.complete.obs")
+    corr <- stats::cor(mat, method = method, use = "pairwise.complete.obs")
     out[[i]] <- plot_correlation_matrix_long(
       corr,
       group = groups[i, , drop = FALSE],

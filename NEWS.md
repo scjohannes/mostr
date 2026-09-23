@@ -1,5 +1,9 @@
 # mostr 0.1.0
 
+* `plot_correlation()` and `plot_variogram()` now default to Spearman rank
+  correlation for observed data and fitted models, accounting for tied states.
+  Use `method = "pearson"` to retain the previous calculation.
+
 * `plot_correlation()` now uses a 0-1 color scale when all available correlations
   are nonnegative, retaining -1 to 1 when negative correlations are present.
   Set `fill_limits` explicitly to keep a common scale across plots.

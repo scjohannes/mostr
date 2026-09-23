@@ -16,6 +16,21 @@
 #' separate through the moment calculation and summarized only after
 #' correlations are computed for each draw.
 #'
+#' Spearman correlation is the default: it measures association between patients'
+#' ranks at two times, assigning average ranks to tied states. Observed-data
+#' calculations use patients observed at both times and rank each pair separately.
+#' Model-based calculations use the corresponding ranks from each time's state
+#' probabilities, averaged over prediction profiles within each stratum. Ranks
+#' are calculated separately for each posterior draw before summarizing.
+#' Correlations are undefined when either time has no variation in state.
+#'
+#' With `method = "pearson"`, correlations describe numerical state scores.
+#' Model-based scores are positions in `y_levels` (1 through the number of states).
+#' Observed scores use `y_levels` positions when supplied, factor codes for
+#' factors, or integer state values. Use the same `y_levels` for comparisons.
+#' Pearson is useful when differences between these scores are meaningful.
+#'
+#' @param method Correlation method: `"spearman"` (default) or `"pearson"`.
 #' @param x A trajectory data frame or a fitted Markov model.
 #' @param newdata Optional data frame of prediction profiles for model-based
 #'   plots. If `NULL`, wrapper-fitted models use their stored data and extract
@@ -79,8 +94,10 @@ plot_correlation <- function(
   triangle = c("upper", "full"),
   show_values = TRUE,
   digits = 2,
-  fill_limits = NULL
+  fill_limits = NULL,
+  method = c("spearman", "pearson")
 ) {
+  method <- match.arg(method)
   object <- x
   triangle <- match.arg(triangle)
   if (
@@ -107,7 +124,8 @@ plot_correlation <- function(
     time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
-    triangle = triangle
+    triangle = triangle,
+    method = method
   )
 
   plot_correlation_heatmap(
@@ -151,8 +169,10 @@ plot_variogram <- function(
   time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
-  smooth = TRUE
+  smooth = TRUE,
+  method = c("spearman", "pearson")
 ) {
+  method <- match.arg(method)
   object <- x
   if (!is.logical(smooth) || length(smooth) != 1L || is.na(smooth)) {
     stop("`smooth` must be TRUE or FALSE.")
@@ -175,7 +195,8 @@ plot_variogram <- function(
     time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
-    triangle = "upper"
+    triangle = "upper",
+    method = method
   )
   variogram <- plot_variogram_data(corr)
 

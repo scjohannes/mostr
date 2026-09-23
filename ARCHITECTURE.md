@@ -37,6 +37,14 @@ package vignette builds retain the existing opt-in for this longer calculation.
 Vignette transition heatmaps use up to sixteen evenly spaced visits in grids of
 at most four rows and four columns. Observed, fitted, and difference plots share
 the same visits, with tile labels omitted for readability.
+Correlation diagnostics share `method = c("spearman", "pearson")`, defaulting to
+Spearman. Observed trajectories use pairwise-complete ranks with average ties.
+In `R/diagnostic-correlation.R`, model calculations assign each state's
+mid-distribution score (cumulative probability minus half its probability)
+from the stratum's profile-averaged marginal distribution at each time.
+The existing first- and second-order cross-moment recursions accept different
+scores at the two times; Pearson retains category-position scores. Posterior
+ranks and correlations are calculated within each draw before averaging.
 Vignette correlation heatmaps omit tile labels. `plot_correlation_heatmap()`
 chooses a 0-1 fill scale for nonnegative finite correlations and -1 to 1 when
 negative values occur or no finite values are available; explicit `fill_limits`

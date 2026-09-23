@@ -24,7 +24,8 @@ plot_correlation(
   triangle = c("upper", "full"),
   show_values = TRUE,
   digits = 2,
-  fill_limits = NULL
+  fill_limits = NULL,
+  method = c("spearman", "pearson")
 )
 }
 \arguments{
@@ -81,6 +82,8 @@ off-diagonal triangles.}
 \code{c(0, 1)} when all available correlations are nonnegative, and \code{c(-1, 1)}
 when any are negative or all are missing. Supply limits explicitly to use
 the same color scale across several plots.}
+
+\item{method}{Correlation method: \code{"spearman"} (default) or \code{"pearson"}.}
 }
 \value{
 A ggplot object.
@@ -99,6 +102,20 @@ when needed. Model-based correlations are computed from exact first- or
 second-order Markov recursions. For \code{blrm} fits, posterior draws are kept
 separate through the moment calculation and summarized only after
 correlations are computed for each draw.
+
+Spearman correlation is the default: it measures association between patients'
+ranks at two times, assigning average ranks to tied states. Observed-data
+calculations use patients observed at both times and rank each pair separately.
+Model-based calculations use the corresponding ranks from each time's state
+probabilities, averaged over prediction profiles within each stratum. Ranks
+are calculated separately for each posterior draw before summarizing.
+Correlations are undefined when either time has no variation in state.
+
+With \code{method = "pearson"}, correlations describe numerical state scores.
+Model-based scores are positions in \code{y_levels} (1 through the number of states).
+Observed scores use \code{y_levels} positions when supplied, factor codes for
+factors, or integer state values. Use the same \code{y_levels} for comparisons.
+Pearson is useful when differences between these scores are meaningful.
 }
 \examples{
 \dontrun{

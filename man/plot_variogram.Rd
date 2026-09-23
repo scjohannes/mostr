@@ -21,7 +21,8 @@ plot_variogram(
   time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
-  smooth = TRUE
+  smooth = TRUE,
+  method = c("spearman", "pearson")
 )
 }
 \arguments{
@@ -68,6 +69,8 @@ model.}
 \code{NULL} to use all stored draws. Defaults to 100.}
 
 \item{smooth}{Logical. If \code{TRUE}, add a loess smooth.}
+
+\item{method}{Correlation method: \code{"spearman"} (default) or \code{"pearson"}.}
 }
 \value{
 A ggplot object.
