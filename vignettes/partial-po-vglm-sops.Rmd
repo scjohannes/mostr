@@ -11,12 +11,27 @@ vignette: >
 source("_setup.R", local = TRUE)
 ```
 
-Partial proportional-odds models can relax the proportional-odds assumption for selected predictors while keeping the rest of the transition model parsimonious. This vignette fits such a model with `vglm_markov()`, allowing the linear time basis to deviate from
-proportional odds while treatment and previous state remain proportional.
+A proportional-odds model assumes that each covariate shifts the odds of
+being in a worse state by the same factor at every cut-point of the ordinal
+scale. For example, the effect of time on the odds of being in state 2 or
+worse is assumed to equal its effect on the odds of being in state 5 or
+worse. When this assumption is doubtful for some covariates, a *partial*
+proportional-odds model lets their effects differ between cut-points while
+keeping proportional odds for the others.
 
-## Simulate Data
+This article fits such a model with `vglm_markov()`. We let the effect of time
+change linearly across the cut-points and keep proportional odds for
+treatment and the previous state. We then check the model, estimate state
+occupancy probabilities (SOPs), and compare expected time in each state
+between arms.
 
-We collapse the 8 state data into 6 states the make the linear deviation from proportional odds more stable.
+## Simulate data
+
+We simulate 200 patients over 14 days with `sim_actt2_markov()`, which uses
+the eight-state NIAID scale described in `vignette("full-po-sops")`. To keep
+the extra coefficients well estimated in this small example, we combine the
+two outpatient states (1 and 2) and the two hospital states without oxygen
+(3 and 4). This leaves six states, with death as state 6.
 
 ```{r setup}
 library(mostr)
@@ -30,6 +45,7 @@ SEED <- 20260528
 STATE_LEVELS <- as.character(1:6)
 ABSORB <- "6"
 
+# Map states 1-2 to 1, 3-4 to 2, and 5-8 to 3-6.
 collapse_actt2_states <- function(data) {
   data$y <- ifelse(
     data$y %in% c(1L, 2L),
@@ -55,9 +71,29 @@ raw_data <- sim_actt2_markov(
 model_data <- prepare_markov_data(raw_data, absorbing_state = 6)
 ```
 
-## Constraint
+## Specify which effects may vary
 
-It's often helpful to fit a full PO model first and incoroporate the deviations from PO from there.
+VGAM expresses partial proportional odds through *constraint matrices*. The
+model has one linear predictor per cut-point; with six states there are five.
+Each model term has a constraint matrix with one row per cut-point and one
+column per coefficient for that term:
+
+- a single column of ones gives one coefficient shared by all cut-points,
+  which is proportional odds;
+- a second column $(0, 1, 2, 3, 4)$ adds a coefficient that changes the
+  term's effect by the same amount from one cut-point to the next, a linear
+  departure from proportional odds.
+
+The easiest way to obtain a valid set of constraint matrices is to fit the
+proportional-odds model first and edit its constraints. We change two things:
+
+1. The spline in time, `rcs(time, 4)`, is represented by several basis
+   columns. We give the linear basis column the extra "linear departure"
+   coefficient and keep the other basis columns proportional.
+2. The fitted model lists a separate constraint for each dummy variable of the
+   factor `yprev`. The constraints we supply must instead be named by the
+   formula term, so we replace these entries with a single `yprev` entry with
+   proportional odds.
 
 ```{r fit-ppo}
 form <- ordered(y) ~ tx + rcs(time, 4) + yprev
@@ -71,35 +107,41 @@ fit_po <- vglm_markov(
 
 constraints <- fit_po$vglm_fit@constraints
 
-# find linear basis function of time
+# The linear basis column of the time spline.
 linear_time_term <- grep(
   "^rcs\\(time, 4\\).*time$",
   names(constraints),
   value = TRUE
 )[[1]]
 
-# our model has 5 intercept (6 states)
+# One row per cut-point: five for six states.
 n_thresholds <- nrow(constraints[[linear_time_term]])
 
-# need to change yprev back to one matrix, because it's not in the formula as dummy variables
+# Replace the per-dummy yprev constraints with one term-level entry.
 yprev_terms <- grep("^yprev", names(constraints), value = TRUE)
 constraints[yprev_terms] <- NULL
 constraints[["yprev"]] <- cbind(PO_effect = rep(1, n_thresholds))
 
-# build full list of constraints
+# Shared effect plus a linear change across cut-points.
 constraints[[linear_time_term]] <- cbind(
   PO_effect = rep(1, n_thresholds),
   linear_deviation = seq_len(n_thresholds) - 1
 )
 ```
 
-We now have linear devtion from proportional odds for the linear basis function of time. 
+Printing the list shows the result: only the linear time term has two
+columns.
 
 ```{r}
 constraints
 ```
 
-We can now refit the model with the custom constraints.
+We refit the model with these constraints. `parallel = FALSE` tells VGAM not
+to impose proportional odds on every term, so that our constraint matrices
+decide instead. Starting from the proportional-odds fit's linear predictors
+(`etastart`) helps the fit converge. The final line stores the constraint
+list itself, rather than the name `constraints`, in the model call, so that
+code that later re-evaluates the call does not depend on this variable.
 
 ```{r}
 fit_ppo <- vglm_markov(
@@ -115,12 +157,13 @@ fit_ppo$vglm_fit@call$constraints <- constraints
 summary(fit_ppo)
 ```
 
-## Model Diagnostics
+## Check the model against the data
 
-These diagnostics compare empirical trajectory features with corresponding
-features implied by the partial proportional-odds transition model.
-The transition plots use up to sixteen evenly spaced visits, shared between
-observed and fitted results.
+As in `vignette("full-po-sops")`, each diagnostic is computed once from the
+observed trajectories and once from the fitted model. Similar patterns
+suggest the model captures how patients move between states; clear
+differences point to a missing feature. The transition heatmaps use at most
+sixteen evenly spaced days.
 
 ```{r diagnostics-transitions-observed, fig.width = 9, fig.height = 9}
 diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
@@ -147,6 +190,7 @@ plot_transitions(
 
 ```{r diagnostics-correlation-observed}
 plot_correlation(
+  fill_limits = c(0, 1),
   raw_data,
   times = 1:FOLLOW_UP,
   show_values = FALSE
@@ -156,6 +200,7 @@ plot_correlation(
 
 ```{r diagnostics-correlation-model}
 plot_correlation(
+  fill_limits = c(0, 1),
   fit_ppo,
   times = 1:FOLLOW_UP,
   y_levels = STATE_LEVELS,
@@ -183,10 +228,14 @@ plot_variogram(
   labs(title = "Model-based correlation variogram")
 ```
 
+## Estimate state occupancy probabilities
 
-## SOPs
-
-Analytical confidence interals are not supported for partial proportional odds models, so we have use simulation based confidence intervals. 
+Analytical confidence intervals (`method = "delta"`) are available only for
+full proportional-odds models, so we use the default `method = "mvn"`. It
+draws coefficient vectors from a multivariate normal distribution centered on
+the estimates, with the model's covariance matrix, recomputes the SOPs for
+each draw, and takes percentiles of the results. We use only 100 draws to
+keep this example fast; use more, such as 1,000, in a real analysis.
 
 ```{r avg-sops}
 sop_ppo <- avg_sops(
@@ -195,7 +244,7 @@ sop_ppo <- avg_sops(
   times = seq_len(FOLLOW_UP),
   y_levels = STATE_LEVELS,
   absorb = ABSORB
-) |> 
+) |>
   inferences(n_draws = 100)
 
 plot_sops(
@@ -210,17 +259,24 @@ plot_sops(
   )
 ```
 
-## Contrast
+## Compare time in each state
+
+`avg_comparisons()` with `estimand = "time_in_state"` sums each arm's daily
+SOPs over follow-up. The result is the expected number of days spent in each
+state, and the comparison reports treated minus control. A positive
+difference for state 1 means that treated patients are expected to spend more
+of the 14 days in the best state.
 
 ```{r}
-c <- avg_comparisons(
+tis_ppo <- avg_comparisons(
   fit_ppo,
   estimand = "time_in_state",
   variables = list(tx = c(0, 1)),
   times = 1:FOLLOW_UP,
   y_levels = STATE_LEVELS,
-  absorb = ABSORB) |> 
+  absorb = ABSORB
+) |>
   inferences(n_draws = 100)
 
-plot_comparisons(c)
+plot_comparisons(tis_ppo)
 ```

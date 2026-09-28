@@ -1,5 +1,5 @@
 ---
-title:  "Time as a Factor with orm_markov()"
+title: "Time as a Factor with orm_markov()"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Time as a Factor with orm_markov()}
@@ -11,16 +11,26 @@ vignette: >
 source("_setup.R", local = TRUE)
 ```
 
-Outcome assessments may happen at scheduled visits rather than a regular daily
-grid, without the possibility of accurately reconstructing daily states. This
-vignette simulates daily health states for 220 patients using a model based on
-the [ACTT-2 clinical trial](https://doi.org/10.1056/NEJMoa2031994), which enrolled
-adults hospitalized with moderate to severe COVID-19. Health states use the
-[NIAID eight-point ordinal scale](https://www.fda.gov/media/144473/download#page=10),
-from unrestricted activities outside hospital (1) to death (8). We keep only
-days 3, 7, 14, and 21 and fit an `orm_markov()` model with `time` as a visit factor.
+Many studies assess patients at a few scheduled visits rather than every day,
+for example on days 3, 7, 14, and 21. The state between visits is then
+unknown and cannot be reconstructed reliably. In this situation, a transition
+model can describe the change from one *visit* to the next, with each visit
+treated as a separate category of time.
 
-## Visit Data
+This article shows how to
+
+1. turn daily data into visit data and fit an `orm_markov()` model with time
+   as a factor;
+2. estimate state occupancy probabilities (SOPs) at each visit;
+3. convert these to a calendar-day scale by interpolating between visits; and
+4. compare the expected number of days spent in each state between arms.
+
+## Visit data
+
+We simulate daily states for 220 patients with `sim_actt2_markov()`, which
+uses the eight-state NIAID scale described in `vignette("full-po-sops")`, and
+keep only days 3, 7, 14, and 21. The observed SOPs of the full daily data are
+shown for reference.
 
 ```{r setup}
 library(mostr)
@@ -40,7 +50,20 @@ raw_data <- sim_actt2_markov(
 )
 
 plot_sops(raw_data, facet_var = NULL, linetype_var = "tx")
+```
 
+`VISIT_DAYS` links each visit number to its calendar day. To build the visit
+data, we
+
+- keep the rows for the four visit days;
+- recode `time` as a factor with levels `"1"` to `"4"` (the visit number),
+  keeping the calendar day in `visit_day`;
+- set `yprev` to the state at the previous *visit* rather than the previous
+  day; and
+- for the first visit, use the patient's state before day 1 as `yprev`, so
+  that every patient's starting state is the same observed baseline state.
+
+```{r visit-data}
 baseline_state <- raw_data[raw_data$time == 1, c("id", "yprev")]
 names(baseline_state)[2] <- "baseline_yprev"
 
@@ -80,10 +103,17 @@ model_data <- prepare_markov_data(
 head(model_data)
 ```
 
-## Fit And Predict On The Visit Scale
+## Fit the model and estimate SOPs at each visit
 
-For factor-valued visits, supply the visit labels explicitly with `times`.
-The returned SOPs are on the visit scale.
+With time as a factor, the model estimates a separate effect for each visit,
+so the intervals between visits may differ in length without any assumption
+about how transition probabilities change from day to day.
+
+mostr needs to know which visit is the first, because each patient's starting
+state and covariates are taken from their row at that visit. For numeric time
+this defaults to 1; for factor time, set it explicitly with
+`first_followup_time = "1"`. Likewise, pass the visit labels, not calendar
+days, to `times` in `avg_sops()`. The resulting SOPs refer to visits 1 to 4.
 
 ```{r fit-model}
 dd <- rms::datadist(model_data)
@@ -96,7 +126,6 @@ fit_visit <- orm_markov(
   first_followup_time = "1",
   opt_method = "LM",
   scale = TRUE,
-  # penalty = 0.1,
   maxit = 100
 )
 
@@ -109,16 +138,22 @@ sop_visit <- avg_sops(
 ) |>
   inferences(method = "delta", vcov = "unconditional")
 
-attr(sop_visit, "avg_args")$times
+head(sop_visit)
 ```
 
-## Interpolate To Calendar Days
+## Interpolate to calendar days
 
-The model is fit on visit labels. `interpolate_sops()` maps those labels to
-nominal calendar days, adds the observed `yprev` distribution as a day-0
-baseline anchor, and linearly interpolates probabilities between the anchor and
-modeled visits. The returned grid starts on day 1, so the baseline anchors the
-interpolation without being part of the follow-up summary.
+`interpolate_sops()` places the visit-scale SOPs on the calendar-day scale:
+
+- `time_map = VISIT_DAYS` maps each visit label to its day;
+- `baseline_time = 0` adds the observed distribution of starting states
+  (`yprev` at the first visit) as the SOPs on day 0;
+- `target_times = 1:21` requests every day from 1 to 21.
+
+Between two known time points, each probability is interpolated linearly.
+The day-0 baseline anchors the interpolation for days 1 and 2, before the
+first visit, but is not itself part of the returned grid. Interpolated values
+are a convenient summary, not model predictions for the unobserved days.
 
 ```{r plot-sops}
 sop_days <- interpolate_sops(
@@ -142,7 +177,13 @@ plot_sops(
   )
 ```
 
-## Contrasts
+## Compare time in each state
+
+`avg_comparisons()` accepts the same `time_map`, `target_times`, and
+`baseline_time` arguments. With them, `estimand = "time_in_state"` measures
+the expected number of calendar days, rather than visits, spent in each state
+over days 1 to 21. `time_unit = "days"` labels the result. Each estimate is
+treated minus control.
 
 ```{r}
 cmp_days <- avg_comparisons(

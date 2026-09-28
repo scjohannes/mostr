@@ -11,9 +11,26 @@ vignette: >
 source("_setup.R", local = TRUE)
 ```
 
-When the outcome has many ordered levels, a categorical previous-state effect can become too large. We can instead model the previous state effect using a restricted cubic spline to allow for non-linear effects.
+Some outcomes have many ordered levels, such as a quality-of-life score from
+1 to 30. Treating the previous state as a factor then adds one coefficient
+per level, 29 in this case, and the rarer levels are poorly estimated.
+Instead, the previous state can enter the model as a number, with a
+restricted cubic spline allowing its effect to be non-linear. This uses a
+handful of coefficients however many levels there are.
 
-## Simulate Many Ordered States
+This article fits such a model, checks it against the data, and compares
+arms using three summaries: state occupancy probabilities (SOPs), expected
+time in each state, and time benefit.
+
+## Simulate an outcome with 30 levels
+
+We simulate 220 patients over 14 days on a 30-level scale where higher is
+worse and no state is absorbing. `sim_trajectories_markov()` generates each
+day's state from an ordinal model whose linear predictor is supplied in
+`lp_function`: it increases linearly with the previous state, decreases
+slightly over time, and is shifted by `parameter = -0.25` for treated
+patients. The 29 cut-points are spread so that, with a linear predictor of
+zero, the 30 states are equally likely.
 
 ```{r setup}
 library(mostr)
@@ -50,13 +67,11 @@ raw_data <- sim_trajectories_markov(
 plot_sops(raw_data, geom = "bar")
 ```
 
-The generator conditions each transition on the previous observed state, time,
-and treatment. It uses 29 ordered logistic thresholds and no absorbing state.
+## Fit a spline in the previous state
 
-## Fit `rcs(yprev, 5)`
-
-`prepare_markov_data(..., factor_previous = FALSE)` keeps `yprev` numeric so it
-can enter the model as a smooth previous-state effect.
+`prepare_markov_data(..., factor_previous = FALSE)` keeps `yprev` numeric so
+that it can enter the model through `rcs(yprev, 5)`, a restricted cubic spline
+with five knots. Because no state is absorbing, `absorbing_state = NULL`.
 
 ```{r fit-model}
 model_data <- prepare_markov_data(
@@ -81,17 +96,27 @@ fit_many <- orm_markov(
 fit_many
 ```
 
-## Diagnostics
+## Check the model against the data
 
-```{r}
+As in `vignette("full-po-sops")`, we compare the correlations between days
+in the observed data with those implied by the model, first as a matrix of
+all pairs of days and then as a variogram against the gap between days.
+Without an absorbing state, `absorb = NULL`. Some observed
+correlations are slightly negative, so both correlation plots use
+`fill_limits = c(-1, 1)`; a shared scale makes their colors comparable.
+
+```{r diagnostics-correlation}
 ec <- plot_correlation(
+  fill_limits = c(-1, 1),
   show_values = FALSE,
   raw_data,
   id_var = "id",
   time_var = "time",
-  y_var = "y")
+  y_var = "y"
+)
 
 mc <- plot_correlation(
+  fill_limits = c(-1, 1),
   show_values = FALSE,
   fit_many,
   id_var = "id",
@@ -99,20 +124,20 @@ mc <- plot_correlation(
   y_var = "y",
   times = seq_len(FOLLOW_UP),
   y_levels = fit_many$yunique,
-  absorb = ABSORB)
+  absorb = ABSORB
+)
 
 ec
 mc
 ```
 
-
-```{r}
+```{r diagnostics-variogram}
 plot_variogram(
   raw_data,
   id_var = "id",
   time_var = "time",
   y_var = "y"
-  )
+)
 
 plot_variogram(
   fit_many,
@@ -121,10 +146,15 @@ plot_variogram(
   y_var = "y",
   times = seq_len(FOLLOW_UP),
   y_levels = fit_many$yunique,
-  absorb = ABSORB)
+  absorb = ABSORB
+)
 ```
 
-## SOPs
+## Estimate state occupancy probabilities
+
+`p_var = "yprev"` names the previous-state column. It is the default, shown
+here to make clear that mostr substitutes each possible previous state into
+this numeric column, and hence into the spline, when chaining predictions.
 
 ```{r avg-sops}
 sop_many <- avg_sops(
@@ -133,11 +163,15 @@ sop_many <- avg_sops(
   times = seq_len(FOLLOW_UP),
   y_levels = fit_many$yunique,
   p_var = "yprev"
-) |> 
+) |>
   inferences(method = "delta", vcov = "unconditional")
 ```
 
-```{r plot-sops}
+With 30 states, two views help. Stacked bars show the whole distribution on
+each day, one panel per arm. Line plots, one panel per state, show how each
+state's probability changes over time in each arm.
+
+```{r plot-sops, fig.height = 8}
 plot_sops(
   sop_many,
   geom = "bar",
@@ -145,7 +179,7 @@ plot_sops(
 ) +
   scale_x_continuous(breaks = c(1, 7, 14)) +
   labs(
-    x = "Week",
+    x = "Day",
     y = "State occupancy probability"
   )
 
@@ -157,61 +191,81 @@ plot_sops(
 ) +
   scale_x_continuous(breaks = c(1, 7, 14)) +
   labs(
-    x = "Week",
+    x = "Day",
     y = "State occupancy probability"
   )
 ```
 
-## Contrasts
+## Compare the arms
 
-We can show the difference in the SOPs from above over time.
+### Differences in state occupancy probabilities
 
-```{r}
-sc <- avg_comparisons(
-  fit_many, 
+`estimand = "sop"` gives, for each state and day, the SOP under treatment
+minus the SOP under control.
+
+```{r compare-sops, fig.height = 8}
+sop_diff <- avg_comparisons(
+  fit_many,
   times = seq_len(FOLLOW_UP),
   variables = list(tx = c(0, 1)),
   estimand = "sop"
-) |> 
+) |>
   inferences(
     method = "delta",
     vcov = "unconditional"
   )
 
-plot_comparisons(sc, facet_var = "state_set")
+plot_comparisons(sop_diff, facet_var = "state_set")
 ```
 
-We can calculate contrasts for time in state or weeks benefit.
+### Differences in time in state
 
-```{r}
-c <- avg_comparisons(
-  fit_many, 
+`estimand = "time_in_state"` sums the daily SOPs, giving the expected number
+of days spent in each state over the 14 days. With many levels, grouping
+states into bands is often easier to interpret. For example,
+`state_sets = list(good = 1:10, average = 11:20, bad = 21:30)` would compare
+time spent in three bands; here we keep all 30 states.
+
+```{r compare-time-in-state}
+tis_many <- avg_comparisons(
+  fit_many,
   times = seq_len(FOLLOW_UP),
-  variables = list(tx = c(0, 1)), 
+  variables = list(tx = c(0, 1)),
   estimand = "time_in_state"
-  # state_sets = list(good = 1:10, average = 11:20, bad = 21:30)
-) |> 
+) |>
   inferences(
     method = "delta",
     vcov = "unconditional"
   )
 
-plot_comparisons(c)
+plot_comparisons(tis_many)
 ```
 
-Analytical delta intervals do not yet support `time_benefit`, so one needs to use bootstrapping or coefficient draws here.
+### Time benefit
 
-```{r}
-tb <- avg_comparisons(
-  fit_many, 
+Time benefit summarizes all states in a single number. On each day, imagine
+drawing one state from each arm's predicted distribution for the same
+patient. The daily benefit is the probability that the treated state is better
+(lower) minus the probability that it is worse. Summing over days gives the
+expected number of days benefit: the net number of days on which treatment
+leaves the patient better off. Results are averaged over patients.
+
+Analytical intervals are not yet available for time benefit, so we use
+simulation from the coefficients' multivariate normal distribution. Only 50
+draws are used here to keep the example fast; use more, such as 1,000, in a
+real analysis.
+
+```{r compare-time-benefit}
+tb_many <- avg_comparisons(
+  fit_many,
   times = seq_len(FOLLOW_UP),
   variables = list(tx = c(0, 1)),
   estimand = "time_benefit"
-) |> 
+) |>
   inferences(
     method = "mvn",
     n_draws = 50
   )
 
-plot_comparisons(tb)
+plot_comparisons(tb_many)
 ```
