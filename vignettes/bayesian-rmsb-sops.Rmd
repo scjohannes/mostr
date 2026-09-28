@@ -15,11 +15,28 @@ RUN_BAYESIAN <- identical(
 ) && requireNamespace("rmsb", quietly = TRUE)
 ```
 
-`blrm_markov()` fits Bayesian transition models using `rmsb::blrm()` and stores
-the data needed by subsequent SOP and inference functions. In this vignette we
-use a small number of MCMC iterations and SOP draws for demonstration.
+`blrm_markov()` fits a Bayesian transition model with `rmsb::blrm()`, which
+samples from the posterior distribution of the coefficients using Stan. The
+state occupancy probabilities (SOPs) and comparisons calculated from it carry
+posterior uncertainty directly: mostr computes the SOPs for each posterior
+draw of the coefficients and summarizes the results. No separate
+`inferences()` step is needed.
+
+This article fits a Bayesian model in which the effect of time may depart
+from proportional odds, computes posterior SOPs, and checks the model
+against the data.
+
+Fitting the model takes a while, so the model-based code below runs only when
+the environment variable `MOSTR_RUN_BAYESIAN_VIGNETTE` is `"true"` and the
+rmsb package is installed. The example uses few MCMC iterations to keep
+running time short; a real analysis needs more iterations and a check of
+sampling diagnostics.
 
 ## Data
+
+We simulate 200 patients over 14 days with `sim_actt2_markov()`, which uses
+the eight-state NIAID scale described in `vignette("full-po-sops")`, and plot
+the observed proportion of patients in each state.
 
 ```{r setup}
 library(mostr)
@@ -44,16 +61,23 @@ raw_data <- sim_actt2_markov(
 model_data <- prepare_markov_data(raw_data, absorbing_state = 8)
 ```
 
-As usual, we plot the raw data.
-
-```{r}
+```{r observed-sops}
 plot_sops(raw_data)
 ```
 
-## Fit `blrm_markov()`
+## Fit the model
 
-The `ppo = ~ time` term marks `time` as non-proportional. The `cppo` function
-constrains that deviation to be linear in the numeric ordinal score.
+The formula includes the previous state and a treatment-by-time interaction,
+with time modeled by a restricted cubic spline. Two further arguments relax
+proportional odds for time:
+
+- `ppo = ~ time` allows the effect of time to differ between cut-points of
+  the ordinal scale;
+- `cppo = function(y) as.numeric(y)` constrains that difference to change
+  linearly with the state number, so it adds only one coefficient.
+
+`cluster(id)` adds a random effect for each patient, which allows for
+patient-level differences not explained by the covariates.
 
 ```{r fit-blrm, eval = RUN_BAYESIAN}
 dd <- rms::datadist(model_data)
@@ -77,10 +101,22 @@ fit_blrm
 
 ## Posterior SOPs
 
-For Bayesian fits, `avg_sops()` evaluates the SOP recursion on posterior draws.
-There is no separate `inferences()` step. Setting
-`options(mostr.blrm_avg_chunk_size = 100)` processes posterior draws in groups
-of 100 to limit memory use when averaging over patients.
+For Bayesian fits, `avg_sops()` computes the SOPs for each posterior draw and
+then summarizes them. The arguments specific to Bayesian fits are:
+
+- `n_draws = NULL` uses all stored posterior draws; a number uses a random
+  subset of that size, selected reproducibly with `seed`;
+- `include_re = TRUE` includes each patient's estimated random effect in the
+  predictions;
+- `posterior_summary = "mean"` reports the posterior mean. Unlike the median,
+  the means across states always add up to 1;
+- `conf_level = 0.90` requests 90% posterior intervals;
+- `return_draws = TRUE` keeps the draw-level SOPs, which `get_draws()`
+  extracts.
+
+Averaging over patients for every posterior draw can need a lot of memory.
+`options(mostr.blrm_avg_chunk_size = 100)` processes the draws in groups of
+100 to limit it.
 
 ```{r avg-sops, eval = RUN_BAYESIAN}
 options(mostr.blrm_avg_chunk_size = 100)
@@ -115,14 +151,13 @@ plot_sops(
   )
 ```
 
-## Model Diagnostics
+## Check the model against the data
 
-These diagnostics compare empirical trajectory features with features implied
-by the fitted transition model. For `blrm_markov()` plots, posterior draws are
-kept separate through the transition, correlation, and variogram summaries;
-`seed` controls posterior-draw selection.
-The transition plots use up to sixteen evenly spaced visits, shared between
-observed and fitted results.
+As in `vignette("full-po-sops")`, each diagnostic is computed once from the
+observed trajectories and once from the fitted model. For Bayesian fits,
+the model-based summary is calculated separately for each posterior draw and
+only then summarized across draws; `seed` makes the choice of draws reproducible. The transition
+heatmaps use at most sixteen evenly spaced days.
 
 ```{r diagnostics-transitions-observed, eval = RUN_BAYESIAN, fig.width = 9, fig.height = 9}
 diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
@@ -150,6 +185,7 @@ plot_transitions(
 
 ```{r diagnostics-correlation-observed, eval = RUN_BAYESIAN}
 plot_correlation(
+  fill_limits = c(0, 1),
   raw_data,
   times = seq_len(FOLLOW_UP),
   show_values = FALSE
@@ -159,6 +195,7 @@ plot_correlation(
 
 ```{r diagnostics-correlation-model, eval = RUN_BAYESIAN}
 plot_correlation(
+  fill_limits = c(0, 1),
   fit_blrm,
   times = seq_len(FOLLOW_UP),
   y_levels = fit_blrm$ylevels,

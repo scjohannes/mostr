@@ -11,19 +11,37 @@ vignette: >
 source("_setup.R", local = TRUE)
 ```
 
-This vignette fits one full proportional-odds `orm_markov()` transition model and
-compares two uncertainty routes for marginal SOPs:
+Analytical confidence intervals (`vignette("analytical-confidence-intervals")`)
+are not available for every model or summary. Two general alternatives work
+with frequentist models fitted by `orm_markov()` or `vglm_markov()`:
 
-1. Multivariate-normal (MVN) simulation from the fitted coefficient covariance.
-2. Patient bootstrap with model refitting.
+1. **Multivariate-normal (MVN) simulation**, `method = "mvn"`, draws many
+   coefficient vectors from a multivariate normal distribution centered on
+   the estimates, with the model's covariance matrix. For each draw it
+   recomputes the state occupancy probabilities (SOPs) over the same
+   patients. The spread of the results reflects uncertainty in the
+   coefficients only, with the patients' starting states and covariates
+   treated as given, like the conditional variance of the analytical method.
+2. **Patient bootstrap**, `method = "bootstrap"`, resamples patients with
+   replacement, refits the model to each resample, and recomputes the
+   averaged SOPs over the resampled patients. Its spread reflects both
+   uncertainty in the coefficients and which patients happened to be sampled,
+   like the unconditional variance of the analytical method.
 
-Simulation from MVN trets the covariates (this the paths of the individual patients) as fixed and varies the model coefficients.
+MVN simulation is much faster, because it never refits the model. The
+bootstrap relies less on the normal approximation to the coefficients and
+also reflects variation in the patients averaged over, but refitting can take
+a long time for large models.
 
-The nonparametric patient bootstrap resamples the empirical covariate and previous state distribution.
+This article applies both methods to the same fitted model and compares the
+results. It uses only 50 draws so that it runs quickly; a real analysis needs
+many more, typically 1,000 or more, for stable interval limits.
 
-The number of draws is deliberately tiny for vignette runtime and should be much larger for any real work.
+## Simulate data and fit the model
 
-## Simulate Data
+We simulate 200 patients over 10 days with `sim_actt2_markov()`, which uses
+the eight-state NIAID scale described in `vignette("full-po-sops")`, and fit
+a proportional-odds transition model.
 
 ```{r setup}
 library(mostr)
@@ -45,11 +63,7 @@ raw_data <- sim_actt2_markov(
 )
 
 model_data <- prepare_markov_data(raw_data, absorbing_state = as.integer(ABSORB))
-```
 
-## Fit Model
-
-```{r}
 dd <- rms::datadist(model_data)
 options(datadist = "dd")
 
@@ -63,11 +77,16 @@ fit_orm <- orm_markov(
 )
 ```
 
-## Create SOP Targets
+Both methods rely on what `orm_markov()` stores with the fit. With
+`id_var = "id"`, it computes a covariance matrix that allows for correlation
+between each patient's transitions, which MVN simulation draws from. It also
+keeps the full longitudinal data, which the bootstrap resamples and refits,
+and each patient's starting row, over which `avg_sops()` averages.
 
-The wrapper `orm_markov` stores the full transition data for bootstrap refits and lets
-`avg_sops()` extract the baseline prediction rows automatically. MVN simulation
-uses the cluster-robust covariance returned by `orm_markov(id_var = "id")`.
+## Estimate SOPs
+
+The point estimates are computed once, and both methods start from the same
+object.
 
 ```{r avg-sops}
 avg <- avg_sops(
@@ -79,7 +98,12 @@ avg <- avg_sops(
 )
 ```
 
-## Run Both Methods
+## Run both methods
+
+`workers` sets the number of parallel processes; more than one speeds up the
+bootstrap considerably. `return_draws = TRUE` keeps the individual draws,
+which `get_draws()` extracts for further analysis. Setting the seed makes the
+draws reproducible.
 
 ```{r run-inference}
 set.seed(SEED)
@@ -101,7 +125,7 @@ sop_boot <- inferences(
 )
 ```
 
-## Compare Both Methods
+## Compare the results
 
 ```{r compare}
 comparison <- rbind(
@@ -121,8 +145,19 @@ plot_sops(
   )
 ```
 
-The point estimates are based on the same transition model. The confidence-band widths differ (especially close to baseline) because the two procedures target the variance of different estimands (conditional population average treatment effects vs population average treatment effect). For more information, see Magirr et al. 
+The point estimates are identical, because both come from the same fitted
+model. The intervals differ because the two methods answer different
+questions. MVN simulation measures how precisely the average is known for
+these 200 patients. The bootstrap measures how precisely it is known for the
+population they were sampled from, so it also captures variation in the
+patients' starting states. The difference is largest in the first days,
+when the SOPs depend most strongly on where patients started. Magirr et al.
+(2025) discuss this distinction for covariate-adjusted treatment effects in
+randomized trials.
 
 ## References
 
-Magirr D, Wang C, Przybylski A, Baillie M. Estimating the Variance of Covariate-Adjusted Estimators of Average Treatment Effects in Clinical Trials With Binary Endpoints. Pharm Stat. 2025 Jul-Aug;24(4):e70021. doi: 10.1002/pst.70021.
+Magirr D, Wang C, Przybylski A, Baillie M. Estimating the variance of
+covariate-adjusted estimators of average treatment effects in clinical trials
+with binary endpoints. *Pharmaceutical Statistics*. 2025;24(4):e70021.
+[doi:10.1002/pst.70021](https://doi.org/10.1002/pst.70021)

@@ -11,16 +11,35 @@ vignette: >
 source("_setup.R", local = TRUE)
 ```
 
-This vignette shows the fractional weighted bootstrap (FWB) engine for grouped
-state occupancy probabilities.
+The ordinary patient bootstrap (`vignette("mvn-vs-bootstrap-orm-sops")`)
+draws patients with replacement, so each resample leaves out about a third of
+the patients and counts others several times. In small samples or subgroups,
+a resample can then lack patients in a rare state, and the model cannot be
+refitted, or a subgroup can be missing altogether.
 
-The ordinary refit bootstrap samples patients with replacement, refits the
-transition model, and recomputes SOPs. The FWB keeps every patient in every
-bootstrap replicate, draws one positive exponential weight per patient, refits
-the model with those row-expanded weights, and uses the same patient weights
-when averaging SOPs.
+The *fractional weighted bootstrap* (FWB) avoids this. Instead of resampling,
+it keeps every patient in every replicate and gives each patient a random
+positive weight, drawn from an exponential distribution and scaled to have
+mean 1. For each replicate it
 
-## Fit The Model
+1. refits the transition model, applying each patient's weight to all of
+   that patient's rows; and
+2. averages the patient-level state occupancy probabilities (SOPs) using the
+   same weights.
+
+Like the ordinary bootstrap, the FWB reflects both uncertainty in the model
+coefficients and which patients happened to be sampled.
+
+This article uses the FWB to estimate SOPs within subgroups defined by the
+patients' starting state, and to compare time benefit between arms in these
+subgroups.
+
+## Fit the model
+
+We simulate 160 patients over 10 days with `sim_actt2_markov()`, which uses
+the eight-state NIAID scale described in `vignette("full-po-sops")`. We record
+each patient's starting state, the value of `yprev` on day 1, in a new column
+`starting_state` for use as a subgroup.
 
 ```{r setup}
 library(mostr)
@@ -46,9 +65,9 @@ model_data <- prepare_markov_data(
   raw_data,
   absorbing_state = as.integer(ABSORB),
   factor_previous = TRUE
-) |> 
-  group_by(id) |> 
-  mutate(starting_state = first(yprev)) |> 
+) |>
+  group_by(id) |>
+  mutate(starting_state = first(yprev)) |>
   ungroup()
 
 fit <- orm_markov(
@@ -61,17 +80,16 @@ fit <- orm_markov(
 )
 ```
 
-## Define Grouped SOPs
+## Define SOPs by subgroup
 
-Because `fit` was created with `orm_markov(id_var = "id")`, `sops()` can
-use the stored longitudinal transition data for refits while automatically
-extracting one prediction row per patient for the SOP target. The `by` argument
-asks for subgroup averages by initial observed state.
+`by = "starting_state"` asks `avg_sops()` to average the patient-level SOPs
+separately within each starting state, after setting every patient to each
+treatment value. Because the model was fitted with `orm_markov()`, the full
+longitudinal data needed for refitting and each patient's starting row are
+stored with the fit, so neither needs to be passed again.
 
 ```{r avg-sops}
-# marginalize, but the average within each subgroup
-# weights from FWB are used when averaging
-s <- avg_sops(
+sop_by_start <- avg_sops(
   fit,
   variables = "tx",
   by = "starting_state",
@@ -80,19 +98,20 @@ s <- avg_sops(
   absorb = ABSORB
 )
 
-head(s)
+head(sop_by_start)
 ```
 
-## Fractional Bootstrap
+## Run the fractional weighted bootstrap
 
-Use `method = "fwb"` for fractional weighted refits. In this grouped `sops()`
-example, each draw's `initial_y` subgroup average uses the corresponding
-patient-level FWB weights internally.
+`method = "fwb"` selects the FWB. Within each replicate, the subgroup
+averages use the same patient weights as the refit. We use only 30 replicates
+to keep this example fast; a real analysis needs many more, typically 1,000
+or more.
 
 ```{r run-bootstrap}
 set.seed(SEED)
 sop_fwb <- inferences(
-  s,
+  sop_by_start,
   method = "fwb",
   n_draws = N_BOOT,
   workers = 1,
@@ -100,7 +119,8 @@ sop_fwb <- inferences(
 )
 ```
 
-## Plot
+Each panel shows one starting state. Subgroups with few patients have wider
+intervals.
 
 ```{r compare}
 plot_sops(
@@ -110,21 +130,30 @@ plot_sops(
 )
 ```
 
-## Contrasts
+## Compare time benefit by subgroup
 
-```{r}
-c <- avg_comparisons(
-  fit, 
+Time benefit summarizes the whole ordinal scale in one number: on each day,
+the probability that a patient would be in a better state under treatment
+than under control, minus the probability of a worse state, summed over days.
+See `vignette("many-levels-previous-state-spline")` for a fuller explanation.
+With `by = "starting_state"`, it is reported separately for each starting
+state.
+
+```{r compare-time-benefit}
+tb_fwb <- avg_comparisons(
+  fit,
   times = seq_len(FOLLOW_UP),
   variables = list(tx = c(0, 1)),
   estimand = "time_benefit",
   absorb = ABSORB,
   by = "starting_state"
-) |> 
-  inferences(method = "fwb",
-  n_draws = N_BOOT,
-  workers = 1,
-  return_draws = TRUE)
+) |>
+  inferences(
+    method = "fwb",
+    n_draws = N_BOOT,
+    workers = 1,
+    return_draws = TRUE
+  )
 
-plot_comparisons(c, color_var = "starting_state")
+plot_comparisons(tb_fwb, color_var = "starting_state")
 ```
