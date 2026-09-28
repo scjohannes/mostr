@@ -73,3 +73,4 @@ slides/
 # Optional local performance experiments and results
 /benchmarks/local/
 /src/*.so
+.posit/assistant/settings.json
