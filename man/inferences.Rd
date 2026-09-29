@@ -2,7 +2,7 @@
 % Please edit documentation in R/sops-inference.R
 \name{inferences}
 \alias{inferences}
-\title{Inference for State Occupation Probabilities}
+\title{Inference for State Occupation Probabilities and Time Summaries}
 \usage{
 inferences(
   x,
@@ -22,8 +22,8 @@ inferences(
 }
 \arguments{
 \item{x}{A \code{markov_avg_sops} object from \code{avg_sops()}, a
-\code{markov_sops} object from \code{sops()}, or a \code{markov_avg_comparisons} object
-from \code{\link[=avg_comparisons]{avg_comparisons()}}.}
+\code{markov_sops} object from \code{sops()}, a \code{markov_avg_comparisons} object
+from \code{\link[=avg_comparisons]{avg_comparisons()}}, or a \code{markov_avg_time} object from \code{\link[=avg_time]{avg_time()}}.}
 
 \item{method}{Character. Inference method:
 \itemize{
@@ -49,7 +49,9 @@ sampling variability and its cross-term with coefficient estimation.
 \code{sops()} results support only conditional inference. A complete, named
 coefficient covariance matrix selects conditional inference and overrides
 the model covariance. Character choices are available only for delta
-inference; other methods retain their existing matrix/\code{NULL} behavior.}
+inference; other methods retain their existing matrix/\code{NULL} behavior.
+Averages whose \code{variables} set the starting state (the previous-state
+variable, usually \code{yprev}) support only conditional variance; see Details.}
 
 \item{cluster}{Optional patient-cluster specification. For analytical
 conditional and unconditional variance estimates, supply a
@@ -74,7 +76,7 @@ SOP objects this argument is ignored; rerun \code{sops()}/\code{avg_sops()} with
 \item{conf_type}{Type of frequentist confidence interval. \code{"auto"} uses
 percentile intervals for draw-based methods, componentwise logit-delta
 intervals for SOP probabilities, and identity-scale Wald intervals for
-analytical comparisons:
+analytical comparisons and average times:
 \itemize{
 \item \code{"auto"}: Method-appropriate default.
 \item \code{"perc"}: Percentile-based intervals from the simulation
@@ -113,8 +115,8 @@ cohort, score-bootstrap and FWB draws include the draw-specific
 \code{score_weight} or \code{fwb_weight} column.
 }
 \description{
-Adds confidence intervals to SOP objects using analytical delta,
-simulation-based, or bootstrap methods. The default method is
+Adds confidence intervals to SOP, average-time, and comparison objects using
+analytical delta, simulation-based, or bootstrap methods. The default is
 multivariate-normal coefficient simulation. Objects produced from
 \code{rmsb::blrm()} models already contain posterior uncertainty, so non-delta
 calls return them unchanged. \code{method = "delta"} is frequentist-only and
@@ -233,6 +235,21 @@ cannot be assumed to align with the bootstrap clusters.
 
 Choosing conditional or unconditional analytical variance changes the
 standard errors and confidence intervals, not the point estimates.
+}
+
+\subsection{Setting the Starting State}{
+
+When \code{variables} in \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_time]{avg_time()}}, or \code{\link[=avg_comparisons]{avg_comparisons()}} sets
+the previous-state variable, for example
+\code{variables = list(yprev = c("1", "2"))}, every patient starts in the set
+state in each scenario. Real-time summaries then start from that state
+rather than from the patients' observed starting states. Such results
+support only conditional variance: use \code{method = "delta"} with
+\code{vcov = "conditional"} (or a coefficient covariance matrix), or
+\code{method = "mvn"}. Unconditional delta inference and the score-bootstrap,
+bootstrap, and FWB methods error, because they also account for which
+patients were sampled, and that calculation is not supported once the
+starting state is set.
 }
 }
 \examples{

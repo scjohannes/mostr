@@ -105,6 +105,10 @@ delta_trapezoid_weights <- function(times) {
 }
 
 delta_real_time_visit_weights <- function(avg, args) {
+  delta_real_time_weights(avg, args)$visit
+}
+
+delta_real_time_weights <- function(avg, args) {
   time_map <- standardize_time_map(args$time_map)
   source_labels <- unique(as.character(avg$time))
   source_real <- map_sop_time_values(source_labels, time_map)
@@ -127,10 +131,14 @@ delta_real_time_visit_weights <- function(avg, args) {
   mapped_range <- range(source_real)
   lower <- if (use_baseline) baseline_time else mapped_range[1L]
   upper <- mapped_range[2L]
-  target_times <- args$target_times
-  if (is.null(target_times)) {
-    target_times <- sort(unique(source_real))
-  }
+  # Same default grid as `comparison_real_time_target_times()`: include the
+  # interval from `baseline_time` to the first mapped visit when it is used.
+  target_times <- comparison_real_time_target_times(
+    avg,
+    args$time_map,
+    args$target_times,
+    baseline_time
+  )
   target_times <- validate_sop_xout(target_times, lower, upper)
 
   augmented_times <- c(if (use_baseline) baseline_time else NULL, source_real)
@@ -155,7 +163,14 @@ delta_real_time_visit_weights <- function(avg, args) {
     node_weights[as.integer(rownames(weights))] <- weights[, 1L]
   }
   visit_weights <- node_weights[node_index] / counts[node_index]
-  stats::setNames(visit_weights, source_labels)
+  list(
+    visit = stats::setNames(visit_weights, source_labels),
+    baseline = if (use_baseline) {
+      node_weights[match(baseline_time, node_times)]
+    } else {
+      0
+    }
+  )
 }
 
 delta_comparison_operator <- function(object, avg, args, avg_args) {
@@ -185,11 +200,13 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
 
   real_time <- identical(args$estimand, "time_in_state") &&
     !is.null(args$time_map)
+  real_time_weights <- if (real_time) {
+    delta_real_time_weights(avg, args)
+  } else {
+    NULL
+  }
   visit_weights <- if (real_time) {
-    if (is.null(args$time_map)) {
-      stop("`time_map` must be supplied for real-time AUC.")
-    }
-    delta_real_time_visit_weights(avg, args)
+    real_time_weights$visit
   } else if (identical(args$estimand, "time_in_state")) {
     stats::setNames(
       rep(1, length(unique(as.character(source$time)))),
@@ -236,7 +253,25 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
     operator[[i]] <- list(index = index, weight = weight[index])
   }
 
-  propagated <- drop(delta_apply_comparison_operator(operator, source$estimate))
+  # The shared observed baseline cancels between scenarios. Scenarios that set
+  # the starting state instead anchor at that state, a constant that differs
+  # between the compared scenarios.
+  anchor <- numeric(n_result)
+  p_var <- attr(avg, "p_var") %||% "yprev"
+  baseline_weight <- real_time_weights$baseline %||% 0
+  if (identical(varname, p_var) && baseline_weight != 0) {
+    for (i in seq_len(n_result)) {
+      states <- as.character(state_sets[[state_index[i]]])
+      anchor[i] <- baseline_weight *
+        (as.numeric(as.character(object$comparison_level[i]) %in% states) -
+          as.numeric(as.character(object$reference_level[i]) %in% states))
+    }
+  }
+  propagated <- drop(delta_apply_comparison_operator(
+    operator,
+    source$estimate
+  )) +
+    anchor
   if (
     any(!is.finite(propagated)) ||
       any(

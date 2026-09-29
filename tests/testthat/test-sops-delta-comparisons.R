@@ -336,7 +336,7 @@ test_that("factor-time ORM differences match public finite differences", {
   expect_equal(inferred$std.error, expected_se, tolerance = 1e-12)
 })
 
-test_that("delta real-time weights exclude baseline unless explicitly targeted", {
+test_that("delta real-time weights include the baseline interval by default", {
   case <- delta_comparison_factor_case()
   avg <- avg_sops(
     case$fit,
@@ -353,11 +353,13 @@ test_that("delta real-time weights exclude baseline unless explicitly targeted",
   anchored <- mostr:::delta_real_time_visit_weights(avg, args)
   args$baseline_time <- NULL
   unanchored <- mostr:::delta_real_time_visit_weights(avg, args)
-  expected <- mostr:::delta_trapezoid_weights(
-    sort(unique(unname(case$time_map)))
-  )
+  nodes <- sort(unique(unname(case$time_map)))
+  expected <- mostr:::delta_trapezoid_weights(nodes)
+  # The default grid starts at `baseline_time`, so the first visit also
+  # receives half of the baseline-to-first-visit interval.
+  expected_anchored <- mostr:::delta_trapezoid_weights(c(0, nodes))[-1L]
 
-  expect_equal(unname(anchored), expected)
+  expect_equal(unname(anchored), expected_anchored)
   expect_equal(unname(unanchored), expected)
 
   args$baseline_time <- min(case$time_map)

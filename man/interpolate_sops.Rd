@@ -50,7 +50,10 @@ real-day summaries.
 }
 
 With RCT standardization from \code{\link[=avg_sops]{avg_sops()}}, the empirical baseline anchor is
-shared across treatment counterfactual groups.
+shared across treatment counterfactual groups. When \code{variables} in
+\code{\link[=avg_sops]{avg_sops()}} sets the previous-state variable (for example \code{yprev}), every
+patient starts in the set state, so the anchor for that scenario gives
+probability 1 to that state and 0 to the others.
 
 If \code{x} contains stored simulation, bootstrap, or posterior draws, the draws
 are interpolated too. Interval columns are then recomputed from the

@@ -40,9 +40,10 @@ covariates. The internal \code{rowid} column is regenerated. If \code{NULL}, use
 one complete designated starting profile per fitted patient. \code{refit_data}
 is never used as a prediction-profile fallback.}
 
-\item{variables}{A named list specifying the variable(s) to standardize over.
-E.g., \code{list(tx = c(0, 1))} creates counterfactual datasets for treatment
-and control.}
+\item{variables}{Optional named list specifying covariates to set before
+averaging. E.g., \code{list(tx = c(0, 1))} estimates probabilities if every
+patient received control or treatment. The default, \code{NULL}, averages with
+each patient's observed covariates, including their observed treatment.}
 
 \item{by}{Optional character vector of additional variables to group by
 after standardization. Rows missing any grouping value are omitted; an
@@ -106,19 +107,23 @@ extraction with \code{get_draws()}.}
 A data frame of class \code{markov_avg_sops} with columns:
 \item{time}{Time point}
 \item{state}{State level}
-\item{(variables)}{Value of standardization variable (e.g., tx)}
+\item{(variables)}{Values requested in \code{variables}, when supplied}
 \item{estimate}{Average probability across individuals}
 \item{conf.low, conf.high, std.error}{For \code{blrm} fits, posterior
 uncertainty summaries computed directly from marginalized SOP draws}
 }
 \description{
-Computes standardized (marginal) state occupation probabilities using
-G-computation. Creates counterfactual cohorts by setting all individuals
-to each level of the treatment variable and averaging over the covariate
-distribution.
+Averages state occupation probabilities over patients' starting states and
+covariates. With \code{variables = NULL}, uses each patient's observed covariates.
+Supply \code{variables} to set the specified covariates to common values before
+averaging, for example to estimate probabilities under each treatment.
 }
 \details{
-This function implements G-computation (standardization) for Markov SOPs:
+With \code{variables = NULL}, this function averages patients' SOPs using their
+observed covariates, returning one estimate per time and state. Supply \code{by}
+to average separately within groups.
+
+Supplying \code{variables} implements G-computation (standardization):
 \enumerate{
 \item \strong{Counterfactual Creation}: For each value in \code{variables}, creates a
 copy of \code{newdata} with that variable set to the specified value.
@@ -129,8 +134,9 @@ each time-state-treatment combination, yielding population-average
 (marginal) probabilities.
 }
 
-The result represents the expected SOP if the entire population received
-treatment vs. control, averaged over the observed covariate distribution.
+With \code{variables = list(tx = c(0, 1))}, the result represents the expected SOP
+if the entire population received treatment or control, averaged over the
+observed covariate distribution.
 For automatic wrapper-stored standardization, that distribution contains
 exactly the fitted patients with a complete designated starting profile and
 at least one usable likelihood transition. A missing response at the
@@ -162,6 +168,9 @@ fit <- vglm_markov(
 )
 
 # Wrapper-fitted models can use their stored designated starting profiles.
+observed <- avg_sops(fit, times = 1:60, y_levels = 1:6, absorb = 6)
+
+# Set treatment to each requested value before averaging.
 result <- avg_sops(
   model = fit,
   variables = list(tx = c(0, 1)),

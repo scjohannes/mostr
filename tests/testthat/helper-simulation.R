@@ -123,3 +123,25 @@ make_score_bootstrap_case <- function(
     absorb = 6
   )
 }
+
+make_observed_average_case <- function() {
+  skip_if_not_installed("VGAM")
+  skip_if_not_installed("rms")
+  data <- make_test_data(
+    n_patients = 60,
+    follow_up_time = 6,
+    seed = 3211,
+    treatment_effect = 0.8
+  )
+  list(
+    data = data,
+    model = vglm_markov(
+      ordered(y) ~ time + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      id_var = "id"
+    ),
+    times = 1:3,
+    absorb = 6
+  )
+}

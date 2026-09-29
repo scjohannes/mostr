@@ -68,13 +68,18 @@ standardization.}
 labels to real elapsed times. Used by \code{"time_in_state"} and
 \code{"time_benefit"}.}
 
-\item{baseline_time}{Real time of the observed baseline state used as an
-interpolation anchor, or \code{NULL} to disable baseline anchoring. See
-\code{\link[=interpolate_sops]{interpolate_sops()}}.}
+\item{baseline_time}{Real time at which patients are in their starting state,
+used with \code{time_map}. The default \code{0} means that real-time totals start
+from the starting state at time 0. Set to \code{NULL} to start at the first
+mapped visit instead. See \code{\link[=interpolate_sops]{interpolate_sops()}}.}
 
-\item{target_times}{Optional numeric real-time grid when \code{time_map} is
-supplied. When omitted, real-time comparisons use the mapped modeled
-follow-up times and exclude the baseline interval.}
+\item{target_times}{Optional numeric grid of real times, used with
+\code{time_map}. Probabilities are linearly interpolated at these times, and
+totals are calculated with the trapezoidal rule over the grid. When
+omitted, the grid is \code{baseline_time} followed by the mapped visit times, so
+totals cover the whole period from the starting state to the last visit.
+With \code{baseline_time = NULL}, the omitted grid is the mapped visit times
+only.}
 
 \item{time_unit}{Optional label stored in output.}
 

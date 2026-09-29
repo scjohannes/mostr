@@ -21,10 +21,11 @@ reference:
       - orm_markov
       - vglm_markov
       - blrm_markov
-  - title: Estimate probabilities and treatment contrasts
+  - title: Estimate probabilities, time in states, and treatment contrasts
     contents:
       - sops
       - avg_sops
+      - avg_time
       - avg_comparisons
       - inferences
       - time_in_state
@@ -82,3 +83,6 @@ articles:
       - mvn-vs-bootstrap-orm-sops
       - fractional-weighted-bootstrap-sops
       - bayesian-rmsb-sops
+  - title: Simulation studies
+    contents:
+      - waning-treatment-effect-sops

@@ -4,16 +4,19 @@
 \alias{vcov.markov_sops}
 \alias{vcov.markov_avg_sops}
 \alias{vcov.markov_avg_comparisons}
-\title{Analytical Covariance for SOPs and Average Comparisons}
+\alias{vcov.markov_avg_time}
+\title{Analytical Covariance for SOPs, Average Times, and Comparisons}
 \usage{
 \method{vcov}{markov_sops}(object, rows = NULL, ...)
 
 \method{vcov}{markov_avg_sops}(object, rows = NULL, ...)
 
 \method{vcov}{markov_avg_comparisons}(object, rows = NULL, ...)
+
+\method{vcov}{markov_avg_time}(object, rows = NULL, ...)
 }
 \arguments{
-\item{object}{A \code{markov_sops}, \code{markov_avg_sops}, or
+\item{object}{A \code{markov_sops}, \code{markov_avg_sops}, \code{markov_avg_time}, or
 \code{markov_avg_comparisons} object returned by \code{inferences(method = "delta")}.}
 
 \item{rows}{Optional numeric or logical row selection, or analytical row-key

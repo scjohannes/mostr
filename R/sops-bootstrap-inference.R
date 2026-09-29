@@ -142,7 +142,7 @@ inferences_bootstrap <- function(
       !ylevel_names %in% as_state_labels(missing_states)
     ]
 
-    grid <- do.call(expand.grid, variables)
+    grid <- create_counterfactual_grid(variables)
     if (newdata_supplied) {
       newdata_cf <- prediction_data
       n_cf <- nrow(grid)

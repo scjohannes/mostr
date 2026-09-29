@@ -129,7 +129,8 @@ test_that("avg_comparisons() uses real-time AUC for time-in-state", {
         estimand = "time_in_state",
         state_sets = "1",
         times = 1:2,
-        time_map = c("1" = 1, "2" = 3)
+        time_map = c("1" = 1, "2" = 3),
+        baseline_time = NULL
       )
     }
   )

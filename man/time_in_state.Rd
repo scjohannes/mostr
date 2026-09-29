@@ -105,6 +105,10 @@ boot_effects <- time_in_state(avg_boot, target_states = 1)
 }
 
 }
+\seealso{
+\code{\link[=avg_time]{avg_time()}} for model-level average time estimates with analytical,
+simulation, bootstrap, or posterior uncertainty.
+}
 \keyword{auc}
 \keyword{bootstrap}
 \keyword{time-in-state}

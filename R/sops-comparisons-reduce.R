@@ -15,7 +15,8 @@ avg_comparison_from_avg_sops <- function(
     target_times <- comparison_real_time_target_times(
       x,
       time_map,
-      target_times
+      target_times,
+      baseline_time
     )
     x <- interpolate_sops(
       x,
@@ -86,12 +87,20 @@ avg_comparison_from_avg_sops <- function(
   point
 }
 
-comparison_real_time_target_times <- function(x, time_map, target_times) {
+# Default real-time grid: the observed starting-state time, when used, followed
+# by the mapped visit times, so totals cover the whole baseline-to-last-visit
+# period. Keep in sync with `delta_real_time_weights()`.
+comparison_real_time_target_times <- function(
+  x,
+  time_map,
+  target_times,
+  baseline_time = NULL
+) {
   if (!is.null(target_times)) {
     return(target_times)
   }
   time_map <- standardize_time_map(time_map)
-  sort(unique(map_sop_time_values(x$time, time_map)))
+  sort(unique(c(baseline_time, map_sop_time_values(x$time, time_map))))
 }
 
 reduce_avg_sop_metric_df <- function(
@@ -198,17 +207,14 @@ reduce_time_in_state_comparison_df <- function(
 
   for (i in seq_along(state_sets)) {
     states <- state_sets[[i]]
-    keep <- as.character(data$state) %in% as.character(states)
-    work <- data[keep, , drop = FALSE]
-    by_time_cols <- unique(c(draw_cols, "time", varname, by))
-    by_time <- aggregate_value(work, value_col, by_time_cols, sum)
-
     reduce_cols <- unique(c(draw_cols, varname, by))
-    if (isTRUE(real_time)) {
-      totals <- aggregate_auc(by_time, value_col, reduce_cols)
-    } else {
-      totals <- aggregate_value(by_time, value_col, reduce_cols, sum)
-    }
+    totals <- reduce_state_time_df(
+      data,
+      states,
+      value_col,
+      reduce_cols,
+      real_time
+    )
 
     comp <- compare_counterfactual_levels(
       data = totals,
@@ -238,6 +244,27 @@ reduce_time_in_state_comparison_df <- function(
       value_col
     )
   )
+}
+
+reduce_state_time_df <- function(
+  data,
+  states,
+  value_col,
+  group_cols,
+  real_time
+) {
+  keep <- as.character(data$state) %in% as.character(states)
+  by_time <- aggregate_value(
+    data[keep, , drop = FALSE],
+    value_col,
+    unique(c(group_cols, "time")),
+    sum
+  )
+  if (isTRUE(real_time)) {
+    aggregate_auc(by_time, value_col, group_cols)
+  } else {
+    aggregate_value(by_time, value_col, group_cols, sum)
+  }
 }
 
 aggregate_value <- function(data, value_col, group_cols, fun) {
@@ -420,7 +447,8 @@ avg_comparison_time_benefit_point <- function(
     target_times <- comparison_real_time_target_times(
       ind,
       time_map,
-      target_times
+      target_times,
+      baseline_time
     )
     ind <- interpolate_sops(
       ind,
@@ -704,10 +732,12 @@ summarize_comparison_draws <- function(
 ) {
   conf_level <- validate_conf_level(conf_level)
   alpha <- 1 - conf_level
+  # Keep groups in the order they first appear, which follows the point
+  # reduction, rather than the alphabetical order of `interaction()` levels.
+  key <- as.character(split_key(draws_df, group_cols))
   groups <- split(
     seq_len(nrow(draws_df)),
-    split_key(draws_df, group_cols),
-    drop = TRUE
+    factor(key, levels = unique(key))
   )
   out <- draws_df[vapply(groups, `[`, integer(1), 1L), group_cols, drop = FALSE]
   values <- lapply(groups, function(idx) draws_df$estimate[idx])

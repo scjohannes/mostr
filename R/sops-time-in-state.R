@@ -269,6 +269,8 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #' }
 #'
 #' @keywords time-in-state auc bootstrap
+#' @seealso [avg_time()] for model-level average time estimates with analytical,
+#'   simulation, bootstrap, or posterior uncertainty.
 #' @export
 time_in_state <- function(
   x,

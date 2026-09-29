@@ -1,5 +1,32 @@
 # mostr 0.1.0
 
+* `avg_sops()` now accepts `variables = NULL` to average over patients using
+  their observed starting states and covariates, with the existing analytical,
+  posterior, simulation, and bootstrap inference methods.
+
+* `avg_time()` estimates average total time in separate or pooled states, using
+  visit sums or mapped elapsed-time integration. It supports conditional and
+  unconditional analytical variance, posterior intervals, and all existing
+  simulation and bootstrap methods. Use `vcov()` for analytical covariance and
+  `get_draws()` for retained time-total draws.
+
+* With `time_map` and no `target_times`, `avg_comparisons(estimand =
+  "time_in_state")` (and `"time_benefit"`) now integrates from `baseline_time`
+  (default `0`) to the last mapped visit, including the interval before the
+  first visit. Previously, the omitted grid started at the first mapped visit.
+  Set `baseline_time = NULL` or supply `target_times` to choose the period.
+  `avg_time()` uses the same default.
+
+* When `variables` sets the starting state (for example
+  `variables = list(yprev = c("1", "2"))`), real-time summaries from
+  `avg_time()`, `avg_comparisons(estimand = "time_in_state")`, and
+  `interpolate_sops()` now start each scenario in the set state at
+  `baseline_time`. Previously they started from the patients' observed starting
+  states. These results support only conditional variance:
+  `inferences(method = "delta")` requires `vcov = "conditional"` (or a
+  coefficient covariance matrix), and `method = "mvn"` remains available;
+  unconditional delta, score-bootstrap, bootstrap, and FWB inference now error.
+
 * `plot_correlation()` and `plot_variogram()` now default to Spearman rank
   correlation for observed data and fitted models, accounting for tied states.
   Use `method = "pearson"` to retain the previous calculation.
