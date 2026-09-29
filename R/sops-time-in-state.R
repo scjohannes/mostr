@@ -220,8 +220,10 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #' @param target_times Optional numeric real-time grid for tidy SOP outputs when
 #'   `time_map` is supplied. This controls the interpolation grid used for AUC,
 #'   for example `target_times = 1:28` with `baseline_time = 0` uses day 0 as an
-#'   anchor but starts the AUC at day 1. If `NULL`, integration uses only the
-#'   mapped follow-up nodes and excludes the baseline interval.
+#'   anchor but starts the AUC at day 1. If `NULL`, integration runs from
+#'   `baseline_time` through the mapped follow-up times, matching [avg_time()]
+#'   and [avg_comparisons()]. With `baseline_time = NULL`, it starts at the
+#'   first mapped follow-up time.
 #'
 #' @return
 #' \itemize{
@@ -330,13 +332,12 @@ time_in_state <- function(
       if (is.null(time_map)) {
         stop("`time_map` must be supplied for real-time AUC.")
       }
-      if (is.null(target_times)) {
-        standardized_map <- standardize_time_map(time_map)
-        target_times <- sort(unique(map_sop_time_values(
-          sops$time,
-          standardized_map
-        )))
-      }
+      target_times <- comparison_real_time_target_times(
+        sops,
+        time_map,
+        target_times,
+        baseline_time
+      )
       sops <- interpolate_sops(
         sops,
         time_map = time_map,

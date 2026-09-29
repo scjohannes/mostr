@@ -535,3 +535,36 @@ test_that("posterior average times keep the requested state-set order", {
   )
   expect_identical(comparison$state_set, c("zeta", "alpha"))
 })
+
+test_that("time_in_state() default grid matches avg_time()", {
+  case <- make_avg_time_case(factor_time = TRUE)
+  time_map <- c("1" = 2, "2" = 7, "3" = 9)
+  avg <- avg_sops(case$model, absorb = 3, times = 1:3)
+  for (baseline_time in list(0, NULL)) {
+    expected <- avg_time(
+      case$model,
+      absorb = 3,
+      times = 1:3,
+      state_sets = list(alive = 1:2, all = 1:3),
+      time_map = time_map,
+      baseline_time = baseline_time
+    )
+    alive <- time_in_state(
+      avg,
+      target_states = 1:2,
+      time_map = time_map,
+      baseline_time = baseline_time
+    )
+    all <- time_in_state(
+      avg,
+      target_states = 1:3,
+      time_map = time_map,
+      baseline_time = baseline_time
+    )
+    expect_equal(
+      c(alive$total_time, all$total_time),
+      expected$estimate[match(c("alive", "all"), expected$state_set)]
+    )
+    expect_equal(all$total_time, if (is.null(baseline_time)) 7 else 9)
+  }
+})

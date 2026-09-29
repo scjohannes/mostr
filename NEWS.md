@@ -11,7 +11,8 @@
   `get_draws()` for retained time-total draws.
 
 * With `time_map` and no `target_times`, `avg_comparisons(estimand =
-  "time_in_state")` (and `"time_benefit"`) now integrates from `baseline_time`
+  "time_in_state")` (and `"time_benefit"`) and `time_in_state()` for SOP data
+  frames now integrate from `baseline_time`
   (default `0`) to the last mapped visit, including the interval before the
   first visit. Previously, the omitted grid started at the first mapped visit.
   Set `baseline_time = NULL` or supply `target_times` to choose the period.

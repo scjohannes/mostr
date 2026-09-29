@@ -120,8 +120,8 @@ totals sum probabilities; mapped real-time totals use linear interpolation and
 trapezoidal integration. With omitted `target_times`,
 `comparison_real_time_target_times()` builds the grid as `baseline_time`
 followed by the mapped visit times (visit times only when
-`baseline_time = NULL`); average times, all real-time average comparisons, and
-`delta_real_time_weights()` share this default so point, draw, and analytical
+`baseline_time = NULL`); average times, all real-time average comparisons,
+tidy-SOP `time_in_state()`, and `delta_real_time_weights()` share this default so point, draw, and analytical
 totals cover the same period.
 Simulation, bootstrap, and posterior inference reduce each draw before computing
 time-total summaries. `summarize_comparison_draws()` keeps groups in their
