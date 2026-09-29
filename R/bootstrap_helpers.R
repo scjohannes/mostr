@@ -33,28 +33,8 @@
 #' an inefficient "oversampling then trimming" strategy. See GitHub issue
 #' tidymodels/rsample#357 for details.
 #'
-#' @examples
-#' \dontrun{
-#' # Generate 2000 bootstrap ID samples
-#' boot_ids <- fast_group_bootstrap(my_data, id_var = "id", n_boot = 2000)
-#'
-#' # Each element contains only the sampled IDs (very small)
-#' boot_ids[[1]]
-#'
-#' # To get a full bootstrap sample, materialize it:
-#' boot_sample <- materialize_bootstrap_sample(boot_ids[[1]], my_data, "id")
-#'
-#' # Use with parallel processing - data is materialized on each worker
-#' library(furrr)
-#' plan(callr)
-#' results <- future_map(boot_ids, function(ids) {
-#'   boot_data <- materialize_bootstrap_sample(ids, my_data, "id")
-#'   analyze_bootstrap(boot_data)
-#' })
-#' }
-#'
 #' @importFrom stats ave
-#' @export
+#' @noRd
 
 fast_group_bootstrap <- function(data, id_var = "id", n_boot) {
   # Input validation
@@ -131,18 +111,7 @@ fast_group_bootstrap <- function(data, id_var = "id", n_boot) {
 #'   \item Each ID can appear multiple times in boot_ids (bootstrap resampling)
 #' }
 #'
-#' @examples
-#' \dontrun{
-#' # Generate bootstrap IDs
-#' boot_ids <- fast_group_bootstrap(my_data, "id", n_boot = 10)
-#'
-#' # Materialize first bootstrap sample
-#' boot_sample_1 <- materialize_bootstrap_sample(boot_ids[[1]], my_data, "id")
-#'
-#' # This is done automatically by apply_to_bootstrap
-#' }
-#'
-#' @export
+#' @noRd
 
 materialize_bootstrap_sample <- function(boot_ids, data, id_var) {
   row_plan <- bootstrap_row_plan(data, id_var)
@@ -333,40 +302,10 @@ fwb_baseline_weights <- function(fwb_weights, baseline_data, id_var) {
 #' processing, which provides isolated R processes for each worker. This makes
 #' it safe to modify the global environment (e.g., for datadist).
 #'
-#' @examples
-#' \dontrun{
-#' # Define analysis function (receives full bootstrap data)
-#' analyze_boot <- function(boot_data) {
-#'   # Update datadist
-#'   dd <- rms::datadist(boot_data)
-#'   assign("dd", dd, envir = .GlobalEnv)
-#'   options(datadist = "dd")
-#'
-#'   # Refit model
-#'   m <- update(original_model, data = boot_data)
-#'
-#'   # Return coefficient
-#'   coef(m)["tx"]
-#' }
-#'
-#' # Generate bootstrap IDs (not full data)
-#' boot_ids <- fast_group_bootstrap(my_data, id_var = "id", n_boot = 2000)
-#'
-#' # Apply to bootstrap samples with just-in-time materialization
-#' results <- apply_to_bootstrap(
-#'   boot_samples = boot_ids,
-#'   analysis_fn = analyze_boot,
-#'   data = my_data,
-#'   id_var = "id",
-#'   workers = 8,
-#'   globals = c("original_model")
-#' )
-#' }
-#'
 #' @importFrom furrr future_map furrr_options
 #' @importFrom future plan
 #' @importFrom future.callr callr
-#' @export
+#' @noRd
 
 apply_to_bootstrap <- function(
   boot_samples,
@@ -491,7 +430,10 @@ apply_to_fwb_bootstrap <- function(
 #' @param update_datadist Logical indicating whether to update datadist
 #'   (only needed for rms::orm models)
 #' @param use_coefstart Logical indicating whether to use starting coefficients
-#'   from the original model when refitting (only for vglm models).
+#'   from the original model when refitting (only for vglm models). Starting
+#'   values (these or a `coefstart` stored with the fit) are used only when
+#'   no state is missing from the sample; a failed refit with starting values
+#'   is retried once without them.
 #' @param fit_weights Optional non-negative row weights for the bootstrap fit.
 #'
 #' @return A list with components:
@@ -507,26 +449,13 @@ apply_to_fwb_bootstrap <- function(
 #' This function wraps common bootstrap operations:
 #' 1. Relevel factors to consecutive integers if states are missing
 #' 2. Update datadist for rms models
-#' 3. Refit the model on the bootstrap data
-#'
-#' @examples
-#' original_data <- data.frame(y = 1:5, x = 1:5)
-#' fit <- lm(y ~ x, data = original_data)
-#' boot_data <- original_data[c(1, 1, 2, 3, 4), ]
-#'
-#' result <- bootstrap_analysis_wrapper(
-#'   boot_data = boot_data,
-#'   model = fit,
-#'   factor_cols = character(0),
-#'   original_data = original_data,
-#'   update_datadist = FALSE
-#' )
-#' names(result)
+#' 3. Refit the model on the bootstrap data (see `use_coefstart` for
+#'    starting values)
 #'
 #' @seealso [relevel_factors_consecutive()], [fast_group_bootstrap()],
 #'   [apply_to_bootstrap()]
 #'
-#' @export
+#' @noRd
 bootstrap_analysis_wrapper <- function(
   boot_data,
   model,
@@ -539,6 +468,12 @@ bootstrap_analysis_wrapper <- function(
   fit_weights = NULL
 ) {
   fit_model <- bootstrap_refit_model(model)
+
+  prior_weight_column <- markov_model_prior_weight_column(fit_model)
+  if (!is.null(prior_weight_column)) {
+    # Fail early rather than refitting without the stored row weights.
+    bootstrap_prior_weights(boot_data, prior_weight_column)
+  }
 
   if (!is.null(fit_weights)) {
     if (
@@ -591,42 +526,32 @@ bootstrap_analysis_wrapper <- function(
     options(datadist = "dd")
   }
 
-  # Refit model
+  # Starting coefficients, whether the original fit's (`use_coefstart`) or a
+  # `coefstart` stored with the fit, only match a sample with every state:
+  # a missing state removes an intercept. Such samples are refitted without
+  # any starting values. Other refits with starting values are retried once
+  # without them if they fail, e.g. when a covariate level is absent.
+  coefstart <- NULL
+  if (use_coefstart && inherits(fit_model, "vglm")) {
+    coefstart <- stats::coef(fit_model)
+  }
+  uses_coefstart <- length(missing_states) == 0 &&
+    (!is.null(coefstart) || bootstrap_has_coefstart(fit_model))
+  refit <- function(with_coefstart) {
+    update_bootstrap_model(
+      fit_model,
+      boot_data,
+      fit_weights = fit_weights,
+      coefstart = if (with_coefstart) coefstart else NULL,
+      drop_coefstart = !with_coefstart
+    )
+  }
+
   m_boot <- tryCatch(
-    {
-      # Attempt with coefstart if conditions met
-      if (
-        use_coefstart &&
-          inherits(fit_model, "vglm") &&
-          length(missing_states) == 0
-      ) {
-        tryCatch(
-          {
-            update_bootstrap_model(
-              fit_model,
-              boot_data,
-              fit_weights = fit_weights,
-              coefstart = stats::coef(fit_model)
-            )
-          },
-          error = function(e) {
-            # If coefstart fails (e.g. non-conformable due to dropped predictor levels),
-            # fall back to standard update
-            update_bootstrap_model(
-              fit_model,
-              boot_data,
-              fit_weights = fit_weights
-            )
-          }
-        )
-      } else {
-        # Standard update without coefstart
-        update_bootstrap_model(
-          fit_model,
-          boot_data,
-          fit_weights = fit_weights
-        )
-      }
+    if (uses_coefstart) {
+      tryCatch(refit(TRUE), error = function(e) refit(FALSE))
+    } else {
+      refit(FALSE)
     },
     error = function(e) {
       warning("Bootstrap model fitting failed: ", e$message)
@@ -648,7 +573,8 @@ bootstrap_datadist_data <- function(data) {
     "boot_id",
     "new_id",
     "fwb_weight",
-    ".mostr_fit_weight"
+    ".mostr_fit_weight",
+    markov_prior_weight_column()
   )
   data[, setdiff(names(data), metadata_cols), drop = FALSE]
 }
@@ -667,6 +593,17 @@ bootstrap_refit_model <- function(model) {
 }
 
 bootstrap_original_fit_weights <- function(model, data) {
+  if (!is.null(markov_model_refit_args(model))) {
+    # Wrapper fits store their row weights as a column of the refit data, so
+    # resampled rows carry their own weights. Unweighted wrapper fits have
+    # unit weights.
+    prior_weight_column <- markov_model_prior_weight_column(model)
+    if (is.null(prior_weight_column)) {
+      return(rep(1, nrow(data)))
+    }
+    return(bootstrap_prior_weights(data, prior_weight_column))
+  }
+
   stored_weights <- bootstrap_stored_fit_weights(model, data)
   if (!is.null(stored_weights)) {
     return(stored_weights)
@@ -705,6 +642,22 @@ bootstrap_original_fit_weights <- function(model, data) {
   }
 
   as.numeric(weights)
+}
+
+bootstrap_prior_weights <- function(data, column) {
+  if (!column %in% names(data)) {
+    stop(
+      "The bootstrap data do not contain the model's row weights (column `",
+      column,
+      "`). Resample the refit data stored on the fitted model.",
+      call. = FALSE
+    )
+  }
+  weights <- data[[column]]
+  if (!is.numeric(weights) || any(!is.finite(weights)) || any(weights < 0)) {
+    stop("Original model weights must be non-negative finite row weights.")
+  }
+  weights
 }
 
 bootstrap_stored_fit_weights <- function(model, data) {
@@ -772,46 +725,102 @@ update_bootstrap_model <- function(
   model,
   boot_data,
   fit_weights = NULL,
-  coefstart = NULL
+  coefstart = NULL,
+  drop_coefstart = FALSE
 ) {
-  has_fit_weights <- !is.null(fit_weights)
+  refit_args <- markov_model_refit_args(model)
+  model_call <- if (!is.null(refit_args)) bootstrap_model_call(model) else NULL
 
-  updated <- if (has_fit_weights && !is.null(coefstart)) {
-    suppress_orm_bootstrap_weight_warning(
+  if (is.null(model_call)) {
+    # Fits without stored wrapper arguments keep plain `update()` semantics.
+    updated <- bootstrap_update_model(
       model,
-      stats::update(
-        model,
-        data = boot_data,
-        weights = .mostr_fit_weight,
-        coefstart = coefstart
-      )
+      boot_data,
+      fit_weights,
+      coefstart,
+      drop_coefstart
     )
-  } else if (has_fit_weights) {
-    suppress_orm_bootstrap_weight_warning(
-      model,
-      stats::update(
-        model,
-        data = boot_data,
-        weights = .mostr_fit_weight
-      )
-    )
-  } else if (!is.null(coefstart)) {
-    suppress_orm_bootstrap_weight_warning(
-      model,
-      stats::update(
-        model,
-        data = boot_data,
-        coefstart = coefstart
-      )
-    )
-  } else {
-    suppress_orm_bootstrap_weight_warning(
-      model,
-      stats::update(model, data = boot_data)
-    )
+    return(markov_inherit_fit_wrapper(updated, model))
   }
 
+  refit_call <- model_call
+  refit_call$data <- quote(boot_data)
+
+  # Wrapper refit data already exclude the rows removed by `subset`, and
+  # starting values are aligned with the original rows, so neither applies to
+  # resampled data.
+  refit_call$subset <- NULL
+  refit_call$etastart <- NULL
+  refit_call$mustart <- NULL
+
+  # Row weights come from columns of the resampled data: FWB refits use the
+  # original weights times the random weights; ordinary refits use the
+  # weights the wrapper stored with each row.
+  prior_weight_column <- markov_model_prior_weight_column(model)
+  if (!is.null(fit_weights)) {
+    refit_call$weights <- quote(.mostr_fit_weight)
+  } else if (!is.null(prior_weight_column)) {
+    refit_call$weights <- as.name(prior_weight_column)
+  }
+
+  # Starting coefficients supplied for this refit replace a stored
+  # `coefstart`; `drop_coefstart` removes the stored one as well.
+  if (!is.null(coefstart)) {
+    refit_call$coefstart <- quote(coefstart)
+  } else if (drop_coefstart) {
+    refit_call$coefstart <- NULL
+  }
+
+  # Wrapper fits store their argument values from fit time. Inline them so
+  # the refit does not re-evaluate expressions that may refer to variables
+  # local to the user's fitting frame or changed after fitting.
+  inlined <- intersect(names(refit_args), setdiff(names(refit_call), ""))
+  inlined <- setdiff(inlined, c("data", "weights"))
+  if (!is.null(coefstart)) {
+    inlined <- setdiff(inlined, "coefstart")
+  }
+  for (nm in inlined) {
+    refit_call[nm] <- list(refit_args[[nm]])
+  }
+
+  updated <- suppress_orm_bootstrap_weight_warning(
+    model,
+    eval(refit_call)
+  )
+
   markov_inherit_fit_wrapper(updated, model)
+}
+
+bootstrap_update_model <- function(
+  model,
+  boot_data,
+  fit_weights,
+  coefstart,
+  drop_coefstart = FALSE
+) {
+  update_call <- quote(stats::update(model, data = boot_data))
+  if (!is.null(fit_weights)) {
+    update_call$weights <- quote(.mostr_fit_weight)
+  }
+  if (!is.null(coefstart)) {
+    update_call$coefstart <- quote(coefstart)
+  } else if (drop_coefstart && bootstrap_has_coefstart(model)) {
+    # `update()` removes an argument that is set to NULL.
+    update_call["coefstart"] <- list(NULL)
+  }
+
+  suppress_orm_bootstrap_weight_warning(model, eval(update_call))
+}
+
+bootstrap_has_coefstart <- function(model) {
+  !is.null(bootstrap_model_call(model)$coefstart)
+}
+
+bootstrap_model_call <- function(model) {
+  if (isS4(model)) {
+    return(tryCatch(methods::slot(model, "call"), error = function(e) NULL))
+  }
+  model$call
 }
 
 suppress_orm_bootstrap_weight_warning <- function(model, expr) {

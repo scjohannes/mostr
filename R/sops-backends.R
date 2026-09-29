@@ -69,28 +69,16 @@ validate_markov_model <- function(object) {
       stop_unsupported_markov_link(link)
     }
 
-    # Check reverse coding
-    # The reverse parameter is stored in the model's call, not in the family object
-    model_call <- model_chk@call
-    reverse_param <- NULL
+    # Read the reverse coding from the fitted family object. Its `infos`
+    # function reports the value used at fit time, however the family was
+    # supplied (inline call, local variable, or family object).
+    reverse_param <- vglm_family_reverse(fam)
 
-    # Try to extract reverse from the family call
-    if ("family" %in% names(model_call) && is.call(model_call$family)) {
-      fam_args <- as.list(model_call$family)[-1] # Remove function name
-      if ("reverse" %in% names(fam_args)) {
-        reverse_param <- tryCatch(
-          eval(fam_args$reverse),
-          error = function(e) NULL
-        )
-      }
-    }
-
-    # If reverse was not explicitly set in the call, we cannot verify it
-    # In this case, we should warn and reject (safer to be conservative)
+    # Reject fits whose reverse coding cannot be verified.
     if (is.null(reverse_param)) {
       stop(
-        "Cannot determine 'reverse' parameter from vglm model call.\n",
-        "For safety, please explicitly specify: family = cumulative(reverse = TRUE, ...)\n",
+        "Cannot determine 'reverse' parameter from the fitted vglm family.\n",
+        "For safety, please refit with: family = cumulative(reverse = TRUE, ...)"
       )
     }
 
@@ -120,6 +108,20 @@ validate_markov_model <- function(object) {
   # Other model types will be caught by the existing class check in soprob_markov
 
   invisible(NULL)
+}
+
+# Return the `reverse` setting of a fitted VGAM family, or NULL when the
+# family does not report it as one non-missing logical value.
+vglm_family_reverse <- function(family) {
+  infos <- tryCatch(methods::slot(family, "infos"), error = function(e) NULL)
+  if (!is.function(infos)) {
+    return(NULL)
+  }
+  reverse <- tryCatch(infos()$reverse, error = function(e) NULL)
+  if (!is.logical(reverse) || length(reverse) != 1L || is.na(reverse)) {
+    return(NULL)
+  }
+  reverse
 }
 
 stop_unsupported_markov_link <- function(link = NULL) {

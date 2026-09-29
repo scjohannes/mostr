@@ -33,7 +33,11 @@
 #' @param weights Optional positive prior weights. A vector supplies one weight
 #'   per observation. For families with multiple responses, a matrix can supply
 #'   one column per response; a vector is recycled across response columns.
-#'   See [VGAM::vglm()] for family-specific weighting behavior.
+#'   See [VGAM::vglm()] for family-specific weighting behavior. Weights are
+#'   evaluated once when the model is fitted, so they can be a column of
+#'   `data` or a vector defined outside it; they must be finite and
+#'   non-negative. Each row keeps its weight in the data stored on the fit, so
+#'   bootstrap refits resample rows together with their weights.
 #' @param etastart Optional starting linear predictors: a matrix with one row
 #'   per observation and \eqn{L} columns, where \eqn{L} is the number of linear
 #'   predictors (\eqn{K - 1} for an ordinal model with \eqn{K} states).
@@ -154,6 +158,12 @@ vglm_markov <- function(
   first_followup_time = NULL,
   ...
 ) {
+  refit_args <- markov_capture_refit_args(
+    match.call(),
+    environment(),
+    names(formals(sys.function())),
+    ...
+  )
   type <- match.arg(type)
   markov_call <- match.call(expand.dots = FALSE)
   markov_reject_legacy_wrapper_args(markov_call$..., "vglm_markov()")
@@ -162,6 +172,24 @@ vglm_markov <- function(
   ocall <- match.call()
   data_was_supplied <- !missing(data)
   original_data <- if (data_was_supplied && is.data.frame(data)) data else NULL
+
+  # Row weights are evaluated once, as `model.frame()` would evaluate them,
+  # and stored as a column of the data. The weights may then refer to
+  # variables that exist only in the caller's frame, and bootstrap refits
+  # resample each row together with its weight.
+  prior_weight_column <- NULL
+  if (!is.null(original_data) && !is.null(ocall$weights)) {
+    prior_weights <- markov_eval_prior_weights(
+      ocall$weights,
+      original_data,
+      environment(formula) %||% parent.frame()
+    )
+    if (!is.null(prior_weights)) {
+      prior_weight_column <- markov_prior_weight_column()
+      original_data[[prior_weight_column]] <- prior_weights
+    }
+  }
+
   formula <- add_rms_formula_helpers(formula)
   if (!is.null(form2)) {
     form2 <- add_rms_formula_helpers(form2)
@@ -227,6 +255,10 @@ vglm_markov <- function(
   )
   mf <- mf[c(1, m)]
   mf$formula <- formula
+  if (!is.null(prior_weight_column)) {
+    mf$data <- original_data
+    mf$weights <- as.name(prior_weight_column)
+  }
   mf$drop.unused.levels <- TRUE
   mf[[1]] <- as.name("model.frame")
   mf <- eval(mf, parent.frame())
@@ -449,7 +481,9 @@ vglm_markov <- function(
     id_var = id_var,
     refit_data = stored$refit_data,
     starting_profile_data = stored$starting_profile_data,
-    starting_profile_metadata = stored$starting_profile_metadata
+    starting_profile_metadata = stored$starting_profile_metadata,
+    refit_args = refit_args,
+    prior_weight_column = prior_weight_column
   )
   answer <- markov_set_fit_wrapper(answer, "vglm_markov")
 
@@ -466,7 +500,9 @@ vglm_markov <- function(
       id_var = id_var,
       refit_data = stored$refit_data,
       starting_profile_data = stored$starting_profile_data,
-      starting_profile_metadata = stored$starting_profile_metadata
+      starting_profile_metadata = stored$starting_profile_metadata,
+      refit_args = refit_args,
+      prior_weight_column = prior_weight_column
     )
     return(robust)
   }

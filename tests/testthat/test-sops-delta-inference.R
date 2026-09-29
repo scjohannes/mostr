@@ -150,7 +150,6 @@ replay_public_sops <- function(object, model) {
   sops(
     model = model,
     newdata = attr(object, "newdata_pred"),
-    refit_data = attr(object, "refit_data"),
     times = args$times,
     y_levels = attr(object, "y_levels"),
     absorb = attr(object, "absorb"),

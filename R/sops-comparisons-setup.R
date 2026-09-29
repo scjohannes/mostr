@@ -39,7 +39,6 @@ validate_avg_comparison_estimand <- function(estimand, state_sets, comparison) {
 avg_comparison_setup <- function(
   model,
   newdata,
-  refit_data,
   variables,
   by,
   times,
@@ -56,7 +55,7 @@ avg_comparison_setup <- function(
 ) {
   validate_markov_model(model)
 
-  data_res <- resolve_markov_source_data(model, newdata, refit_data)
+  data_res <- resolve_markov_source_data(model, newdata)
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
@@ -69,7 +68,11 @@ avg_comparison_setup <- function(
   }
 
   if (!is.null(refit_data)) {
-    validate_markov_id_var(id_var, refit_data, "refit_data")
+    validate_markov_id_var(
+      id_var,
+      refit_data,
+      "the refit data stored on the fitted model"
+    )
   }
   if (!newdata_supplied) {
     validate_markov_id_var(id_var, newdata_orig, "stored model data")
@@ -160,7 +163,6 @@ avg_comparison_setup_from_sops <- function(x) {
 avg_comparison_replay_avg_sops <- function(
   model,
   newdata,
-  refit_data,
   variables,
   by,
   times,
@@ -184,7 +186,6 @@ avg_comparison_replay_avg_sops <- function(
     list(
       model = model,
       newdata = newdata,
-      refit_data = refit_data,
       variables = variables,
       by = by,
       times = times,

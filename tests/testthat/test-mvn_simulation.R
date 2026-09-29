@@ -410,7 +410,6 @@ describe("MVN Simulation-Based Inference for SOPs", {
 
       avg_result <- avg_sops(
         model = m_robust,
-        refit_data = data,
         variables = list(tx = c(0, 1)),
         times = 1:10,
         y_levels = 1:6,

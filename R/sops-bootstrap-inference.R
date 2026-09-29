@@ -60,10 +60,8 @@ inferences_bootstrap <- function(
 
   # --- 1. Extract Stored Attributes ---
   model <- attr(object, "model")
-  newdata_orig <- attr(object, "newdata_orig")
   prediction_data <- attr(object, "newdata_pred")
   newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
-  refit_data <- attr(object, "refit_data") %||% newdata_orig
   call_args <- attr(object, "call_args")
   avg_args <- attr(object, "avg_args")
 
@@ -80,10 +78,7 @@ inferences_bootstrap <- function(
   times <- avg_args$times
   id_var <- avg_args$id_var
 
-  if (is.null(refit_data)) {
-    stop("Full refit data not stored. Cannot perform bootstrap.")
-  }
-
+  refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, id_var, time_var)
 
   if (newdata_supplied && engine == "fwb") {
@@ -453,7 +448,6 @@ inferences_bootstrap_sops_fwb <- function(
   prediction_data <- attr(object, "newdata_pred") %||%
     attr(object, "newdata_orig")
   newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
-  refit_data <- attr(object, "refit_data") %||% markov_model_data(model)
   call_args <- attr(object, "call_args")
 
   time_var <- attr(object, "time_var")
@@ -473,12 +467,7 @@ inferences_bootstrap_sops_fwb <- function(
   if (is.null(prediction_data)) {
     stop("Prediction data not stored. Cannot perform bootstrap.")
   }
-  if (is.null(refit_data)) {
-    stop(
-      "Full refit data not stored. Fit with `orm_markov()` or ",
-      "`vglm_markov(id_var = ...)`, or pass full data to `sops()`."
-    )
-  }
+  refit_data <- stored_refit_bootstrap_data(object, model)
   if (is.null(id_var)) {
     stop(
       "`id_var` is required for fractional weighted bootstrap. Fit with ",
@@ -708,13 +697,29 @@ inferences_bootstrap_sops_fwb <- function(
 # HELPER FUNCTIONS FOR INFERENCE
 # =============================================================================
 
-validate_refit_bootstrap_data <- function(
-  refit_data,
-  id_var,
-  time_var,
-  data_arg = "refit_data"
-) {
-  validate_markov_id_var(id_var, refit_data, data_arg)
+# Refit bootstraps resample the refit data that a wrapper fit stores on the
+# model: they already exclude rows removed by `subset` and carry the row
+# weights. SOP results keep that data in their "refit_data" attribute.
+stored_refit_bootstrap_data <- function(object, model) {
+  refit_data <- attr(object, "refit_data", exact = TRUE) %||%
+    markov_model_refit_data(model)
+  if (is.null(refit_data)) {
+    stop(
+      "Refit bootstrap inference resamples the data stored on the fitted ",
+      "model, but this model has no stored data. Fit it with `orm_markov()` ",
+      "or `vglm_markov()`.",
+      call. = FALSE
+    )
+  }
+  refit_data
+}
+
+validate_refit_bootstrap_data <- function(refit_data, id_var, time_var) {
+  validate_markov_id_var(
+    id_var,
+    refit_data,
+    "the refit data stored on the fitted model"
+  )
 
   if (!is.null(time_var) && time_var %in% names(refit_data)) {
     rows_per_patient <- tabulate(match(
@@ -724,12 +729,9 @@ validate_refit_bootstrap_data <- function(
 
     if (all(rows_per_patient == 1)) {
       stop(
-        "Bootstrap inference requires full longitudinal data (all time points), ",
-        "but `",
-        data_arg,
-        "` appears to be baseline only (one row per patient).\n\n",
-        "For bootstrap: pass the full longitudinal data as `newdata` or ",
-        "`refit_data`.\n",
+        "Bootstrap inference requires full longitudinal data (all time ",
+        "points), but the refit data stored on the fitted model contain one ",
+        "row per patient. Fit the model to the full longitudinal data.\n",
         "For simulation: baseline-only prediction profiles are supported.",
         call. = FALSE
       )

@@ -103,6 +103,13 @@ Unconditional analytical variance estimates instead combine variation
 between patients' predictions with uncertainty in coefficient estimation;
 see \code{\link[=inferences]{inferences()}} for the calculation and supported models.
 
+Row \code{weights} and \code{subset} supplied through \code{...} are evaluated once when
+the model is fitted, looking first in \code{data} and then where
+\code{orm_markov()} was called, so they can be vectors defined outside \code{data}.
+Weights must be finite and non-negative. Each row keeps its weight in the
+data stored on the fit, and the stored data contain only the rows selected
+by \code{subset}, so bootstrap refits resample rows together with their weights.
+
 Model-based SOP and diagnostic workflows require models created by
 \code{orm_markov()}, \code{\link[=vglm_markov]{vglm_markov()}}, or \code{\link[=blrm_markov]{blrm_markov()}}. The wrappers record
 the fitted-data and model-provenance contracts needed by those workflows;

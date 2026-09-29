@@ -3,7 +3,6 @@
 plot_transition_model_setup <- function(
   model,
   newdata,
-  refit_data,
   variables,
   times,
   y_levels,
@@ -20,15 +19,11 @@ plot_transition_model_setup <- function(
     stop("`times` must be supplied for model-based plots.")
   }
 
-  data_res <- resolve_markov_source_data(model, newdata, refit_data)
+  data_res <- resolve_markov_source_data(model, newdata)
   source_data <- data_res$source_data
-  refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
   id_var <- markov_model_id_var(model, id_var) %||% "id"
 
-  if (!is.null(refit_data)) {
-    validate_markov_id_var(id_var, refit_data, "refit_data")
-  }
   if (!newdata_supplied) {
     validate_markov_id_var(id_var, source_data, "stored model data")
   }

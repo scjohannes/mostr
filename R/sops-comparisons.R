@@ -39,8 +39,6 @@
 #'   With `baseline_time = NULL`, the omitted grid is the mapped visit times
 #'   only.
 #' @param time_unit Optional label stored in output.
-#' @param refit_data Optional full longitudinal data used only by refit-bootstrap
-#'   inference. It is not used for point estimates. See [avg_sops()].
 #' @param id_var Name of the patient ID variable. See [avg_sops()].
 #' @param time_var Name of the time variable in the model. See [avg_sops()].
 #' @param p_var Name of the previous state variable in the model. See
@@ -114,7 +112,6 @@ avg_comparisons <- function(
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  refit_data = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -159,7 +156,6 @@ avg_comparisons <- function(
     setup <- avg_comparison_setup(
       model = model,
       newdata = newdata,
-      refit_data = refit_data,
       variables = variables,
       by = by,
       times = times,
@@ -203,7 +199,6 @@ avg_comparisons <- function(
     avg <- avg_comparison_replay_avg_sops(
       model = model,
       newdata = newdata,
-      refit_data = refit_data,
       variables = variables,
       by = by,
       times = times,

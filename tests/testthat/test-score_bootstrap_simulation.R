@@ -6,7 +6,6 @@ test_that("score-bootstrap simulation adds CIs and metadata for avg_sops", {
   withr::local_seed(2001)
   result <- avg_sops(
     model = case$model,
-    refit_data = case$data,
     variables = list(tx = c(0, 1)),
     times = case$times,
     y_levels = case$y_levels,
@@ -34,7 +33,6 @@ test_that("score-bootstrap simulation stores draw-level output with expected str
   withr::local_seed(2002)
   result <- avg_sops(
     model = case$model,
-    refit_data = case$data,
     variables = list(tx = c(0, 1)),
     times = case$times,
     y_levels = case$y_levels,
@@ -67,7 +65,6 @@ test_that("score-bootstrap treats supplied newdata as fixed profiles", {
   avg <- avg_sops(
     model = case$model,
     newdata = profiles,
-    refit_data = case$data,
     variables = list(tx = c(0, 1)),
     times = case$times[1:2],
     y_levels = case$y_levels,
@@ -102,7 +99,6 @@ test_that("score-bootstrap simulation does not expose draws when return_draws is
   withr::local_seed(2003)
   result <- avg_sops(
     model = case$model,
-    refit_data = case$data,
     variables = list(tx = c(0, 1)),
     times = case$times,
     y_levels = case$y_levels,
@@ -127,7 +123,6 @@ test_that("score-bootstrap simulation rejects user-supplied vcov", {
 
   avg_result <- avg_sops(
     model = case$model,
-    refit_data = case$data,
     variables = list(tx = c(0, 1)),
     times = case$times,
     y_levels = case$y_levels,
@@ -153,7 +148,6 @@ test_that("score-bootstrap uses the fixed exponential weight distribution", {
   case <- make_score_bootstrap_case(seed = 2005)
   avg_result <- avg_sops(
     model = case$model,
-    refit_data = case$data,
     variables = list(tx = c(0, 1)),
     times = case$times,
     y_levels = case$y_levels,

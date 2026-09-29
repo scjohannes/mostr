@@ -1,5 +1,31 @@
 # mostr 0.1.0
 
+* Bootstrap refits (`inferences(method = "bootstrap")` and `method = "fwb"`)
+  now always resample the data stored by `orm_markov()` or `vglm_markov()`:
+  the rows used for fitting, after any `subset`, with their
+  fitting weights. The `refit_data` argument of `sops()`, `avg_sops()`,
+  `avg_comparisons()`, `avg_time()`, `plot_transitions()`,
+  `plot_correlation()`, and `plot_variogram()` has been removed; drop it from
+  existing calls. `newdata` still sets the patient profiles used for
+  prediction and can contain any profiles. Refit bootstraps of models fitted
+  without these wrappers now error.
+
+* `bootstrap_model_coefs()` no longer has a `data` argument. It resamples the
+  patients stored on a model fitted with `orm_markov()` or `vglm_markov()`, and
+  `id_var` now defaults to the patient ID column given when fitting.
+
+* `fast_group_bootstrap()`, `materialize_bootstrap_sample()`,
+  `apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
+  `relevel_factors_consecutive()` are no longer exported. Use `inferences()` or
+  `bootstrap_model_coefs()` for bootstrap calculations.
+
+* Bootstrap refits use starting values (from `use_coefstart = TRUE` or a
+  `coefstart` passed to `vglm_markov()`) only when the resampled data contain
+  every outcome state. When a state is missing, the refitted model has fewer
+  intercepts, so it is fitted without starting values. A refit with starting
+  values that fails, for example because a covariate level is absent from the
+  resample, is retried once without them.
+
 * `avg_sops()` now accepts `variables = NULL` to average over patients using
   their observed starting states and covariates, with the existing analytical,
   posterior, simulation, and bootstrap inference methods.

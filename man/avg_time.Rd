@@ -17,7 +17,6 @@ avg_time(
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  refit_data = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -42,8 +41,7 @@ For \code{orm} models, the family must be logistic.}
 supplied, every row supplies a separate starting state and set of
 covariates. The internal \code{rowid} column is regenerated. If \code{NULL}, uses data stored by
 \code{\link[=orm_markov]{orm_markov()}}, \code{\link[=blrm_markov]{blrm_markov()}}, or \code{\link[=vglm_markov]{vglm_markov()}} and requires exactly
-one complete designated starting profile per fitted patient. \code{refit_data}
-is never used as a prediction-profile fallback.}
+one complete designated starting profile per fitted patient.}
 
 \item{variables}{Optional named list of covariates to set before averaging,
 for example \code{list(tx = c(0, 1))} for average times under each treatment.
@@ -90,16 +88,13 @@ example, \code{target_times = 7:28} to total only days 7 to 28.}
 
 \item{time_unit}{Optional label stored in output.}
 
-\item{refit_data}{Optional full longitudinal data used only by refit-bootstrap
-inference. It is not used for point estimates. Defaults to data stored on
-wrapper-fitted models.}
-
 \item{id_var}{Name of the patient ID variable. Required for bootstrap
 inference and for \code{blrm} random-effect prediction. If \code{NULL}, defaults to
 \code{"id"}; for wrapper-fitted models, it is inferred from stored metadata.
 For user-supplied \code{newdata}, \code{id_var} is required only for \code{blrm} random
-effects. Refit bootstrap inference uses \code{id_var} from \code{refit_data} or
-wrapper-stored model data. For \code{blrm} models with \code{include_re = TRUE},
+effects. Refit bootstrap inference resamples patients by this column in
+the data stored on the wrapper-fitted model. For \code{blrm} models with
+\code{include_re = TRUE},
 \code{model$clusterInfo$name} is used before the final \code{"id"} fallback when
 wrapper metadata is absent.}
 

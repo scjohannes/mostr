@@ -1,24 +1,39 @@
+# Mimic a wrapper fit, which stores its refit data and patient ID column.
+with_stored_refit_data <- function(model, data, id_var = "id") {
+  attr(model, "markov_refit_data") <- data
+  attr(model, "markov_id_var") <- id_var
+  model
+}
+
 test_that("bootstrap_model_coefs validates inputs", {
   expect_error(
-    bootstrap_model_coefs(
-      lm(mpg ~ wt, data = mtcars),
-      data = mtcars,
-      n_boot = 1
-    ),
+    bootstrap_model_coefs(lm(mpg ~ wt, data = mtcars), n_boot = 1),
     "model must be an orm object",
     fixed = TRUE
   )
 
   model <- structure(list(), class = "vglm")
   expect_error(
-    bootstrap_model_coefs(model, data = NULL, n_boot = 1),
-    "No data provided",
+    bootstrap_model_coefs(model, n_boot = 1),
+    "The model has no stored data to resample",
     fixed = TRUE
   )
 
   expect_error(
-    bootstrap_model_coefs(model, data = data.frame(patient = 1:2), n_boot = 1),
-    "id_var 'id' not found in data",
+    bootstrap_model_coefs(
+      with_stored_refit_data(model, data.frame(id = 1:2), id_var = NULL),
+      n_boot = 1
+    ),
+    "No patient ID column is known",
+    fixed = TRUE
+  )
+
+  expect_error(
+    bootstrap_model_coefs(
+      with_stored_refit_data(model, data.frame(patient = 1:2)),
+      n_boot = 1
+    ),
+    "id_var 'id' not found in the stored model data",
     fixed = TRUE
   )
 
@@ -26,7 +41,6 @@ test_that("bootstrap_model_coefs validates inputs", {
     expect_error(
       bootstrap_model_coefs(
         lm(mpg ~ wt, data = mtcars),
-        data = mtcars,
         n_boot = 1,
         parallel = TRUE
       ),
@@ -48,6 +62,7 @@ test_that("bootstrap_model_coefs orchestrates bootstrap coefficient extraction",
     tx = c(0, 0, 1, 1),
     yprev = factor(c(0, 0, 0, 0))
   )
+  model <- with_stored_refit_data(model, data)
 
   with_mocked_bindings(
     fast_group_bootstrap = function(data, id_var, n_boot) {
@@ -82,7 +97,6 @@ test_that("bootstrap_model_coefs orchestrates bootstrap coefficient extraction",
       expect_warning(
         result <- bootstrap_model_coefs(
           model,
-          data = data,
           n_boot = 2,
           workers = 1,
           parallel = FALSE
@@ -107,6 +121,7 @@ test_that("bootstrap_model_coefs preserves numeric yprev before bootstrapping", 
     tx = c(0, 1),
     yprev = c(0, 1)
   )
+  model <- with_stored_refit_data(model, data)
 
   observed_is_factor <- NULL
   with_mocked_bindings(
@@ -120,7 +135,7 @@ test_that("bootstrap_model_coefs preserves numeric yprev before bootstrapping", 
     },
     apply_to_bootstrap = function(...) list(list(tx = 1)),
     {
-      result <- bootstrap_model_coefs(model, data = data, n_boot = 1)
+      result <- bootstrap_model_coefs(model, n_boot = 1)
     }
   )
 
@@ -139,6 +154,7 @@ test_that("bootstrap_model_coefs records coefficients and failed refits", {
     yprev = factor(c(1, 1, 1, 1)),
     tx = c(0, 0, 1, 1)
   )
+  model <- with_stored_refit_data(model, data)
 
   call_id <- 0
   with_mocked_bindings(
@@ -171,7 +187,6 @@ test_that("bootstrap_model_coefs records coefficients and failed refits", {
     {
       result <- bootstrap_model_coefs(
         model,
-        data = data,
         n_boot = 2,
         workers = 1,
         use_coefstart = TRUE

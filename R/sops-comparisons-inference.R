@@ -90,7 +90,6 @@ inferences_avg_comparisons_linear <- function(
   avg <- avg_comparison_replay_avg_sops(
     model = attr(object, "model"),
     newdata = newdata,
-    refit_data = attr(object, "refit_data"),
     variables = avg_args$variables,
     by = avg_args$by,
     times = avg_args$times,
@@ -324,12 +323,9 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   setup <- setup_from_avg_comparison_object(object)
   args <- attr(object, "comparison_args")
   model <- attr(object, "model")
-  refit_data <- attr(object, "refit_data") %||% attr(object, "newdata_orig")
+  refit_data <- stored_refit_bootstrap_data(object, model)
   newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
 
-  if (is.null(refit_data)) {
-    stop("Full refit data not stored. Cannot perform bootstrap.")
-  }
   validate_refit_bootstrap_data(refit_data, setup$id_var, setup$time_var)
   if (newdata_supplied && engine == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
