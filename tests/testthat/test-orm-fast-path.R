@@ -238,7 +238,6 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   robust_scaled <- fit_scaled
   avg_default <- mostr::avg_sops(
     robust_default,
-    refit_data = data,
     variables = "tx",
     times = 1:4,
     y_levels = fit_default$yunique,
@@ -247,7 +246,6 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   )
   avg_scaled <- mostr::avg_sops(
     robust_scaled,
-    refit_data = data,
     variables = "tx",
     times = 1:4,
     y_levels = fit_scaled$yunique,
@@ -342,7 +340,6 @@ test_that("orm supports MVN and score-bootstrap inference", {
 
   avg <- mostr::avg_sops(
     robust_fit,
-    refit_data = data,
     variables = "tx",
     times = 1:4,
     y_levels = fit$yunique,

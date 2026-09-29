@@ -24,8 +24,6 @@
 #' @param newdata Optional data frame of prediction profiles for model-based
 #'   plots. If `NULL`, wrapper-fitted models use their stored data and extract
 #'   one prediction row per ID.
-#' @param refit_data Optional full longitudinal data used only for stored-data
-#'   resolution in model-based plots.
 #' @param variables Optional named list with one counterfactual variable. For
 #'   `comparison = "difference"`, at least two values are required and the
 #'   first value is the reference.
@@ -76,7 +74,6 @@
 plot_transitions <- function(
   x,
   newdata = NULL,
-  refit_data = NULL,
   variables = NULL,
   times = NULL,
   y_levels = NULL,
@@ -115,7 +112,6 @@ plot_transitions <- function(
     data <- plot_transitions_model_data(
       model = object,
       newdata = newdata,
-      refit_data = refit_data,
       variables = variables,
       times = times,
       y_levels = y_levels,
@@ -135,8 +131,8 @@ plot_transitions <- function(
     if (!is.data.frame(object)) {
       stop("`object` must be a data frame or a supported Markov model.")
     }
-    if (!is.null(newdata) || !is.null(refit_data)) {
-      stop("`newdata` and `refit_data` are only used for model-based plots.")
+    if (!is.null(newdata)) {
+      stop("`newdata` is only used for model-based plots.")
     }
     if (!is.null(variables)) {
       stop("`variables` is only used for model-based plots.")

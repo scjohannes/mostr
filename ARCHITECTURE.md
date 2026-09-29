@@ -89,6 +89,62 @@ The `markov_sops`, `markov_avg_sops`, `markov_avg_time`, and
 `markov_avg_comparisons` S3 classes describe result semantics. Package-qualified
 calls, native registration symbols, and package options use `mostr`.
 
+Ordinary and fractional weighted bootstrap refits (`update_bootstrap_model()` in
+`R/bootstrap_helpers.R`) are restricted to wrapper fits. They always resample
+the refit data stored on the fit (`markov_model_refit_data()`); the public API
+(`sops()`, `avg_sops()`, `avg_comparisons()`, `avg_time()`, and the plots) has
+no argument for separate refit data. SOP results carry the stored data in their
+internal `refit_data` attribute, and `stored_refit_bootstrap_data()` in
+`R/sops-bootstrap-inference.R` reads it back or errors when a model has none.
+User-supplied `newdata` only changes the prediction profiles, never the refit
+data. `bootstrap_model_coefs()` resamples the same stored data, clustered on the
+fit's stored `id_var` unless the user names another column. The low-level
+helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample()`,
+`apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
+`relevel_factors_consecutive()`) are internal.
+
+Refits rebuild the fitted model's stored call with the resampled data,
+bootstrap weights, and optional starting coefficients. The
+wrappers store the values of the arguments the user passed at fit time
+(`markov_capture_refit_args()`, read back with `markov_model_refit_args()`),
+and refits inline those values instead of re-evaluating the call's argument
+expressions, which may refer to variables local to the user's fitting function
+or changed after fitting; the refitted model's recorded call therefore holds
+those values. A fit-time `coefstart` is inlined the same way unless the refit
+supplies its own starting coefficients or drops starting values
+(`drop_coefstart = TRUE`). `bootstrap_analysis_wrapper()` decides on starting
+values in one place: when the sample contains every state, it refits with the
+original coefficients (`use_coefstart = TRUE`, `vglm` only) or the stored
+`coefstart`, and retries once without any starting values if that refit errors
+(for example, VGAM's non-conformable arguments after a covariate level drops
+out). When states are missing, the relevelled refit has fewer intercepts, so it
+is fitted without any `coefstart`, including the stored one. Row-aligned
+arguments are not stored as values:
+
+- Row `weights` are evaluated once at fit time (in `data`, enclosed by the
+  formula environment for `vglm_markov()` and by the caller's frame for
+  `orm_markov()`; `markov_eval_prior_weights()`) and stored as the reserved
+  column `.mostr_prior_weight` of the fitted and refit data
+  (`markov_prior_weight_column()`, recorded in the
+  `markov_prior_weight_column` attribute). Resampled rows keep their own
+  weights: ordinary refits use `weights = .mostr_prior_weight`, and FWB refits
+  use `.mostr_fit_weight`, the stored weight times the random weight. Wrapper
+  fits never fall back to unweighted refits; bootstrap data without the column
+  are rejected. The column is removed from stored starting profiles and
+  excluded from bootstrap `datadist` data.
+- `subset` is evaluated at fit time (`orm_markov()` and `blrm_markov()` pass
+  the evaluated rows to the backend) and the stored refit data contain only the
+  selected rows, so refit calls drop `subset`. They also drop `etastart` and
+  `mustart`, which are aligned with the original rows. `offset` is rejected.
+
+`update_bootstrap_model()` still refits a model without stored argument values
+with `stats::update()`, but the bootstrap workflows reach it only through
+internal helpers because they require the refit data stored by a wrapper.
+
+The `vglm` reverse-coding check in `validate_markov_model()` reads `reverse`
+from the fitted family object (`family@infos()`, `vglm_family_reverse()`), not
+from the model call, so it holds however the family was supplied.
+
 Conditional variance accounts for coefficient estimation with prediction
 profiles held given. Unconditional variance also accounts for sampled patients
 and their contribution to coefficient estimation. It is available for supported

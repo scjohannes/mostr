@@ -443,7 +443,7 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
   )
 })
 
-test_that("refit_data cannot change automatic standardization profiles", {
+test_that("avg_sops() keeps the refit data stored on the fit", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1014)
@@ -453,28 +453,17 @@ test_that("refit_data cannot change automatic standardization profiles", {
     data = data,
     id_var = "id"
   )
-  altered_refit <- data
-  altered_refit$tx <- 1 - altered_refit$tx
-
-  original <- avg_sops(
+  out <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
     times = 1:2,
     y_levels = 1:6,
     absorb = 6
   )
-  altered <- avg_sops(
-    fit,
-    refit_data = altered_refit,
-    variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = 1:6,
-    absorb = 6
-  )
 
-  expect_equal(original$estimate, altered$estimate, tolerance = 1e-12)
-  expect_equal(attr(original, "newdata_pred"), attr(altered, "newdata_pred"))
-  expect_equal(attr(altered, "refit_data"), altered_refit)
+  # Refit bootstraps resample the stored refit data, not the prediction rows.
+  expect_equal(attr(out, "refit_data"), mostr:::markov_model_refit_data(fit))
+  expect_equal(nrow(attr(out, "refit_data")), nrow(data))
 })
 
 test_that("factor and character time require explicit first follow-up values", {

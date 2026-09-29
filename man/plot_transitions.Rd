@@ -7,7 +7,6 @@
 plot_transitions(
   x,
   newdata = NULL,
-  refit_data = NULL,
   variables = NULL,
   times = NULL,
   y_levels = NULL,
@@ -34,9 +33,6 @@ plot_transitions(
 \item{newdata}{Optional data frame of prediction profiles for model-based
 plots. If \code{NULL}, wrapper-fitted models use their stored data and extract
 one prediction row per ID.}
-
-\item{refit_data}{Optional full longitudinal data used only for stored-data
-resolution in model-based plots.}
 
 \item{variables}{Optional named list with one counterfactual variable. For
 \code{comparison = "difference"}, at least two values are required and the

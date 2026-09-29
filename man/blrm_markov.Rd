@@ -63,6 +63,9 @@ The designated-start profile and fitted-patient eligibility contract
 is the same as for \code{\link[=orm_markov]{orm_markov()}}. In particular, the transition response
 at the starting row may be missing when that patient contributes another
 usable likelihood transition.
+
+A \code{subset} supplied through \code{...} is evaluated once when the model is
+fitted, looking first in \code{data} and then where \code{blrm_markov()} was called.
 }
 \examples{
 \dontrun{

@@ -71,7 +71,11 @@ correction \eqn{n / (n - 1)}, where \eqn{n} is the number of patient clusters.}
 \item{weights}{Optional positive prior weights. A vector supplies one weight
 per observation. For families with multiple responses, a matrix can supply
 one column per response; a vector is recycled across response columns.
-See \code{\link[VGAM:vglm]{VGAM::vglm()}} for family-specific weighting behavior.}
+See \code{\link[VGAM:vglm]{VGAM::vglm()}} for family-specific weighting behavior. Weights are
+evaluated once when the model is fitted, so they can be a column of
+\code{data} or a vector defined outside it; they must be finite and
+non-negative. Each row keeps its weight in the data stored on the fit, so
+bootstrap refits resample rows together with their weights.}
 
 \item{subset}{
   an optional logical vector specifying a subset of

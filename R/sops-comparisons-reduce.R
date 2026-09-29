@@ -424,7 +424,6 @@ avg_comparison_time_benefit_point <- function(
   ind <- sops(
     model = model,
     newdata = setup$newdata_pred,
-    refit_data = setup$refit_data,
     times = setup$times,
     y_levels = y_levels,
     absorb = absorb,

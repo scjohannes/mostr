@@ -280,7 +280,6 @@ test_that("factor visit simulation and bootstrap inference smoke-test", {
 
   avg_full <- avg_sops(
     fit,
-    refit_data = data,
     variables = list(tx = c(0, 1)),
     times = 1:4,
     y_levels = factor(1:4),

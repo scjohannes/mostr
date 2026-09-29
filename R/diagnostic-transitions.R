@@ -29,7 +29,6 @@ plot_transitions_empirical_data <- function(
 plot_transitions_model_data <- function(
   model,
   newdata,
-  refit_data,
   variables,
   times,
   y_levels,
@@ -55,7 +54,6 @@ plot_transitions_model_data <- function(
   setup <- plot_transition_model_setup(
     model = model,
     newdata = newdata,
-    refit_data = refit_data,
     variables = variables,
     times = times,
     y_levels = y_levels,

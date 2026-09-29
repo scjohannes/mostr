@@ -17,7 +17,6 @@ reference:
   - title: Prepare data and fit models
     contents:
       - prepare_markov_data
-      - relevel_factors_consecutive
       - orm_markov
       - vglm_markov
       - blrm_markov
@@ -52,10 +51,6 @@ reference:
   - title: Bootstrap and coefficient utilities
     contents:
       - bootstrap_model_coefs
-      - bootstrap_analysis_wrapper
-      - apply_to_bootstrap
-      - fast_group_bootstrap
-      - materialize_bootstrap_sample
       - get_draws
       - get_effective_coefs
       - get_vcov_robust

@@ -138,23 +138,7 @@ prepare_markov_data <- function(
 #' in Markov models, where missing states would otherwise cause model fitting
 #' failures.
 #'
-#' @examples
-#' \dontrun{
-#' # Relevel y and yprev in bootstrap sample
-#' releveled <- relevel_factors_consecutive(
-#'   data = boot_data,
-#'   factor_cols = c("y", "yprev"),
-#'   original_data = full_data,
-#'   y_levels = 1:6,
-#'   absorb = 6
-#' )
-#'
-#' boot_data <- releveled$data
-#' boot_ylevels <- releveled$ylevels
-#' boot_absorb <- releveled$absorb
-#' }
-#'
-#' @export
+#' @noRd
 relevel_factors_consecutive <- function(
   data,
   factor_cols = c("y", "yprev"),

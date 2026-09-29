@@ -57,6 +57,13 @@
 #'   between patients' predictions with uncertainty in coefficient estimation;
 #'   see [inferences()] for the calculation and supported models.
 #'
+#'   Row `weights` and `subset` supplied through `...` are evaluated once when
+#'   the model is fitted, looking first in `data` and then where
+#'   `orm_markov()` was called, so they can be vectors defined outside `data`.
+#'   Weights must be finite and non-negative. Each row keeps its weight in the
+#'   data stored on the fit, and the stored data contain only the rows selected
+#'   by `subset`, so bootstrap refits resample rows together with their weights.
+#'
 #'   Model-based SOP and diagnostic workflows require models created by
 #'   `orm_markov()`, [vglm_markov()], or [blrm_markov()]. The wrappers record
 #'   the fitted-data and model-provenance contracts needed by those workflows;
@@ -94,6 +101,12 @@ orm_markov <- function(
   x = TRUE,
   y = TRUE
 ) {
+  refit_args <- markov_capture_refit_args(
+    match.call(),
+    environment(),
+    names(formals(sys.function())),
+    ...
+  )
   type <- match.arg(type)
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be supplied as a data frame.")
@@ -123,13 +136,37 @@ orm_markov <- function(
     )
   }
 
-  fit <- rms::orm(
-    formula = formula,
-    data = data,
-    ...,
-    x = x,
-    y = y
-  )
+  # Row weights and `subset` are evaluated once here, in the caller's frame,
+  # so they may refer to variables that exist only there. The weights are
+  # stored as a column of `data`, which keeps them aligned with resampled
+  # rows during bootstrap refits.
+  prior_weight_column <- NULL
+  if (!is.null(dots$weights)) {
+    prior_weights <- markov_eval_prior_weights(
+      dots$weights,
+      data,
+      parent.frame()
+    )
+    if (!is.null(prior_weights)) {
+      prior_weight_column <- markov_prior_weight_column()
+      data[[prior_weight_column]] <- prior_weights
+    }
+  }
+  .mostr_subset <- if (!is.null(dots$subset)) {
+    eval(dots$subset, data, parent.frame())
+  }
+
+  fit_call <- quote(rms::orm(formula = formula, data = data, ..., x = x, y = y))
+  if (!is.null(prior_weight_column)) {
+    fit_call$weights <- as.name(prior_weight_column)
+  }
+  if (!is.null(.mostr_subset)) {
+    fit_call$subset <- quote(.mostr_subset)
+  }
+  # `weights` and `subset` are absorbed here and replaced by the values
+  # evaluated above; all other arguments are passed through unchanged.
+  fit_orm <- function(..., weights, subset) eval(fit_call)
+  fit <- fit_orm(...)
   fit <- markov_normalize_rms_call(
     fit,
     fun = quote(rms::orm),
@@ -139,7 +176,14 @@ orm_markov <- function(
     x = x,
     y = y
   )
-  fit_frame <- markov_rms_model_frame(orm_call, dots, parent.frame())
+  fit_frame <- markov_rms_model_frame(
+    formula,
+    data,
+    dots,
+    subset = .mostr_subset,
+    weight_column = prior_weight_column,
+    eval_env = parent.frame()
+  )
   fit_data <- markov_align_model_data(data, fit_frame)
   stored <- markov_prepare_stored_data(
     data = data,
@@ -157,7 +201,9 @@ orm_markov <- function(
     id_var = id_var,
     refit_data = stored$refit_data,
     starting_profile_data = stored$starting_profile_data,
-    starting_profile_metadata = stored$starting_profile_metadata
+    starting_profile_metadata = stored$starting_profile_metadata,
+    refit_args = refit_args,
+    prior_weight_column = prior_weight_column
   )
   fit <- markov_set_fit_wrapper(fit, "orm_markov")
 
@@ -183,7 +229,9 @@ orm_markov <- function(
       id_var = id_var,
       refit_data = stored$refit_data,
       starting_profile_data = stored$starting_profile_data,
-      starting_profile_metadata = stored$starting_profile_metadata
+      starting_profile_metadata = stored$starting_profile_metadata,
+      refit_args = refit_args,
+      prior_weight_column = prior_weight_column
     )
     return(robust)
   }
@@ -218,6 +266,9 @@ orm_markov <- function(
 #'   at the starting row may be missing when that patient contributes another
 #'   usable likelihood transition.
 #'
+#'   A `subset` supplied through `...` is evaluated once when the model is
+#'   fitted, looking first in `data` and then where `blrm_markov()` was called.
+#'
 #' @return A fitted `blrm` object retaining the data needed by subsequent
 #'   SOP and inference functions.
 #'
@@ -251,6 +302,12 @@ blrm_markov <- function(
   x = TRUE,
   y = TRUE
 ) {
+  refit_args <- markov_capture_refit_args(
+    match.call(),
+    environment(),
+    names(formals(sys.function())),
+    ...
+  )
   if (!requireNamespace("rmsb", quietly = TRUE)) {
     stop("Package 'rmsb' is required for `blrm_markov()`.")
   }
@@ -282,7 +339,12 @@ blrm_markov <- function(
     )
   }
 
-  fit <- rmsb::blrm(
+  # `subset` is evaluated once here, in the caller's frame, so it may refer
+  # to variables that exist only there.
+  .mostr_subset <- if (!is.null(dots$subset)) {
+    eval(dots$subset, data, parent.frame())
+  }
+  fit_call <- quote(rmsb::blrm(
     formula = formula,
     ppo = ppo,
     cppo = cppo,
@@ -290,7 +352,12 @@ blrm_markov <- function(
     ...,
     x = x,
     y = y
-  )
+  ))
+  if (!is.null(.mostr_subset)) {
+    fit_call$subset <- quote(.mostr_subset)
+  }
+  fit_blrm <- function(..., subset) eval(fit_call)
+  fit <- fit_blrm(...)
   fit <- markov_normalize_rms_call(
     fit,
     fun = quote(rmsb::blrm),
@@ -302,7 +369,13 @@ blrm_markov <- function(
     x = x,
     y = y
   )
-  fit_frame <- markov_rms_model_frame(blrm_call, dots, parent.frame())
+  fit_frame <- markov_rms_model_frame(
+    formula,
+    data,
+    dots,
+    subset = .mostr_subset,
+    eval_env = parent.frame()
+  )
   fit_data <- markov_align_model_data(data, fit_frame)
   stored <- markov_prepare_stored_data(
     data = data,
@@ -320,7 +393,8 @@ blrm_markov <- function(
     id_var = id_var,
     refit_data = stored$refit_data,
     starting_profile_data = stored$starting_profile_data,
-    starting_profile_metadata = stored$starting_profile_metadata
+    starting_profile_metadata = stored$starting_profile_metadata,
+    refit_args = refit_args
   )
   markov_set_fit_wrapper(fit, "blrm_markov")
 }
@@ -347,17 +421,31 @@ markov_normalize_rms_call <- function(
   fit
 }
 
-markov_rms_model_frame <- function(rms_call, dots, eval_env) {
-  mf <- rms_call[c(1L, match(c("formula", "data"), names(rms_call), 0L))]
-  for (nm in intersect(c("subset", "weights", "na.action"), names(dots))) {
-    mf[[nm]] <- dots[[nm]]
+# Rebuild the rows used by an rms fit. `subset` is the already evaluated row
+# selection and `weight_column` names the stored row-weight column of `data`.
+markov_rms_model_frame <- function(
+  formula,
+  data,
+  dots,
+  subset = NULL,
+  weight_column = NULL,
+  eval_env = parent.frame()
+) {
+  na_action <- if (!is.null(dots$na.action)) {
+    eval(dots$na.action, eval_env)
+  } else {
+    utils::getFromNamespace("na.delete", "Hmisc")
   }
-  if (is.null(mf$na.action)) {
-    mf$na.action <- utils::getFromNamespace("na.delete", "Hmisc")
+  args <- list(formula = formula, data = data)
+  if (!is.null(subset)) {
+    args$subset <- subset
   }
-  mf$drop.unused.levels <- TRUE
-  mf[[1L]] <- as.name("model.frame")
-  eval(mf, eval_env)
+  if (!is.null(weight_column)) {
+    args$weights <- as.name(weight_column)
+  }
+  args$na.action <- na_action
+  args$drop.unused.levels <- TRUE
+  eval(as.call(c(list(quote(stats::model.frame)), args)))
 }
 
 validate_markov_id_var <- function(id_var, data, data_arg = "data") {
@@ -420,14 +508,87 @@ warn_duplicate_markov_id_time <- function(
   invisible(NULL)
 }
 
+markov_refit_skip_args <- function() {
+  c("data", "subset", "weights", "etastart", "mustart", "offset")
+}
+
+# Capture the values of the arguments a user passed to a fitting wrapper.
+# Bootstrap and FWB refits reuse these values instead of re-evaluating the
+# stored call's argument expressions, which may refer to variables that exist
+# only in the user's fitting frame or that changed after fitting. Arguments
+# evaluated inside `data` (or replaced at refit time) are not captured.
+markov_capture_refit_args <- function(call, env, formal_names, ...) {
+  skip <- markov_refit_skip_args()
+  call_names <- setdiff(names(call)[-1L], "")
+  out <- list()
+
+  for (nm in intersect(call_names, setdiff(formal_names, c("...", skip)))) {
+    out[nm] <- list(get(nm, envir = env, inherits = FALSE))
+  }
+
+  dot_names <- ...names()
+  for (i in seq_len(...length())) {
+    nm <- dot_names[[i]]
+    if (is.null(nm) || is.na(nm) || !nzchar(nm) || nm %in% skip) {
+      next
+    }
+    out[nm] <- list(...elt(i))
+  }
+
+  out
+}
+
+# Name of the column in which the wrappers store row weights. Stored refit
+# data carry this column, so bootstrap resampling keeps each row's weight.
+markov_prior_weight_column <- function() {
+  ".mostr_prior_weight"
+}
+
+# Evaluate a row-weight expression once, with the data and enclosing
+# environment the backend would use, and validate the result.
+markov_eval_prior_weights <- function(expr, data, eval_env) {
+  weights <- eval(expr, data, eval_env)
+  if (is.null(weights)) {
+    return(NULL)
+  }
+  if (is.data.frame(weights)) {
+    weights <- as.matrix(weights)
+  }
+  if (is.matrix(weights) && ncol(weights) == 1L) {
+    weights <- weights[, 1L]
+  }
+  n_weights <- if (is.matrix(weights)) nrow(weights) else length(weights)
+  if (!is.numeric(weights) || n_weights != nrow(data)) {
+    stop(
+      "`weights` must be numeric with one value per row of `data`.",
+      call. = FALSE
+    )
+  }
+  if (any(!is.finite(weights))) {
+    stop("`weights` must be finite.", call. = FALSE)
+  }
+  if (any(weights < 0)) {
+    stop("negative weights not allowed", call. = FALSE)
+  }
+  weights
+}
+
 markov_attach_model_data <- function(
   model,
   data,
   id_var = NULL,
   refit_data = NULL,
   starting_profile_data = NULL,
-  starting_profile_metadata = NULL
+  starting_profile_metadata = NULL,
+  refit_args = NULL,
+  prior_weight_column = NULL
 ) {
+  if (!is.null(refit_args)) {
+    attr(model, "markov_refit_args") <- refit_args
+  }
+  if (!is.null(prior_weight_column)) {
+    attr(model, "markov_prior_weight_column") <- prior_weight_column
+  }
   if (!is.null(data)) {
     attr(model, "markov_data") <- data
   }
@@ -539,6 +700,14 @@ markov_model_metadata_attr <- function(model, name) {
   }
 
   NULL
+}
+
+markov_model_refit_args <- function(model) {
+  markov_model_metadata_attr(model, "markov_refit_args")
+}
+
+markov_model_prior_weight_column <- function(model) {
+  markov_model_metadata_attr(model, "markov_prior_weight_column")
 }
 
 markov_model_refit_data <- function(model) {
@@ -836,6 +1005,8 @@ markov_prepare_stored_data <- function(
     as.character(scheduled_start)
   in_fit <- as.character(refit_data[[id_var]]) %in% fitted_ids
   starting_profile_data <- refit_data[at_start & in_fit, , drop = FALSE]
+  # Stored row weights are fitting metadata, not prediction variables.
+  starting_profile_data[[markov_prior_weight_column()]] <- NULL
   starting_profile_data$.markov_source_row <- source$rows[at_start & in_fit]
 
   predictor_terms <- stats::delete.response(stats::terms(formula, data = data))
@@ -904,12 +1075,11 @@ markov_align_model_data <- function(data, model_or_frame) {
 resolve_markov_source_data <- function(
   model,
   newdata,
-  refit_data = NULL,
   time_var = NULL,
   p_var = NULL
 ) {
   newdata_supplied <- !is.null(newdata)
-  refit_data <- refit_data %||% markov_model_refit_data(model)
+  refit_data <- markov_model_refit_data(model)
   source_data <- if (newdata_supplied) {
     newdata
   } else {

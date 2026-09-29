@@ -73,8 +73,9 @@
 #'   inference never stores draws. Default is `TRUE`.
 #' @param update_datadist Logical. Whether to update datadist for rms models
 #'   during bootstrap. Default is TRUE.
-#' @param use_coefstart Logical. Use original coefficients as starting values
-#'   for bootstrap refitting. Default is FALSE.
+#' @param use_coefstart Logical. If `TRUE`, `vglm` refits start from the
+#'   original fit's coefficients, which can speed up convergence. Default is
+#'   `FALSE`. See "Starting values in refits" in Details.
 #'
 #' @return The input object with added columns:
 #'   \item{conf.low}{Lower confidence bound}
@@ -171,9 +172,14 @@
 #' 2. Refit model on bootstrap sample (handles missing states through releveling)
 #' 3. Compute SOPs using G-computation
 #' 4. Compute percentile-based confidence intervals
-#' Bootstrap requires the full longitudinal dataset (all time points) either in
-#' the original `newdata`/`refit_data` passed to `sops()` or `avg_sops()`, or
-#' stored on the model by [orm_markov()], [blrm_markov()], or [vglm_markov()].
+#' Bootstrap refits always resample the full longitudinal data (all time
+#' points) that [orm_markov()] or [vglm_markov()] stored on the fitted model.
+#' These are the rows used for fitting, after any `subset`, together with their
+#' fitting weights, so every refit uses the same data rules as the original
+#' fit. Models fitted without these wrappers cannot be
+#' used for refit bootstraps. The prediction rows are separate: supplying
+#' `newdata` to `sops()` or `avg_sops()` changes which patient profiles are
+#' predicted, not which data are refitted.
 #' Standard bootstrap is intentionally limited to marginal `avg_sops()` objects
 #' because ordinary resampling can drop outcome-state support needed by fixed
 #' individual prediction rows. Fractional weighted bootstrap keeps every row in
@@ -189,9 +195,21 @@
 #' For marginal `avg_sops()` objects built from user-supplied `newdata`, the
 #' supplied patients' starting states and covariates are treated as given.
 #' This also applies to `sops(newdata = ...)`. Score bootstrap and FWB use the
-#' original/refit data for coefficient or refit uncertainty, but do not attach or
-#' apply draw weights to the supplied prediction profiles because those rows
-#' cannot be assumed to align with the bootstrap clusters.
+#' data stored on the fitted model for coefficient or refit uncertainty, but do
+#' not attach or apply draw weights to the supplied prediction profiles because
+#' those rows cannot be assumed to align with the bootstrap clusters.
+#'
+#' ## Starting values in refits
+#'
+#' Starting values are the coefficient values from which the fitting algorithm
+#' begins its search. They can come from `use_coefstart = TRUE` (the original
+#' fit's coefficients) or from a `coefstart` argument you passed to
+#' [vglm_markov()]. A refit uses them only when its bootstrap sample contains
+#' every outcome state. When a state is missing, the refit has fewer intercepts
+#' than the original model, so the starting values no longer fit and the model
+#' is refitted without any. If a refit with starting values fails, for example
+#' because a covariate level is absent from the sample, it is retried once
+#' without them.
 #'
 #' Choosing conditional or unconditional analytical variance changes the
 #' standard errors and confidence intervals, not the point estimates.

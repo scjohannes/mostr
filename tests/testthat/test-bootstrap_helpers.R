@@ -534,3 +534,53 @@ test_that("bootstrap_analysis_wrapper recovers stored fit weights", {
     c(1, 3, 6, 10)
   )
 })
+
+test_that("bootstrap_analysis_wrapper decides when refits use starting values", {
+  # A stored fit-time `coefstart` appears in the model call.
+  model <- structure(
+    list(coefficients = c(a = 1), call = quote(fit(coefstart = start))),
+    class = "vglm"
+  )
+  original_data <- data.frame(y = factor(1:3))
+  drop_requests <- logical()
+  refit_with <- function(boot_data, fail_with_coefstart) {
+    drop_requests <<- logical()
+    with_mocked_bindings(
+      update_bootstrap_model = function(
+        model,
+        boot_data,
+        fit_weights = NULL,
+        coefstart = NULL,
+        drop_coefstart = FALSE
+      ) {
+        drop_requests <<- c(drop_requests, drop_coefstart)
+        if (fail_with_coefstart && !drop_coefstart) {
+          stop("non-conformable arguments")
+        }
+        model
+      },
+      bootstrap_analysis_wrapper(
+        boot_data = boot_data,
+        model = model,
+        factor_cols = "y",
+        original_data = original_data,
+        update_datadist = FALSE
+      )
+    )
+  }
+
+  # Every state present: keep the stored starting values.
+  result <- refit_with(original_data, fail_with_coefstart = FALSE)
+  expect_false(is.null(result$model))
+  expect_equal(drop_requests, FALSE)
+
+  # A failed refit with starting values is retried once without them.
+  result <- refit_with(original_data, fail_with_coefstart = TRUE)
+  expect_false(is.null(result$model))
+  expect_equal(drop_requests, c(FALSE, TRUE))
+
+  # A missing state: refit without starting values from the start.
+  result <- refit_with(original_data[1:2, , drop = FALSE], FALSE)
+  expect_length(result$missing_states, 1L)
+  expect_equal(drop_requests, TRUE)
+})

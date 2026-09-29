@@ -66,7 +66,6 @@ delta_replay_average_comparison <- function(
   avg_comparison_replay_avg_sops(
     model = attr(object, "model"),
     newdata = newdata,
-    refit_data = attr(object, "refit_data"),
     variables = avg_args$variables,
     by = avg_args$by,
     times = avg_args$times,

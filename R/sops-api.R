@@ -20,8 +20,7 @@
 #'   every row supplies a separate starting state and set of covariates. The
 #'   internal `rowid` column is regenerated. If `NULL`, uses the data stored by
 #'   [orm_markov()], [blrm_markov()], or [vglm_markov()] and requires exactly
-#'   one complete designated starting profile per fitted patient. `refit_data`
-#'   is never used as a prediction-profile fallback.
+#'   one complete designated starting profile per fitted patient.
 #' @param times Required visit-scale time points to estimate. For numeric time
 #'   variables this is usually a numeric vector. For factor-valued visit
 #'   indices, values are matched to fitted visit levels.
@@ -37,9 +36,6 @@
 #'   omitted; an error is raised if none remain. This is simple aggregation
 #'   within observed strata, not G-computation standardization (use
 #'   `avg_sops()` for that).
-#' @param refit_data Optional full longitudinal data used only by refit-bootstrap
-#'   inference. It is not used for point estimates. Defaults to data stored on
-#'   wrapper-fitted models.
 #' @param id_var Character ID column used when `include_re = TRUE`. For `blrm`,
 #'   `NULL` is inferred from wrapper metadata, then `model$clusterInfo$name`
 #'   when available, otherwise `"id"`. For frequentist models, `id_var` is used
@@ -148,7 +144,6 @@ sops <- function(
   y_levels = NULL,
   absorb = NULL,
   by = NULL,
-  refit_data = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -174,7 +169,6 @@ sops <- function(
   data_res <- resolve_markov_source_data(
     model,
     newdata,
-    refit_data,
     time_var = time_var,
     p_var = p_var
   )
@@ -190,7 +184,11 @@ sops <- function(
 
   if (!is.null(id_var)) {
     if (!is.null(refit_data)) {
-      validate_markov_id_var(id_var, refit_data, "refit_data")
+      validate_markov_id_var(
+        id_var,
+        refit_data,
+        "the refit data stored on the fitted model"
+      )
     }
   }
 
@@ -716,8 +714,7 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   supplied, every row supplies a separate starting state and set of
 #'   covariates. The internal `rowid` column is regenerated. If `NULL`, uses data stored by
 #'   [orm_markov()], [blrm_markov()], or [vglm_markov()] and requires exactly
-#'   one complete designated starting profile per fitted patient. `refit_data`
-#'   is never used as a prediction-profile fallback.
+#'   one complete designated starting profile per fitted patient.
 #' @param variables Optional named list specifying covariates to set before
 #'   averaging. E.g., `list(tx = c(0, 1))` estimates probabilities if every
 #'   patient received control or treatment. The default, `NULL`, averages with
@@ -731,15 +728,13 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
 #'   infer the levels from `model`.
 #' @param absorb The absorbing state.
-#' @param refit_data Optional full longitudinal data used only by refit-bootstrap
-#'   inference. It is not used for point estimates. Defaults to data stored on
-#'   wrapper-fitted models.
 #' @param id_var Name of the patient ID variable. Required for bootstrap
 #'   inference and for `blrm` random-effect prediction. If `NULL`, defaults to
 #'   `"id"`; for wrapper-fitted models, it is inferred from stored metadata.
 #'   For user-supplied `newdata`, `id_var` is required only for `blrm` random
-#'   effects. Refit bootstrap inference uses `id_var` from `refit_data` or
-#'   wrapper-stored model data. For `blrm` models with `include_re = TRUE`,
+#'   effects. Refit bootstrap inference resamples patients by this column in
+#'   the data stored on the wrapper-fitted model. For `blrm` models with
+#'   `include_re = TRUE`,
 #'   `model$clusterInfo$name` is used before the final `"id"` fallback when
 #'   wrapper metadata is absent.
 #' @param time_var Name of the time variable in the model.
@@ -837,7 +832,7 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   absorb = 6
 #' ) |> inferences(method = "mvn", n_draws = 500)
 #'
-#' # Refit bootstrap can reuse the stored full longitudinal data.
+#' # Refit bootstrap resamples the patients stored on the fitted model.
 #' result_boot <- avg_sops(
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
@@ -856,7 +851,6 @@ avg_sops <- function(
   times,
   y_levels = NULL,
   absorb = NULL,
-  refit_data = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -886,7 +880,6 @@ avg_sops <- function(
   data_res <- resolve_markov_source_data(
     model,
     newdata,
-    refit_data,
     time_var = time_var,
     p_var = p_var
   )
@@ -902,7 +895,11 @@ avg_sops <- function(
   }
 
   if (!is.null(refit_data)) {
-    validate_markov_id_var(id_var, refit_data, "refit_data")
+    validate_markov_id_var(
+      id_var,
+      refit_data,
+      "the refit data stored on the fitted model"
+    )
   }
 
   if (!newdata_supplied) {
@@ -951,7 +948,6 @@ avg_sops <- function(
     sops_ind <- sops(
       model,
       newdata = newdata_expanded,
-      refit_data = refit_data,
       times = times,
       y_levels = y_levels,
       absorb = absorb,

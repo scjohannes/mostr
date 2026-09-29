@@ -11,7 +11,6 @@ sops(
   y_levels = NULL,
   absorb = NULL,
   by = NULL,
-  refit_data = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -36,8 +35,7 @@ For \code{orm} models, the family must be logistic.}
 every row supplies a separate starting state and set of covariates. The
 internal \code{rowid} column is regenerated. If \code{NULL}, uses the data stored by
 \code{\link[=orm_markov]{orm_markov()}}, \code{\link[=blrm_markov]{blrm_markov()}}, or \code{\link[=vglm_markov]{vglm_markov()}} and requires exactly
-one complete designated starting profile per fitted patient. \code{refit_data}
-is never used as a prediction-profile fallback.}
+one complete designated starting profile per fitted patient.}
 
 \item{times}{Required visit-scale time points to estimate. For numeric time
 variables this is usually a numeric vector. For factor-valued visit
@@ -57,10 +55,6 @@ combination of ECOG and age group. Rows missing any grouping value are
 omitted; an error is raised if none remain. This is simple aggregation
 within observed strata, not G-computation standardization (use
 \code{avg_sops()} for that).}
-
-\item{refit_data}{Optional full longitudinal data used only by refit-bootstrap
-inference. It is not used for point estimates. Defaults to data stored on
-wrapper-fitted models.}
 
 \item{id_var}{Character ID column used when \code{include_re = TRUE}. For \code{blrm},
 \code{NULL} is inferred from wrapper metadata, then \code{model$clusterInfo$name}

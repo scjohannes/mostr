@@ -19,7 +19,6 @@ avg_comparisons(
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  refit_data = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -82,9 +81,6 @@ With \code{baseline_time = NULL}, the omitted grid is the mapped visit times
 only.}
 
 \item{time_unit}{Optional label stored in output.}
-
-\item{refit_data}{Optional full longitudinal data used only by refit-bootstrap
-inference. It is not used for point estimates. See \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{id_var}{Name of the patient ID variable. See \code{\link[=avg_sops]{avg_sops()}}.}
 

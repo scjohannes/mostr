@@ -12,6 +12,7 @@ make_avg_sops_object <- function(model, newdata, by = NULL) {
   class(out) <- c("markov_avg_sops", class(out))
   attr(out, "model") <- model
   attr(out, "newdata_orig") <- newdata
+  attr(out, "refit_data") <- newdata
   attr(out, "call_args") <- list(times = 1:2)
   attr(out, "avg_args") <- list(
     variables = list(tx = c(0, 1)),
@@ -720,6 +721,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
   class(object) <- c("markov_avg_sops", class(object))
   attr(object, "model") <- model
   attr(object, "newdata_orig") <- newdata
+  attr(object, "refit_data") <- newdata
   attr(object, "avg_args") <- list(
     variables = list(tx = c(0, 1), grp = "a"),
     by = "grp",
@@ -749,7 +751,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
   )
 
   no_data <- object
-  attr(no_data, "newdata_orig") <- NULL
+  attr(no_data, "refit_data") <- NULL
   expect_error(
     mostr:::inferences_bootstrap(
       no_data,
@@ -761,12 +763,12 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       update_datadist = TRUE,
       use_coefstart = FALSE
     ),
-    "Full refit data not stored",
+    "this model has no stored data",
     fixed = TRUE
   )
 
   missing_id <- object
-  attr(missing_id, "newdata_orig") <- data.frame(time = 1:2)
+  attr(missing_id, "refit_data") <- data.frame(time = 1:2)
   expect_error(
     mostr:::inferences_bootstrap(
       missing_id,
@@ -783,7 +785,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
   )
 
   baseline_only <- object
-  attr(baseline_only, "newdata_orig") <- newdata[newdata$time == 1, ]
+  attr(baseline_only, "refit_data") <- newdata[newdata$time == 1, ]
   expect_error(
     mostr:::inferences_bootstrap(
       baseline_only,
@@ -1027,6 +1029,7 @@ test_that("inferences_bootstrap() applies FWB by weights", {
   class(object) <- c("markov_avg_sops", class(object))
   attr(object, "model") <- model
   attr(object, "newdata_orig") <- refit_data
+  attr(object, "refit_data") <- refit_data
   attr(object, "avg_args") <- list(
     variables = list(tx = 0),
     by = "grp",

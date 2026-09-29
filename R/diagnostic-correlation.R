@@ -3,7 +3,6 @@
 plot_correlation_input_data <- function(
   object,
   newdata,
-  refit_data,
   times,
   y_levels,
   absorb,
@@ -24,7 +23,6 @@ plot_correlation_input_data <- function(
     return(plot_correlation_model_data(
       model = object,
       newdata = newdata,
-      refit_data = refit_data,
       times = times,
       y_levels = y_levels,
       absorb = absorb,
@@ -45,8 +43,8 @@ plot_correlation_input_data <- function(
   if (!is.data.frame(object)) {
     stop("`object` must be a data frame or a supported Markov model.")
   }
-  if (!is.null(newdata) || !is.null(refit_data)) {
-    stop("`newdata` and `refit_data` are only used for model-based plots.")
+  if (!is.null(newdata)) {
+    stop("`newdata` is only used for model-based plots.")
   }
   if (!is.null(p2_var) || !is.null(gap_var) || !is.null(time_covariates)) {
     stop(
@@ -79,7 +77,6 @@ plot_correlation_input_data <- function(
 plot_correlation_model_data <- function(
   model,
   newdata,
-  refit_data,
   times,
   y_levels,
   absorb,
@@ -98,7 +95,6 @@ plot_correlation_model_data <- function(
   setup <- plot_transition_model_setup(
     model = model,
     newdata = newdata,
-    refit_data = refit_data,
     variables = NULL,
     times = times,
     y_levels = y_levels,

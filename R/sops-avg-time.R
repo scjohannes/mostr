@@ -134,7 +134,6 @@ avg_time <- function(
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  refit_data = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -194,7 +193,6 @@ avg_time <- function(
   avg <- avg_comparison_replay_avg_sops(
     model = model,
     newdata = newdata,
-    refit_data = refit_data,
     variables = variables,
     by = by,
     times = times,
@@ -275,7 +273,6 @@ replay_avg_time_sops <- function(object, conf_level, return_draws = FALSE) {
     } else {
       NULL
     },
-    refit_data = attr(object, "refit_data"),
     variables = avg_args$variables,
     by = avg_args$by,
     times = avg_args$times,

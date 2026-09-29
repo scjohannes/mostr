@@ -706,7 +706,6 @@ describe("avg_sops() and inferences() pipeline", {
 
     avg <- mostr::avg_sops(
       model = model,
-      refit_data = case$data,
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,
@@ -756,7 +755,6 @@ describe("avg_sops() and inferences() pipeline", {
 
     avg <- mostr::avg_sops(
       model = model,
-      refit_data = case$data,
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,
@@ -796,7 +794,6 @@ describe("avg_sops() and inferences() pipeline", {
 
     avg <- mostr::avg_sops(
       model = model,
-      refit_data = case$data,
       variables = "tx",
       times = 1:7,
       y_levels = case$y_levels,
@@ -828,7 +825,6 @@ describe("avg_sops() and inferences() pipeline", {
 
     avg <- mostr::avg_sops(
       model = robust_model,
-      refit_data = case$data,
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,
@@ -954,7 +950,6 @@ describe("avg_sops() and inferences() pipeline", {
 
     avg <- mostr::avg_sops(
       model = robust_model,
-      refit_data = case$data,
       variables = "tx",
       times = 1:7,
       y_levels = case$y_levels,
@@ -1056,7 +1051,6 @@ describe("avg_sops() and inferences() pipeline", {
 
     explicit_avg <- mostr::avg_sops(
       model = explicit_robust,
-      refit_data = case$data,
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,
@@ -1068,7 +1062,6 @@ describe("avg_sops() and inferences() pipeline", {
     )
     inline_avg <- mostr::avg_sops(
       model = inline_robust,
-      refit_data = case$data,
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,

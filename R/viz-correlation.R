@@ -35,8 +35,6 @@
 #' @param newdata Optional data frame of prediction profiles for model-based
 #'   plots. If `NULL`, wrapper-fitted models use their stored data and extract
 #'   one prediction row per ID.
-#' @param refit_data Optional full longitudinal data used only for stored-data
-#'   resolution in model-based plots.
 #' @param times Optional time values to include. Required for model-based plots.
 #' @param y_levels Optional state levels. If supplied for raw trajectory data,
 #'   state scores follow this order.
@@ -77,7 +75,6 @@
 plot_correlation <- function(
   x,
   newdata = NULL,
-  refit_data = NULL,
   times = NULL,
   y_levels = NULL,
   absorb = NULL,
@@ -110,7 +107,6 @@ plot_correlation <- function(
   corr <- plot_correlation_input_data(
     object = object,
     newdata = newdata,
-    refit_data = refit_data,
     times = times,
     y_levels = y_levels,
     absorb = absorb,
@@ -155,7 +151,6 @@ plot_correlation <- function(
 plot_variogram <- function(
   x,
   newdata = NULL,
-  refit_data = NULL,
   times = NULL,
   y_levels = NULL,
   absorb = NULL,
@@ -181,7 +176,6 @@ plot_variogram <- function(
   corr <- plot_correlation_input_data(
     object = object,
     newdata = newdata,
-    refit_data = refit_data,
     times = times,
     y_levels = y_levels,
     absorb = absorb,

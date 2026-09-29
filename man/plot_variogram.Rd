@@ -7,7 +7,6 @@
 plot_variogram(
   x,
   newdata = NULL,
-  refit_data = NULL,
   times = NULL,
   y_levels = NULL,
   absorb = NULL,
@@ -31,9 +30,6 @@ plot_variogram(
 \item{newdata}{Optional data frame of prediction profiles for model-based
 plots. If \code{NULL}, wrapper-fitted models use their stored data and extract
 one prediction row per ID.}
-
-\item{refit_data}{Optional full longitudinal data used only for stored-data
-resolution in model-based plots.}
 
 \item{times}{Optional time values to include. Required for model-based plots.}
 

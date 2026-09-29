@@ -565,18 +565,24 @@ test_that("low-level SOP helpers validate model families and state metadata", {
     fixed = TRUE
   )
 
-  model@family <- methods::new("vglmff", vfamily = "cumulative")
+  # The reverse coding is read from the fitted family's `infos()` report.
+  model@family <- methods::new(
+    "vglmff",
+    vfamily = "cumulative",
+    infos = function(...) list()
+  )
   model@misc$link <- "logitlink"
-  model@call <- quote(VGAM::vglm(y ~ x, family = VGAM::cumulative()))
   expect_error(
     mostr:::validate_markov_model(model),
-    "argument is missing|Cannot determine"
+    "Cannot determine 'reverse'",
+    fixed = TRUE
   )
 
-  model@call <- quote(VGAM::vglm(
-    y ~ x,
-    family = VGAM::cumulative(reverse = FALSE)
-  ))
+  model@family <- methods::new(
+    "vglmff",
+    vfamily = "cumulative",
+    infos = function(...) list(reverse = FALSE)
+  )
   expect_error(
     mostr:::validate_markov_model(model),
     "must use reverse = TRUE",

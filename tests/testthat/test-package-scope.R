@@ -41,7 +41,7 @@ test_that("the package exposes Markov workflows without removed APIs", {
     "avg_comparisons",
     "inferences",
     "time_in_state",
-    "apply_to_bootstrap"
+    "bootstrap_model_coefs"
   )
   expect_equal(setdiff(retained, getNamespaceExports("mostr")), character())
 })
