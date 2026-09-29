@@ -180,9 +180,14 @@ result fields, or local implementation variables.
 
 `tests/testthat` retains model, recursion, inference, and diagnostic coverage.
 Shared synthetic fixtures use explicit proportional-odds Markov transitions.
-Native analytical tests retain an independent test-only R oracle. GitHub Actions
-runs R CMD check, address/undefined sanitizers, and Valgrind. The nine vignettes
-demonstrate Markov-generated data, including a custom 30-state generator.
+Every native routine in `src/sops.cpp` is checked against an independent
+test-only R reference written from the mathematics of the calculation
+(`tests/testthat/helper-sops-native-reference.R` and
+`tests/testthat/helper-sops-delta-oracle.R`); these references are never
+production fallbacks. GitHub Actions runs R CMD check and runs the native and
+analytical-inference tests under address/undefined sanitizers and Valgrind.
+The nine vignettes demonstrate Markov-generated data, including a custom
+30-state generator.
 
 Numerical inference snapshots use a relative tolerance of 1e-7 to accommodate
 platform-dependent rounding while preserving the stored regression baselines.
