@@ -234,11 +234,10 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
       out
     },
     {
-      expect_error(
-        avg_sops(model, newdata = newdata, variables = NULL, times = 1),
-        "`variables` is required",
-        fixed = TRUE
-      )
+      observed <- avg_sops(model, newdata = newdata, times = 1)
+      expect_named(observed, c("time", "state", "estimate"))
+      expect_null(attr(observed, "avg_args")$variables)
+      expect_equal(attr(observed, "newdata_pred")$tx, newdata$tx)
       expect_error(
         avg_sops(model, newdata = NULL, variables = "tx", times = 1),
         "Provide newdata",

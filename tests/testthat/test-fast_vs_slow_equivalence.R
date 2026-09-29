@@ -216,7 +216,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
 })
 
 
-test_that("Fast path yields same results as slow path for constrained PPO", {
+test_that("compiled plan matches markov_msm_build() and the R reference for constrained PPO", {
   withr::local_seed(12345)
 
   follow_up <- 30
@@ -279,8 +279,10 @@ test_that("Fast path yields same results as slow path for constrained PPO", {
   # Setup comparison
   newdata <- data[data$time == 1, ] # Baseline rows
 
-  # --- SLOW PATH (soprob_markov) ---
-  res_slow <- soprob_markov(
+  # Both paths run the same native recursion in markov_msm_run(); they differ
+  # only in how the design matrices and effective coefficients are built.
+  # --- COMPILED PLAN (soprob_markov) ---
+  res_plan <- soprob_markov(
     model = fit2,
     newdata = newdata,
     times = times,
@@ -291,7 +293,7 @@ test_that("Fast path yields same results as slow path for constrained PPO", {
     time_covariates = time_covariates
   )
 
-  # --- FAST PATH (markov_msm_build + run) ---
+  # --- MANUAL BUILD (markov_msm_build + markov_msm_run) ---
   components <- markov_msm_build(
     model = fit2,
     data = newdata,
@@ -306,21 +308,39 @@ test_that("Fast path yields same results as slow path for constrained PPO", {
   Gamma_hat <- compute_Gamma(beta, C_list)
 
   # Run
-  res_fast <- markov_msm_run(
+  res_manual <- markov_msm_run(
     components = components,
     Gamma = Gamma_hat,
     times = times,
     absorb = absorb
   )
 
-  # Fix dimnames for comparison
-  dimnames(res_slow)[1:2] <- list(NULL)
+  # --- R REFERENCE (pure-R recursion, coefficients read from VGAM) ---
+  plan <- compile_sop_execution_plan(
+    model = fit2,
+    newdata = newdata,
+    times = times,
+    y_levels = y_levels,
+    absorb = absorb,
+    time_var = "time_lin",
+    p_var = "yprev",
+    time_covariates = time_covariates
+  )
+  res_reference <- reference_first_order_plan_sops(
+    plan,
+    reference_backend_gamma(fit2, plan$components$col_names),
+    category_probabilities = reference_clipped_probabilities
+  )
 
-  expect_equal(res_slow, res_fast, tolerance = 1e-15)
+  # Fix dimnames for comparison
+  dimnames(res_plan)[1:2] <- list(NULL)
+
+  expect_equal(res_plan, res_manual, tolerance = 1e-15)
+  expect_equal(unname(res_plan), res_reference, tolerance = 1e-12)
 })
 
 
-test_that("Fast path yields same results as slow path for PPO", {
+test_that("compiled plan matches markov_msm_build() and the R reference for PPO", {
   withr::local_seed(1234567)
 
   follow_up <- 30
@@ -363,8 +383,10 @@ test_that("Fast path yields same results as slow path for PPO", {
   y_levels <- factor(sort(unique(data$y)), ordered = FALSE)
   absorb <- 6
 
-  # --- SLOW PATH (soprob_markov) ---
-  res_slow <- soprob_markov(
+  # Both paths run the same native recursion in markov_msm_run(); they differ
+  # only in how the design matrices and effective coefficients are built.
+  # --- COMPILED PLAN (soprob_markov) ---
+  res_plan <- soprob_markov(
     model = fit,
     newdata = newdata,
     times = times,
@@ -375,7 +397,7 @@ test_that("Fast path yields same results as slow path for PPO", {
     time_covariates = time_covariates
   )
 
-  # --- FAST PATH (markov_msm_build + run) ---
+  # --- MANUAL BUILD (markov_msm_build + markov_msm_run) ---
   components <- markov_msm_build(
     model = fit,
     data = newdata,
@@ -390,15 +412,33 @@ test_that("Fast path yields same results as slow path for PPO", {
   Gamma_hat <- compute_Gamma(beta, C_list)
 
   # Run
-  res_fast <- markov_msm_run(
+  res_manual <- markov_msm_run(
     components = components,
     Gamma = Gamma_hat,
     times = times,
     absorb = absorb
   )
 
-  # Fix dimnames for comparison
-  dimnames(res_slow)[1:2] <- list(NULL)
+  # --- R REFERENCE (pure-R recursion, coefficients read from VGAM) ---
+  plan <- compile_sop_execution_plan(
+    model = fit,
+    newdata = newdata,
+    times = times,
+    y_levels = y_levels,
+    absorb = absorb,
+    time_var = "time_lin",
+    p_var = "yprev",
+    time_covariates = time_covariates
+  )
+  res_reference <- reference_first_order_plan_sops(
+    plan,
+    reference_backend_gamma(fit, plan$components$col_names),
+    category_probabilities = reference_clipped_probabilities
+  )
 
-  expect_equal(res_slow, res_fast, tolerance = 1e-10)
+  # Fix dimnames for comparison
+  dimnames(res_plan)[1:2] <- list(NULL)
+
+  expect_equal(res_plan, res_manual, tolerance = 1e-10)
+  expect_equal(unname(res_plan), res_reference, tolerance = 1e-12)
 })

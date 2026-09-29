@@ -862,7 +862,7 @@ test_that("time_in_state uses trapezoidal AUC on mapped real time", {
     x,
     target_states = "1",
     time_map = c(v1 = 3, v2 = 7),
-    baseline_time = 0
+    baseline_time = NULL
   )
   auc <- auc[order(auc$tx), , drop = FALSE]
 
@@ -888,6 +888,13 @@ test_that("time_in_state uses trapezoidal AUC on mapped real time", {
     3.825,
     tolerance = 1e-10
   )
+  default_auc <- time_in_state(
+    x,
+    target_states = "1",
+    time_map = c(v1 = 3, v2 = 7)
+  )
+  default_auc <- default_auc[order(default_auc$tx), , drop = FALSE]
+  expect_equal(default_auc$total_time, c(3.975, 3.825), tolerance = 1e-10)
 
   day_1_auc <- time_in_state(
     x,

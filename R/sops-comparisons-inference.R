@@ -566,7 +566,8 @@ reduce_time_benefit_array_for_setup <- function(
     target_times <- comparison_real_time_target_times(
       ind,
       time_map,
-      target_times
+      target_times,
+      baseline_time
     )
     ind <- interpolate_sops(
       ind,

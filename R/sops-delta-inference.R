@@ -4,6 +4,31 @@ delta_model_for_plan <- function(model) {
   if (inherits(model, "robcov_vglm")) model$vglm_fit else model
 }
 
+# Averages whose scenarios set the previous-state variable start every patient
+# in the set state. Their baseline anchor is then a fixed point mass, and only
+# conditional variance (coefficient uncertainty) is defined for them.
+sets_starting_state <- function(object) {
+  if (
+    !inherits(
+      object,
+      c("markov_avg_sops", "markov_avg_time", "markov_avg_comparisons")
+    )
+  ) {
+    return(FALSE)
+  }
+  p_var <- attr(object, "p_var") %||% "yprev"
+  p_var %in% names(attr(object, "avg_args")$variables %||% list())
+}
+
+stop_starting_state_conditional_only <- function() {
+  stop(
+    "Setting the starting state with `variables` supports only conditional ",
+    'variance: use `method = "delta", vcov = "conditional"` or ',
+    '`method = "mvn"`.',
+    call. = FALSE
+  )
+}
+
 delta_resolve_vcov <- function(object, vcov) {
   individual <- inherits(object, "markov_sops")
   choice <- if (is.null(vcov)) {
@@ -28,6 +53,9 @@ delta_resolve_vcov <- function(object, vcov) {
       '`sops()` delta inference supports only `vcov = "conditional"` or a coefficient covariance matrix.',
       call. = FALSE
     )
+  }
+  if (identical(choice, "unconditional") && sets_starting_state(object)) {
+    stop_starting_state_conditional_only()
   }
   target <- if (identical(choice, "unconditional")) {
     "unconditional"
@@ -412,6 +440,9 @@ delta_finalize_result <- function(
     "n_successful",
     "engine",
     "score_weight_dist",
+    "fwb_weight_type",
+    "fwb_weight_scale",
+    "null",
     "draw_weights_attached",
     "draw_weight_col",
     "draw_weight_omission_reason"
@@ -587,7 +618,7 @@ inferences_delta_sops <- function(
   y_levels <- attr(object, "y_levels")
   if (is_average) {
     variables <- avg_args$variables
-    grid <- do.call(expand.grid, variables)
+    grid <- create_counterfactual_grid(variables)
     n_cf <- nrow(grid)
     if (n_cf < 1L || nrow(newdata) < 1L || nrow(newdata) %% n_cf != 0L) {
       stop(

@@ -516,6 +516,47 @@ test_that("avg_sops() streams and summarizes blrm posterior draws", {
   expect_s3_class(plot_sops(result, geom = "line", facet_var = "tx"), "ggplot")
 })
 
+test_that("observed blrm averages reduce individual posterior draws", {
+  model <- make_fake_blrm()
+  newdata <- data.frame(
+    id = c("a", "b"),
+    tx = c(0, 1),
+    yprev = factor(c(1, 2), levels = 1:3),
+    time = 1
+  )
+  local_mocked_bindings(blrm_design_matrix = fake_blrm_design)
+  individual <- sops(
+    model,
+    newdata = newdata,
+    times = 1:2,
+    n_draws = NULL,
+    return_draws = TRUE
+  )
+  for (by in list(NULL, "tx")) {
+    result <- avg_sops(
+      model,
+      newdata = newdata,
+      by = by,
+      times = 1:2,
+      n_draws = NULL,
+      posterior_summary = "median",
+      return_draws = TRUE
+    )
+    keys <- c("draw_id", "time", "state", by)
+    draws <- attr(individual, "draws")
+    manual <- stats::aggregate(draws$estimate, draws[keys], mean)
+    names(manual)[names(manual) == "x"] <- "manual"
+    compared <- merge(attr(result, "draws"), manual, by = keys)
+    expect_equal(compared$estimate, compared$manual, tolerance = 1e-12)
+    cells <- setdiff(keys, "draw_id")
+    medians <- stats::aggregate(manual$manual, manual[cells], stats::median)
+    names(medians)[names(medians) == "x"] <- "manual"
+    compared <- merge(result, medians, by = cells)
+    expect_equal(compared$estimate, compared$manual, tolerance = 1e-12)
+    expect_null(attr(result, "avg_args")$variables)
+  }
+})
+
 test_that("second-order blrm posterior results are invariant to outer draw chunks", {
   model <- make_fake_blrm()
   newdata <- data.frame(

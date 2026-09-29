@@ -704,10 +704,10 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 
 #' Calculate Averaged State Occupation Probabilities (Marginal Effects)
 #'
-#' Computes standardized (marginal) state occupation probabilities using
-#' G-computation. Creates counterfactual cohorts by setting all individuals
-#' to each level of the treatment variable and averaging over the covariate
-#' distribution.
+#' Averages state occupation probabilities over patients' starting states and
+#' covariates. With `variables = NULL`, uses each patient's observed covariates.
+#' Supply `variables` to set the specified covariates to common values before
+#' averaging, for example to estimate probabilities under each treatment.
 #'
 #' @param model A fitted model object (e.g., `vglm`, `orm`, or `blrm`). For
 #'   `vglm` models, the family must be cumulative-logit with `reverse = TRUE`.
@@ -718,9 +718,10 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   [orm_markov()], [blrm_markov()], or [vglm_markov()] and requires exactly
 #'   one complete designated starting profile per fitted patient. `refit_data`
 #'   is never used as a prediction-profile fallback.
-#' @param variables A named list specifying the variable(s) to standardize over.
-#'   E.g., `list(tx = c(0, 1))` creates counterfactual datasets for treatment
-#'   and control.
+#' @param variables Optional named list specifying covariates to set before
+#'   averaging. E.g., `list(tx = c(0, 1))` estimates probabilities if every
+#'   patient received control or treatment. The default, `NULL`, averages with
+#'   each patient's observed covariates, including their observed treatment.
 #' @param by Optional character vector of additional variables to group by
 #'   after standardization. Rows missing any grouping value are omitted; an
 #'   error is raised if none remain.
@@ -765,13 +766,17 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' @return A data frame of class `markov_avg_sops` with columns:
 #'   \item{time}{Time point}
 #'   \item{state}{State level}
-#'   \item{(variables)}{Value of standardization variable (e.g., tx)}
+#'   \item{(variables)}{Values requested in `variables`, when supplied}
 #'   \item{estimate}{Average probability across individuals}
 #'   \item{conf.low, conf.high, std.error}{For `blrm` fits, posterior
 #'     uncertainty summaries computed directly from marginalized SOP draws}
 #'
 #' @details
-#' This function implements G-computation (standardization) for Markov SOPs:
+#' With `variables = NULL`, this function averages patients' SOPs using their
+#' observed covariates, returning one estimate per time and state. Supply `by`
+#' to average separately within groups.
+#'
+#' Supplying `variables` implements G-computation (standardization):
 #'
 #' 1. **Counterfactual Creation**: For each value in `variables`, creates a
 #'    copy of `newdata` with that variable set to the specified value.
@@ -783,8 +788,9 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'    each time-state-treatment combination, yielding population-average
 #'    (marginal) probabilities.
 #'
-#' The result represents the expected SOP if the entire population received
-#' treatment vs. control, averaged over the observed covariate distribution.
+#' With `variables = list(tx = c(0, 1))`, the result represents the expected SOP
+#' if the entire population received treatment or control, averaged over the
+#' observed covariate distribution.
 #' For automatic wrapper-stored standardization, that distribution contains
 #' exactly the fitted patients with a complete designated starting profile and
 #' at least one usable likelihood transition. A missing response at the
@@ -820,6 +826,9 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' )
 #'
 #' # Wrapper-fitted models can use their stored designated starting profiles.
+#' observed <- avg_sops(fit, times = 1:60, y_levels = 1:6, absorb = 6)
+#'
+#' # Set treatment to each requested value before averaging.
 #' result <- avg_sops(
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
@@ -870,11 +879,8 @@ avg_sops <- function(
   }
   conf_level <- validate_conf_level(conf_level)
 
-  if (is.null(variables)) {
-    stop(
-      "`variables` is required for G-computation. ",
-      "Specify the treatment variable, e.g., `variables = list(tx = c(0, 1))`."
-    )
+  if (!length(by)) {
+    by <- NULL
   }
 
   data_res <- resolve_markov_source_data(
@@ -927,7 +933,7 @@ avg_sops <- function(
   # For each combination in variables, create a copy of baseline_data with
   # the variable(s) set to that value
 
-  if (!is.list(variables)) {
+  if (!is.null(variables) && !is.list(variables)) {
     var_list <- list()
     for (i in seq_along(variables)) {
       var_list[[variables[i]]] <- unique(baseline_data[[variables[i]]])
@@ -936,7 +942,7 @@ avg_sops <- function(
     var_list <- variables
   }
 
-  grid <- do.call(expand.grid, var_list)
+  grid <- create_counterfactual_grid(var_list)
 
   newdata_expanded <- create_counterfactual_data(baseline_data, grid, var_list)
 

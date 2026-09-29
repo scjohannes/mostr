@@ -1,9 +1,9 @@
-# delta real-time weights exclude baseline unless explicitly targeted
+# delta real-time weights include the baseline interval by default
 
     Code
       mostr:::delta_real_time_visit_weights(avg, args)
     Condition
-      Error in `mostr:::delta_real_time_visit_weights()`:
+      Error in `delta_real_time_weights()`:
       ! `baseline_time` must be earlier than the earliest mapped SOP time.
 
 # unconditional comparisons retain transformed stacked influence

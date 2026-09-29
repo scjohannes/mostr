@@ -1,17 +1,17 @@
 # SOP inference dispatcher and simulation engine.
 
-#' Inference for State Occupation Probabilities
+#' Inference for State Occupation Probabilities and Time Summaries
 #'
-#' Adds confidence intervals to SOP objects using analytical delta,
-#' simulation-based, or bootstrap methods. The default method is
+#' Adds confidence intervals to SOP, average-time, and comparison objects using
+#' analytical delta, simulation-based, or bootstrap methods. The default is
 #' multivariate-normal coefficient simulation. Objects produced from
 #' `rmsb::blrm()` models already contain posterior uncertainty, so non-delta
 #' calls return them unchanged. `method = "delta"` is frequentist-only and
 #' errors for `blrm` objects.
 #'
 #' @param x A `markov_avg_sops` object from `avg_sops()`, a
-#'   `markov_sops` object from `sops()`, or a `markov_avg_comparisons` object
-#'   from [avg_comparisons()].
+#'   `markov_sops` object from `sops()`, a `markov_avg_comparisons` object
+#'   from [avg_comparisons()], or a `markov_avg_time` object from [avg_time()].
 #' @param method Character. Inference method:
 #'   \itemize{
 #'     \item `"mvn"`: Multivariate-normal coefficient draws.
@@ -35,6 +35,8 @@
 #'   coefficient covariance matrix selects conditional inference and overrides
 #'   the model covariance. Character choices are available only for delta
 #'   inference; other methods retain their existing matrix/`NULL` behavior.
+#'   Averages whose `variables` set the starting state (the previous-state
+#'   variable, usually `yprev`) support only conditional variance; see Details.
 #' @param cluster Optional patient-cluster specification. For analytical
 #'   conditional and unconditional variance estimates, supply a
 #'   vector aligned with the fitting rows or a one-sided formula selecting a
@@ -54,7 +56,7 @@
 #' @param conf_type Type of frequentist confidence interval. `"auto"` uses
 #'   percentile intervals for draw-based methods, componentwise logit-delta
 #'   intervals for SOP probabilities, and identity-scale Wald intervals for
-#'   analytical comparisons:
+#'   analytical comparisons and average times:
 #'   \itemize{
 #'     \item `"auto"`: Method-appropriate default.
 #'     \item `"perc"`: Percentile-based intervals from the simulation
@@ -193,6 +195,20 @@
 #'
 #' Choosing conditional or unconditional analytical variance changes the
 #' standard errors and confidence intervals, not the point estimates.
+#'
+#' ## Setting the Starting State
+#'
+#' When `variables` in [avg_sops()], [avg_time()], or [avg_comparisons()] sets
+#' the previous-state variable, for example
+#' `variables = list(yprev = c("1", "2"))`, every patient starts in the set
+#' state in each scenario. Real-time summaries then start from that state
+#' rather than from the patients' observed starting states. Such results
+#' support only conditional variance: use `method = "delta"` with
+#' `vcov = "conditional"` (or a coefficient covariance matrix), or
+#' `method = "mvn"`. Unconditional delta inference and the score-bootstrap,
+#' bootstrap, and FWB methods error, because they also account for which
+#' patients were sampled, and that calculation is not supported once the
+#' starting state is set.
 #'
 #' @seealso [avg_sops()], [sops()], [get_draws()],
 #'   [robcov_vglm()], [set_coef()]
@@ -349,12 +365,13 @@ inferences_impl <- function(
       c(
         "markov_avg_sops",
         "markov_sops",
+        "markov_avg_time",
         "markov_avg_comparisons"
       )
     )
   ) {
     stop(
-      "inferences() requires a 'markov_avg_sops', 'markov_sops', or ",
+      "inferences() requires a 'markov_avg_sops', 'markov_sops', 'markov_avg_time', or ",
       "'markov_avg_comparisons' object. ",
       "Got: ",
       paste(class(x), collapse = ", ")
@@ -374,7 +391,7 @@ inferences_impl <- function(
   if (identical(conf_type, "auto")) {
     conf_type <- if (!identical(method, "delta")) {
       "perc"
-    } else if (inherits(x, "markov_avg_comparisons")) {
+    } else if (inherits(x, c("markov_avg_comparisons", "markov_avg_time"))) {
       "wald"
     } else {
       "logit"
@@ -398,15 +415,24 @@ inferences_impl <- function(
     if (inherits(attr(x, "model"), "blrm")) {
       stop(
         "Analytical delta inference is not available for `blrm` models; ",
-        "use the posterior intervals returned by `sops()`, `avg_sops()`, or ",
-        "`avg_comparisons()`.",
+        "use the posterior intervals returned by `sops()`, `avg_sops()`, ",
+        "`avg_comparisons()`, or `avg_time()`.",
         call. = FALSE
       )
     }
     covariance <- delta_resolve_vcov(x, vcov)
     target <- covariance$target
     vcov <- covariance$vcov
-    result <- if (inherits(x, "markov_avg_comparisons")) {
+    result <- if (inherits(x, "markov_avg_time")) {
+      inferences_delta_avg_time(
+        object = x,
+        target = target,
+        vcov = vcov,
+        cluster = cluster,
+        conf_level = conf_level,
+        conf_type = conf_type
+      )
+    } else if (inherits(x, "markov_avg_comparisons")) {
       inferences_delta_comparisons(
         object = x,
         target = target,
@@ -439,6 +465,13 @@ inferences_impl <- function(
   }
 
   if (
+    method %in% c("score_bootstrap", "bootstrap", "fwb") &&
+      sets_starting_state(x)
+  ) {
+    stop_starting_state_conditional_only()
+  }
+
+  if (
     inherits(x, "markov_avg_comparisons") &&
       identical(unique(x$comparison), "ratio") &&
       identical(null, 0)
@@ -459,7 +492,21 @@ inferences_impl <- function(
     fwb = "fwb"
   )
 
-  if (inherits(x, "markov_avg_comparisons")) {
+  if (inherits(x, "markov_avg_time")) {
+    result <- inferences_avg_time(
+      object = x,
+      method = method,
+      n_draws = n_draws,
+      vcov = vcov,
+      cluster = cluster,
+      workers = workers,
+      conf_level = conf_level,
+      conf_type = conf_type,
+      return_draws = return_draws,
+      update_datadist = update_datadist,
+      use_coefstart = use_coefstart
+    )
+  } else if (inherits(x, "markov_avg_comparisons")) {
     result <- inferences_avg_comparisons(
       object = x,
       method = internal_method,
@@ -612,7 +659,7 @@ inferences_simulation <- function(
   # --- 2. Prepare Prediction Data (COMPUTED ONCE) ---
   if (is_avg) {
     # For avg_sops: create counterfactual datasets
-    grid <- do.call(expand.grid, variables)
+    grid <- create_counterfactual_grid(variables)
     n_cf <- nrow(grid)
     if (!is.null(newdata_pred_stored)) {
       newdata_pred <- newdata_pred_stored

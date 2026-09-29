@@ -92,7 +92,7 @@ avg_comparison_setup <- function(
   validate_sops_by(by, baseline_data)
   baseline_data <- ensure_markov_rowid(baseline_data)
 
-  grid <- do.call(expand.grid, variables)
+  grid <- create_counterfactual_grid(variables)
   newdata_pred <- create_counterfactual_data(baseline_data, grid, variables)
 
   list(
@@ -121,7 +121,7 @@ avg_comparison_setup <- function(
 avg_comparison_setup_from_sops <- function(x) {
   avg_args <- attr(x, "avg_args")
   variables <- avg_args$variables
-  grid <- do.call(expand.grid, variables)
+  grid <- create_counterfactual_grid(variables)
   newdata_pred <- attr(x, "newdata_pred")
   n_each <- if (!is.null(newdata_pred) && nrow(grid) > 0L) {
     nrow(newdata_pred) / nrow(grid)

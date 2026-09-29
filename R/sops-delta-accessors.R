@@ -95,11 +95,16 @@ delta_analytical <- function(x) {
   if (
     !inherits(
       x,
-      c("markov_sops", "markov_avg_sops", "markov_avg_comparisons")
+      c(
+        "markov_sops",
+        "markov_avg_sops",
+        "markov_avg_comparisons",
+        "markov_avg_time"
+      )
     )
   ) {
     stop(
-      "Analytical accessors require a SOP or average-comparison object.",
+      "Analytical accessors require a SOP, average-time, or average-comparison object.",
       call. = FALSE
     )
   }
@@ -201,7 +206,7 @@ delta_vcov <- function(object, rows = NULL) {
   out
 }
 
-#' Analytical Covariance for SOPs and Average Comparisons
+#' Analytical Covariance for SOPs, Average Times, and Comparisons
 #'
 #' Materializes a selected covariance block from the low-rank analytical state
 #' retained by `inferences(method = "delta")`.
@@ -215,7 +220,7 @@ delta_vcov <- function(object, rows = NULL) {
 #' extract smaller blocks within the analytical memory limit. Standard errors
 #' are computed without materializing the full covariance matrix.
 #'
-#' @param object A `markov_sops`, `markov_avg_sops`, or
+#' @param object A `markov_sops`, `markov_avg_sops`, `markov_avg_time`, or
 #'   `markov_avg_comparisons` object returned by `inferences(method = "delta")`.
 #' @param rows Optional numeric or logical row selection, or analytical row-key
 #'   values. `NULL` returns every result row.
@@ -236,5 +241,11 @@ vcov.markov_avg_sops <- function(object, rows = NULL, ...) {
 #' @rdname vcov.markov_sops
 #' @export
 vcov.markov_avg_comparisons <- function(object, rows = NULL, ...) {
+  delta_vcov(object, rows = rows)
+}
+
+#' @rdname vcov.markov_sops
+#' @export
+vcov.markov_avg_time <- function(object, rows = NULL, ...) {
   delta_vcov(object, rows = rows)
 }

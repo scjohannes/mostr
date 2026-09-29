@@ -7,22 +7,23 @@
 get_draws(x)
 }
 \arguments{
-\item{x}{A SOP or average-comparison object returned with stored draws.}
+\item{x}{A SOP, average-time, or average-comparison object returned with
+stored draws.}
 }
 \value{
 A data frame with columns:
 \itemize{
 \item draw_id: Simulation or bootstrap iteration number
-\item time: Time point
-\item state: State number
-\item draw: Draw-specific estimate of state occupation probability
+\item time, state: Time point and state for SOP results
+\item state_set: State set for average-time or comparison results
+\item draw: Draw-specific estimate of the requested quantity
 \item estimate: The original point estimate from the model
 \item conf.low, conf.high, std.error: Summary statistics from the point estimate object
 \item fwb_weight or score_weight: Optional draw-specific patient weight
 for eligible ungrouped stored-data \code{sops()} draws
 \item Additional columns from the original object (covariates, etc.)
 }
-Each row represents one draw for a specific time-state combination.
+Each row represents one draw for a specific result row.
 }
 \description{
 Extracts the individual draws (bootstrap samples, simulated values from MVN, etc.)

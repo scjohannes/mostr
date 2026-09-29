@@ -75,7 +75,7 @@ flowchart TD
 | Data generation | `R/simulate-markov.R`, `R/lp_violet.R`, `R/simulate-native.R` | `sim_trajectories_markov`, `sim_actt1_markov`, `sim_actt2_markov`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
-| Prediction API | `R/sops-api.R`, `R/sops-comparisons.R` | `sops`, `avg_sops`, `avg_comparisons`; individual or averaged probabilities and treatment contrasts |
+| Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R` | `sops`, `avg_sops`, `avg_time`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
@@ -85,8 +85,8 @@ flowchart TD
 Longitudinal rows use `id`, `time`, `y`, `yprev`, and covariates such as `tx`.
 Wrappers preserve the patient starting profiles used when `newdata` is omitted.
 Second-order workflows additionally carry `ypprev` or the configured second lag.
-The existing `markov_sops`, `markov_avg_sops`, and `markov_avg_comparisons` S3
-classes describe result semantics and retain their names. Package-qualified
+The `markov_sops`, `markov_avg_sops`, `markov_avg_time`, and
+`markov_avg_comparisons` S3 classes describe result semantics. Package-qualified
 calls, native registration symbols, and package options use `mostr`.
 
 Conditional variance accounts for coefficient estimation with prediction
@@ -94,6 +94,64 @@ profiles held given. Unconditional variance also accounts for sampled patients
 and their contribution to coefficient estimation. It is available for supported
 averaged results using stored patient profiles; supplied `newdata` requires
 conditional variance. Individual results support conditional variance only.
+
+### Average time in states
+
+`avg_time()` builds average SOPs and reduces selected states over the requested
+visits. Its `state_sets` convention matches average comparisons: separate states
+by default, one pooled vector, or a named list. The result has `estimate` and
+`state_set`, plus counterfactual/grouping columns, but no SOP-scale time column.
+It therefore has its own class rather than inheriting from `markov_avg_sops`.
+Stored `avg_args`, `time_args`, and model/data metadata allow inference to replay
+the same prediction cohort without retaining a duplicate nested SOP object.
+Argument checks that do not need predictions (duplicate `times`, `state_sets`
+structure via `validate_avg_time_state_sets()`, reserved output names, and
+`baseline_time` without `time_map`) run before the average SOPs are predicted;
+only the check that states exist in the model's levels runs afterwards.
+
+Both `avg_sops()` and `avg_time()` accept `variables = NULL` for averages under
+observed covariates. `create_counterfactual_grid()` represents this as one row
+with no columns; the existing cohort expansion and marginalization then operate
+on one unchanged cohort. Prediction, simulation, bootstrap, and analytical
+replay all use that same grid contract. Subgroups still use `by`.
+
+`reduce_state_time_df()` is shared with time-in-state comparisons. Visit-scale
+totals sum probabilities; mapped real-time totals use linear interpolation and
+trapezoidal integration. With omitted `target_times`,
+`comparison_real_time_target_times()` builds the grid as `baseline_time`
+followed by the mapped visit times (visit times only when
+`baseline_time = NULL`); average times, all real-time average comparisons,
+tidy-SOP `time_in_state()`, and `delta_real_time_weights()` share this default so point, draw, and analytical
+totals cover the same period.
+Simulation, bootstrap, and posterior inference reduce each draw before computing
+time-total summaries. `summarize_comparison_draws()` keeps groups in their
+first-appearance order, and `avg_time()` additionally joins posterior summaries
+onto the point reduction so posterior rows follow `state_sets` order. Score and refit bootstrap retain their draw-specific
+baseline anchors until interpolation; posterior medians summarize reduced draws.
+Only reduced draws are retained on average-time results.
+
+`R/sops-delta-avg-time.R` propagates weighted sums of the original SOP coefficient
+derivatives or patient contributions using the shared analytical operators.
+`delta_real_time_weights()` returns visit and baseline weights. The baseline
+contributes no coefficient derivative under conditional variance; unconditional
+variance adds each aligned patient's starting-state deviation times the baseline
+weight before forming covariance. This preserves baseline/follow-up covariance.
+Average comparisons cancel the shared observed baseline only when their
+scenarios do not set the starting state. When `variables` sets `p_var`,
+`state_distribution_anchor()` (`R/sops-interpolate.R`) makes each scenario's
+anchor a point mass at the set state, for point estimates and for every draw
+path that builds anchors from it. The analytical average-time and comparison
+operators then add the baseline weight times that constant anchor (which
+differs between compared starting states) before checking stored estimates.
+Because a set starting state has no sampling distribution in the observed
+cohort, `sets_starting_state()` makes `delta_resolve_vcov()` reject
+unconditional variance and `inferences_impl()` reject score bootstrap,
+bootstrap, and FWB for such averages; conditional delta and MVN remain
+available. Only `p_var` defines the anchor; `p2_var` does not.
+Time inference uses Wald intervals and the existing memory guards and covariance
+accessors; it does not modify the native recursion or infer uncertainty by
+interpolating standard errors. Fresh replay replaces previous uncertainty
+metadata when callers change inference methods.
 
 ## Dependencies and execution
 
@@ -180,9 +238,16 @@ result fields, or local implementation variables.
 
 `tests/testthat` retains model, recursion, inference, and diagnostic coverage.
 Shared synthetic fixtures use explicit proportional-odds Markov transitions.
-Native analytical tests retain an independent test-only R oracle. GitHub Actions
-runs R CMD check, address/undefined sanitizers, and Valgrind. The nine vignettes
-demonstrate Markov-generated data, including a custom 30-state generator.
+Every native routine in `src/sops.cpp` is checked against an independent
+test-only R reference written from the mathematics of the calculation
+(`tests/testthat/helper-sops-native-reference.R` and
+`tests/testthat/helper-sops-delta-oracle.R`); these references are never
+production fallbacks. GitHub Actions runs R CMD check and runs the native and
+analytical-inference tests under address/undefined sanitizers and Valgrind.
+The ten vignettes demonstrate Markov-generated data, including a custom
+30-state generator and a waning-treatment-effect simulation study comparing
+constant and time-varying treatment models on full-grid SOP and time-in-state
+contrasts.
 
 Numerical inference snapshots use a relative tolerance of 1e-7 to accommodate
 platform-dependent rounding while preserving the stored regression baselines.

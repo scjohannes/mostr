@@ -113,21 +113,22 @@ compute_ci_from_draws <- function(
 #' This function joins the draws back to the original point estimate object,
 #' preserving all covariates, grouping variables, and summary statistics.
 #'
-#' @param x A SOP or average-comparison object returned with stored draws.
+#' @param x A SOP, average-time, or average-comparison object returned with
+#'   stored draws.
 #'
 #' @return A data frame with columns:
 #'   \itemize{
 #'     \item draw_id: Simulation or bootstrap iteration number
-#'     \item time: Time point
-#'     \item state: State number
-#'     \item draw: Draw-specific estimate of state occupation probability
+#'     \item time, state: Time point and state for SOP results
+#'     \item state_set: State set for average-time or comparison results
+#'     \item draw: Draw-specific estimate of the requested quantity
 #'     \item estimate: The original point estimate from the model
 #'     \item conf.low, conf.high, std.error: Summary statistics from the point estimate object
 #'     \item fwb_weight or score_weight: Optional draw-specific patient weight
 #'       for eligible ungrouped stored-data `sops()` draws
 #'     \item Additional columns from the original object (covariates, etc.)
 #'   }
-#'   Each row represents one draw for a specific time-state combination.
+#'   Each row represents one draw for a specific result row.
 #'
 #' @details
 #' This function retrieves the draws from objects created by `inferences()`.
@@ -199,6 +200,7 @@ get_draws <- function(x) {
       c(
         "markov_avg_sops",
         "markov_sops",
+        "markov_avg_time",
         "markov_avg_comparisons"
       )
     )

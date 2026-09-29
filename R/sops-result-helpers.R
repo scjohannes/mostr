@@ -175,6 +175,14 @@ with_local_seed <- function(seed, code) {
   force(code)
 }
 
+create_counterfactual_grid <- function(variables) {
+  if (length(variables)) {
+    do.call(expand.grid, variables)
+  } else {
+    data.frame(row.names = 1L)
+  }
+}
+
 #' Create Counterfactual Datasets for G-Computation
 #'
 #' Creates copies of baseline data with treatment variable set to each level.

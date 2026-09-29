@@ -37,6 +37,7 @@ test_that("the package exposes Markov workflows without removed APIs", {
     "blrm_markov",
     "sops",
     "avg_sops",
+    "avg_time",
     "avg_comparisons",
     "inferences",
     "time_in_state",

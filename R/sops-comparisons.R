@@ -27,12 +27,17 @@
 #' @param time_map Optional named numeric vector or data frame mapping visit
 #'   labels to real elapsed times. Used by `"time_in_state"` and
 #'   `"time_benefit"`.
-#' @param baseline_time Real time of the observed baseline state used as an
-#'   interpolation anchor, or `NULL` to disable baseline anchoring. See
-#'   [interpolate_sops()].
-#' @param target_times Optional numeric real-time grid when `time_map` is
-#'   supplied. When omitted, real-time comparisons use the mapped modeled
-#'   follow-up times and exclude the baseline interval.
+#' @param baseline_time Real time at which patients are in their starting state,
+#'   used with `time_map`. The default `0` means that real-time totals start
+#'   from the starting state at time 0. Set to `NULL` to start at the first
+#'   mapped visit instead. See [interpolate_sops()].
+#' @param target_times Optional numeric grid of real times, used with
+#'   `time_map`. Probabilities are linearly interpolated at these times, and
+#'   totals are calculated with the trapezoidal rule over the grid. When
+#'   omitted, the grid is `baseline_time` followed by the mapped visit times, so
+#'   totals cover the whole period from the starting state to the last visit.
+#'   With `baseline_time = NULL`, the omitted grid is the mapped visit times
+#'   only.
 #' @param time_unit Optional label stored in output.
 #' @param refit_data Optional full longitudinal data used only by refit-bootstrap
 #'   inference. It is not used for point estimates. See [avg_sops()].
@@ -140,6 +145,11 @@ avg_comparisons <- function(
 
   if (missing(times) || is.null(times)) {
     stop("`times` must be supplied to `avg_comparisons()`.")
+  }
+  if (anyDuplicated(times)) {
+    stop(
+      "`times` must not contain duplicate visits; each visit is counted once."
+    )
   }
   conf_level <- validate_conf_level(conf_level)
   variables <- validate_avg_comparison_variables(variables)

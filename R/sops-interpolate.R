@@ -189,22 +189,27 @@ state_distribution_anchor <- function(
       stop("No baseline rows are available for an empirical baseline anchor.")
     }
 
-    state_idx <- match(as.character(baseline_i[[p_var]]), states)
-    weights_i <- if (is.null(weights)) {
-      rep(1, nrow(baseline_i))
+    probs <- if (p_var %in% names(combo)) {
+      # A scenario that sets the starting state starts every patient there.
+      as.numeric(states == as.character(combo[[p_var]][1L]))
     } else {
-      weights[rows_match_values(baseline, combo[use_filters])]
+      state_idx <- match(as.character(baseline_i[[p_var]]), states)
+      weights_i <- if (is.null(weights)) {
+        rep(1, nrow(baseline_i))
+      } else {
+        weights[rows_match_values(baseline, combo[use_filters])]
+      }
+      weight_total <- sum(weights_i)
+      if (!is.finite(weight_total) || weight_total <= 0) {
+        stop("Baseline-anchor weights must have a positive finite sum.")
+      }
+      vapply(
+        seq_along(states),
+        function(state) sum(weights_i[state_idx == state], na.rm = TRUE),
+        numeric(1)
+      ) /
+        weight_total
     }
-    weight_total <- sum(weights_i)
-    if (!is.finite(weight_total) || weight_total <= 0) {
-      stop("Baseline-anchor weights must have a positive finite sum.")
-    }
-    probs <- vapply(
-      seq_along(states),
-      function(state) sum(weights_i[state_idx == state], na.rm = TRUE),
-      numeric(1)
-    ) /
-      weight_total
     rows <- row:(row + length(states) - 1L)
 
     for (nm in group_cols) {
@@ -772,7 +777,10 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #'    real-day summaries.
 #'
 #' With RCT standardization from [avg_sops()], the empirical baseline anchor is
-#' shared across treatment counterfactual groups.
+#' shared across treatment counterfactual groups. When `variables` in
+#' [avg_sops()] sets the previous-state variable (for example `yprev`), every
+#' patient starts in the set state, so the anchor for that scenario gives
+#' probability 1 to that state and 0 to the others.
 #'
 #' If `x` contains stored simulation, bootstrap, or posterior draws, the draws
 #' are interpolated too. Interval columns are then recomputed from the
