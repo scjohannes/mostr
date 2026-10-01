@@ -85,6 +85,21 @@ vignette("bayesian-rmsb-sops", package = "mostr")
 vignette("mvn-vs-bootstrap-orm-sops", package = "mostr")
 ```
 
+## Inspiration
+
+The design of `mostr` is heavily inspired by the philosophy and workflow of
+the [`marginaleffects`](https://marginaleffects.com/) package: fit a model
+first, then compute the quantities you care about from it. Functions such as
+`avg_sops()`, `avg_time()`, and `avg_comparisons()` average predictions over
+patients, `inferences()` adds uncertainty in a separate step, and results are
+plain data frames with `estimate`, `std.error`, `conf.low`, and `conf.high`
+columns. If you use `mostr`, please also consider citing `marginaleffects`:
+
+> Arel-Bundock V, Greifer N, Heiss A (2024). "How to Interpret Statistical
+> Models Using marginaleffects for R and Python." *Journal of Statistical
+> Software*, 111(9), 1–32.
+> [doi:10.18637/jss.v111.i09](https://doi.org/10.18637/jss.v111.i09)
+
 ## Data Provenance
 
 The included `violet_baseline` dataset is derived from `Hmisc::simlongord`,
