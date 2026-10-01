@@ -79,6 +79,3 @@ articles:
       - mvn-vs-bootstrap-orm-sops
       - fractional-weighted-bootstrap-sops
       - bayesian-rmsb-sops
-  - title: Simulation studies
-    contents:
-      - waning-treatment-effect-sops

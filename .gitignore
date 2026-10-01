@@ -74,3 +74,6 @@ slides/
 /benchmarks/local/
 /src/*.so
 .posit/assistant/settings.json
+
+# Local-only vignettes, not synced for now
+vignettes/waning-treatment-effect-sops.Rmd
