@@ -80,7 +80,7 @@ flowchart TD
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
-| Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, contrasts, transitions, correlation, variograms, and linear predictor comparisons |
+| Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
 
 Longitudinal rows use `id`, `time`, `y`, `yprev`, and covariates such as `tx`.
 Wrappers preserve the patient starting profiles used when `newdata` is omitted.
@@ -88,6 +88,17 @@ Second-order workflows additionally carry `ypprev` or the configured second lag.
 The `markov_sops`, `markov_avg_sops`, `markov_avg_time`, and
 `markov_avg_comparisons` S3 classes describe result semantics. Package-qualified
 calls, native registration symbols, and package options use `mostr`.
+
+`inferences()` adds Wald null tests (`statistic`, `p.value`, `s.value`, and a
+`null` attribute) through `add_null_test()` in `R/sops-result-helpers.R`, after
+every non-Bayesian inference method. `resolve_inference_null()` in
+`R/sops-inference.R` turns the default `null = "auto"` into 0 for difference
+comparisons, 1 for ratio comparisons (read from the stored
+`comparison_args`), and no test for SOP and average-time objects. The same
+function rejects a zero null for ratios before any method runs. Internal
+replays that call `inferences()` on intermediate SOP objects therefore never
+add tests, and the warnings for Bayesian outputs or missing standard errors
+fire only when the user supplied a numeric null.
 
 Ordinary and fractional weighted bootstrap refits (`update_bootstrap_model()` in
 `R/bootstrap_helpers.R`) are restricted to wrapper fits. They always resample

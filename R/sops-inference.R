@@ -65,9 +65,22 @@
 #'     \item `"logit"`: Componentwise logit-delta limits for probabilities;
 #'       available only with `method = "delta"` on SOP objects.
 #'   }
-#' @param null Optional single finite numeric null value. Supplying it adds
-#'   Wald `statistic`, `p.value`, and `s.value` columns. A zero null is rejected
-#'   for known ratio comparisons.
+#' @param null The value each estimate is tested against. A test adds three
+#'   columns: the Wald `statistic`, (estimate - `null`) / `std.error`; its
+#'   two-sided normal `p.value`; and the `s.value`, \eqn{-\log_2(p)}, which
+#'   expresses the evidence against the null in bits.
+#'   \itemize{
+#'     \item `"auto"` (the default): tests [avg_comparisons()] results against
+#'       "no effect", which is 0 for `comparison = "difference"` and 1 for
+#'       `comparison = "ratio"`. SOPs and average times have no natural null
+#'       value, so they are not tested.
+#'     \item A single finite number: tests every estimate against that value.
+#'       Ratio comparisons cannot be tested against 0.
+#'     \item `NULL`: no test.
+#'   }
+#'   Ratios are tested on the ratio scale, using the ratio's own standard
+#'   error. Bayesian `blrm` results are never tested; supplying a number for
+#'   them gives a warning.
 #' @param return_draws Logical. If `TRUE`, stores individual simulation or
 #'   bootstrap draws as an attribute. Extract with [get_draws()]. Delta
 #'   inference never stores draws. Default is `TRUE`.
@@ -82,6 +95,10 @@
 #'   \item{conf.high}{Upper confidence bound}
 #'   \item{std.error}{Standard error from analytical delta propagation,
 #'     simulation, or bootstrap}
+#'
+#'   When a null value is tested (by default, for [avg_comparisons()] results),
+#'   the object also has `statistic`, `p.value`, and `s.value` columns; see
+#'   `null`.
 #'
 #'   For simulation and bootstrap methods, `return_draws = TRUE` also stores a
 #'   `"draws"` attribute containing all individual draws. Delta results instead
@@ -337,7 +354,7 @@ inferences <- function(
   seed = NULL,
   conf_level = 0.95,
   conf_type = "auto",
-  null = NULL,
+  null = "auto",
   return_draws = TRUE,
   update_datadist = TRUE,
   use_coefstart = FALSE
@@ -397,6 +414,8 @@ inferences_impl <- function(
   }
 
   conf_level <- validate_conf_level(conf_level)
+  null_requested <- !is.null(null) && !identical(null, "auto")
+  null <- resolve_inference_null(null, x)
   method <- match.arg(
     method,
     choices = c("mvn", "delta", "score_bootstrap", "bootstrap", "fwb")
@@ -469,11 +488,11 @@ inferences_impl <- function(
         conf_type = conf_type
       )
     }
-    return(add_null_test(result, null))
+    return(add_null_test(result, null, warn = null_requested))
   }
 
   if (inherits(attr(x, "model"), "blrm")) {
-    if (!is.null(null)) {
+    if (null_requested) {
       warning(
         "Wald null tests are not computed for Bayesian posterior outputs.",
         call. = FALSE
@@ -487,14 +506,6 @@ inferences_impl <- function(
       sets_starting_state(x)
   ) {
     stop_starting_state_conditional_only()
-  }
-
-  if (
-    inherits(x, "markov_avg_comparisons") &&
-      identical(unique(x$comparison), "ratio") &&
-      identical(null, 0)
-  ) {
-    stop("Ratio comparisons cannot be tested against `null = 0`.")
   }
 
   internal_method <- if (method %in% c("mvn", "score_bootstrap")) {
@@ -575,7 +586,31 @@ inferences_impl <- function(
     conf_type = conf_type,
     return_draws = return_draws
   )
-  add_null_test(result, null)
+  add_null_test(result, null, warn = null_requested)
+}
+
+# `"auto"` tests comparisons against "no effect": 0 for differences, 1 for
+# ratios. Other objects have no natural null, so `"auto"` skips the test.
+resolve_inference_null <- function(null, x) {
+  if (is.character(null) && !identical(null, "auto")) {
+    stop("`null` must be \"auto\", NULL, or a single finite numeric value.")
+  }
+  comparison <- if (inherits(x, "markov_avg_comparisons")) {
+    attr(x, "comparison_args")$comparison %||%
+      unique(as.character(x$comparison))
+  }
+  if (identical(null, "auto")) {
+    return(switch(
+      comparison %||% "none",
+      difference = 0,
+      ratio = 1,
+      NULL
+    ))
+  }
+  if (identical(comparison, "ratio") && is.numeric(null) && isTRUE(null == 0)) {
+    stop("Ratio comparisons cannot be tested against `null = 0`.")
+  }
+  null
 }
 
 normalize_inference_result <- function(

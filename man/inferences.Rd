@@ -14,7 +14,7 @@ inferences(
   seed = NULL,
   conf_level = 0.95,
   conf_type = "auto",
-  null = NULL,
+  null = "auto",
   return_draws = TRUE,
   update_datadist = TRUE,
   use_coefstart = FALSE
@@ -86,9 +86,22 @@ distribution.
 available only with \code{method = "delta"} on SOP objects.
 }}
 
-\item{null}{Optional single finite numeric null value. Supplying it adds
-Wald \code{statistic}, \code{p.value}, and \code{s.value} columns. A zero null is rejected
-for known ratio comparisons.}
+\item{null}{The value each estimate is tested against. A test adds three
+columns: the Wald \code{statistic}, (estimate - \code{null}) / \code{std.error}; its
+two-sided normal \code{p.value}; and the \code{s.value}, \eqn{-\log_2(p)}, which
+expresses the evidence against the null in bits.
+\itemize{
+\item \code{"auto"} (the default): tests \code{\link[=avg_comparisons]{avg_comparisons()}} results against
+"no effect", which is 0 for \code{comparison = "difference"} and 1 for
+\code{comparison = "ratio"}. SOPs and average times have no natural null
+value, so they are not tested.
+\item A single finite number: tests every estimate against that value.
+Ratio comparisons cannot be tested against 0.
+\item \code{NULL}: no test.
+}
+Ratios are tested on the ratio scale, using the ratio's own standard
+error. Bayesian \code{blrm} results are never tested; supplying a number for
+them gives a warning.}
 
 \item{return_draws}{Logical. If \code{TRUE}, stores individual simulation or
 bootstrap draws as an attribute. Extract with \code{\link[=get_draws]{get_draws()}}. Delta
@@ -107,6 +120,10 @@ The input object with added columns:
 \item{conf.high}{Upper confidence bound}
 \item{std.error}{Standard error from analytical delta propagation,
 simulation, or bootstrap}
+
+When a null value is tested (by default, for \code{\link[=avg_comparisons]{avg_comparisons()}} results),
+the object also has \code{statistic}, \code{p.value}, and \code{s.value} columns; see
+\code{null}.
 
 For simulation and bootstrap methods, \code{return_draws = TRUE} also stores a
 \code{"draws"} attribute containing all individual draws. Delta results instead

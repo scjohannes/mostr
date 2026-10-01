@@ -37,9 +37,7 @@ We simulate 800 patients over 30 days with `sim_actt2_markov()`, which uses
 the eight-state NIAID scale described in `vignette("full-po-sops")`, and fit
 a proportional-odds transition model with `orm_markov()`. `id_var = "id"`
 identifies the rows that belong to the same patient, which the variance
-calculations need. `type = "HC0"` and `cadjust = TRUE` choose small-sample
-corrections for the coefficient covariance, explained
-[below](#conditional-variance).
+calculations need.
 
 ```{r setup}
 library(mostr)
@@ -75,8 +73,6 @@ fit <- orm_markov(
   y ~ tx + time + yprev,
   data = model_data,
   id_var = "id",
-  type = "HC0",
-  cadjust = TRUE,
   opt_method = "LM",
   scale = TRUE,
   maxit = 100
@@ -111,7 +107,7 @@ only conditional variance, since there is no average over sampled patients.
 
 ## Conditional variance
 
-The conditional calculation needs some notation. Let $i = 1,\ldots,n$ index
+Let $i = 1,\ldots,n$ index
 patients, and let $\beta$ be the vector of all $p$ model coefficients, with
 estimate $\hat\beta$. For patient $i$, the column vector $h_i(\beta)$ stacks
 the predicted probabilities $S_{it}(l)$ for all requested times $t$ and
@@ -134,13 +130,13 @@ $$
 The square roots of its diagonal entries are the standard errors.
 
 By default, $V_\beta$ is the fit's *patient-cluster robust* covariance, which
-allows for the correlation between a patient's repeated transitions. Two
-fitting options of `orm_markov()` and `vglm_markov()` adjust it for small
+allows for the correlation between a patient's repeated transitions. There are two
+fitting options in `orm_markov()` and `vglm_markov()` that allow adjustment for small
 samples:
 
 - `type = "HC1"` multiplies it by $(m - 1)/(m - p)$, where $m$ is the number
   of rows used in fitting (rows with positive weight, for `orm_markov()`) and
-  $p$ is the number of coefficients. `type = "HC0"` applies no such factor.
+  $p$ is the number of coefficients. `type = "HC0"` applies no such factor, and is used by default.
 - `cadjust = TRUE` multiplies it by $n/(n - 1)$, where $n$ is the number of
   patients. Fits with `id_var` use this adjustment by default.
 
@@ -148,6 +144,7 @@ Conditional variance, like MVN simulation, also works for weighted and
 penalized `orm_markov()` fits whose fitted covariance is valid.
 
 ```{r conditional-variance}
+# compute sops
 t1 <- Sys.time()
 avg_conditional <- avg_sops(
   fit,
@@ -163,6 +160,20 @@ avg_conditional <- avg_sops(
 t2 <- Sys.time()
 t2 - t1
 
+# compute time in state
+time_conditional <- avg_time(
+  fit,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit$yunique,
+  absorb = ABSORB
+) |>
+  inferences(
+    method = "delta",
+    vcov = "conditional", 
+  )
+
+# compute differences in time in state
 comp_conditional <- avg_comparisons(
   fit,
   variables = list(tx = c(0, 1)),
@@ -174,7 +185,9 @@ comp_conditional <- avg_comparisons(
 ) |>
   inferences(
     method = "delta",
-    vcov = "conditional"
+    vcov = "conditional", 
+    # specify null hypothesis, here no difference on additive scale
+    null = 0
   )
 
 p1.sops <- plot_sops(avg_conditional, linetype_var = "tx", facet_var = NULL) +
@@ -226,7 +239,6 @@ taking the covariance, their correlation in the observed sample is retained.
 The fitting options `type` and `cadjust` do not change this estimate.
 
 ```{r unconditional-variance}
-t1 <- Sys.time()
 avg_unconditional <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
@@ -238,8 +250,20 @@ avg_unconditional <- avg_sops(
   vcov = "unconditional",
   conf_type = "wald"
 )
-t2 <- Sys.time()
-t2 - t1
+
+# compute time in state
+time_unconditional <- avg_time(
+  fit,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit$yunique,
+  absorb = ABSORB
+) |>
+  inferences(
+    method = "delta",
+    vcov = "unconditional", 
+  )
+
 
 comp_unconditional <- avg_comparisons(
   fit,
@@ -252,7 +276,8 @@ comp_unconditional <- avg_comparisons(
 ) |>
   inferences(
     method = "delta",
-    vcov = "unconditional"
+    vcov = "unconditional",
+    null = 0
   )
 
 p2.sops <- plot_sops(avg_unconditional, linetype_var = "tx", facet_var = NULL) +
@@ -269,6 +294,18 @@ point estimates are identical; the intervals differ.
 ```{r compare-variances}
 p1.sops + p2.sops + plot_layout(guides = "collect")
 p1.c + p2.c
+```
+
+We can also plot the expect time in each state by arm using Grotta bars:
+
+```{r}
+plot_time(time_conditional, show_labels = FALSE)
+```
+
+If we want to show uncertainty, we can plot the expected time differently as well:
+
+```{r}
+plot_time(time_conditional, show_labels = FALSE, type = "pointrange")
 ```
 
 ### Requirements for unconditional variance

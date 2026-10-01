@@ -54,6 +54,19 @@
   coefficient covariance matrix), and `method = "mvn"` remains available;
   unconditional delta, score-bootstrap, bootstrap, and FWB inference now error.
 
+* `plot_time()` plots `avg_time()` results. `type = "bar"` draws one
+  horizontal stacked bar per scenario, split into the average time in each
+  state ("Grotta bars"); `scale = "proportion"` shows shares of follow-up.
+  `type = "pointrange"` draws one point per state and scenario with its
+  vertical confidence interval. Scenarios are drawn in black and successively
+  lighter shades of gray.
+
+* `inferences()` now tests `avg_comparisons()` results against "no effect" by
+  default: 0 for differences and 1 for ratios. The result gains `statistic`,
+  `p.value`, and `s.value` columns. The new default is `null = "auto"`; pass
+  a number to test against another value, or `null = NULL` to skip the test.
+  SOP and average-time results are still not tested unless you supply `null`.
+
 * `plot_correlation()` and `plot_variogram()` now default to Spearman rank
   correlation for observed data and fitted models, accounting for tied states.
   Use `method = "pearson"` to retain the previous calculation.

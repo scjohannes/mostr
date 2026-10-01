@@ -129,7 +129,7 @@ order_estimate_columns <- function(x) {
   out
 }
 
-add_null_test <- function(x, null) {
+add_null_test <- function(x, null, warn = TRUE) {
   if (is.null(null)) {
     return(order_estimate_columns(x))
   }
@@ -137,10 +137,12 @@ add_null_test <- function(x, null) {
     stop("`null` must be a single finite numeric value.")
   }
   if (!"std.error" %in% names(x)) {
-    warning(
-      "A null hypothesis was requested, but no standard errors are available.",
-      call. = FALSE
-    )
+    if (warn) {
+      warning(
+        "A null hypothesis was requested, but no standard errors are available.",
+        call. = FALSE
+      )
+    }
     return(order_estimate_columns(x))
   }
   x$statistic <- (x$estimate - null) / x$std.error
