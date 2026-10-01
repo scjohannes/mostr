@@ -85,6 +85,24 @@ vignette("bayesian-rmsb-sops", package = "mostr")
 vignette("mvn-vs-bootstrap-orm-sops", package = "mostr")
 ```
 
+## Methodological Foundations
+
+The statistical methods behind `mostr` were developed by Frank Harrell and
+colleagues. They include Markov ordinal state transition models, state
+occupancy probabilities computed from them, and the `rms` and `rmsb` model
+fitting. `mostr` wraps these methods in a workflow for fitting models,
+computing estimates, adding uncertainty, and plotting. If you use `mostr`,
+please cite the foundational paper:
+
+> Rohde MD, French B, Stewart TG, Harrell FE Jr (2024). "Bayesian Transition
+> Models for Ordinal Longitudinal Outcomes." *Statistics in Medicine*, 43(18),
+> 3539–3561.
+> [doi:10.1002/sim.10133](https://doi.org/10.1002/sim.10133)
+
+For a detailed introduction with worked case studies, see the chapter
+[Semiparametric Ordinal Longitudinal Models](https://hbiostat.org/rmsc/markov)
+in Frank Harrell's *Regression Modeling Strategies*.
+
 ## Inspiration
 
 The design of `mostr` is heavily inspired by the philosophy and workflow of
