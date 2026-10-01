@@ -1,4 +1,4 @@
-# mostr <img src="man/figures/logo.png" align="right" width="150" alt="mostr logo: a hexagon with stacked state-probability bars" />
+﻿# mostr <img src="man/figures/logo.png" align="right" width="150" alt="mostr logo: a hexagon with stacked state-probability bars" />
 
 Markov Ordinal State Transition models.
 
@@ -87,12 +87,7 @@ vignette("mvn-vs-bootstrap-orm-sops", package = "mostr")
 
 ## Methodological Foundations
 
-The statistical methods behind `mostr` were developed by Frank Harrell and
-colleagues. They include Markov ordinal state transition models, state
-occupancy probabilities computed from them, and the `rms` and `rmsb` model
-fitting. `mostr` wraps these methods in a workflow for fitting models,
-computing estimates, adding uncertainty, and plotting. If you use `mostr`,
-please cite the foundational paper:
+The statistical methods behind `mostr` were developed by Frank Harrell and colleagues. `mostr` wraps these methods in a workflow for fitting models, computing estimates, adding uncertainty, and plotting. If you use `mostr`, please consider citing the foundational paper:
 
 > Rohde MD, French B, Stewart TG, Harrell FE Jr (2024). "Bayesian Transition
 > Models for Ordinal Longitudinal Outcomes." *Statistics in Medicine*, 43(18),
