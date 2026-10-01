@@ -452,8 +452,8 @@ apply_to_fwb_bootstrap <- function(
 #' 3. Refit the model on the bootstrap data (see `use_coefstart` for
 #'    starting values)
 #'
-#' @seealso [relevel_factors_consecutive()], [fast_group_bootstrap()],
-#'   [apply_to_bootstrap()]
+#' @seealso `relevel_factors_consecutive()`, `fast_group_bootstrap()`,
+#'   `apply_to_bootstrap()`
 #'
 #' @noRd
 bootstrap_analysis_wrapper <- function(
