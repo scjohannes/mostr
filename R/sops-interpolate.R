@@ -539,12 +539,8 @@ sop_draw_attr_name <- function(x) {
   NULL
 }
 
-sop_has_uncertainty_cols <- function(x) {
-  any(c("conf.low", "conf.high", "std.error") %in% names(x))
-}
-
 warn_missing_interpolation_draws <- function(x) {
-  if (!sop_has_uncertainty_cols(x)) {
+  if (!any(c("conf.low", "conf.high", "std.error") %in% names(x))) {
     return(invisible(NULL))
   }
 

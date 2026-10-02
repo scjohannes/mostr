@@ -219,14 +219,6 @@ plot_variogram <- function(
   p
 }
 
-plot_correlation_label <- function(x, digits) {
-  ifelse(
-    is.na(x),
-    "",
-    formatC(round(x, digits), format = "f", digits = digits)
-  )
-}
-
 plot_correlation_heatmap <- function(
   data,
   show_values,
@@ -241,7 +233,7 @@ plot_correlation_heatmap <- function(
       c(-1, 1)
     }
   }
-  data$.label <- plot_correlation_label(data$correlation, digits)
+  data$.label <- plot_value_label(data$correlation, digits)
   p <- ggplot2::ggplot(data) +
     ggplot2::aes(x = .data$time_1, y = .data$time_2, fill = .data$correlation) +
     ggplot2::geom_tile(color = "white", linewidth = 0.25) +

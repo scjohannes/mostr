@@ -184,7 +184,12 @@ plot_comparisons <- function(
   p <- p +
     ggplot2::labs(
       x = plot_comparisons_axis_label(x_var),
-      y = plot_comparisons_y_label(comparison),
+      y = switch(
+        comparison,
+        difference = "Difference",
+        ratio = "Ratio",
+        comparison
+      ),
       colour = plot_comparisons_axis_label(color_var),
       fill = plot_comparisons_axis_label(color_var),
       linetype = plot_comparisons_axis_label(linetype_var),
@@ -321,15 +326,6 @@ plot_comparisons_axis_label <- function(var) {
     return(unname(labels[[var]]))
   }
   var
-}
-
-plot_comparisons_y_label <- function(comparison) {
-  switch(
-    comparison,
-    difference = "Difference",
-    ratio = "Ratio",
-    comparison
-  )
 }
 
 plot_comparisons_title <- function(data) {

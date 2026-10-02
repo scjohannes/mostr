@@ -135,7 +135,7 @@ plot_time <- function(
     plot_time_points(data, show_uncertainty, point_size, line_width)
   }
 
-  group_title <- plot_time_group_title(group_var)
+  group_title <- if (length(group_var)) paste(group_var, collapse = " / ")
   x_label <- plot_time_axis_label(scale, unique(data$time_unit))
   p <- p +
     if (identical(type, "bar")) {
@@ -200,13 +200,6 @@ plot_time_group_labels <- function(data, group_var) {
     return(if (is.factor(values)) values else factor(values))
   }
   interaction(data[, group_var, drop = FALSE], sep = " / ", lex.order = TRUE)
-}
-
-plot_time_group_title <- function(group_var) {
-  if (!length(group_var)) {
-    return(NULL)
-  }
-  paste(group_var, collapse = " / ")
 }
 
 plot_time_proportions <- function(data) {

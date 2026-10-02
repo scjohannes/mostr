@@ -89,10 +89,6 @@ rms_basis_handlers_for_term <- function(term) {
   )]
 }
 
-has_registered_rms_basis <- function(term) {
-  length(rms_basis_handlers_for_term(term)) > 0L
-}
-
 new_compiled_rms_basis <- function(
   handler,
   variable,

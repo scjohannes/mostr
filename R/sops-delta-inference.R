@@ -1,9 +1,5 @@
 # Analytical delta-method inference for SOP objects.
 
-delta_model_for_plan <- function(model) {
-  if (inherits(model, "robcov_vglm")) model$vglm_fit else model
-}
-
 # Averages whose scenarios set the previous-state variable start every patient
 # in the set state. Their baseline anchor is then a fixed point mass, and only
 # conditional variance (coefficient uncertainty) is defined for them.
@@ -118,7 +114,7 @@ delta_validate_sop_scope <- function(object, model, by) {
       call. = FALSE
     )
   }
-  model_plan <- delta_model_for_plan(model)
+  model_plan <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
   if (!inherits(model_plan, c("orm", "vglm")) || inherits(model_plan, "blrm")) {
     stop(
       "Analytical delta inference currently supports frequentist `orm`, ",
@@ -287,10 +283,6 @@ delta_jacobian_variance <- function(jacobian, coefficient_vcov) {
     stop("Analytical propagation produced a negative variance.", call. = FALSE)
   }
   variance
-}
-
-delta_unconditional_cluster <- function(cluster) {
-  cluster
 }
 
 delta_profile_ids <- function(baseline_data, id_var) {
@@ -605,7 +597,7 @@ inferences_delta_sops <- function(
   score_components <- if (identical(target, "unconditional")) {
     get_delta_score_components(
       model = model,
-      cluster = delta_unconditional_cluster(cluster)
+      cluster = cluster
     )
   } else {
     NULL

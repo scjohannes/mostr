@@ -1,7 +1,3 @@
-markov_native_run <- function(initial, transitions, non_absorb, absorb) {
-  cpp_markov_propagate(initial, transitions, non_absorb, absorb)
-}
-
 markov_update_logits_native <- function(
   previous,
   logits,

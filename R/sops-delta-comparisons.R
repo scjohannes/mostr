@@ -103,10 +103,6 @@ delta_trapezoid_weights <- function(times) {
   )
 }
 
-delta_real_time_visit_weights <- function(avg, args) {
-  delta_real_time_weights(avg, args)$visit
-}
-
 delta_real_time_weights <- function(avg, args) {
   time_map <- standardize_time_map(args$time_map)
   source_labels <- unique(as.character(avg$time))

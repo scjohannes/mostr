@@ -20,8 +20,8 @@
 #'
 #' @details
 #' The ID lookup tables are later joined with the original data on-demand using
-#' \code{\link{materialize_bootstrap_sample}}, so each parallel worker only
-#' materializes the data it needs for analysis.
+#' \code{\link{materialize_bootstrap_sample_indexed}}, so each parallel worker
+#' only materializes the data it needs for analysis.
 #'
 #' The new_id column ensures that if a group is sampled multiple times in
 #' the same bootstrap iteration, each instance gets a unique identifier
@@ -86,38 +86,6 @@ fast_group_bootstrap <- function(data, id_var = "id", n_boot) {
 }
 
 
-#' Materialize Bootstrap Sample from ID Lookup
-#'
-#' Joins bootstrap ID lookup table with the original data to create a full
-#' bootstrap dataset. This is used internally by bootstrap functions to
-#' materialize data on-demand for memory efficiency.
-#'
-#' @param boot_ids A data frame with columns: original_id, new_id, boot_id
-#'   (output from \code{\link{fast_group_bootstrap}})
-#' @param data The original data frame
-#' @param id_var Name of the grouping variable in data (e.g., "id")
-#'
-#' @return A data frame containing the bootstrap sample with columns from
-#'   the original data plus new_id and boot_id
-#'
-#' @details
-#' This function performs a left join between the bootstrap ID lookup table
-#' and the original data, preserving the sampling order and creating unique
-#' patient identifiers for groups that were sampled multiple times.
-#'
-#' The join uses relationship = "many-to-many" because:
-#' \itemize{
-#'   \item Each ID in boot_ids can match multiple rows in data (longitudinal)
-#'   \item Each ID can appear multiple times in boot_ids (bootstrap resampling)
-#' }
-#'
-#' @noRd
-
-materialize_bootstrap_sample <- function(boot_ids, data, id_var) {
-  row_plan <- bootstrap_row_plan(data, id_var)
-  materialize_bootstrap_sample_indexed(boot_ids, data, id_var, row_plan)
-}
-
 bootstrap_row_plan <- function(data, id_var) {
   ids <- as.character(data[[id_var]])
   unique_ids <- unique(ids)
@@ -128,6 +96,29 @@ bootstrap_row_plan <- function(data, id_var) {
   )
 }
 
+#' Materialize Bootstrap Sample from ID Lookup
+#'
+#' Joins bootstrap ID lookup table with the original data to create a full
+#' bootstrap dataset. This is used internally by bootstrap functions to
+#' materialize data on-demand for memory efficiency.
+#'
+#' @param boot_ids A data frame with columns: original_id, new_id, boot_id
+#'   (output from \code{\link{fast_group_bootstrap}})
+#' @param data The original data frame
+#' @param id_var Name of the grouping variable in data (e.g., "id")
+#' @param row_plan The rows of each group in `data`, from
+#'   `bootstrap_row_plan(data, id_var)`. It is computed once and reused for
+#'   every bootstrap sample.
+#'
+#' @return A data frame containing the bootstrap sample with columns from
+#'   the original data plus new_id and boot_id
+#'
+#' @details
+#' Each row of `boot_ids` is expanded to all rows of its group in `data`,
+#' preserving the sampling order. A group sampled several times appears once
+#' per draw, each copy with its own `new_id`.
+#'
+#' @noRd
 materialize_bootstrap_sample_indexed <- function(
   boot_ids,
   data,
@@ -536,7 +527,8 @@ bootstrap_analysis_wrapper <- function(
     coefstart <- stats::coef(fit_model)
   }
   uses_coefstart <- length(missing_states) == 0 &&
-    (!is.null(coefstart) || bootstrap_has_coefstart(fit_model))
+    (!is.null(coefstart) ||
+      !is.null(bootstrap_model_call(fit_model)$coefstart))
   refit <- function(with_coefstart) {
     update_bootstrap_model(
       fit_model,
@@ -804,16 +796,14 @@ bootstrap_update_model <- function(
   }
   if (!is.null(coefstart)) {
     update_call$coefstart <- quote(coefstart)
-  } else if (drop_coefstart && bootstrap_has_coefstart(model)) {
+  } else if (
+    drop_coefstart && !is.null(bootstrap_model_call(model)$coefstart)
+  ) {
     # `update()` removes an argument that is set to NULL.
     update_call["coefstart"] <- list(NULL)
   }
 
   suppress_orm_bootstrap_weight_warning(model, eval(update_call))
-}
-
-bootstrap_has_coefstart <- function(model) {
-  !is.null(bootstrap_model_call(model)$coefstart)
 }
 
 bootstrap_model_call <- function(model) {

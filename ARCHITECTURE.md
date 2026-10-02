@@ -110,7 +110,7 @@ internal `refit_data` attribute, and `stored_refit_bootstrap_data()` in
 User-supplied `newdata` only changes the prediction profiles, never the refit
 data. `bootstrap_model_coefs()` resamples the same stored data, clustered on the
 fit's stored `id_var` unless the user names another column. The low-level
-helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample()`,
+helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample_indexed()`,
 `apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
 `relevel_factors_consecutive()`) are internal.
 

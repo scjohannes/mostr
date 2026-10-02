@@ -20,6 +20,15 @@ plot_add_default_scales <- function(p) {
     ggplot2::scale_fill_viridis_d()
 }
 
+# Heatmap cell labels: values rounded to `digits` decimals, blank when missing.
+plot_value_label <- function(x, digits) {
+  ifelse(
+    is.na(x),
+    "",
+    formatC(round(x, digits), format = "f", digits = digits)
+  )
+}
+
 plot_validate_facets <- function(data, facet_var) {
   if (is.null(facet_var)) {
     return(invisible(NULL))

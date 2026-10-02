@@ -197,7 +197,7 @@ score_bootstrap_components <- function(model, cluster = NULL) {
 
   scores <- compute_scores_orm(model)
   cluster <- align_cluster_orm(model, cluster, nrow(scores))
-  bread <- get_orm_model_vcov(model)
+  bread <- orm_model_bread(model)$bread
 
   list(
     coefficients = stats::coef(model),
@@ -289,8 +289,4 @@ align_cluster_orm <- function(model, cluster, n_scores) {
     n_scores,
     "). Supply the row-level patient ID vector used to fit the model."
   )
-}
-
-get_orm_model_vcov <- function(model) {
-  orm_model_bread(model)$bread
 }

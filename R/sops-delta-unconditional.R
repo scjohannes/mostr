@@ -435,14 +435,6 @@ delta_normalize_orm_backend_matrix <- function(
   value
 }
 
-delta_orm_model_bread <- function(model, coefficient_names) {
-  delta_normalize_orm_backend_matrix(
-    orm_model_bread(model)$bread,
-    model,
-    coefficient_names
-  )
-}
-
 delta_reject_weighted_orm_unconditional <- function(model) {
   weights <- model$weights
   if (
@@ -677,7 +669,11 @@ get_delta_score_components <- function(model, cluster = NULL) {
     )
   } else {
     row_scores <- compute_scores_orm(fit)
-    bread <- delta_orm_model_bread(fit, names(beta))
+    bread <- delta_normalize_orm_backend_matrix(
+      orm_model_bread(fit)$bread,
+      fit,
+      names(beta)
+    )
     component_metadata <- list(
       bread_source = "rms_inverse_total_information",
       backend_hc_type_ignored = NA_character_,

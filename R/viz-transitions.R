@@ -160,14 +160,6 @@ plot_transitions <- function(
   )
 }
 
-plot_transition_label <- function(x, digits) {
-  ifelse(
-    is.na(x),
-    "",
-    formatC(round(x, digits), format = "f", digits = digits)
-  )
-}
-
 plot_transitions_heatmap <- function(
   data,
   comparison,
@@ -175,7 +167,7 @@ plot_transitions_heatmap <- function(
   digits,
   fill_limits
 ) {
-  data$.label <- plot_transition_label(data$estimate, digits)
+  data$.label <- plot_value_label(data$estimate, digits)
   p <- ggplot2::ggplot(data) +
     ggplot2::aes(
       x = .data$previous_state,

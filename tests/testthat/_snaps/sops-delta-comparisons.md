@@ -1,7 +1,7 @@
 # delta real-time weights include the baseline interval by default
 
     Code
-      mostr:::delta_real_time_visit_weights(avg, args)
+      delta_real_time_weights(avg, args)$visit
     Condition
       Error in `delta_real_time_weights()`:
       ! `baseline_time` must be earlier than the earliest mapped SOP time.

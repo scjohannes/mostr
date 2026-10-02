@@ -152,20 +152,15 @@ delta_resolve_rows <- function(analytical, rows = NULL) {
   stop("`rows` must be NULL, numeric, logical, or analytical row keys.")
 }
 
-delta_jacobian <- function(analytical) {
-  jacobian <- analytical$jacobian %||% analytical$average_jacobian
-  if (is.null(jacobian)) {
-    stop("The analytical result does not contain an average Jacobian.")
-  }
-  jacobian
-}
-
 # Internal inspection helper: the unconditional Jacobian contains only the
 # coefficient derivative, not the complete patient influence representation.
 get_jacobian <- function(x, rows = NULL) {
   analytical <- delta_analytical(x)
   index <- delta_resolve_rows(analytical, rows)
-  jacobian <- delta_jacobian(analytical)
+  jacobian <- analytical$jacobian %||% analytical$average_jacobian
+  if (is.null(jacobian)) {
+    stop("The analytical result does not contain an average Jacobian.")
+  }
   required <- as.double(length(index)) * as.double(ncol(jacobian)) * 8
   delta_assert_bytes(required, "The requested Jacobian block")
   out <- jacobian[index, , drop = FALSE]

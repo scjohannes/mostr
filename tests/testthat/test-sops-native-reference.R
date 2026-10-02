@@ -28,7 +28,7 @@ test_that("native first-order propagation matches the reference over visits", {
     transitions <- lapply(1:3, function(visit) {
       reference_random_stochastic(n * length(non_absorb), K)
     })
-    actual <- markov_native_run(
+    actual <- cpp_markov_propagate(
       initial,
       transitions,
       as.integer(non_absorb),

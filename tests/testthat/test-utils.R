@@ -37,7 +37,12 @@ test_that("table helpers preserve matrix-valued model predictors", {
   expect_identical(joined$basis, x$basis[c(1, 1, 2), ])
   expect_identical(joined$value, c(2L, 3L, 1L))
   ids <- data.frame(original_id = c(2L, 2L), new_id = c("a", "b"), boot_id = 1L)
-  sample <- materialize_bootstrap_sample(ids, x, "id")
+  sample <- materialize_bootstrap_sample_indexed(
+    ids,
+    x,
+    "id",
+    bootstrap_row_plan(x, "id")
+  )
   expect_identical(sample$basis, x$basis[c(1, 1), ])
 })
 

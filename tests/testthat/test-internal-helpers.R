@@ -358,7 +358,7 @@ test_that("orm score-bootstrap helpers cover validation and alignment branches",
     fixed = TRUE
   )
 
-  expect_true(is.matrix(mostr:::get_orm_model_vcov(fit)))
+  expect_true(is.matrix(mostr:::orm_model_bread(fit)$bread))
 })
 
 test_that("score bootstrap draw helper reports malformed robust components", {

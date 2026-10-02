@@ -106,7 +106,7 @@ delta_public_orm_case <- local({
         ,
         drop = FALSE
       ]
-      covariance <- get_orm_model_vcov(model)
+      covariance <- orm_model_bread(model)$bread
       value <<- list(
         model = model,
         baseline = baseline,
@@ -645,7 +645,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
 
   avg_args <- attr(avg, "avg_args")
   newdata <- attr(avg, "newdata_pred")
-  model_plan <- delta_model_for_plan(case$model)
+  model_plan <- case$model$vglm_fit
   plan <- delta_compile_plan(
     object = avg,
     model_plan = model_plan,
@@ -689,7 +689,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
     profile_ids = profile_ids,
     score_components = get_delta_score_components(
       case$model,
-      cluster = delta_unconditional_cluster(NULL)
+      cluster = NULL
     )
   )
   analytical <- attr(inferred, "analytical")

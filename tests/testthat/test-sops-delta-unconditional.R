@@ -395,7 +395,7 @@ test_that("orm covariance and score components use inverse total information", {
     reorder = FALSE
   )
   rownames(expected_scores) <- cluster_ids
-  expected_bread <- get_orm_model_vcov(fit)
+  expected_bread <- orm_model_bread(fit)$bread
 
   expect_equal(components$ids, cluster_ids)
   expect_equal(components$scores, expected_scores)

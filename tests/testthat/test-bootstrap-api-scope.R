@@ -24,7 +24,7 @@ test_that("low-level bootstrap helpers are not exported", {
     "bootstrap_analysis_wrapper",
     "apply_to_bootstrap",
     "fast_group_bootstrap",
-    "materialize_bootstrap_sample",
+    "materialize_bootstrap_sample_indexed",
     "relevel_factors_consecutive"
   )
   expect_length(intersect(helpers, exports), 0L)

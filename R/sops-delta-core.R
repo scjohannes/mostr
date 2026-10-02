@@ -727,13 +727,3 @@ run_sop_delta_plan <- function(
   }
   out
 }
-
-compile_and_run_sop_delta <- function(model, newdata, ...) {
-  backend <- sop_delta_backend_model(model)
-  plan <- compile_sop_execution_plan(
-    model = backend,
-    newdata = newdata,
-    ...
-  )
-  run_sop_delta_plan(plan, model)
-}

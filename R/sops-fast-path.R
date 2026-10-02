@@ -511,10 +511,6 @@ normalize_probability_rows <- function(probs) {
   probs
 }
 
-normalize_probability_array <- function(probs) {
-  normalize_probability_array_native(probs)
-}
-
 
 #' Compute Effective Coefficients from Beta Vector (Internal)
 #'

@@ -508,17 +508,13 @@ warn_duplicate_markov_id_time <- function(
   invisible(NULL)
 }
 
-markov_refit_skip_args <- function() {
-  c("data", "subset", "weights", "etastart", "mustart", "offset")
-}
-
 # Capture the values of the arguments a user passed to a fitting wrapper.
 # Bootstrap and FWB refits reuse these values instead of re-evaluating the
 # stored call's argument expressions, which may refer to variables that exist
 # only in the user's fitting frame or that changed after fitting. Arguments
 # evaluated inside `data` (or replaced at refit time) are not captured.
 markov_capture_refit_args <- function(call, env, formal_names, ...) {
-  skip <- markov_refit_skip_args()
+  skip <- c("data", "subset", "weights", "etastart", "mustart", "offset")
   call_names <- setdiff(names(call)[-1L], "")
   out <- list()
 

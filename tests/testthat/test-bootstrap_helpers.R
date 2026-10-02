@@ -25,7 +25,7 @@ test_that("fast_group_bootstrap validates the grouping column", {
   )
 })
 
-test_that("materialize_bootstrap_sample preserves sampled copies and row data", {
+test_that("materialize_bootstrap_sample_indexed preserves sampled copies and row data", {
   data <- data.frame(
     id = c(1, 1, 2, 2),
     time = c(1, 2, 1, 2),
@@ -37,7 +37,12 @@ test_that("materialize_bootstrap_sample preserves sampled copies and row data", 
     boot_id = 1
   )
 
-  result <- materialize_bootstrap_sample(boot_ids, data, "id")
+  result <- materialize_bootstrap_sample_indexed(
+    boot_ids,
+    data,
+    "id",
+    bootstrap_row_plan(data, "id")
+  )
 
   expect_equal(nrow(result), 6)
   expect_equal(result$new_id, rep(c("2_1", "1_1", "2_2"), each = 2))
@@ -56,7 +61,12 @@ test_that("indexed bootstrap keeps factor levels and unmatched sampled ids", {
     boot_id = 1L
   )
   before <- serialize(list(data, ids), NULL)
-  out <- materialize_bootstrap_sample(ids, data, "id")
+  out <- materialize_bootstrap_sample_indexed(
+    ids,
+    data,
+    "id",
+    bootstrap_row_plan(data, "id")
+  )
   expect_identical(out$id, c("1", "1", "missing", "1", "1"))
   expect_identical(
     out$y,

@@ -5,7 +5,7 @@ test_that("native first-order propagation matches the reference update", {
     matrix(c(0.2, 0.6, 0.2, 0.1, 0.7, 0.2), nrow = 2, byrow = TRUE)
   )
 
-  actual <- mostr:::markov_native_run(
+  actual <- mostr:::cpp_markov_propagate(
     initial,
     list(transition),
     non_absorb = 1:2,
@@ -120,7 +120,7 @@ test_that("native BLRM probability conversion preserves R semantics", {
   expected[,, 2L] <- cumulative[,, 1L] - cumulative[,, 2L]
   expected[,, 3L] <- cumulative[,, 2L]
   expected[expected < 0] <- 0
-  expected <- mostr:::normalize_probability_array(expected)
+  expected <- mostr:::normalize_probability_array_native(expected)
 
   actual <- mostr:::blrm_probabilities_native(
     base_eta,

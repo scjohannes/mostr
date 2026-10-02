@@ -551,7 +551,7 @@ split_rms_basis_assign <- function(x, terms) {
 
   basis_terms <- names(assign)[vapply(
     names(assign),
-    has_registered_rms_basis,
+    function(term) length(rms_basis_handlers_for_term(term)) > 0L,
     logical(1)
   )]
   basis_metadata <- vector("list", length(basis_terms))
@@ -576,20 +576,6 @@ split_rms_basis_assign <- function(x, terms) {
     has_basis = length(basis_terms) > 0L,
     basis_terms = basis_metadata
   )
-}
-
-split_rcs_assign <- function(x, terms) {
-  out <- split_rms_basis_assign(x, terms)
-  out$has_rcs <- any(vapply(
-    out$basis_terms,
-    function(term) "rcs" %in% term$handlers,
-    logical(1)
-  ))
-  out
-}
-
-has_inline_rcs <- function(term) {
-  "rcs" %in% rms_basis_handlers_for_term(term)
 }
 
 make_vgam_vcontrol_eval <- function() {

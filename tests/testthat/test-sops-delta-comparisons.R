@@ -315,10 +315,10 @@ test_that("factor-time ORM differences match public finite differences", {
     numeric(length(case$target_times))
   )
   expected_visit_weights <- drop(target_weights %*% source_basis)
-  analytical_visit_weights <- mostr:::delta_real_time_visit_weights(
+  analytical_visit_weights <- mostr:::delta_real_time_weights(
     avg,
     attr(point, "comparison_args")
-  )
+  )$visit
   expect_equal(
     unname(analytical_visit_weights),
     expected_visit_weights,
@@ -350,9 +350,9 @@ test_that("delta real-time weights include the baseline interval by default", {
     target_times = NULL
   )
 
-  anchored <- mostr:::delta_real_time_visit_weights(avg, args)
+  anchored <- mostr:::delta_real_time_weights(avg, args)$visit
   args$baseline_time <- NULL
-  unanchored <- mostr:::delta_real_time_visit_weights(avg, args)
+  unanchored <- mostr:::delta_real_time_weights(avg, args)$visit
   nodes <- sort(unique(unname(case$time_map)))
   expected <- mostr:::delta_trapezoid_weights(nodes)
   # The default grid starts at `baseline_time`, so the first visit also
@@ -364,7 +364,7 @@ test_that("delta real-time weights include the baseline interval by default", {
 
   args$baseline_time <- min(case$time_map)
   expect_snapshot(
-    mostr:::delta_real_time_visit_weights(avg, args),
+    delta_real_time_weights(avg, args)$visit,
     error = TRUE
   )
 })
@@ -386,8 +386,8 @@ test_that("delta real-time weights ignore unused time-map entries", {
   expected_args$time_map <- case$time_map
 
   expect_equal(
-    mostr:::delta_real_time_visit_weights(avg, args),
-    mostr:::delta_real_time_visit_weights(avg, expected_args)
+    mostr:::delta_real_time_weights(avg, args)$visit,
+    mostr:::delta_real_time_weights(avg, expected_args)$visit
   )
 })
 
@@ -615,7 +615,7 @@ test_that("real-time weights collapse duplicate visits and handle a single node"
     baseline_time = 0,
     target_times = c(0, 1, 3, 5, 7)
   )
-  weights <- delta_real_time_visit_weights(avg, args)
+  weights <- delta_real_time_weights(avg, args)$visit
   basis <- vapply(
     seq_len(3),
     function(j) {
@@ -633,12 +633,12 @@ test_that("real-time weights collapse duplicate visits and handle a single node"
   expected <- drop(delta_trapezoid_weights(args$target_times) %*% basis)
   expect_equal(unname(weights), expected, tolerance = 1e-12)
   args$target_times <- 5
-  expect_equal(unname(delta_real_time_visit_weights(avg, args)), numeric(3))
+  expect_equal(unname(delta_real_time_weights(avg, args)$visit), numeric(3))
   expect_equal(
-    delta_real_time_visit_weights(
+    delta_real_time_weights(
       data.frame(time = "v1"),
       list(time_map = c(v1 = 3), baseline_time = NULL)
-    ),
+    )$visit,
     c(v1 = 0)
   )
 })

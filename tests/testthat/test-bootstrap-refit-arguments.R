@@ -140,7 +140,12 @@ resample_patients <- function(data, ids) {
     new_id = paste0(ids, "_", seq_along(ids)),
     boot_id = 1L
   )
-  boot_data <- mostr:::materialize_bootstrap_sample(boot_ids, data, "id")
+  boot_data <- mostr:::materialize_bootstrap_sample_indexed(
+    boot_ids,
+    data,
+    "id",
+    mostr:::bootstrap_row_plan(data, "id")
+  )
   boot_data$id <- boot_data$new_id
   boot_data
 }
