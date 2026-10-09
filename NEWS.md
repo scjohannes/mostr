@@ -1,5 +1,11 @@
 # mostr 0.1.0
 
+* `sim_actt1_markov()` now adds the average age and sex contribution of an
+  ACTT-1 patient (0.2253 on the log-odds scale) to every threshold. The
+  reported thresholds describe a woman aged 0, so simulated patients
+  previously moved to better states too quickly; placebo mortality by day 28
+  rises from 9.5% to 13.4%, closer to the reported 15.2% by day 29.
+
 * Bootstrap refits (`inferences(method = "bootstrap")` and `method = "fwb"`)
   now always resample the data stored by `orm_markov()` or `vglm_markov()`:
   the rows used for fitting, after any `subset`, with their

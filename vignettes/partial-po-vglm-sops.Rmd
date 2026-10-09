@@ -14,89 +14,70 @@ source("_setup.R", local = TRUE)
 A proportional-odds model assumes that each covariate shifts the odds of
 being in a worse state by the same factor at every cut-point of the ordinal
 scale. For example, the effect of time on the odds of being in state 2 or
-worse is assumed to equal its effect on the odds of being in state 5 or
+worse is assumed to equal its effect on the odds of being in state 8 or
 worse. When this assumption is doubtful for some covariates, a *partial*
 proportional-odds model lets their effects differ between cut-points while
 keeping proportional odds for the others.
 
-This article fits such a model with `vglm_markov()`. We let the effect of time
-change linearly across the cut-points and keep proportional odds for
-treatment and the previous state. We then check the model, estimate state
-occupancy probabilities (SOPs), and compare expected time in each state
-between arms.
+This article fits both kinds of model to the same data with `vglm_markov()`:
+a full proportional-odds model, and a partial proportional-odds model in which
+the effect of time changes linearly across the cut-points. We compare how well
+the two models fit, and how closely each reproduces the observed state
+occupancy probabilities (SOPs), transitions, and correlations between days.
 
 ## Simulate data
 
-We simulate 200 patients over 14 days with `sim_actt2_markov()`, which uses
-the eight-state NIAID scale described in `vignette("full-po-sops")`. To keep
-the extra coefficients well estimated in this small example, we combine the
-two outpatient states (1 and 2) and the two hospital states without oxygen
-(3 and 4). This leaves six states, with death as state 6.
+We simulate 1,000 patients over 28 days with `sim_actt1_markov()`. Its
+trajectories resemble those of the
+[Adaptive COVID-19 Treatment Trial 1 (ACTT-1)](https://doi.org/10.1056/NEJMoa2007764),
+which compared Remdesivir with placebo in adults hospitalized with COVID-19.
+States follow the eight-point NIAID scale described in
+`vignette("full-po-sops")`, from 1 (at home, no limitations) to 8 (death).
+Treated patients (`tx = 1`) have 0.8 times the odds of being in a worse state
+on any day.
+
+The simulator itself is a partial proportional-odds model. For the cut-point
+"state $k$ or worse", its linear predictor contains the term
+$-0.0188 \times k \times t$ on day $t$. The coefficient is small, but it grows
+with both the day and the cut-point: on day 28 it lowers the log odds of
+death (cut-point $k = 8$) by $0.0188 \times 8 \times 28 \approx 4.2$, but those
+of being in state 2 or worse by only about 1.1. We can therefore check which
+model recovers this structure.
 
 ```{r setup}
 library(mostr)
 library(ggplot2)
+library(patchwork)
 library(rms)
 library(VGAM)
 
-N_PATIENTS <- 200
-FOLLOW_UP <- 14
-SEED <- 20260528
-STATE_LEVELS <- as.character(1:6)
-ABSORB <- "6"
+N_PATIENTS <- 1000
+FOLLOW_UP <- 28
+SEED <- 20261009
+STATE_LEVELS <- as.character(1:8)
+ABSORB <- "8"
 
-# Map states 1-2 to 1, 3-4 to 2, and 5-8 to 3-6.
-collapse_actt2_states <- function(data) {
-  data$y <- ifelse(
-    data$y %in% c(1L, 2L),
-    1L,
-    ifelse(data$y %in% c(3L, 4L), 2L, data$y - 2L)
-  )
-  data$yprev <- ifelse(
-    data$yprev %in% c(1L, 2L),
-    1L,
-    ifelse(data$yprev %in% c(3L, 4L), 2L, data$yprev - 2L)
-  )
-  data
-}
-
-raw_data <- sim_actt2_markov(
+raw_data <- sim_actt1_markov(
   n_patients = N_PATIENTS,
   follow_up_time = FOLLOW_UP,
-  treatment_effect = -0.03,
+  treatment_effect = log(0.8),
   seed = SEED
-) |>
-  collapse_actt2_states()
+)
 
-model_data <- prepare_markov_data(raw_data, absorbing_state = 6)
+model_data <- prepare_markov_data(raw_data, absorbing_state = 8)
 ```
 
-## Specify which effects may vary
+## Fit the proportional-odds model
 
-VGAM expresses partial proportional odds through *constraint matrices*. The
-model has one linear predictor per cut-point; with six states there are five.
-Each model term has a constraint matrix with one row per cut-point and one
-column per coefficient for that term:
+Both models use treatment, the previous state, and a restricted cubic spline
+in time with six knots, `rcs(time, 6)`, which places the knots at quantiles
+of the observed days.
 
-- a single column of ones gives one coefficient shared by all cut-points,
-  which is proportional odds;
-- a second column $(0, 1, 2, 3, 4)$ adds a coefficient that changes the
-  term's effect by the same amount from one cut-point to the next, a linear
-  departure from proportional odds.
+In VGAM, `cumulative(reverse = TRUE)` models the odds of worse (higher)
+states, and `parallel = TRUE` requests proportional odds for every term.
 
-The easiest way to obtain a valid set of constraint matrices is to fit the
-proportional-odds model first and edit its constraints. We change two things:
-
-1. The spline in time, `rcs(time, 4)`, is represented by several basis
-   columns. We give the linear basis column the extra "linear departure"
-   coefficient and keep the other basis columns proportional.
-2. The fitted model lists a separate constraint for each dummy variable of the
-   factor `yprev`. The constraints we supply must instead be named by the
-   formula term, so we replace these entries with a single `yprev` entry with
-   proportional odds.
-
-```{r fit-ppo}
-form <- ordered(y) ~ tx + rcs(time, 4) + yprev
+```{r fit-po}
+form <- ordered(y) ~ tx + rcs(time, 6) + yprev
 
 fit_po <- vglm_markov(
   form,
@@ -104,17 +85,47 @@ fit_po <- vglm_markov(
   data = model_data,
   id_var = "id"
 )
+```
 
+## Specify which effects may vary
+
+VGAM expresses partial proportional odds through *constraint matrices*. The
+model has one linear predictor per cut-point; with eight states there are
+seven, for "state 2 or worse" through "state 8 or worse". Each model term has
+a constraint matrix with one row per cut-point and one column per coefficient
+for that term:
+
+- a single column of ones gives one coefficient shared by all cut-points,
+  which is proportional odds;
+- a second column with a score for each cut-point adds a coefficient that
+  changes the term's effect in proportion to that score. With the scores
+  $(0, 1, \ldots, 6)$, the effect of the term at cut-point "state $k$ or
+  worse" is $\beta + (k - 2)\,\tau$. Here $\beta$ is the effect at the first
+  cut-point, "state 2 or worse", and $\tau$ is the *linear deviation*: the
+  change in effect from one cut-point to the next.
+
+The easiest way to obtain a valid set of constraint matrices is to fit the
+proportional-odds model first and edit its constraints. We change two things:
+
+1. The spline in time is represented by several basis columns. We give the
+   linear basis column the extra linear-deviation coefficient and keep the
+   other basis columns proportional.
+2. The fitted model lists a separate constraint for each dummy variable of the
+   factor `yprev`. The constraints we supply must instead be named by the
+   formula term, so we replace these entries with a single `yprev` entry with
+   proportional odds.
+
+```{r constraints}
 constraints <- fit_po$vglm_fit@constraints
 
 # The linear basis column of the time spline.
 linear_time_term <- grep(
-  "^rcs\\(time, 4\\).*time$",
+  "^rcs\\(time.*time$",
   names(constraints),
   value = TRUE
 )[[1]]
 
-# One row per cut-point: five for six states.
+# One row per cut-point: seven for eight states.
 n_thresholds <- nrow(constraints[[linear_time_term]])
 
 # Replace the per-dummy yprev constraints with one term-level entry.
@@ -122,19 +133,15 @@ yprev_terms <- grep("^yprev", names(constraints), value = TRUE)
 constraints[yprev_terms] <- NULL
 constraints[["yprev"]] <- cbind(PO_effect = rep(1, n_thresholds))
 
-# Shared effect plus a linear change across cut-points.
+# Effect at the first cut-point plus a change of the same size per cut-point.
 constraints[[linear_time_term]] <- cbind(
   PO_effect = rep(1, n_thresholds),
   linear_deviation = seq_len(n_thresholds) - 1
 )
+constraints[[linear_time_term]]
 ```
 
-Printing the list shows the result: only the linear time term has two
-columns.
-
-```{r}
-constraints
-```
+## Fit the partial proportional-odds model
 
 We refit the model with these constraints. `parallel = FALSE` tells VGAM not
 to impose proportional odds on every term, so that our constraint matrices
@@ -143,7 +150,7 @@ decide instead. Starting from the proportional-odds fit's linear predictors
 list itself, rather than the name `constraints`, in the model call, so that
 code that later re-evaluates the call does not depend on this variable.
 
-```{r}
+```{r fit-ppo}
 fit_ppo <- vglm_markov(
   form,
   family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
@@ -153,130 +160,311 @@ fit_ppo <- vglm_markov(
   etastart = fit_po$vglm_fit@predictors
 )
 fit_ppo$vglm_fit@call$constraints <- constraints
-
-summary(fit_ppo)
 ```
 
-## Check the model against the data
+The two models share all coefficients except the linear deviation. VGAM
+numbers the coefficients of a term by the columns of its constraint matrix,
+so the linear time effect at the first cut-point ends in `:1` and the linear
+deviation in `:2`. In the simulator, too, the time effect changes by
+$-0.0188\,t$ from one cut-point to the next, so the deviation estimate
+should be close to -0.0188. The treatment coefficient should be close to
+$\log(0.8) \approx -0.22$:
 
-As in `vignette("full-po-sops")`, each diagnostic is computed once from the
-observed trajectories and once from the fitted model. Similar patterns
-suggest the model captures how patients move between states; clear
-differences point to a missing feature. The transition heatmaps use at most
-sixteen evenly spaced days.
+```{r compare-coefficients}
+coef_po <- coef(fit_po$vglm_fit)
+coef_ppo <- coef(fit_ppo$vglm_fit)
+deviation_name <- paste0(linear_time_term, ":2")
 
-```{r diagnostics-transitions-observed, fig.width = 9, fig.height = 9}
-diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
-
-plot_transitions(
-  raw_data,
-  times = diagnostic_times,
-  y_levels = STATE_LEVELS,
-  show_values = FALSE
-) +
-  labs(title = "Observed transition proportions")
+data.frame(
+  coefficient = c("tx", "linear deviation of time"),
+  PO = c(coef_po[["tx"]], NA),
+  PPO = c(coef_ppo[["tx"]], coef_ppo[[deviation_name]]),
+  simulated = c(log(0.8), -0.0188)
+)
 ```
 
-```{r diagnostics-transitions-model, fig.width = 9, fig.height = 9}
-plot_transitions(
-  fit_ppo,
-  times = diagnostic_times,
-  y_levels = STATE_LEVELS,
-  absorb = ABSORB,
-  show_values = FALSE
-) +
-  labs(title = "Model-based transition proportions")
+## Compare model fit
+
+The Akaike information criterion, `AIC()`, measures how well a model fits
+the data while penalizing each extra coefficient by 2 units; lower values are
+better. The Bayesian information criterion, `BIC()`, uses a larger penalty
+that grows with the number of observations. A difference of more than about
+10 is usually regarded as strong evidence for the model with the lower value.
+Because the proportional-odds model is the partial proportional-odds model
+with the deviation set to zero, we can also compare them with a likelihood
+ratio test, `VGAM::lrtest()`.
+
+```{r model-fit}
+data.frame(
+  model = c("Proportional odds", "Partial proportional odds"),
+  coefficients = c(length(coef_po), length(coef_ppo)),
+  AIC = c(AIC(fit_po$vglm_fit), AIC(fit_ppo$vglm_fit)),
+  BIC = c(BIC(fit_po$vglm_fit), BIC(fit_ppo$vglm_fit))
+)
+
+VGAM::lrtest(fit_ppo$vglm_fit, fit_po$vglm_fit)
 ```
 
-```{r diagnostics-correlation-observed}
-plot_correlation(
-  fill_limits = c(0, 1),
-  raw_data,
-  times = 1:FOLLOW_UP,
-  show_values = FALSE
-) +
-  labs(title = "Observed state correlations")
-```
+Both criteria strongly favour the partial proportional-odds model.
 
-```{r diagnostics-correlation-model}
-plot_correlation(
-  fill_limits = c(0, 1),
-  fit_ppo,
-  times = 1:FOLLOW_UP,
-  y_levels = STATE_LEVELS,
-  absorb = ABSORB,
-  show_values = FALSE
-) +
-  labs(title = "Model-based state correlations")
-```
+## Compare state occupancy probabilities
 
-```{r diagnostics-variogram-observed}
-plot_variogram(
-  raw_data,
-  times = 1:FOLLOW_UP
-) +
-  labs(title = "Observed correlation variogram")
-```
+`avg_sops()` estimates, for each arm, the probability of each state on each
+day, averaged over the patients' observed starting states (see
+`vignette("full-po-sops")`). We compare both models' estimates with the
+observed proportion of patients in each state, separately for each arm. Only
+point estimates are needed here, so we do not call `inferences()`.
 
-```{r diagnostics-variogram-model}
-plot_variogram(
-  fit_ppo,
-  times = 1:FOLLOW_UP,
-  y_levels = STATE_LEVELS,
-  absorb = ABSORB
-) +
-  labs(title = "Model-based correlation variogram")
-```
-
-## Estimate state occupancy probabilities
-
-Analytical confidence intervals (`method = "delta"`) are available only for
-full proportional-odds models, so we use the default `method = "mvn"`. It
-draws coefficient vectors from a multivariate normal distribution centered on
-the estimates, with the model's covariance matrix, recomputes the SOPs for
-each draw, and takes percentiles of the results. We use only 100 draws to
-keep this example fast; use more, such as 1,000, in a real analysis.
-
-```{r avg-sops}
-sop_ppo <- avg_sops(
-  fit_ppo,
+```{r sops-models}
+sop_args <- list(
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
   y_levels = STATE_LEVELS,
   absorb = ABSORB
-) |>
-  inferences(n_draws = 100)
+)
+sop_po <- do.call(avg_sops, c(list(fit_po), sop_args))
+sop_ppo <- do.call(avg_sops, c(list(fit_ppo), sop_args))
 
-plot_sops(
-  sop_ppo,
-  geom = "line",
-  facet_var = NULL,
-  linetype_var = "tx"
+observed <- as.data.frame(
+  prop.table(
+    table(
+      tx = raw_data$tx,
+      time = raw_data$time,
+      state = factor(raw_data$y, levels = STATE_LEVELS)
+    ),
+    margin = c(1, 2)
+  ),
+  responseName = "estimate"
+)
+
+sop_comparison <- rbind(
+  data.frame(source = "Observed", observed[, c("tx", "time", "state", "estimate")]),
+  data.frame(source = "Proportional odds", as.data.frame(sop_po)[, c("tx", "time", "state", "estimate")]),
+  data.frame(source = "Partial proportional odds", as.data.frame(sop_ppo)[, c("tx", "time", "state", "estimate")])
+)
+sop_comparison$time <- as.integer(as.character(sop_comparison$time))
+sop_comparison$source <- factor(
+  sop_comparison$source,
+  levels = c("Observed", "Proportional odds", "Partial proportional odds")
+)
+```
+
+```{r sops-plot, fig.width = 8, fig.height = 6}
+ggplot(
+  subset(sop_comparison, tx == 0),
+  aes(time, estimate, colour = source, linetype = source)
 ) +
+  geom_line() +
+  facet_wrap(~state, scales = "free_y", labeller = label_both, ncol = 4) +
   labs(
     x = "Day",
-    y = "State occupancy probability"
+    y = "State occupancy probability",
+    colour = NULL,
+    linetype = NULL,
+    title = "Control arm"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+The partial proportional-odds curves follow the observed proportions. The
+proportional-odds curves deviate systematically: they underestimate deaths
+during the first three weeks and misplace the occupancy of the hospital
+states, most visibly state 4. The mean absolute difference from the observed
+proportions over all days, states, and arms summarizes this:
+
+```{r sops-error}
+sop_wide <- reshape(
+  sop_comparison,
+  idvar = c("tx", "time", "state"),
+  timevar = "source",
+  direction = "wide"
+)
+c(
+  `Proportional odds` = mean(abs(
+    sop_wide$`estimate.Proportional odds` - sop_wide$estimate.Observed
+  )),
+  `Partial proportional odds` = mean(abs(
+    sop_wide$`estimate.Partial proportional odds` - sop_wide$estimate.Observed
+  ))
+)
+```
+
+
+
+## Compare transitions
+
+`plot_transitions()` shows, for selected days, the proportion of all
+patients who move from each previous state (x-axis) to each current state
+(y-axis). For the observed data these are counts divided by the number of
+patients; for a model they are the expected proportions implied by its
+transition probabilities.
+
+```{r transitions-data}
+transition_sources <- list(
+  Observed = plot_transitions(
+    raw_data,
+    times = seq_len(FOLLOW_UP),
+    y_levels = STATE_LEVELS
+  ),
+  `Proportional odds` = plot_transitions(
+    fit_po,
+    times = seq_len(FOLLOW_UP),
+    y_levels = STATE_LEVELS,
+    absorb = ABSORB
+  ),
+  `Partial proportional odds` = plot_transitions(
+    fit_ppo,
+    times = seq_len(FOLLOW_UP),
+    y_levels = STATE_LEVELS,
+    absorb = ABSORB
+  )
+)
+transitions <- do.call(rbind, Map(
+  function(plot, source) {
+    data.frame(
+      source = source,
+      time = as.integer(as.character(plot$data$.time_key)),
+      previous_state = plot$data$previous_state,
+      state = plot$data$state,
+      estimate = plot$data$estimate
+    )
+  },
+  transition_sources,
+  names(transition_sources)
+))
+transitions$source <- factor(transitions$source, levels = names(transition_sources))
+```
+
+```{r transitions-plot, fig.width = 9, fig.height = 7}
+ggplot(
+  subset(transitions, time %in% c(2, 7, 14, 28)),
+  aes(previous_state, state, fill = estimate)
+) +
+  geom_tile(colour = "white") +
+  facet_grid(source ~ time, labeller = labeller(time = function(x) paste("Day", x))) +
+  scale_fill_viridis_c(trans = "sqrt", limits = c(0, NA)) +
+  coord_equal() +
+  labs(x = "Previous state", y = "Current state", fill = "Proportion")
+```
+
+Most patients stay in their previous state, so the diagonal dominates all
+three rows. Differences between the models appear in the smaller
+off-diagonal proportions. The plotted values are easier to compare directly
+over time. For example, the proportion of patients who die on each day after
+being ventilated the day before:
+
+```{r transitions-death, fig.height = 3.5}
+ggplot(
+  subset(transitions, previous_state == "7" & state == "8"),
+  aes(time, estimate, colour = source, linetype = source)
+) +
+  geom_line() +
+  labs(
+    x = "Day",
+    y = "Proportion of patients",
+    colour = NULL,
+    linetype = NULL,
+    title = "Moves from ventilation (state 7) to death (state 8)"
   )
 ```
 
-## Compare time in each state
+The proportional-odds model underestimates these deaths in the first week
+and overestimates them later.
+
+## Compare correlations between days
+
+`plot_correlation()` shows the Spearman rank correlation between patients'
+states on every pair of days, from the observed data or implied by a model.
+
+```{r correlation, fig.width = 10, fig.height = 4}
+correlation_days <- seq(1, FOLLOW_UP, by = 3)
+
+correlation_plots <- list(
+  plot_correlation(
+    raw_data,
+    times = correlation_days,
+    fill_limits = c(0, 1),
+    show_values = FALSE
+  ) +
+    labs(title = "Observed"),
+  plot_correlation(
+    fit_po,
+    times = correlation_days,
+    y_levels = STATE_LEVELS,
+    absorb = ABSORB,
+    fill_limits = c(0, 1),
+    show_values = FALSE
+  ) +
+    labs(title = "Proportional odds"),
+  plot_correlation(
+    fit_ppo,
+    times = correlation_days,
+    y_levels = STATE_LEVELS,
+    absorb = ABSORB,
+    fill_limits = c(0, 1),
+    show_values = FALSE
+  ) +
+    labs(title = "Partial proportional odds")
+)
+wrap_plots(correlation_plots, nrow = 1) + plot_layout(guides = "collect")
+```
+
+All three plots look almost the same. Correlations between days depend
+mainly on how strongly patients tend to stay in their previous state, which both models capture.
+
+## Compare treatment effects on time in each state
 
 `avg_comparisons()` with `estimand = "time_in_state"` sums each arm's daily
 SOPs over follow-up. The result is the expected number of days spent in each
 state, and the comparison reports treated minus control. A positive
 difference for state 1 means that treated patients are expected to spend more
-of the 14 days in the best state.
+of the 28 days at home without limitations.
 
-```{r}
-tis_ppo <- avg_comparisons(
-  fit_ppo,
+Analytical confidence intervals (`method = "delta"`) are available only for
+full proportional-odds models, so for the partial proportional-odds model we
+use `method = "mvn"`. It draws coefficient vectors from a multivariate normal
+distribution centered on the estimates, with the model's covariance matrix,
+recomputes the result for each draw, and takes percentiles. We use only 100
+draws to keep this example fast; use more, such as 1,000, in a real analysis.
+
+```{r time-in-state}
+tis_args <- list(
   estimand = "time_in_state",
   variables = list(tx = c(0, 1)),
-  times = 1:FOLLOW_UP,
+  times = seq_len(FOLLOW_UP),
   y_levels = STATE_LEVELS,
   absorb = ABSORB
-) |>
-  inferences(n_draws = 100)
+)
 
-plot_comparisons(tis_ppo)
+tis_po <- do.call(avg_comparisons, c(list(fit_po), tis_args)) |>
+  inferences(method = "delta", vcov = "conditional")
+tis_ppo <- do.call(avg_comparisons, c(list(fit_ppo), tis_args)) |>
+  inferences(method = "mvn", n_draws = 100, seed = SEED)
+
+tis_comparison <- rbind(
+  data.frame(model = "Proportional odds", as.data.frame(tis_po)),
+  data.frame(model = "Partial proportional odds", as.data.frame(tis_ppo))
+)
+tis_comparison$model <- factor(
+  tis_comparison$model,
+  levels = c("Proportional odds", "Partial proportional odds")
+)
+tis_comparison[, c("model", "state_set", "estimate", "conf.low", "conf.high")]
 ```
+
+```{r time-in-state-plot, fig.height = 3.5}
+ggplot(
+  tis_comparison,
+  aes(state_set, estimate, ymin = conf.low, ymax = conf.high, colour = model)
+) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_pointrange(position = position_dodge(width = 0.5)) +
+  labs(
+    x = "State",
+    y = "Difference in days (treated - control)",
+    colour = NULL
+  ) +
+  theme(legend.position = "bottom")
+```
+
+The two models give similar treatment effects even though their SOPs differ.

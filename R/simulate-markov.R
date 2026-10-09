@@ -456,10 +456,15 @@ sim_actt2_markov <- function(
 #' Simulate ACTT-1 ordinal patient trajectories
 #'
 #' @description
-#' Simulates individual 8-state ACTT-1 trajectories from a simplified Bayesian
-#' Markov proportional-odds model. The wrapper uses posterior mean coefficients,
-#' the reported baseline-state counts, and the ACTT-2 restricted cubic spline
-#' knots because the original ACTT-1 knot locations are unavailable.
+#' Simulates individual 8-state trajectories resembling the
+#' [Adaptive COVID-19 Treatment Trial 1 (ACTT-1)](https://doi.org/10.1056/NEJMoa2007764)
+#' of Remdesivir versus placebo in adults hospitalized with COVID-19 (Beigel et
+#' al., 2020). The transition model is a simplified version of the Bayesian
+#' Markov partial proportional-odds model that Rohde et al. (2024) fitted to
+#' the ACTT-1 data. The wrapper uses that model's posterior mean coefficients,
+#' the baseline-state counts reported by Beigel et al. (2020), and the ACTT-2
+#' restricted cubic spline knots because the original ACTT-1 knot locations
+#' are unavailable.
 #'
 #' @param n_patients Number of patients to simulate. Must be a positive integer.
 #' @param treatment_prob Probability of assignment to Remdesivir. Must be a
@@ -491,20 +496,38 @@ sim_actt2_markov <- function(
 #'
 #' Treatment is coded as `tx = 0` for placebo and `tx = 1` for Remdesivir. The
 #' user-specified effect replaces the fitted ACTT-1 treatment main effect and
-#' treatment-by-day spline interactions. Age and sex are omitted because the
-#' required joint baseline distribution is unavailable or the fitted effect was
-#' judged negligible.
+#' treatment-by-day spline interactions.
+#'
+#' Age and sex are not simulated because their joint distribution with the
+#' baseline state is not reported. The fitted thresholds describe a woman aged
+#' 0 years, the only patient whose age and sex terms are all zero, so every
+#' threshold is shifted by the average contribution of an ACTT-1 patient,
+#' 0.2253 on the log-odds scale. For the spline age effect
+#' \eqn{f(a) = 0.0017a + 0.0172a' - 0.0586a''}{f(a) = 0.0017 a + 0.0172 a' - 0.0586 a''},
+#' ages are assumed normal with the reported mean 58.9 and standard deviation
+#' 15.0 years, truncated at 18, and the unreported knots are placed at the 5th,
+#' 35th, 65th, and 95th percentiles of that normal distribution, as
+#' `rms::rcs()` would. The average age contribution,
+#' \eqn{\int_{18}^{\infty} f(a)\phi(a)\,da / (1 - \Phi(18))}{the integral of f(a) phi(a) / (1 - Phi(18)) over a >= 18},
+#' is 0.2215, where \eqn{\phi}{phi} and \eqn{\Phi}{Phi} are the normal density
+#' and distribution function; it was computed with [stats::integrate()]. Men add
+#' \eqn{0.0059 \times 684/1062 = 0.0038}{0.0059 * 684/1062 = 0.0038}.
+#' Simulating individual ages instead, independent of baseline state, changes
+#' state occupancy probabilities by less than 0.3 percentage points.
 #'
 #' The fitted constrained partial proportional-odds time deviation is retained.
 #' For the cumulative cutoff `y >= k`, it adds `-0.0188 * day * k` to the linear
 #' predictor. This threshold-specific term is essential for reproducing ACTT-1
 #' mortality over follow-up even though its printed coefficient is small.
 #'
-#' The reported thresholds for `y >= 2` through `y >= 8` are reversed only when
-#' passed to [sim_trajectories_markov()]; the shared previous-state and time
-#' coefficients retain their reported signs. Coefficients are rounded, so this
-#' function reproduces the supplied model summary rather than an unavailable
-#' full-precision fit.
+#' @references
+#' Beigel JH, Tomashek KM, Dodd LE, et al. (2020). "Remdesivir for the
+#' Treatment of Covid-19 - Final Report." *New England Journal of Medicine*,
+#' 383(19), 1813-1826. \doi{10.1056/NEJMoa2007764}
+#'
+#' Rohde MD, French B, Stewart TG, Harrell FE Jr (2024). "Bayesian Transition
+#' Models for Ordinal Longitudinal Outcomes." *Statistics in Medicine*, 43(18),
+#' 3539-3561. \doi{10.1002/sim.10133}
 #'
 #' @examples
 #' actt1 <- sim_actt1_markov(n_patients = 20, seed = 123)
@@ -549,7 +572,7 @@ sim_actt1_markov <- function(
     list(
       baseline_data = baseline_data,
       follow_up_time = 28L,
-      intercepts = rev(actt1$orm_intercepts),
+      intercepts = rev(actt1$orm_intercepts + actt1$average_age_sex_effect),
       lp_function = actt1_markov_lp,
       extra_params = c(
         actt1$extra_params,
@@ -582,6 +605,10 @@ actt1_markov_parameters <- function() {
       -12.3361,
       -18.8334
     ),
+    # Average of 0.0017 * age + 0.0172 * age' - 0.0586 * age'' for ages
+    # N(58.9, 15) truncated at 18 (knots at the 5th, 35th, 65th, and 95th
+    # percentiles), plus 0.0059 * 684 / 1062 for male sex.
+    average_age_sex_effect = 0.2253,
     extra_params = c(
       "day" = -0.1110,
       "day'" = 1.6444,
