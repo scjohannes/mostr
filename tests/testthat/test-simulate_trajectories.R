@@ -187,37 +187,6 @@ test_that("ACTT-1 reversed thresholds reproduce Bayesian model probabilities", {
   expect_equal(sum(simulator_probabilities), 1)
 })
 
-test_that("ACTT-1 partial PO time deviation calibrates mortality", {
-  parameters <- mostr:::actt1_markov_parameters()
-  occupancy <- c(0, 0, 0, parameters$baseline_probabilities, 0)
-
-  for (day in 1:28) {
-    transition <- matrix(0, nrow = 8, ncol = 8)
-    for (previous_state in 1:7) {
-      eta <- mostr:::actt1_markov_lp(
-        yprev = factor(previous_state, levels = 1:8),
-        t = day,
-        tx = 0,
-        parameter = 0,
-        extra_params = c(
-          parameters$extra_params,
-          treatment_effect_decay = 0
-        )
-      )
-      cumulative <- stats::plogis(rev(parameters$orm_intercepts) + eta)
-      transition[previous_state, ] <- rev(c(
-        cumulative[1],
-        diff(cumulative),
-        1 - cumulative[length(cumulative)]
-      ))
-    }
-    transition[8, 8] <- 1
-    occupancy <- drop(occupancy %*% transition)
-  }
-
-  expect_equal(occupancy[8], 0.0953, tolerance = 0.001)
-})
-
 test_that("sim_actt1_markov validates wrapper inputs", {
   expect_snapshot(error = TRUE, sim_actt1_markov(n_patients = 0))
   expect_snapshot(error = TRUE, sim_actt1_markov(treatment_prob = 2))

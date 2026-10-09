@@ -42,10 +42,15 @@ A data frame with the same columns returned by
 patient and states numbered 1 through 8.
 }
 \description{
-Simulates individual 8-state ACTT-1 trajectories from a simplified Bayesian
-Markov proportional-odds model. The wrapper uses posterior mean coefficients,
-the reported baseline-state counts, and the ACTT-2 restricted cubic spline
-knots because the original ACTT-1 knot locations are unavailable.
+Simulates individual 8-state trajectories resembling the
+\href{https://doi.org/10.1056/NEJMoa2007764}{Adaptive COVID-19 Treatment Trial 1 (ACTT-1)}
+of Remdesivir versus placebo in adults hospitalized with COVID-19 (Beigel et
+al., 2020). The transition model is a simplified version of the Bayesian
+Markov partial proportional-odds model that Rohde et al. (2024) fitted to
+the ACTT-1 data. The wrapper uses that model's posterior mean coefficients,
+the baseline-state counts reported by Beigel et al. (2020), and the ACTT-2
+restricted cubic spline knots because the original ACTT-1 knot locations
+are unavailable.
 }
 \details{
 Initial previous states are sampled from states 4 through 7 according to the
@@ -55,20 +60,29 @@ the first generated day-1 outcome. State 8 is absorbing by default.
 
 Treatment is coded as \code{tx = 0} for placebo and \code{tx = 1} for Remdesivir. The
 user-specified effect replaces the fitted ACTT-1 treatment main effect and
-treatment-by-day spline interactions. Age and sex are omitted because the
-required joint baseline distribution is unavailable or the fitted effect was
-judged negligible.
+treatment-by-day spline interactions.
+
+Age and sex are not simulated because their joint distribution with the
+baseline state is not reported. The fitted thresholds describe a woman aged
+0 years, the only patient whose age and sex terms are all zero, so every
+threshold is shifted by the average contribution of an ACTT-1 patient,
+0.2253 on the log-odds scale. For the spline age effect
+\eqn{f(a) = 0.0017a + 0.0172a' - 0.0586a''}{f(a) = 0.0017 a + 0.0172 a' - 0.0586 a''},
+ages are assumed normal with the reported mean 58.9 and standard deviation
+15.0 years, truncated at 18, and the unreported knots are placed at the 5th,
+35th, 65th, and 95th percentiles of that normal distribution, as
+\code{rms::rcs()} would. The average age contribution,
+\eqn{\int_{18}^{\infty} f(a)\phi(a)\,da / (1 - \Phi(18))}{the integral of f(a) phi(a) / (1 - Phi(18)) over a >= 18},
+is 0.2215, where \eqn{\phi}{phi} and \eqn{\Phi}{Phi} are the normal density
+and distribution function; it was computed with \code{\link[stats:integrate]{stats::integrate()}}. Men add
+\eqn{0.0059 \times 684/1062 = 0.0038}{0.0059 * 684/1062 = 0.0038}.
+Simulating individual ages instead, independent of baseline state, changes
+state occupancy probabilities by less than 0.3 percentage points.
 
 The fitted constrained partial proportional-odds time deviation is retained.
 For the cumulative cutoff \code{y >= k}, it adds \code{-0.0188 * day * k} to the linear
 predictor. This threshold-specific term is essential for reproducing ACTT-1
 mortality over follow-up even though its printed coefficient is small.
-
-The reported thresholds for \code{y >= 2} through \code{y >= 8} are reversed only when
-passed to \code{\link[=sim_trajectories_markov]{sim_trajectories_markov()}}; the shared previous-state and time
-coefficients retain their reported signs. Coefficients are rounded, so this
-function reproduces the supplied model summary rather than an unavailable
-full-precision fit.
 }
 \examples{
 actt1 <- sim_actt1_markov(n_patients = 20, seed = 123)
@@ -80,4 +94,13 @@ decaying <- sim_actt1_markov(
   seed = 123
 )
 
+}
+\references{
+Beigel JH, Tomashek KM, Dodd LE, et al. (2020). "Remdesivir for the
+Treatment of Covid-19 - Final Report." \emph{New England Journal of Medicine},
+383(19), 1813-1826. \doi{10.1056/NEJMoa2007764}
+
+Rohde MD, French B, Stewart TG, Harrell FE Jr (2024). "Bayesian Transition
+Models for Ordinal Longitudinal Outcomes." \emph{Statistics in Medicine}, 43(18),
+3539-3561. \doi{10.1002/sim.10133}
 }
