@@ -231,8 +231,11 @@ grouped reductions, bootstrap row extraction, and baseline selection internally.
 sdprisk, survival, and ordinal are not required.
 
 ACTT wrappers call the general Markov generator with published-model
-coefficients. The ACTT-2 wrapper accepts `follow_up_time = 60`, which extrapolates
-its fitted time effect beyond 28 days. No alternate 60-day calibration is kept.
+coefficients. The ACTT-2 coefficients come from a fit with states 1 and 2
+merged; an added lowest threshold splits them again, with `yprev = 1` and
+`yprev = 2` sharing the reference coefficient. The ACTT-2 wrapper accepts
+`follow_up_time = 60`, which extrapolates its fitted time effect beyond 28
+days. No alternate 60-day calibration is kept.
 `violet_baseline` and its source-generation script preserve the original Hmisc
 data attribution; see `R/data.R` and `data-raw/violet_baseline.R`.
 

@@ -360,8 +360,7 @@ sim_trajectories_markov <- function(
 #'   is represented by `tx = 0`.
 #' @param treatment_effect Numeric. Day-1 log-odds coefficient for Baricitinib
 #'   plus Remdesivir (`tx = 1`) relative to Placebo plus Remdesivir (`tx = 0`).
-#'   The default -0.0657 is the active-arm equivalent of the reported reverse
-#'   contrast.
+#'   The default -0.0730 is the coefficient fitted to the ACTT-2 data.
 #' @param treatment_effect_decay Nonnegative exponential decay rate per day.
 #'   The effect on day `t` is `treatment_effect *
 #'   exp(-treatment_effect_decay * (t - 1))`. The default 0 gives a constant
@@ -383,13 +382,12 @@ sim_trajectories_markov <- function(
 #' absorbing by default. Set `follow_up_time = 60` for 60 days; days beyond
 #' 28 extrapolate the fitted time effect.
 #'
-#' The transition model uses the reported `rms::orm()` thresholds for `y >= 2`
-#' through `y >= 8`, reversed to match the cumulative-probability ordering used
-#' by [sim_trajectories_markov()]. Shared previous-state and spline coefficients
-#' retain their reported order and signs. The treatment effect is supplied
-#' separately through `treatment_effect`. The reported coefficients are rounded,
-#' so this function reproduces the supplied model summary rather than an
-#' unavailable full-precision fit.
+#' In ACTT-2, state 2 was mostly recorded only at the day 14, 21, and 28
+#' visits, so the transition model was fitted with states 1 and 2 merged. An
+#' added lowest threshold splits them again, placing the observed 9.3% of the
+#' control arm in state 2 on day 14. Both states share the same coefficients,
+#' so the split does not change the occupancy of states 3 to 8. The treatment
+#' effect is supplied through `treatment_effect`.
 #'
 #' @examples
 #' actt2 <- sim_actt2_markov(n_patients = 20, seed = 123)
@@ -405,7 +403,7 @@ sim_trajectories_markov <- function(
 sim_actt2_markov <- function(
   n_patients = 1000,
   treatment_prob = 0.5,
-  treatment_effect = -0.0657,
+  treatment_effect = -0.0730,
   treatment_effect_decay = 0,
   seed = NULL,
   ...
@@ -470,7 +468,7 @@ sim_actt2_markov <- function(
 #' @param treatment_prob Probability of assignment to Remdesivir. Must be a
 #'   numeric scalar between 0 and 1.
 #' @param treatment_effect Day-1 proportional-odds coefficient applied to
-#'   Remdesivir (`tx = 1`) relative to placebo (`tx = 0`). The default -0.0657
+#'   Remdesivir (`tx = 1`) relative to placebo (`tx = 0`). The default -0.0730
 #'   matches [sim_actt2_markov()].
 #' @param treatment_effect_decay Nonnegative exponential decay rate per day.
 #'   The effect on day `t` is `treatment_effect *
@@ -543,7 +541,7 @@ sim_actt2_markov <- function(
 sim_actt1_markov <- function(
   n_patients = 1000,
   treatment_prob = 0.5,
-  treatment_effect = -0.0657,
+  treatment_effect = -0.0730,
   treatment_effect_decay = 0,
   seed = NULL,
   ...
@@ -652,28 +650,30 @@ actt2_markov_parameters <- function() {
   list(
     baseline_states = 4:7,
     baseline_probabilities = c(0.1374637, 0.5459826, 0.2090997, 0.1074540),
+    # Fitted with states 1 and 2 merged; the first threshold splits them again
+    # so that 9.3% of the control arm is in state 2 on day 14.
     orm_intercepts = c(
-      -1.7503,
-      -2.4174,
-      -2.6911,
-      -4.8406,
-      -8.9716,
-      -12.6833,
-      -19.5542
+      -0.6465,
+      -4.9314,
+      -5.2230,
+      -7.4169,
+      -11.5321,
+      -15.2262,
+      -22.0693
     ),
     extra_params = c(
-      "day" = -0.3376,
-      "day'" = 2.6884,
-      "day''" = -4.9025,
-      "day'''" = 1.4712,
-      "day''''" = 2.1778,
+      "day" = -0.3084,
+      "day'" = 2.5186,
+      "day''" = -5.0276,
+      "day'''" = 3.1714,
+      "day''''" = -1.0672,
       "yprev=1" = 0,
-      "yprev=2" = -0.4585,
-      "yprev=3" = 3.5573,
-      "yprev=4" = 4.5199,
-      "yprev=5" = 7.4148,
-      "yprev=6" = 11.6247,
-      "yprev=7" = 16.8083
+      "yprev=2" = 0,
+      "yprev=3" = 6.2218,
+      "yprev=4" = 7.1412,
+      "yprev=5" = 9.9809,
+      "yprev=6" = 14.1645,
+      "yprev=7" = 19.3517
     )
   )
 }

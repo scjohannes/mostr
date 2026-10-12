@@ -1,3 +1,11 @@
+# mostr 0.1.1
+
+* `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,
+  because state 2 was mostly recorded only at study visits. The old fit
+  rehospitalized about 29% of control patients (2% observed); the new one
+  about 2.7%. The default `treatment_effect` of `sim_actt2_markov()` and
+  `sim_actt1_markov()` is now -0.0730.
+
 # mostr 0.1.0
 
 * `sim_actt1_markov()` now adds the average age and sex contribution of an
