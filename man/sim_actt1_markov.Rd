@@ -7,7 +7,7 @@
 sim_actt1_markov(
   n_patients = 1000,
   treatment_prob = 0.5,
-  treatment_effect = -0.0657,
+  treatment_effect = -0.073,
   treatment_effect_decay = 0,
   seed = NULL,
   ...
@@ -20,7 +20,7 @@ sim_actt1_markov(
 numeric scalar between 0 and 1.}
 
 \item{treatment_effect}{Day-1 proportional-odds coefficient applied to
-Remdesivir (\code{tx = 1}) relative to placebo (\code{tx = 0}). The default -0.0657
+Remdesivir (\code{tx = 1}) relative to placebo (\code{tx = 0}). The default -0.0730
 matches \code{\link[=sim_actt2_markov]{sim_actt2_markov()}}.}
 
 \item{treatment_effect_decay}{Nonnegative exponential decay rate per day.

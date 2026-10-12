@@ -7,7 +7,7 @@
 sim_actt2_markov(
   n_patients = 1000,
   treatment_prob = 0.5,
-  treatment_effect = -0.0657,
+  treatment_effect = -0.073,
   treatment_effect_decay = 0,
   seed = NULL,
   ...
@@ -22,8 +22,7 @@ is represented by \code{tx = 0}.}
 
 \item{treatment_effect}{Numeric. Day-1 log-odds coefficient for Baricitinib
 plus Remdesivir (\code{tx = 1}) relative to Placebo plus Remdesivir (\code{tx = 0}).
-The default -0.0657 is the active-arm equivalent of the reported reverse
-contrast.}
+The default -0.0730 is the coefficient fitted to the ACTT-2 data.}
 
 \item{treatment_effect_decay}{Nonnegative exponential decay rate per day.
 The effect on day \code{t} is \code{treatment_effect * exp(-treatment_effect_decay * (t - 1))}. The default 0 gives a constant
@@ -59,13 +58,12 @@ the states immediately before the first generated day-1 outcome. State 8 is
 absorbing by default. Set \code{follow_up_time = 60} for 60 days; days beyond
 28 extrapolate the fitted time effect.
 
-The transition model uses the reported \code{rms::orm()} thresholds for \code{y >= 2}
-through \code{y >= 8}, reversed to match the cumulative-probability ordering used
-by \code{\link[=sim_trajectories_markov]{sim_trajectories_markov()}}. Shared previous-state and spline coefficients
-retain their reported order and signs. The treatment effect is supplied
-separately through \code{treatment_effect}. The reported coefficients are rounded,
-so this function reproduces the supplied model summary rather than an
-unavailable full-precision fit.
+In ACTT-2, state 2 was mostly recorded only at the day 14, 21, and 28
+visits, so the transition model was fitted with states 1 and 2 merged. An
+added lowest threshold splits them again, placing the observed 9.3\% of the
+control arm in state 2 on day 14. Both states share the same coefficients,
+so the split does not change the occupancy of states 3 to 8. The treatment
+effect is supplied through \code{treatment_effect}.
 }
 \examples{
 actt2 <- sim_actt2_markov(n_patients = 20, seed = 123)

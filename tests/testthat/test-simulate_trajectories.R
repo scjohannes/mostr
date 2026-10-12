@@ -203,7 +203,7 @@ test_that("sim_actt2_markov returns reproducible ACTT-2 trajectories", {
   repeated <- sim_actt2_markov(
     n_patients = 80,
     follow_up_time = 6,
-    treatment_effect = -0.0657,
+    treatment_effect = -0.0730,
     seed = 1987
   )
 
@@ -294,17 +294,17 @@ test_that("ACTT-2 linear predictor preserves shared orm slopes", {
       yprev = factor(yprev, levels = 1:8),
       t = day,
       tx = tx,
-      parameter = -0.0657,
+      parameter = -0.0730,
       extra_params = extra_params
     )
   }
 
-  expect_equal(lp(4, 7, 1) - lp(4, 7, 0), -0.0657)
+  expect_equal(lp(4, 7, 1) - lp(4, 7, 0), -0.0730)
   expect_equal(
     lp(4, 7, 1, decay = 0.2) - lp(4, 7, 0, decay = 0.2),
-    -0.0657 * exp(-0.2 * 6)
+    -0.0730 * exp(-0.2 * 6)
   )
-  expect_equal(lp(5, 7, 1) - lp(4, 7, 1), 7.4148 - 4.5199)
+  expect_equal(lp(5, 7, 1) - lp(4, 7, 1), 9.9809 - 7.1412)
 
   basis <- mostr:::actt_markov_rcs_basis(7)
   day_names <- c("day", "day'", "day''", "day'''", "day''''")
@@ -318,14 +318,14 @@ test_that("ACTT-2 reversed thresholds reproduce orm state probabilities", {
   parameters <- mostr:::actt2_markov_parameters()
   expect_equal(
     parameters$orm_intercepts,
-    c(-1.7503, -2.4174, -2.6911, -4.8406, -8.9716, -12.6833, -19.5542)
+    c(-0.6465, -4.9314, -5.2230, -7.4169, -11.5321, -15.2262, -22.0693)
   )
 
   eta <- mostr:::actt2_markov_lp(
     yprev = factor(5, levels = 1:8),
     t = 10,
     tx = 0,
-    parameter = -0.0657,
+    parameter = -0.0730,
     extra_params = c(parameters$extra_params, treatment_effect_decay = 0)
   )
   orm_cumulative <- stats::plogis(parameters$orm_intercepts + eta)
@@ -345,6 +345,18 @@ test_that("ACTT-2 reversed thresholds reproduce orm state probabilities", {
   expect_equal(simulator_probabilities, orm_probabilities, tolerance = 1e-15)
   expect_gte(min(simulator_probabilities), 0)
   expect_equal(sum(simulator_probabilities), 1)
+})
+
+test_that("ACTT-2 transitions from states 1 and 2 are identical", {
+  parameters <- mostr:::actt2_markov_parameters()
+  extra_params <- c(parameters$extra_params, treatment_effect_decay = 0)
+  lp <- function(yprev, day) {
+    mostr:::actt2_markov_lp(yprev, day, 1, -0.0730, extra_params)
+  }
+
+  for (day in c(1, 14, 28)) {
+    expect_equal(lp(1, day), lp(2, day))
+  }
 })
 
 test_that("sim_actt2_markov validates wrapper inputs", {
