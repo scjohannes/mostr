@@ -53,7 +53,8 @@ avg_comparison_setup <- function(
   include_re,
   ...
 ) {
-  validate_markov_model(model, p2_var = p2_var)
+  validate_markov_model(model)
+  markov_reject_ml_second_order(model, p2_var)
 
   data_res <- resolve_markov_source_data(model, newdata)
   newdata_orig <- data_res$source_data

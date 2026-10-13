@@ -1,5 +1,17 @@
 # SOP model adapters and time helpers.
 
+# `orm_markov_ml()` fits are first order: reject a second previous state.
+markov_reject_ml_second_order <- function(model, p2_var) {
+  if (!is.null(p2_var) && identical(markov_model_fit_wrapper(model), "orm_markov_ml")) {
+    stop(
+      "`p2_var` cannot be used with an `orm_markov_ml()` fit, which is a ",
+      "first-order model: transitions depend on the past only through `p_var`.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
 #' Validate Model for Markov Simulation
 #'
 #' Internal helper that checks whether a model is compatible with Markov
@@ -7,11 +19,9 @@
 #' reverse = TRUE.
 #'
 #' @param object A fitted model object
-#' @param p2_var Optional second previous-state variable requested by the
-#'   caller; rejected for first-order `orm_markov_ml()` fits.
 #' @return NULL (invisibly) if valid, otherwise throws an error
 #' @keywords internal
-validate_markov_model <- function(object, p2_var = NULL) {
+validate_markov_model <- function(object) {
   # Unwrap robcov_vglm if needed
   model_chk <- if (inherits(object, "robcov_vglm")) {
     object$vglm_fit
@@ -41,14 +51,6 @@ validate_markov_model <- function(object, p2_var = NULL) {
       call. = FALSE
     )
   }
-  if (!is.null(p2_var) && identical(markov_model_fit_wrapper(object), "orm_markov_ml")) {
-    stop(
-      "`p2_var` cannot be used with an `orm_markov_ml()` fit, which is a ",
-      "first-order model: transitions depend on the past only through `p_var`.",
-      call. = FALSE
-    )
-  }
-
   if (model_uses_offset(model_chk)) {
     stop_unsupported_offset()
   }

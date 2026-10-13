@@ -1,3 +1,18 @@
+# mostr (development version)
+
+* New experimental `orm_markov_ml()` fits the first-order proportional-odds
+  Markov model of `orm_markov()` by maximum likelihood when some states are
+  missing (`NA`) or known only up to a range (`rms::Ocens()`, for example
+  "alive, level unknown"). Instead of dropping every transition that touches
+  such a visit, it sums over the states the patient could have been in.
+  `missing_states` says whether a missing state may hide a death. With nothing
+  missing it gives the same fit as `orm_markov()`. The fit works with
+  `sops()`, `avg_sops()`, `avg_time()`, `avg_comparisons()`, and
+  `inferences()` (delta, MVN, score bootstrap, and refit bootstrap; not
+  fractional weighted bootstrap). Standard errors use the observed
+  information of the observed-data likelihood. The estimates are valid when
+  states are missing at random.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

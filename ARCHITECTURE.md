@@ -61,7 +61,7 @@ cannot reuse a previous diagnostic's image URL for a different plot.
 flowchart TD
     A[Longitudinal ordinal data] --> B[prepare_markov_data]
     G[Markov generators] --> B
-    B --> C[orm_markov / vglm_markov / blrm_markov]
+    B --> C[orm_markov / orm_markov_ml / vglm_markov / blrm_markov]
     C --> D[sops / avg_sops / avg_comparisons]
     D --> E[inferences]
     E --> F[Plots / time_in_state / vcov]
@@ -75,6 +75,7 @@ flowchart TD
 | Data generation | `R/simulate-markov.R`, `R/lp_violet.R`, `R/simulate-native.R` | `sim_trajectories_markov`, `sim_actt1_markov`, `sim_actt2_markov`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
+| Missing-state ML fitting (experimental) | `R/orm-markov-ml.R`, `R/markov-ml-em.R`, `R/markov-ml-inference.R` | `orm_markov_ml`, `orm_markov_ml_control`; observed-data likelihood of the first-order PO model with missing or range-coarsened states, EM with a weighted `rms::orm.fit()` M-step, Newton finish, observed information and patient-cluster sandwich |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R` | `sops`, `avg_sops`, `avg_time`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
@@ -219,6 +220,90 @@ Time inference uses Wald intervals and the existing memory guards and covariance
 accessors; it does not modify the native recursion or infer uncertainty by
 interpolating standard errors. Fresh replay replaces previous uncertainty
 metadata when callers change inference methods.
+
+### Observed-data maximum likelihood with missing states
+
+`orm_markov_ml()` (`R/orm-markov-ml.R`) fits the same first-order
+proportional-odds transition model as `orm_markov()` but maximises the
+observed-data likelihood when some states are `NA` or an `rms::Ocens()` range.
+The model is treated as a hidden Markov model whose rows carry a 0/1 mask of
+allowed states (`markov_ml_masks()`); `missing_states` decides whether `NA`
+allows absorbing states. With nothing missing it reproduces `orm_markov()`.
+
+```mermaid
+flowchart TD
+    A[Long data with NA / Ocens rows] --> B[markov_ml_setup]
+    B --> C[Starting orm fit on fully observed transitions]
+    B --> D[Design rows per unique covariate row x origin]
+    B --> E[Split chains at observed states]
+    E --> F[Fully observed rows: closed-form PO terms]
+    E --> G[Segments with missing/range rows: forward-backward]
+    F --> H[EM: weighted orm.fit M-step on aggregated weights]
+    G --> H
+    H --> I[Newton finish with exact score and FD information]
+    I --> J[Weighted orm refit on posterior triples, knots locked]
+    J --> K[orm_markov_ml object: $ml, $var, stored data]
+```
+
+- **Set-up** (`markov_ml_setup()` in `R/markov-ml-em.R`) sorts by patient and
+  time, parses the response on the fixed state scale of exactly observed
+  values (`markov_ml_parse_response()`, `markov_ml_state_scale()`; rms endpoint
+  rules, `Ocens2ord()` is not used), checks the baseline and `p_var`
+  consistency, fits the starting `rms::orm()` on fully observed transitions,
+  and builds design rows for every unique covariate row and non-absorbing
+  origin through `orm_model_matrix()` so knots and levels come from the
+  starting fit. The chain is split at every exactly observed state: fully
+  observed transitions (`complete_part`) contribute ordinary PO terms, and
+  only segments containing missing or range rows (`chain`) run the scaled
+  forward-backward recursion (`markov_ml_forward()`, `markov_ml_backward()`).
+- **Fitting** alternates `markov_ml_estep()` with `markov_ml_mstep()`
+  (`rms::orm.fit()` on weights aggregated by integer design-row and
+  destination keys), then `markov_ml_newton()` uses the exact score and the
+  information. `markov_ml_final_fit()` refits `rms::orm()` on one row per
+  posterior triple with `.mostr_em_weight` weights, the internal response
+  column `.mostr_state`, and rcs() knots locked to the starting fit
+  (`markov_ml_lock_knots()`); it checks the refit reproduces the estimates and
+  the design, then installs the estimates and removes `info.matrix`.
+- **Inference** (`R/markov-ml-inference.R`): patient scores come from Fisher's
+  identity (`markov_ml_patient_scores()`, with `po_row_scores()` for fully
+  observed rows); the observed information is a central difference of the
+  exact total score (`markov_ml_information()`); `markov_ml_sandwich()` reuses
+  `markov_assemble_sandwich()`. HC1 counts rows whose mask excludes a state;
+  `cadjust` counts patients with such a row.
+
+Contracts with the rest of the package:
+
+- Provenance: `"orm_markov_ml"` is in `markov_fit_wrappers()` and
+  `validate_markov_model()` accepts it for orm fits.
+  `markov_reject_ml_second_order()` rejects `p2_var` at every prediction and
+  diagnostic entry point, because the recursion runs on single states.
+- Stored data: the original rows, missing states included, are both fitted and
+  refit data, so starting profiles cover every patient with an observed
+  baseline.
+- Covariance: `$var` is the robust observed-data covariance, `$orig.var` the
+  model-based one, and `markov_robust_covariance` records implementation
+  `"mostr::orm_markov_ml"`, which `orm_stored_covariance_valid()` accepts.
+  `$ml` holds the patient scores (rows in stored starting-profile ID order,
+  zeros for patients with no information), bread, information, trace,
+  convergence, counts, and the missing-information fraction.
+- Patient influence: `markov_influence_components()` (`R/markov-ml-inference.R`)
+  is the single accessor for coefficients, bread, scores, and cluster IDs.
+  `robcov_orm()`, `score_bootstrap_components()`, and
+  `get_delta_score_components()` read through it; `get_vcov_robust()` and
+  `get_delta_cluster_vcov()` use `markov_ml_vcov()` for ML fits.
+  `robcov_orm()` and `compute_scores_orm()` refuse ML fits because the weighted
+  refit's rows give complete-data scores. A custom `cluster` is rejected.
+- Bootstrap: `update_bootstrap_model()` refits through the stored
+  `mostr::orm_markov_ml` call with `id_var = "new_id"` so resampled copies are
+  separate chains, and with `variance = FALSE`. Fractional weighted bootstrap
+  errors (`stop_orm_markov_ml_fwb()`). `orm_model_matrix()` adds placeholder
+  response columns so prediction data need not contain `.mostr_state`.
+
+The R recursion is the production implementation. If it moves next to
+`cpp_markov_update_po()`, the R version becomes a test-only reference.
+`tests/testthat/helper-markov-ml-oracle.R` enumerates every completion of the
+allowed states as an independent oracle for the likelihood and posteriors.
+Benchmark and simulation scripts are in ignored `benchmarks/local/`.
 
 ## Dependencies and execution
 

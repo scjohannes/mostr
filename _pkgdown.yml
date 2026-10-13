@@ -18,6 +18,8 @@ reference:
     contents:
       - prepare_markov_data
       - orm_markov
+      - orm_markov_ml
+      - orm_markov_ml_control
       - vglm_markov
       - blrm_markov
   - title: Estimate probabilities, time in states, and treatment contrasts
@@ -73,6 +75,9 @@ articles:
       - second-order-orm-sops
       - factor-time-orm-sops
       - many-levels-previous-state-spline
+  - title: Missing data
+    contents:
+      - missing-states-ml
   - title: Uncertainty
     contents:
       - analytical-confidence-intervals

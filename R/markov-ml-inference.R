@@ -46,28 +46,78 @@ po_row_scores <- function(x, y, coefficients, n_intercepts) {
 # complete-data score averaged over the posterior transition weights. With
 # xi(a, b) / p_b = FP[a] Q[b], the threshold score for alpha_j is
 # FP[a] f_j (Q_j - Q_{j-1}) and the linear-predictor score is its sum over j.
-markov_ml_patient_scores <- function(problem, theta, state = NULL) {
-  state <- state %||% markov_ml_estep(problem, theta)
+#
+# Rows whose own and previous states are observed have point-mass posteriors,
+# so their scores are ordinary proportional-odds row scores.
+markov_ml_chain_scores <- function(problem, state) {
+  chain <- problem$chain
   K <- problem$K
-  n_int <- problem$n_int
+  p <- length(problem$coef_names)
+  if (!chain$n) {
+    return(matrix(0, nrow = 0L, ncol = p))
+  }
   dQ <- state$Q[, -1L, drop = FALSE] - state$Q[, -K, drop = FALSE]
-  intercept <- matrix(0, nrow = problem$n, ncol = n_int)
-  slope <- matrix(0, nrow = problem$n, ncol = ncol(problem$X))
+  intercept <- matrix(0, nrow = chain$n, ncol = problem$n_int)
+  slope <- matrix(0, nrow = chain$n, ncol = ncol(problem$X))
   for (ai in seq_len(problem$n_origin)) {
     a <- problem$origins[[ai]]
-    d <- problem$DI[, ai]
+    d <- chain$DI[, ai]
     D <- state$fwd$FP[, a] * state$probs$dens[d, , drop = FALSE] * dQ
     intercept <- intercept + D
     slope <- slope + problem$X[d, , drop = FALSE] * rowSums(D)
   }
-  U <- rowsum(cbind(intercept, slope), problem$row_patient, reorder = TRUE)
-  U <- as.matrix(U)
+  cbind(intercept, slope)
+}
+
+markov_ml_patient_scores <- function(problem, theta, state = NULL) {
+  if (is.null(state)) {
+    state <- markov_ml_estep(problem, theta)
+  }
+  p <- length(problem$coef_names)
+  U <- matrix(0, nrow = problem$N, ncol = p)
+  comp <- problem$complete_part
+  if (length(comp$rows)) {
+    complete <- rowsum(
+      po_row_scores(
+        problem$X[comp$design, , drop = FALSE],
+        comp$state,
+        theta,
+        problem$n_int
+      ),
+      comp$patient,
+      reorder = TRUE
+    )
+    rows <- as.integer(rownames(complete))
+    U[rows, ] <- U[rows, ] + complete
+  }
+  if (problem$chain$n) {
+    chain <- rowsum(
+      markov_ml_chain_scores(problem, state),
+      problem$chain$patient,
+      reorder = TRUE
+    )
+    rows <- as.integer(rownames(chain))
+    U[rows, ] <- U[rows, ] + chain
+  }
   dimnames(U) <- list(problem$patient_ids, problem$coef_names)
   U
 }
 
 markov_ml_total_score <- function(problem, theta) {
-  colSums(markov_ml_patient_scores(problem, theta))
+  state <- markov_ml_estep(problem, theta)
+  comp <- problem$complete_part
+  complete <- colSums(
+    po_row_scores(
+      problem$X[comp$agg_design, , drop = FALSE],
+      comp$agg_state,
+      theta,
+      problem$n_int
+    ) *
+      comp$agg_count
+  )
+  out <- complete + colSums(markov_ml_chain_scores(problem, state))
+  names(out) <- problem$coef_names
+  out
 }
 
 # Observed information by central differences of the exact total score.

@@ -160,7 +160,8 @@ sops <- function(
 ) {
   # --- 1. Setup & Defaults ---
   # Validate model compatibility
-  validate_markov_model(model, p2_var = p2_var)
+  validate_markov_model(model)
+  markov_reject_ml_second_order(model, p2_var)
   if (missing(times) || is.null(times)) {
     stop("`times` must be supplied to `sops()`.")
   }
@@ -867,7 +868,8 @@ avg_sops <- function(
 ) {
   # --- 1. Input Validation ---
   # Validate model compatibility
-  validate_markov_model(model, p2_var = p2_var)
+  validate_markov_model(model)
+  markov_reject_ml_second_order(model, p2_var)
   if (missing(times) || is.null(times)) {
     stop("`times` must be supplied to `avg_sops()`.")
   }

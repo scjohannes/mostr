@@ -110,7 +110,8 @@ compile_sop_execution_plan <- function(
   output = "array"
 ) {
   builder <- match.arg(builder)
-  validate_markov_model(model, p2_var = p2_var)
+  validate_markov_model(model)
+  markov_reject_ml_second_order(model, p2_var)
   Gamma_template <- get_effective_coefs(model)
   validate_sop_threshold_count(Gamma_template, y_levels)
   if (!is.null(p2_var)) {

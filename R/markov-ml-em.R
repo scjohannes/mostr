@@ -449,8 +449,54 @@ markov_ml_setup <- function(
     matrix(seq_len(n_origin), nrow = n, ncol = n_origin, byrow = TRUE)
   storage.mode(DI) <- "integer"
 
-  rows_by_pos <- split(seq_len(n), row_pos)
-  pats_by_pos <- lapply(rows_by_pos, function(r) row_patient[r])
+  # The chain splits at every exactly observed state (Markov property). A row
+  # whose own and previous states are both observed is an ordinary
+  # proportional-odds row; only segments that contain missing or range rows,
+  # each starting from the last observed state, need the recursion.
+  origin_index <- match(prev_state, origins)
+  comp_rows <- which(complete)
+  comp_origin <- origin_index[comp_rows]
+  comp_design <- DI[cbind(comp_rows, comp_origin)]
+  comp_state <- exact_state[comp_rows]
+  W_complete <- matrix(0, nrow = nrow(X), ncol = K)
+  counts <- rowsum(
+    rep(1, length(comp_rows)),
+    (comp_design - 1L) * K + comp_state
+  )
+  keys <- as.integer(rownames(counts)) - 1L
+  W_complete[cbind(keys %/% K + 1L, keys %% K + 1L)] <- counts[, 1L]
+  agg <- which(W_complete > 0, arr.ind = TRUE)
+  complete_part <- list(
+    rows = comp_rows,
+    origin = comp_origin,
+    design = comp_design,
+    state = comp_state,
+    patient = row_patient[comp_rows],
+    W = W_complete,
+    agg_design = agg[, 1L],
+    agg_state = agg[, 2L],
+    agg_count = W_complete[agg]
+  )
+
+  chain_rows <- which(!complete)
+  segment <- cumsum(prev_exact)[chain_rows]
+  segment <- match(segment, unique(segment))
+  segment_start <- chain_rows[!duplicated(segment)]
+  chain_pos <- stats::ave(seq_along(chain_rows), segment, FUN = seq_along)
+  rows_by_pos <- split(seq_along(chain_rows), chain_pos)
+  chain <- list(
+    rows = chain_rows,
+    n = length(chain_rows),
+    N = length(segment_start),
+    baseline = prev_state[segment_start],
+    segment = segment,
+    patient = row_patient[chain_rows],
+    ids = ids[chain_rows],
+    C = C[chain_rows, , drop = FALSE],
+    DI = DI[chain_rows, , drop = FALSE],
+    rows_by_pos = rows_by_pos,
+    pats_by_pos = lapply(rows_by_pos, function(r) segment[r])
+  )
 
   informative <- rowSums(C) < K
   coefficients <- stats::coef(start_fit)
@@ -462,8 +508,8 @@ markov_ml_setup <- function(
     patient_ids = patient_ids,
     row_patient = row_patient,
     row_pos = row_pos,
-    rows_by_pos = rows_by_pos,
-    pats_by_pos = pats_by_pos,
+    complete_part = complete_part,
+    chain = chain,
     N = N,
     n = n,
     K = K,
@@ -546,36 +592,35 @@ markov_ml_transition_probs <- function(problem, theta, strict = TRUE) {
 # Forward-backward recursion
 # ---------------------------------------------------------------------------
 
-# Scaled forward pass. `FP` holds the forward vector before each row (the
-# filtered distribution of the previous state), `s` the scaling constants;
-# log L = sum(log(s)).
+# Scaled forward pass over the segments that need the recursion. `FP` holds
+# the forward vector before each segment row (the filtered distribution of the
+# previous state) and `s` the scaling constants; sum(log(s)) is the segments'
+# log-likelihood.
 markov_ml_forward <- function(problem, probs) {
+  chain <- problem$chain
   K <- problem$K
-  N <- problem$N
   P <- probs$P
-  C <- problem$C
-  DI <- problem$DI
   origins <- problem$origins
   absorbing <- problem$absorbing
 
-  cur <- matrix(0, nrow = N, ncol = K)
-  cur[cbind(seq_len(N), problem$baseline)] <- 1
-  FP <- matrix(0, nrow = problem$n, ncol = K)
-  s <- numeric(problem$n)
+  cur <- matrix(0, nrow = chain$N, ncol = K)
+  cur[cbind(seq_len(chain$N), chain$baseline)] <- 1
+  FP <- matrix(0, nrow = chain$n, ncol = K)
+  s <- numeric(chain$n)
 
-  for (k in seq_along(problem$rows_by_pos)) {
-    r <- problem$rows_by_pos[[k]]
-    i <- problem$pats_by_pos[[k]]
+  for (k in seq_along(chain$rows_by_pos)) {
+    r <- chain$rows_by_pos[[k]]
+    i <- chain$pats_by_pos[[k]]
     fp <- cur[i, , drop = FALSE]
     FP[r, ] <- fp
     new <- matrix(0, nrow = length(r), ncol = K)
     for (ai in seq_along(origins)) {
-      new <- new + fp[, origins[[ai]]] * P[DI[r, ai], , drop = FALSE]
+      new <- new + fp[, origins[[ai]]] * P[chain$DI[r, ai], , drop = FALSE]
     }
     if (length(absorbing)) {
       new[, absorbing] <- new[, absorbing] + fp[, absorbing]
     }
-    new <- new * C[r, , drop = FALSE]
+    new <- new * chain$C[r, , drop = FALSE]
     sk <- rowSums(new)
     s[r] <- sk
     cur[i, ] <- new / sk
@@ -584,37 +629,35 @@ markov_ml_forward <- function(problem, probs) {
   list(FP = FP, s = s, loglik = sum(log(s)), valid = all(s > 0))
 }
 
-markov_ml_stop_impossible <- function(problem, fwd) {
-  bad <- which(!(fwd$s > 0))
+markov_ml_stop_impossible <- function(ids) {
   stop(
     "Observed states have zero probability under the transition model for ",
     "patient(s) ",
-    markov_format_patient_ids(problem$ids[bad]),
+    markov_format_patient_ids(ids),
     ". Check for impossible transitions, such as leaving an absorbing state.",
     call. = FALSE
   )
 }
 
-# Scaled backward pass. Returns Q = c * g / s for each row, so the posterior
-# of a transition is xi(a, b) = FP[a] * P[a, b] * Q[b].
+# Scaled backward pass. Returns Q = c * g / s for each segment row, so the
+# posterior of a transition is xi(a, b) = FP[a] * P[a, b] * Q[b].
 markov_ml_backward <- function(problem, probs, fwd) {
+  chain <- problem$chain
   K <- problem$K
   P <- probs$P
-  C <- problem$C
-  DI <- problem$DI
   origins <- problem$origins
   absorbing <- problem$absorbing
 
-  Q <- matrix(0, nrow = problem$n, ncol = K)
-  gcur <- matrix(1, nrow = problem$N, ncol = K)
-  for (k in rev(seq_along(problem$rows_by_pos))) {
-    r <- problem$rows_by_pos[[k]]
-    i <- problem$pats_by_pos[[k]]
-    q <- C[r, , drop = FALSE] * gcur[i, , drop = FALSE] / fwd$s[r]
+  Q <- matrix(0, nrow = chain$n, ncol = K)
+  gcur <- matrix(1, nrow = chain$N, ncol = K)
+  for (k in rev(seq_along(chain$rows_by_pos))) {
+    r <- chain$rows_by_pos[[k]]
+    i <- chain$pats_by_pos[[k]]
+    q <- chain$C[r, , drop = FALSE] * gcur[i, , drop = FALSE] / fwd$s[r]
     Q[r, ] <- q
     gp <- matrix(0, nrow = length(r), ncol = K)
     for (ai in seq_along(origins)) {
-      gp[, origins[[ai]]] <- rowSums(P[DI[r, ai], , drop = FALSE] * q)
+      gp[, origins[[ai]]] <- rowSums(P[chain$DI[r, ai], , drop = FALSE] * q)
     }
     if (length(absorbing)) {
       gp[, absorbing] <- q[, absorbing]
@@ -624,10 +667,25 @@ markov_ml_backward <- function(problem, probs, fwd) {
   Q
 }
 
-# Posterior transition weights for origin index `ai` (n x K).
-markov_ml_xi <- function(problem, probs, fwd, Q, ai) {
+# Posterior transition weights of the segment rows for origin index `ai`.
+markov_ml_chain_xi <- function(problem, state, ai) {
   a <- problem$origins[[ai]]
-  fwd$FP[, a] * probs$P[problem$DI[, ai], , drop = FALSE] * Q
+  state$fwd$FP[, a] *
+    state$probs$P[problem$chain$DI[, ai], , drop = FALSE] *
+    state$Q
+}
+
+# Posterior transition weights of every data row for origin index `ai`
+# (n x K); fully observed transitions are point masses.
+markov_ml_xi <- function(problem, state, ai) {
+  out <- matrix(0, nrow = problem$n, ncol = problem$K)
+  if (problem$chain$n) {
+    out[problem$chain$rows, ] <- markov_ml_chain_xi(problem, state, ai)
+  }
+  comp <- problem$complete_part
+  sel <- comp$origin == ai
+  out[cbind(comp$rows[sel], comp$state[sel])] <- 1
+  out
 }
 
 # Forward-backward pass at `theta`. With `strict = FALSE` an invalid
@@ -638,14 +696,24 @@ markov_ml_estep <- function(problem, theta, strict = TRUE, backward = TRUE) {
   if (is.null(probs)) {
     return(NULL)
   }
+  comp <- problem$complete_part
+  p_complete <- probs$P[cbind(comp$agg_design, comp$agg_state)]
+  if (any(!(p_complete > 0))) {
+    if (!strict) {
+      return(NULL)
+    }
+    p_rows <- probs$P[cbind(comp$design, comp$state)]
+    markov_ml_stop_impossible(problem$ids[comp$rows[!(p_rows > 0)]])
+  }
   fwd <- markov_ml_forward(problem, probs)
   if (!fwd$valid) {
     if (!strict) {
       return(NULL)
     }
-    markov_ml_stop_impossible(problem, fwd)
+    markov_ml_stop_impossible(problem$chain$ids[!(fwd$s > 0)])
   }
-  out <- list(theta = theta, probs = probs, fwd = fwd, loglik = fwd$loglik)
+  loglik <- fwd$loglik + sum(comp$agg_count * log(p_complete))
+  out <- list(theta = theta, probs = probs, fwd = fwd, loglik = loglik)
   if (backward) {
     out$Q <- markov_ml_backward(problem, probs, fwd)
   }
@@ -663,12 +731,14 @@ markov_ml_loglik <- function(problem, theta, strict = TRUE) {
 # Expected complete-data counts aggregated by (unique design row, destination
 # state), as integer keys.
 markov_ml_aggregate_weights <- function(problem, state) {
-  W <- matrix(0, nrow = nrow(problem$X), ncol = problem$K)
-  for (ai in seq_len(problem$n_origin)) {
-    xi <- markov_ml_xi(problem, state$probs, state$fwd, state$Q, ai)
-    agg <- rowsum(xi, problem$DI[, ai], reorder = TRUE)
-    rows <- as.integer(rownames(agg))
-    W[rows, ] <- W[rows, ] + agg
+  W <- problem$complete_part$W
+  if (problem$chain$n) {
+    for (ai in seq_len(problem$n_origin)) {
+      xi <- markov_ml_chain_xi(problem, state, ai)
+      agg <- rowsum(xi, problem$chain$DI[, ai], reorder = TRUE)
+      rows <- as.integer(rownames(agg))
+      W[rows, ] <- W[rows, ] + agg
+    }
   }
   idx <- which(W > 0, arr.ind = TRUE)
   list(design = idx[, 1L], state = idx[, 2L], weight = W[idx])
@@ -700,16 +770,25 @@ markov_ml_mstep <- function(problem, triples, theta) {
 # Patient-level posterior triples (row, origin, destination, weight) for the
 # final weighted refit.
 markov_ml_patient_triples <- function(problem, state) {
-  pieces <- lapply(seq_len(problem$n_origin), function(ai) {
-    xi <- markov_ml_xi(problem, state$probs, state$fwd, state$Q, ai)
-    idx <- which(xi > 0, arr.ind = TRUE)
-    data.frame(
-      row = idx[, 1L],
-      origin = problem$origins[[ai]],
-      state = idx[, 2L],
-      weight = xi[idx]
-    )
-  })
+  comp <- problem$complete_part
+  pieces <- list(data.frame(
+    row = comp$rows,
+    origin = problem$origins[comp$origin],
+    state = comp$state,
+    weight = 1
+  ))
+  if (problem$chain$n) {
+    for (ai in seq_len(problem$n_origin)) {
+      xi <- markov_ml_chain_xi(problem, state, ai)
+      idx <- which(xi > 0, arr.ind = TRUE)
+      pieces[[length(pieces) + 1L]] <- data.frame(
+        row = problem$chain$rows[idx[, 1L]],
+        origin = problem$origins[[ai]],
+        state = idx[, 2L],
+        weight = xi[idx]
+      )
+    }
+  }
   out <- do.call(rbind, pieces)
   out[order(out$row, out$origin, out$state), , drop = FALSE]
 }
