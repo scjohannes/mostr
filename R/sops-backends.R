@@ -7,9 +7,11 @@
 #' reverse = TRUE.
 #'
 #' @param object A fitted model object
+#' @param p2_var Optional second previous-state variable requested by the
+#'   caller; rejected for first-order `orm_markov_ml()` fits.
 #' @return NULL (invisibly) if valid, otherwise throws an error
 #' @keywords internal
-validate_markov_model <- function(object) {
+validate_markov_model <- function(object, p2_var = NULL) {
   # Unwrap robcov_vglm if needed
   model_chk <- if (inherits(object, "robcov_vglm")) {
     object$vglm_fit
@@ -22,20 +24,27 @@ validate_markov_model <- function(object) {
   } else if (inherits(model_chk, "vglm")) {
     "vglm_markov"
   } else if (inherits(model_chk, "orm")) {
-    "orm_markov"
+    c("orm_markov", "orm_markov_ml")
   } else {
     NULL
   }
   if (
     !is.null(expected_wrapper) &&
-      !identical(markov_model_fit_wrapper(object), expected_wrapper)
+      !isTRUE(markov_model_fit_wrapper(object) %in% expected_wrapper)
   ) {
     stop(
       "Model-based Markov workflows require fits created by `",
-      expected_wrapper,
+      expected_wrapper[[1L]],
       "()`. Refit this model with `",
-      expected_wrapper,
+      expected_wrapper[[1L]],
       "()`.",
+      call. = FALSE
+    )
+  }
+  if (!is.null(p2_var) && identical(markov_model_fit_wrapper(object), "orm_markov_ml")) {
+    stop(
+      "`p2_var` cannot be used with an `orm_markov_ml()` fit, which is a ",
+      "first-order model: transitions depend on the past only through `p_var`.",
       call. = FALSE
     )
   }
@@ -585,6 +594,14 @@ orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
   )
 
   formulano <- add_rms_formula_helpers(model$sformula)
+  # The response is not part of the design; a placeholder lets model.frame()
+  # run on prediction data without it (for example the internal response
+  # column of `orm_markov_ml()` fits).
+  if (length(formulano) == 3L) {
+    for (v in setdiff(all.vars(formulano[[2L]]), names(newdata))) {
+      newdata[[v]] <- rep(NA, nrow(newdata))
+    }
+  }
   Terms <- stats::terms(formulano, specials = "strat")
   attr(Terms, "response") <- 0L
   attr(Terms, "intercept") <- 1L

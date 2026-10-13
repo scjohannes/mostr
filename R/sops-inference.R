@@ -501,6 +501,10 @@ inferences_impl <- function(
     return(x)
   }
 
+  if (identical(method, "fwb")) {
+    stop_orm_markov_ml_fwb(attr(x, "model"))
+  }
+
   if (
     method %in% c("score_bootstrap", "bootstrap", "fwb") &&
       sets_starting_state(x)

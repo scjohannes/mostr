@@ -187,6 +187,11 @@ score_bootstrap_components <- function(model, cluster = NULL) {
     stop("score_bootstrap_components() supports robcov_vglm and orm models.")
   }
 
+  if (markov_is_ml_fit(model)) {
+    components <- markov_influence_components(model, cluster = cluster)
+    return(components[c("coefficients", "bread", "scores", "cluster")])
+  }
+
   if (is.null(cluster)) {
     stop(
       "`cluster` is required for orm score-bootstrap inference. ",
@@ -195,21 +200,20 @@ score_bootstrap_components <- function(model, cluster = NULL) {
     )
   }
 
-  scores <- compute_scores_orm(model)
-  cluster <- align_cluster_orm(model, cluster, nrow(scores))
-  bread <- orm_model_bread(model)$bread
-
-  list(
-    coefficients = stats::coef(model),
-    bread = bread,
-    scores = scores,
-    cluster = cluster
-  )
+  components <- markov_influence_components(model, cluster = cluster)
+  components[c("coefficients", "bread", "scores", "cluster")]
 }
 
 compute_scores_orm <- function(model) {
   if (!inherits(model, "orm")) {
     stop("'model' must be an orm object.")
+  }
+  if (markov_is_ml_fit(model)) {
+    stop(
+      "Likelihood-row scores of an `orm_markov_ml()` fit's weighted refit are ",
+      "complete-data scores; use its stored patient scores instead.",
+      call. = FALSE
+    )
   }
   if (is.null(model$x) || is.null(model$y)) {
     stop(

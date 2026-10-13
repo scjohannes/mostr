@@ -14,7 +14,7 @@ plot_transition_model_setup <- function(
   gap_var,
   time_covariates
 ) {
-  validate_markov_model(model)
+  validate_markov_model(model, p2_var = p2_var)
   if (missing(times) || is.null(times)) {
     stop("`times` must be supplied for model-based plots.")
   }

@@ -208,7 +208,10 @@ orm_stored_covariance_valid <- function(model, cluster = NULL) {
     !inherits(model, "orm") ||
       is.null(metadata) ||
       !identical(metadata$backend, "orm") ||
-      !identical(metadata$implementation, "mostr::robcov_orm") ||
+      !isTRUE(
+        metadata$implementation %in%
+          c("mostr::robcov_orm", "mostr::orm_markov_ml")
+      ) ||
       is.null(model$var) ||
       !identical(model$var, metadata$covariance_identity)
   ) {
@@ -226,6 +229,13 @@ robcov_orm <- function(
   type = c("HC0", "HC1"),
   cadjust = NULL
 ) {
+  if (markov_is_ml_fit(fit)) {
+    stop(
+      "`robcov_orm()` gives the complete-data sandwich, which is wrong for an ",
+      "`orm_markov_ml()` fit; its robust covariance is stored in `$var`.",
+      call. = FALSE
+    )
+  }
   coefficients <- validate_robcov_orm_fit(fit)
   type <- match.arg(type)
   n <- nrow(fit$x)
@@ -234,7 +244,8 @@ robcov_orm <- function(
     stop("Stored orm `x` and `y` components have inconsistent row counts.")
   }
 
-  scores <- compute_scores_orm(fit)
+  components <- markov_influence_components(fit)
+  scores <- components$scores
   if (
     !is.matrix(scores) ||
       !identical(dim(scores), c(n, p)) ||
@@ -285,7 +296,10 @@ robcov_orm <- function(
     stop("`cadjust` must be TRUE or FALSE.")
   }
 
-  bread_result <- orm_model_bread(fit)
+  bread_result <- list(
+    bread = components$bread,
+    source = components$bread_source
+  )
   assembled <- markov_assemble_sandwich(
     sandwich_scores = sandwich_scores,
     bread = bread_result$bread,

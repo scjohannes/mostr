@@ -257,6 +257,16 @@ get_vcov_robust <- function(
     return(model$var)
   }
 
+  # --- orm_markov_ml(): observed-data covariance from stored components ---
+  if (markov_is_ml_fit(model)) {
+    return(markov_ml_vcov(
+      model,
+      cluster = cluster,
+      type = if (type_missing) NULL else type,
+      cadjust = if (cadjust_missing) NULL else cadjust
+    ))
+  }
+
   # --- Case 2: package-owned orm robust covariance ---
   if (
     inherits(model, "orm") &&

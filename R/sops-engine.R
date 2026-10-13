@@ -172,7 +172,7 @@ soprob_markov_reference <- function(
   }
 
   # Validate model is compatible with Markov simulation
-  validate_markov_model(object)
+  validate_markov_model(object, p2_var = p2_var)
 
   if (!p_var %in% names(data)) {
     stop("Previous-state variable `", p_var, "` not found in `data`.")

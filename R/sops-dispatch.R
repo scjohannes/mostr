@@ -96,7 +96,7 @@ soprob_markov <- function(
     return(run_reference())
   }
 
-  validate_markov_model(model_fast)
+  validate_markov_model(model_fast, p2_var = p2_var)
   validate_fast_previous_state_support(
     model_fast,
     p_var = p_var,

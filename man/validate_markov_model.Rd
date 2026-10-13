@@ -4,7 +4,7 @@
 \alias{validate_markov_model}
 \title{Validate Model for Markov Simulation}
 \usage{
-validate_markov_model(object)
+validate_markov_model(object, p2_var = NULL)
 }
 \arguments{
 \item{object}{A fitted model object}

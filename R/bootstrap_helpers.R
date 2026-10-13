@@ -459,6 +459,9 @@ bootstrap_analysis_wrapper <- function(
   fit_weights = NULL
 ) {
   fit_model <- bootstrap_refit_model(model)
+  if (!is.null(fit_weights)) {
+    stop_orm_markov_ml_fwb(fit_model)
+  }
 
   prior_weight_column <- markov_model_prior_weight_column(fit_model)
   if (!is.null(prior_weight_column)) {
@@ -558,6 +561,18 @@ bootstrap_analysis_wrapper <- function(
     absorb = boot_absorb,
     missing_states = missing_states
   ))
+}
+
+stop_orm_markov_ml_fwb <- function(model) {
+  if (identical(markov_model_fit_wrapper(model), "orm_markov_ml")) {
+    stop(
+      "Fractional weighted bootstrap is not available for `orm_markov_ml()` ",
+      "fits, which do not accept row weights. Use `method = \"bootstrap\"`, ",
+      "`\"delta\"`, `\"mvn\"`, or `\"score_bootstrap\"`.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
 }
 
 bootstrap_datadist_data <- function(data) {
@@ -773,6 +788,17 @@ update_bootstrap_model <- function(
   }
   for (nm in inlined) {
     refit_call[nm] <- list(refit_args[[nm]])
+  }
+
+  if (identical(markov_model_fit_wrapper(model), "orm_markov_ml")) {
+    # Each resampled copy of a patient is its own chain, and refits need
+    # only the coefficients.
+    if ("new_id" %in% names(boot_data)) {
+      refit_call$id_var <- "new_id"
+    }
+    control <- refit_args$control %||% orm_markov_ml_control()
+    control$variance <- FALSE
+    refit_call$control <- control
   }
 
   updated <- suppress_orm_bootstrap_weight_warning(
