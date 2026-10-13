@@ -840,7 +840,7 @@ markov_ml_em <- function(problem, theta, control) {
 markov_ml_newton <- function(problem, theta, loglik, information, control) {
   steps <- 0L
   for (step in seq_len(control$newton_steps)) {
-    score <- colSums(markov_ml_patient_scores(problem, theta))
+    score <- markov_ml_total_score(problem, theta)
     if (max(abs(score)) < 1e-12) {
       break
     }

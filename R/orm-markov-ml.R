@@ -50,7 +50,9 @@
 #' The chain follows the rows of each patient in `time_var` order. A visit
 #' without a row is treated as not scheduled, not as a missing state, so keep
 #' one row for every scheduled visit until an observed absorbing state or the
-#' end of follow-up.
+#' end of follow-up. In particular, do not end a patient's rows at a missing
+#' state: if a death may have gone unrecorded, the later visits (showing the
+#' death, or missing) must stay in the data, or the death is lost.
 #'
 #' Rows after a missing state usually have a missing or wrong `p_var`. Only
 #' the first row's `p_var` (the starting state, which must be observed) is

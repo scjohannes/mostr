@@ -182,11 +182,14 @@ round(t(sapply(fits, function(f) {
 })), 3)
 ```
 
-Complete-row analysis and `"any"` both move the death threshold upwards
-(more deaths). For `"any"`, a death could be hidden in any missing visit, but
-deaths were never missing, so the model is told less than is known and still
-over-weights deaths. `"non_absorbing"` uses the knowledge that these patients
-were alive and agrees with the full-data fit.
+Complete-row analysis moves the death threshold upwards (more deaths) and
+changes the treatment coefficient. Both maximum likelihood fits agree with the
+full-data fit. They are nearly identical to each other: in a gap that ends
+with an observed living state, the patient cannot have died during the gap,
+because death is never left. The two rules differ only for missing states at
+the end of a patient's rows, where `"any"` allows a death that was not
+recorded. When deaths are always recorded, `"non_absorbing"` uses that
+knowledge.
 
 ## State occupancy probabilities
 
@@ -234,18 +237,21 @@ fit is close to the full-data fit.
 plot_sops(avg_ml)
 ```
 
-Treatment contrasts and their confidence intervals work the same way:
+Treatment contrasts and their confidence intervals work the same way. As
+everywhere in mostr, `times` lists consecutive visits, so we predict every day
+and then show days 7, 14, and 28:
 
 ```{r comparisons}
 cmp <- avg_comparisons(
   fit_ml,
   variables = list(tx = c(0, 1)),
-  times = c(7, 14, 28),
+  times = 1:FOLLOW_UP,
   state_sets = list(death = ABSORB),
   absorb = ABSORB
 ) |>
   inferences(method = "delta", vcov = "unconditional")
-cmp[, c("time", "state_set", "estimate", "std.error", "conf.low", "conf.high")]
+cmp[cmp$time %in% c(7, 14, 28),
+  c("time", "state_set", "estimate", "std.error", "conf.low", "conf.high")]
 ```
 
 `inferences()` also supports `method = "mvn"`, `"score_bootstrap"`, and
@@ -267,9 +273,11 @@ about why states are missing:
   less often documented if the patient was discharged soon afterwards:
   complete-row analysis is biased, `orm_markov_ml()` is not (this is still
   "missing at random").
-* **Missing never hides a death** (as above): complete-row analysis and
-  `missing_states = "any"` are biased; `"non_absorbing"` or `Ocens(1, K - 1)`
-  is unbiased.
+* **Missing never hides a death** (as above): complete-row analysis is
+  biased, because the transitions it drops are all between living states.
+  `"non_absorbing"` or `Ocens(1, K - 1)` is unbiased. `"any"` ignores that a
+  missing state at the end of a patient's rows means "alive", which can bias
+  it slightly when many patients end with missing states.
 * **Missing depends on the unobserved state itself** (for example sicker
   patients skip visits more often than others in the same previous state):
   both methods are biased. This is "missing not at random"; sensitivity
@@ -281,6 +289,13 @@ about why states are missing:
   `yprev` (`p_var`). Other covariates must be fixed per patient or functions
   of time. A covariate computed from the state history, such as a lagged
   state, would be wrong after a missing state. `p2_var` is not supported.
+* Keep a row for every scheduled visit until an *observed* death or the end of
+  follow-up. If a death may go unrecorded, the visits after it still belong
+  in the data, with the death or a missing state. Ending a patient's rows at a
+  missing state hides that death and, with `missing_states = "any"`, makes
+  mortality look lower than it is. Applying `prepare_markov_data()` to the
+  observed data keeps these rows, because it only drops rows whose `yprev` is
+  an observed death.
 * The starting state (`yprev` on each patient's first row) and all covariates
   must be observed. After a missing state, `yprev` is ignored; the chain is
   rebuilt from the response.
