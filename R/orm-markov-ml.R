@@ -150,6 +150,9 @@
 #'     met its convergence criterion, and Newton steps taken.
 #'   * `max_abs_score`: largest absolute derivative of the log-likelihood at
 #'     the estimate; close to zero at a maximum.
+#'   * `newton_decrement`: \eqn{g^\top J^{-1} g} for the score \eqn{g} at the
+#'     estimate, roughly how much the log-likelihood could still rise; a
+#'     warning is given when it exceeds `1e-6`.
 #'   * `information`, `bread`: observed information \eqn{J} and its inverse.
 #'   * `var_model`, `var_robust`: model-based and robust covariances.
 #'   * `patient_scores`: one row per patient, the derivative of that patient's
@@ -303,7 +306,23 @@ orm_markov_ml <- function(
   theta_hat <- newton$theta
   state <- markov_ml_estep(problem, theta_hat)
   patient_scores <- markov_ml_patient_scores(problem, theta_hat, state)
-  max_abs_score <- max(abs(colSums(patient_scores)))
+  score <- colSums(patient_scores)
+  max_abs_score <- max(abs(score))
+  # Scale-free check that the estimate is a maximum: the Newton decrement
+  # g' J^{-1} g approximates how much the log-likelihood could still rise.
+  newton_decrement <- tryCatch(
+    sum(score * solve(information, score)),
+    error = function(e) NA_real_
+  )
+  if (!is.finite(newton_decrement) || newton_decrement > 1e-6) {
+    warning(
+      "The fit may not be at the maximum of the likelihood (Newton ",
+      "decrement ",
+      signif(newton_decrement, 3),
+      "). Increase `maxit` or `newton_steps` in `orm_markov_ml_control()`.",
+      call. = FALSE
+    )
+  }
 
   var_model <- NULL
   var_robust <- NULL
@@ -377,6 +396,7 @@ orm_markov_ml <- function(
       converged = em$converged,
       newton_steps = newton$steps,
       max_abs_score = max_abs_score,
+      newton_decrement = newton_decrement,
       information = information,
       information_positive_definite = information_pd,
       bread = var_model,

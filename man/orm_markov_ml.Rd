@@ -71,6 +71,9 @@ patient-cluster robust covariance. \verb{$ml} is a list with:
 met its convergence criterion, and Newton steps taken.
 \item \code{max_abs_score}: largest absolute derivative of the log-likelihood at
 the estimate; close to zero at a maximum.
+\item \code{newton_decrement}: \eqn{g^\top J^{-1} g} for the score \eqn{g} at the
+estimate, roughly how much the log-likelihood could still rise; a
+warning is given when it exceeds \code{1e-6}.
 \item \code{information}, \code{bread}: observed information \eqn{J} and its inverse.
 \item \code{var_model}, \code{var_robust}: model-based and robust covariances.
 \item \code{patient_scores}: one row per patient, the derivative of that patient's

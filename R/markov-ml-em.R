@@ -552,10 +552,13 @@ markov_ml_fit_orm <- function(formula, data, dots_fit, weights, initial) {
   if (!is.null(initial)) {
     fit_call$initial <- unname(initial)
   }
-  suppress_orm_bootstrap_weight_warning(
-    structure(list(), class = "orm"),
-    eval(fit_call)
-  )
+  fit <- markov_ml_quiet_orm(eval(fit_call))
+  if (isTRUE(fit$fail) && is.null(dots_fit$opt_method)) {
+    # Retry near-separated data with Levenberg-Marquardt, as in the M-step.
+    fit_call$opt_method <- "LM"
+    fit <- markov_ml_quiet_orm(eval(fit_call))
+  }
+  fit
 }
 
 # ---------------------------------------------------------------------------
@@ -747,24 +750,56 @@ markov_ml_aggregate_weights <- function(problem, state) {
 # Weighted rms::orm.fit() M-step on the aggregated rows. orm.fit() always takes
 # at least one full Newton-Raphson step from `initial` and checks convergence
 # on the gradient before that step, so its default tolerances are adequate.
+# Near-separated data (nearly deterministic transitions) can make the
+# Newton-Raphson step unusable; orm.fit() then reports failure and the step
+# is retried with its Levenberg-Marquardt optimiser.
 markov_ml_mstep <- function(problem, triples, theta) {
-  fit <- suppress_orm_bootstrap_weight_warning(
-    structure(list(), class = "orm"),
-    rms::orm.fit(
+  fit_with <- function(opt_method) {
+    markov_ml_quiet_orm(rms::orm.fit(
       x = problem$X[triples$design, , drop = FALSE],
       y = triples$state,
       weights = triples$weight,
       initial = unname(theta),
       compstats = FALSE,
-      maxit = 50L
-    )
-  )
+      maxit = 50L,
+      opt_method = opt_method
+    ))
+  }
+  fit <- fit_with("NR")
+  if (isTRUE(fit$fail)) {
+    fit <- fit_with("LM")
+  }
   if (isTRUE(fit$fail) || length(stats::coef(fit)) != length(theta)) {
-    stop("The weighted orm M-step failed to converge.", call. = FALSE)
+    stop(
+      "The weighted orm M-step failed with both Newton-Raphson and ",
+      "Levenberg-Marquardt; the data may be (nearly) separated.",
+      call. = FALSE
+    )
   }
   out <- unname(stats::coef(fit))
   names(out) <- problem$coef_names
   out
+}
+
+# Run an rms fit, silencing the weights warning and orm.fit()'s non-convergence
+# message; callers check `fail` and act on it.
+markov_ml_quiet_orm <- function(expr) {
+  suppress_orm_bootstrap_weight_warning(
+    structure(list(), class = "orm"),
+    withCallingHandlers(
+      expr,
+      message = function(m) {
+        if (
+          grepl(
+            "without improving log likelihood|iterations without convergence",
+            conditionMessage(m)
+          )
+        ) {
+          invokeRestart("muffleMessage")
+        }
+      }
+    )
+  )
 }
 
 # Patient-level posterior triples (row, origin, destination, weight) for the

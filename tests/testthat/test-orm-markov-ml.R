@@ -306,6 +306,7 @@ test_that("the estimate maximises the likelihood and EM is monotone", {
   fit <- ml_fit(data, formula)
   expect_true(fit$ml$converged)
   expect_true(all(diff(fit$ml$trace) > -1e-10))
+  expect_lt(fit$ml$newton_decrement, 1e-10)
 
   problem <- markov_ml_setup(
     formula, data, "id", "time", "yprev", 6, "any", list()
@@ -553,4 +554,44 @@ test_that("influence components come from the stored ML scores", {
   sb <- score_bootstrap_components(fit)
   expect_equal(sb$scores, fit$ml$patient_scores)
   expect_equal(sb$bread, fit$ml$bread)
+})
+
+test_that("near-separated data fall back to Levenberg-Marquardt", {
+  full <- prepare_markov_data(
+    sim_actt2_markov(n_patients = 400, follow_up_time = 28,
+      treatment_effect = log(0.8), seed = 2026),
+    absorbing_state = 8
+  )
+  full <- full[order(full$id, full$time), ]
+  set.seed(1)
+  drop <- full$y != "8" & stats::runif(nrow(full)) < 0.25
+  full$y[drop] <- NA
+  same <- c(FALSE, full$id[-1] == full$id[-nrow(full)])
+  full$yprev[c(FALSE, drop[-nrow(full)]) & same] <- NA
+  # A bootstrap resample whose starting fit is nearly separated.
+  ids <- unique(full$id)
+  set.seed(35)
+  picked <- sample(ids, replace = TRUE)
+  boot <- do.call(rbind, lapply(seq_along(picked), function(k) {
+    transform(full[full$id == picked[[k]], ], new_id = paste0(picked[[k]], "_", k))
+  }))
+  formula <- y ~ rms::rcs(time, 4) + tx + yprev
+  problem <- markov_ml_setup(formula, boot, "new_id", "time", "yprev", 8,
+    "non_absorbing", list())
+  theta <- stats::coef(problem$start_fit)
+  state <- markov_ml_estep(problem, theta)
+  triples <- markov_ml_aggregate_weights(problem, state)
+
+  nr <- suppressMessages(rms::orm.fit(
+    x = problem$X[triples$design, , drop = FALSE], y = triples$state,
+    weights = triples$weight, initial = unname(theta), compstats = FALSE
+  ))
+  expect_true(isTRUE(nr$fail))
+  updated <- markov_ml_mstep(problem, triples, theta)
+  expect_gt(markov_ml_loglik(problem, updated), state$loglik)
+
+  fit <- expect_no_warning(orm_markov_ml(formula, data = boot,
+    id_var = "new_id", absorbing_state = 8, missing_states = "non_absorbing"))
+  expect_true(fit$ml$converged)
+  expect_lt(fit$ml$newton_decrement, 1e-6)
 })
