@@ -595,3 +595,36 @@ test_that("near-separated data fall back to Levenberg-Marquardt", {
   expect_true(fit$ml$converged)
   expect_lt(fit$ml$newton_decrement, 1e-6)
 })
+
+test_that("the M-step uses a user-supplied opt_method as given", {
+  data <- ml_sim_missing(n_patients = 50, follow_up_time = 8, missing = 0.2)
+  formula <- y ~ rms::rcs(time, 3) + tx + yprev
+  original <- rms::orm.fit
+  used <- character()
+  local_mocked_bindings(
+    orm.fit = function(..., opt_method = "NR") {
+      used <<- c(used, opt_method)
+      original(..., opt_method = opt_method)
+    },
+    .package = "rms"
+  )
+
+  lm_problem <- markov_ml_setup(formula, data, "id", "time", "yprev", 6,
+    "any", list(opt_method = "LM"))
+  default_problem <- markov_ml_setup(formula, data, "id", "time", "yprev", 6,
+    "any", list())
+  theta <- stats::coef(default_problem$start_fit)
+  state <- markov_ml_estep(default_problem, theta)
+  triples <- markov_ml_aggregate_weights(default_problem, state)
+
+  used <- character()
+  markov_ml_mstep(lm_problem, triples, theta)
+  expect_identical(used, "LM")
+
+  used <- character()
+  markov_ml_mstep(default_problem, triples, theta)
+  expect_identical(used, "NR")
+
+  fit_lm <- ml_fit(data, formula, opt_method = "LM")
+  expect_equal(coef(fit_lm), coef(ml_fit(data, formula)), tolerance = 1e-6)
+})

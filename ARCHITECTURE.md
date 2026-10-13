@@ -259,7 +259,14 @@ flowchart TD
 - **Fitting** alternates `markov_ml_estep()` with `markov_ml_mstep()`
   (`rms::orm.fit()` on weights aggregated by integer design-row and
   destination keys), then `markov_ml_newton()` uses the exact score and the
-  information. `markov_ml_final_fit()` refits `rms::orm()` on one row per
+  information. An `opt_method` passed through `...` is used as given by the
+  starting fit, every M-step, and the final refit. Without one, Newton-Raphson
+  is tried first; near-separated data can make its step unusable, and the
+  M-step and final refit then retry with Levenberg-Marquardt
+  (`markov_ml_quiet_orm()` silences the expected non-convergence message, and
+  `fail` is checked). The fit stores the Newton decrement `g' J^{-1} g` and
+  warns when it exceeds 1e-6.
+  `markov_ml_final_fit()` refits `rms::orm()` on one row per
   posterior triple with `.mostr_em_weight` weights, the internal response
   column `.mostr_state`, and rcs() knots locked to the starting fit
   (`markov_ml_lock_knots()`); it checks the refit reproduces the estimates and

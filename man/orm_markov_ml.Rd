@@ -30,7 +30,11 @@ contain \code{p_var}. Offsets are not supported.}
 patient ID, time, response, previous state, and covariates, keeping rows
 whose response is missing.}
 
-\item{...}{Further arguments passed to \code{\link[rms:orm]{rms::orm()}}, such as \code{scale}.
+\item{...}{Further arguments passed to \code{\link[rms:orm]{rms::orm()}}, such as \code{scale} or
+\code{opt_method}. An \code{opt_method} is used by the starting fit, every EM
+step, and the final fit. Without it, Newton-Raphson is used and, if it
+fails (for example when some transitions are nearly deterministic), the
+step is repeated with Levenberg-Marquardt (\code{opt_method = "LM"}).
 \code{weights}, \code{subset}, \code{offset}, \code{penalty}, \code{cluster}, \code{family}, and
 \code{p2_var} are not supported.}
 

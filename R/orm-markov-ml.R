@@ -120,7 +120,11 @@
 #' @param data Long data with one row per scheduled visit and columns for the
 #'   patient ID, time, response, previous state, and covariates, keeping rows
 #'   whose response is missing.
-#' @param ... Further arguments passed to [rms::orm()], such as `scale`.
+#' @param ... Further arguments passed to [rms::orm()], such as `scale` or
+#'   `opt_method`. An `opt_method` is used by the starting fit, every EM
+#'   step, and the final fit. Without it, Newton-Raphson is used and, if it
+#'   fails (for example when some transitions are nearly deterministic), the
+#'   step is repeated with Levenberg-Marquardt (`opt_method = "LM"`).
 #'   `weights`, `subset`, `offset`, `penalty`, `cluster`, `family`, and
 #'   `p2_var` are not supported.
 #' @param id_var Character scalar naming the patient ID column. Required: each

@@ -532,6 +532,7 @@ markov_ml_setup <- function(
     DI = DI,
     n_int = K - 1L,
     coef_names = names(coefficients),
+    opt_method = dots_fit$opt_method,
     start_fit = start_fit,
     working_formula = working_formula
   )
@@ -750,9 +751,11 @@ markov_ml_aggregate_weights <- function(problem, state) {
 # Weighted rms::orm.fit() M-step on the aggregated rows. orm.fit() always takes
 # at least one full Newton-Raphson step from `initial` and checks convergence
 # on the gradient before that step, so its default tolerances are adequate.
-# Near-separated data (nearly deterministic transitions) can make the
-# Newton-Raphson step unusable; orm.fit() then reports failure and the step
-# is retried with its Levenberg-Marquardt optimiser.
+# An `opt_method` passed to orm_markov_ml() is used as given, as in the
+# starting fit and the final refit. Without one, Newton-Raphson is tried first;
+# near-separated data (nearly deterministic transitions) can make its step
+# unusable, so orm.fit() reports failure and the step is retried with the
+# Levenberg-Marquardt optimiser.
 markov_ml_mstep <- function(problem, triples, theta) {
   fit_with <- function(opt_method) {
     markov_ml_quiet_orm(rms::orm.fit(
@@ -765,14 +768,18 @@ markov_ml_mstep <- function(problem, triples, theta) {
       opt_method = opt_method
     ))
   }
-  fit <- fit_with("NR")
-  if (isTRUE(fit$fail)) {
-    fit <- fit_with("LM")
+  methods <- problem$opt_method %||% c("NR", "LM")
+  for (method in methods) {
+    fit <- fit_with(method)
+    if (!isTRUE(fit$fail)) {
+      break
+    }
   }
   if (isTRUE(fit$fail) || length(stats::coef(fit)) != length(theta)) {
     stop(
-      "The weighted orm M-step failed with both Newton-Raphson and ",
-      "Levenberg-Marquardt; the data may be (nearly) separated.",
+      "The weighted orm M-step failed with `opt_method = ",
+      paste0("\"", methods, "\"", collapse = "` and `"),
+      "`; the data may be (nearly) separated.",
       call. = FALSE
     )
   }
