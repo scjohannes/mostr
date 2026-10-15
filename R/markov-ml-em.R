@@ -883,14 +883,15 @@ markov_ml_newton <- function(problem, theta, loglik, information, control) {
   steps <- 0L
   for (step in seq_len(control$newton_steps)) {
     score <- markov_ml_total_score(problem, theta)
-    if (max(abs(score)) < 1e-12) {
-      break
-    }
     direction <- tryCatch(
       drop(solve(information, score)),
       error = function(e) NULL
     )
     if (is.null(direction) || any(!is.finite(direction))) {
+      break
+    }
+    # Newton decrement: roughly how much the log-likelihood could still rise.
+    if (sum(score * direction) < 1e-20) {
       break
     }
     t <- 1

@@ -352,7 +352,15 @@ orm_markov_ml <- function(
     }
   }
 
-  fit <- markov_ml_final_fit(problem, state, theta_hat, dots_fit, x = x, y = y)
+  fit <- markov_ml_final_fit(
+    problem,
+    state,
+    theta_hat,
+    score = score,
+    dots_fit = dots_fit,
+    x = x,
+    y = y
+  )
   complete_information <- fit$ml_complete_information
   fit$ml_complete_information <- NULL
 
@@ -470,10 +478,14 @@ orm_markov_ml <- function(
 #' @param maxit Maximum number of EM iterations. A fit that reaches it is
 #'   marked as not converged.
 #' @param reltol EM stops when the relative change in log-likelihood falls
-#'   below this value.
+#'   below this value, and Newton steps finish the maximisation. When many
+#'   states are missing, EM converges slowly, while Newton steps converge
+#'   quickly once close to the maximum.
 #' @param coef_tol EM also stops when no coefficient changes by more than this
 #'   value.
-#' @param newton_steps Maximum number of Newton steps after EM.
+#' @param newton_steps Maximum number of Newton steps after EM. They stop
+#'   early once the Newton decrement (roughly how much the log-likelihood could
+#'   still rise) is below `1e-20`.
 #' @param info_step Relative step size for the numerical derivative of the
 #'   score that gives the observed information.
 #' @param trace Print the log-likelihood after each EM iteration?
@@ -484,9 +496,9 @@ orm_markov_ml <- function(
 #' @export
 orm_markov_ml_control <- function(
   maxit = 200L,
-  reltol = 1e-10,
+  reltol = 1e-6,
   coef_tol = 1e-7,
-  newton_steps = 3L,
+  newton_steps = 10L,
   info_step = 1e-4,
   trace = FALSE,
   variance = TRUE
@@ -508,9 +520,9 @@ markov_ml_validate_control <- function(control) {
   }
   defaults <- list(
     maxit = 200L,
-    reltol = 1e-10,
+    reltol = 1e-6,
     coef_tol = 1e-7,
-    newton_steps = 3L,
+    newton_steps = 10L,
     info_step = 1e-4,
     trace = FALSE,
     variance = TRUE
@@ -622,9 +634,13 @@ markov_ml_lock_knots <- function(formula, design) {
   formula
 }
 
-# Weighted rms::orm() refit on one row per possible transition, returning a
-# full orm object whose coefficients are the ML estimates.
-markov_ml_final_fit <- function(problem, state, theta, dots_fit, x, y) {
+# Weighted rms::orm() evaluated at the ML estimates on one row per possible
+# transition, returning a full orm object for prediction. It does not
+# iterate (`maxit = 1` returns the fit at `initial`). By Fisher's identity its
+# gradient, the posterior-weighted complete-data score, equals the
+# observed-data score at `theta`; comparing the two checks that the refit
+# describes the same model.
+markov_ml_final_fit <- function(problem, state, theta, score, dots_fit, x, y) {
   triples <- markov_ml_patient_triples(problem, state)
   expanded <- problem$data[triples$row, , drop = FALSE]
   expanded[[problem$p_var]] <- coerce_previous_state_values(
@@ -644,22 +660,33 @@ markov_ml_final_fit <- function(problem, state, theta, dots_fit, x, y) {
     problem$working_formula,
     problem$start_fit$Design
   )
+  # Scaling and optimiser settings only matter when iterating.
+  refit_args <- dots_fit[setdiff(names(dots_fit), c("maxit", "scale", "opt_method"))]
+  refit_args$maxit <- 1L
   fit <- markov_ml_fit_orm(
     formula,
     expanded,
-    dots_fit,
+    refit_args,
     weights = markov_ml_weight_column(),
     initial = theta
   )
-  if (!identical(names(stats::coef(fit)), problem$coef_names)) {
-    stop("Internal error: the weighted refit has different coefficients.")
+  if (
+    isTRUE(fit$fail) ||
+      !identical(names(stats::coef(fit)), problem$coef_names) ||
+      max(abs(stats::coef(fit) - theta)) > 1e-10 * max(1, max(abs(theta)))
+  ) {
+    stop("Internal error: the weighted refit is not evaluated at the estimates.")
   }
-  difference <- max(abs(stats::coef(fit) - theta))
-  if (!is.finite(difference) || difference > 1e-6) {
+  gradient_gap <- max(abs(fit$u - score))
+  if (
+    length(fit$u) != length(score) ||
+      !is.finite(gradient_gap) ||
+      gradient_gap > 1e-6 * max(1, max(abs(fit$u)), max(abs(score)))
+  ) {
     stop(
-      "Internal error: the weighted refit did not reproduce the maximum ",
-      "likelihood estimates (largest difference ",
-      signif(difference, 3),
+      "Internal error: the weighted refit's gradient differs from the ",
+      "observed-data score (largest difference ",
+      signif(gradient_gap, 3),
       ").",
       call. = FALSE
     )

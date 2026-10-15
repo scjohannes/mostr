@@ -6,9 +6,9 @@
 \usage{
 orm_markov_ml_control(
   maxit = 200L,
-  reltol = 1e-10,
+  reltol = 1e-06,
   coef_tol = 1e-07,
-  newton_steps = 3L,
+  newton_steps = 10L,
   info_step = 1e-04,
   trace = FALSE,
   variance = TRUE
@@ -19,12 +19,16 @@ orm_markov_ml_control(
 marked as not converged.}
 
 \item{reltol}{EM stops when the relative change in log-likelihood falls
-below this value.}
+below this value, and Newton steps finish the maximisation. When many
+states are missing, EM converges slowly, while Newton steps converge
+quickly once close to the maximum.}
 
 \item{coef_tol}{EM also stops when no coefficient changes by more than this
 value.}
 
-\item{newton_steps}{Maximum number of Newton steps after EM.}
+\item{newton_steps}{Maximum number of Newton steps after EM. They stop
+early once the Newton decrement (roughly how much the log-likelihood could
+still rise) is below \code{1e-20}.}
 
 \item{info_step}{Relative step size for the numerical derivative of the
 score that gives the observed information.}
