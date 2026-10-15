@@ -809,32 +809,6 @@ markov_ml_quiet_orm <- function(expr) {
   )
 }
 
-# Patient-level posterior triples (row, origin, destination, weight) for the
-# final weighted refit.
-markov_ml_patient_triples <- function(problem, state) {
-  comp <- problem$complete_part
-  pieces <- list(data.frame(
-    row = comp$rows,
-    origin = problem$origins[comp$origin],
-    state = comp$state,
-    weight = 1
-  ))
-  if (problem$chain$n) {
-    for (ai in seq_len(problem$n_origin)) {
-      xi <- markov_ml_chain_xi(problem, state, ai)
-      idx <- which(xi > 0, arr.ind = TRUE)
-      pieces[[length(pieces) + 1L]] <- data.frame(
-        row = problem$chain$rows[idx[, 1L]],
-        origin = problem$origins[[ai]],
-        state = idx[, 2L],
-        weight = xi[idx]
-      )
-    }
-  }
-  out <- do.call(rbind, pieces)
-  out[order(out$row, out$origin, out$state), , drop = FALSE]
-}
-
 # ---------------------------------------------------------------------------
 # EM and Newton finish
 # ---------------------------------------------------------------------------

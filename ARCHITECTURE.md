@@ -241,7 +241,7 @@ flowchart TD
     F --> H[EM: weighted orm.fit M-step on aggregated weights]
     G --> H
     H --> I[Newton finish with exact score and FD information]
-    I --> J[Weighted orm refit on posterior triples, knots locked]
+    I --> J[Weighted orm at the estimates on expected counts, knots locked]
     J --> K[orm_markov_ml object: $ml, $var, stored data]
 ```
 
@@ -266,11 +266,16 @@ flowchart TD
   (`markov_ml_quiet_orm()` silences the expected non-convergence message, and
   `fail` is checked). The fit stores the Newton decrement `g' J^{-1} g` and
   warns when it exceeds 1e-6.
-  `markov_ml_final_fit()` refits `rms::orm()` on one row per
-  posterior triple with `.mostr_em_weight` weights, the internal response
-  column `.mostr_state`, and rcs() knots locked to the starting fit
-  (`markov_ml_lock_knots()`); it checks the refit reproduces the estimates and
-  the design, then installs the estimates and removes `info.matrix`.
+  EM stops at a loose relative tolerance (`reltol = 1e-6`) because it
+  converges slowly when much information is missing; Newton steps then run
+  until the decrement is below 1e-20.
+  `markov_ml_final_fit()` evaluates `rms::orm()` at the estimates
+  (`maxit = 1`, no iteration) on one row per (unique design row, state) with
+  the expected transition counts as `.mostr_em_weight` weights, the internal
+  response column `.mostr_state`, and rcs() knots locked to the starting fit
+  (`markov_ml_lock_knots()`). By Fisher's identity the refit's gradient
+  equals the observed-data score, which is checked, as is the design; it then
+  removes `info.matrix`. Its `x` and `y` hold these aggregated rows.
 - **Inference** (`R/markov-ml-inference.R`): patient scores come from Fisher's
   identity (`markov_ml_patient_scores()`, with `po_row_scores()` for fully
   observed rows); the observed information is a central difference of the

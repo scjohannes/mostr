@@ -191,9 +191,11 @@ observed. It then alternates between computing, for every row, the
 probability of each possible transition given everything observed for the
 patient (a forward-backward pass), and refitting the proportional-odds
 model with these probabilities as weights (EM). A few Newton steps then
-finish the maximisation. The returned object is an \code{\link[rms:orm]{rms::orm()}} fit on one
-row per possible transition, weighted by its probability, whose
-coefficients are the maximum likelihood estimates.
+finish the maximisation. The returned object is an \code{\link[rms:orm]{rms::orm()}} fit
+evaluated at the maximum likelihood estimates, on one row per distinct
+combination of covariates, previous state, and state, weighted by the
+expected number of such transitions. Its \code{x} and \code{y} components therefore
+hold these combinations, not the original rows.
 }
 
 \section{Standard errors}{

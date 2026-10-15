@@ -91,9 +91,11 @@
 #' probability of each possible transition given everything observed for the
 #' patient (a forward-backward pass), and refitting the proportional-odds
 #' model with these probabilities as weights (EM). A few Newton steps then
-#' finish the maximisation. The returned object is an [rms::orm()] fit on one
-#' row per possible transition, weighted by its probability, whose
-#' coefficients are the maximum likelihood estimates.
+#' finish the maximisation. The returned object is an [rms::orm()] fit
+#' evaluated at the maximum likelihood estimates, on one row per distinct
+#' combination of covariates, previous state, and state, weighted by the
+#' expected number of such transitions. Its `x` and `y` components therefore
+#' hold these combinations, not the original rows.
 #'
 #' @section Standard errors:
 #' Standard errors use the observed information \eqn{J}, the negative second
@@ -634,26 +636,25 @@ markov_ml_lock_knots <- function(formula, design) {
   formula
 }
 
-# Weighted rms::orm() evaluated at the ML estimates on one row per possible
-# transition, returning a full orm object for prediction. It does not
+# Weighted rms::orm() evaluated at the ML estimates on the expected transition
+# counts, returning a full orm object for prediction. It does not
 # iterate (`maxit = 1` returns the fit at `initial`). By Fisher's identity its
 # gradient, the posterior-weighted complete-data score, equals the
 # observed-data score at `theta`; comparing the two checks that the refit
 # describes the same model.
 markov_ml_final_fit <- function(problem, state, theta, score, dots_fit, x, y) {
-  triples <- markov_ml_patient_triples(problem, state)
-  expanded <- problem$data[triples$row, , drop = FALSE]
-  expanded[[problem$p_var]] <- coerce_previous_state_values(
-    problem$labels[triples$origin],
-    problem$prototype,
-    problem$p_var
-  )
+  # One row per (unique design row, destination state) with the expected
+  # number of such transitions as its weight. The gradient and information of
+  # a weighted orm fit depend only on these sums, so this matches a fit on one
+  # row per patient visit and possible transition, with far fewer rows.
+  counts <- markov_ml_aggregate_weights(problem, state)
+  expanded <- problem$design_data[counts$design, , drop = FALSE]
   expanded[[markov_ml_response_column()]] <- markov_ml_state_values(
-    triples$state,
+    counts$state,
     problem$scale,
     problem$response_type
   )
-  expanded[[markov_ml_weight_column()]] <- triples$weight
+  expanded[[markov_ml_weight_column()]] <- counts$weight
   rownames(expanded) <- NULL
 
   formula <- markov_ml_lock_knots(
