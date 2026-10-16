@@ -491,6 +491,45 @@ test_that("prediction and inference run on an ML fit without robcov_orm()", {
   expect_error(inferences(a, method = "fwb", n_draws = 5), "not available")
 })
 
+# --- Printing ----------------------------------------------------------------
+
+test_that("print() reports the ML fit, not the weighted refit", {
+  data <- ml_sim_missing(n_patients = 60, follow_up_time = 6, missing = 0.2)
+  fit <- orm_markov_ml(y ~ time + tx + yprev, data = data, id_var = "id",
+    absorbing_state = 6)
+  out <- utils::capture.output(returned <- print(fit))
+  expect_identical(returned, fit)
+  text <- paste(out, collapse = "\n")
+
+  # Statistics of the refit on expected transition counts describe neither the
+  # rows nor the patients, so they are not shown.
+  for (refit_only in c("Frequencies of Responses", "LR chi2", "Discrimination",
+    "Dxy", "Distinct Y")) {
+    expect_false(grepl(refit_only, text, fixed = TRUE), info = refit_only)
+  }
+  expect_match(text, format(fit$ml$loglik, nsmall = 4), fixed = TRUE)
+  expect_match(text, paste0("Patients: ", fit$ml$n_patients), fixed = TRUE)
+  expect_match(text, "Wald Z", fixed = TRUE)
+
+  # One row per coefficient with the estimate and the robust standard error.
+  se <- sqrt(diag(vcov(fit, intercepts = "all")))
+  for (name in names(coef(fit))) {
+    line <- out[startsWith(out, paste0(name, " "))]
+    expect_length(line, 1L)
+    printed <- as.numeric(
+      strsplit(trimws(substring(line, nchar(name) + 1L)), " +")[[1L]][1:2]
+    )
+    expect_lt(max(abs(printed - c(coef(fit)[[name]], se[[name]]))), 1e-3)
+  }
+
+  no_variance <- orm_markov_ml(y ~ time + tx + yprev, data = data,
+    id_var = "id", absorbing_state = 6,
+    control = orm_markov_ml_control(variance = FALSE))
+  out <- utils::capture.output(print(no_variance))
+  expect_true(any(grepl("not computed", out, fixed = TRUE)))
+  expect_true(any(startsWith(out, "tx ")))
+})
+
 test_that("refit bootstrap refits orm_markov_ml() on whole patients", {
   data <- ml_oracle_data()
   fit <- orm_markov_ml(

@@ -298,6 +298,16 @@ Contracts with the rest of the package:
   `$ml` holds the patient scores (rows in stored starting-profile ID order,
   zeros for patients with no information), bread, information, trace,
   convergence, counts, and the missing-information fraction.
+- Printing: `print.orm_markov_ml()` does not call `print.orm()`, whose
+  frequencies, likelihood-ratio test, R2, and rank correlations would describe
+  the weighted refit on expected counts rather than the data. It prints the
+  `$ml` header (log-likelihood, EM and Newton steps, patients and robust
+  clusters, row counts, missing-information fraction) and a coefficient table
+  with robust standard errors from `vcov(fit, intercepts = "all")`, Wald Z,
+  and p-values; fits with `variance = FALSE` print the estimates only. The
+  refit's `stats`, `freq`, and `deviance`, and hence `logLik()` and `AIC()`,
+  still describe the expected counts; `$ml$loglik` is the observed-data
+  log-likelihood.
 - Patient influence: `markov_influence_components()` (`R/markov-ml-inference.R`)
   is the single accessor for coefficients, bread, scores, and cluster IDs.
   `robcov_orm()`, `score_bootstrap_components()`, and

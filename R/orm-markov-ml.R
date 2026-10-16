@@ -95,7 +95,13 @@
 #' evaluated at the maximum likelihood estimates, on one row per distinct
 #' combination of covariates, previous state, and state, weighted by the
 #' expected number of such transitions. Its `x` and `y` components therefore
-#' hold these combinations, not the original rows.
+#' hold these combinations, not the original rows. For the same reason, the
+#' fit statistics that [rms::orm()] stores (`stats`, `freq`, `deviance`, and
+#' so [logLik()] and [AIC()]) describe these expected counts, not the
+#' patients' data. Use `$ml$loglik` for the maximised log-likelihood.
+#' Printing the fit shows this log-likelihood, the numbers of patients and
+#' rows, and the coefficients with robust standard errors, Wald Z statistics,
+#' and p-values.
 #'
 #' @section Standard errors:
 #' Standard errors use the observed information \eqn{J}, the negative second
@@ -747,10 +753,18 @@ markov_ml_missing_counts <- function(problem) {
   )
 }
 
+# The rms::orm() print method is not used: its statistics (frequencies, LR
+# chi-square, R2, rank correlations) would describe the weighted refit on
+# expected transition counts from markov_ml_final_fit(), not the data.
 #' @export
-print.orm_markov_ml <- function(x, ...) {
+print.orm_markov_ml <- function(x, digits = 4, ...) {
   ml <- x$ml
-  cat("Observed-data maximum likelihood Markov fit (orm_markov_ml)\n")
+  cat("Observed-data maximum likelihood Markov fit (orm_markov_ml)\n\n")
+  if (!is.null(x$call)) {
+    cat("Call:\n")
+    print(x$call)
+    cat("\n")
+  }
   cat(
     "  Log-likelihood: ",
     format(ml$loglik, nsmall = 4),
@@ -761,6 +775,10 @@ print.orm_markov_ml <- function(x, ...) {
     ml$newton_steps,
     "; max |score|: ",
     format(signif(ml$max_abs_score, 3)),
+    "\n  Patients: ",
+    ml$n_patients,
+    "; clusters for robust standard errors: ",
+    sum(ml$contributing),
     "\n  Rows: ",
     ml$n_rows,
     " (",
@@ -778,5 +796,40 @@ print.orm_markov_ml <- function(x, ...) {
     "\n\n",
     sep = ""
   )
-  NextMethod()
+  theta <- stats::coef(x)
+  if (is.null(x$var)) {
+    cat("Coefficients (standard errors not computed: `variance = FALSE`):\n")
+    print(cbind(Coef = round(theta, digits)))
+    return(invisible(x))
+  }
+  se <- sqrt(diag(stats::vcov(x, intercepts = "all")))
+  z <- theta / se
+  table <- cbind(
+    Coef = theta,
+    `Robust S.E.` = se,
+    `Wald Z` = z,
+    `Pr(>|Z|)` = 2 * stats::pnorm(-abs(z))
+  )
+  cat(
+    "Coefficients (patient-cluster robust standard errors, ",
+    ml$type,
+    if (isTRUE(ml$cadjust)) " with n/(n-1)",
+    "):\n",
+    sep = ""
+  )
+  if (!isTRUE(ml$information_positive_definite)) {
+    cat(
+      "  (unavailable: the observed information is not positive definite)\n"
+    )
+  }
+  stats::printCoefmat(
+    table,
+    digits = digits,
+    signif.stars = FALSE,
+    P.values = TRUE,
+    has.Pvalue = TRUE,
+    eps.Pvalue = 1e-4,
+    na.print = "NA"
+  )
+  invisible(x)
 }

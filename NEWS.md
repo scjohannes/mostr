@@ -13,6 +13,15 @@
   information of the observed-data likelihood. The estimates are valid when
   states are missing at random.
 
+* Printing an `orm_markov_ml()` fit now shows the maximised log-likelihood,
+  the numbers of patients and rows, and a table of coefficients with
+  patient-cluster robust standard errors, Wald Z statistics, and p-values. It
+  no longer shows the `rms::orm()` summary (observation count, response
+  frequencies, likelihood-ratio test, R2, rank correlations), which described
+  the internal weighted fit on expected transition counts rather than the
+  data. Printing a fit made with `orm_markov_ml_control(variance = FALSE)`
+  no longer fails.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

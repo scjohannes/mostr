@@ -195,7 +195,13 @@ finish the maximisation. The returned object is an \code{\link[rms:orm]{rms::orm
 evaluated at the maximum likelihood estimates, on one row per distinct
 combination of covariates, previous state, and state, weighted by the
 expected number of such transitions. Its \code{x} and \code{y} components therefore
-hold these combinations, not the original rows.
+hold these combinations, not the original rows. For the same reason, the
+fit statistics that \code{\link[rms:orm]{rms::orm()}} stores (\code{stats}, \code{freq}, \code{deviance}, and
+so \code{\link[=logLik]{logLik()}} and \code{\link[=AIC]{AIC()}}) describe these expected counts, not the
+patients' data. Use \verb{$ml$loglik} for the maximised log-likelihood.
+Printing the fit shows this log-likelihood, the numbers of patients and
+rows, and the coefficients with robust standard errors, Wald Z statistics,
+and p-values.
 }
 
 \section{Standard errors}{
