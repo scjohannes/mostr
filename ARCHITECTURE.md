@@ -311,8 +311,18 @@ Contracts with the rest of the package:
   `$ml$n_informative_rows` (rows whose mask excludes a state, the `m` of
   HC1), replacing the refit's `stats["Obs"]`. `AIC()` (through
   `rms::AIC.rms()`) and `BIC()` use both, and with nothing missing they equal
-  the `orm_markov()` values. The refit's `stats`, `freq`, and `deviance`
-  still describe the expected counts.
+  the `orm_markov()` values.
+- Fit statistics: `markov_ml_fit_statistics()` replaces the `stats`, `freq`,
+  and `deviance` that `rms::orm()` computed on the expected counts. `Obs` is
+  `nobs()`; `Distinct Y` and `Median Y` describe the exactly observed states;
+  `Max Deriv` is `$ml$max_abs_score`; `d.f.` is the number of slopes. `freq`
+  counts exactly observed states and keeps the refit's state labels, which
+  `predict()`, `Mean()`, `Quantile()`, and `ExProb()` read. `deviance` is
+  `c(NA, -2 * loglik)`, since no intercept-only model is fitted. The
+  likelihood-ratio and score tests, R2, ESS, rho, Dxy, g, gr, and pdm are
+  `NA`, and the `R2(n)` variants named after the refit's sample sizes are
+  dropped. With nothing missing, the remaining values equal `orm_markov()`.
+  The refit's `x` and `y` still hold the expected-count rows.
 - Patient influence: `markov_influence_components()` (`R/markov-ml-inference.R`)
   is the single accessor for coefficients, bread, scores, and cluster IDs.
   `robcov_orm()`, `score_bootstrap_components()`, and

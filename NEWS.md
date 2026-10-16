@@ -28,6 +28,14 @@
   observation rules out at least one state. With nothing missing, all four
   give the same values as for `orm_markov()`.
 
+* The `stats`, `freq`, and `deviance` components of an `orm_markov_ml()` fit
+  now describe the data rather than the internal weighted fit: `stats["Obs"]`
+  equals `nobs()`, `freq` counts the exactly observed states, and the model
+  deviance is -2 times the maximised log-likelihood. Statistics that would
+  need an intercept-only fit to the incomplete data (likelihood-ratio and
+  score tests, R2) or an observed state on every row (rank correlations such
+  as Dxy and rho) are `NA`.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

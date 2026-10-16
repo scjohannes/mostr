@@ -95,17 +95,25 @@
 #' evaluated at the maximum likelihood estimates, on one row per distinct
 #' combination of covariates, previous state, and state, weighted by the
 #' expected number of such transitions. Its `x` and `y` components therefore
-#' hold these combinations, not the original rows. For the same reason, the
-#' fit statistics that [rms::orm()] stores (`stats`, `freq`, and `deviance`)
-#' describe these expected counts, not the patients' data. [logLik()],
-#' [AIC()], and [BIC()] instead use the maximised log-likelihood
+#' hold these combinations, not the original rows.
+#'
+#' [logLik()], [AIC()], and [BIC()] use the maximised log-likelihood
 #' \eqn{\sum_i \log L_i} (also in `$ml$loglik`), with one degree of freedom
-#' per coefficient. Their number of observations, returned by [nobs()], is
-#' the number of rows whose observation rules out at least one state; when no
-#' state is missing, this is the number of transitions that [orm_markov()]
-#' uses, so both functions give the same values. Printing the fit shows the
-#' log-likelihood, the numbers of patients and rows, and the coefficients
-#' with robust standard errors, Wald Z statistics, and p-values.
+#' per coefficient. Their number of observations, returned by [nobs()] and
+#' stored as `stats["Obs"]`, is the number of rows whose observation rules
+#' out at least one state; when no state is missing, this is the number of
+#' transitions that [orm_markov()] uses, so both functions give the same
+#' values. `freq` counts the exactly observed states, and the second element
+#' of `deviance` is \eqn{-2 \sum_i \log L_i}. Statistics in `stats` that
+#' compare the model with one containing only intercepts (likelihood-ratio
+#' and score tests, \eqn{R^2}) are `NA`, because that model would need its
+#' own fit to the incomplete data; so are those that compare predictions
+#' with the observed state of each row (rank correlations such as Dxy and
+#' rho), because rows with a missing state have none. To test terms, use
+#' [anova()], which gives Wald tests with the robust covariance, or compare
+#' [logLik()] between nested fits. Printing the fit shows the log-likelihood,
+#' the numbers of patients and rows, and the coefficients with robust
+#' standard errors, Wald Z statistics, and p-values.
 #'
 #' @section Standard errors:
 #' Standard errors use the observed information \eqn{J}, the negative second
@@ -447,6 +455,7 @@ orm_markov_ml <- function(
     ),
     counts
   )
+  fit <- markov_ml_fit_statistics(fit, problem)
 
   if (isTRUE(control$variance)) {
     fit$var <- var_robust
@@ -757,6 +766,41 @@ markov_ml_missing_counts <- function(problem) {
   )
 }
 
+# rms::orm() computed `stats`, `freq`, and `deviance` of the returned fit on the
+# weighted rows of expected transition counts. Replace them with values that
+# describe the data: `Obs` is nobs(), the frequencies count exactly observed
+# states, and the deviance is -2 times the observed-data log-likelihood
+# (there is no intercept-only fit, so the null deviance is NA). Statistics
+# that compare with an intercept-only model (likelihood-ratio and score
+# tests, R2) or compare predictions with observed states row by row (ESS,
+# rank correlations, g) are NA; the R2 variants named after the refit's
+# sample sizes are dropped. The state labels of `freq` are kept for
+# prediction.
+markov_ml_fit_statistics <- function(fit, problem) {
+  scale <- problem$scale
+  if (length(fit$freq) != scale$K) {
+    stop("Internal error: the weighted refit does not have one level per state.")
+  }
+  observed <- scale$lo[scale$exact]
+  freq <- tabulate(observed, nbins = scale$K)
+  names(freq) <- names(fit$freq)
+  fit$freq <- freq
+
+  stats <- fit$stats
+  stats <- stats[!startsWith(names(stats), "R2(")]
+  stats[] <- NA_real_
+  stats[c("Obs", "Distinct Y", "Median Y", "Max Deriv", "d.f.")] <- c(
+    fit$ml$n_informative_rows,
+    scale$K,
+    stats::median(scale$values[observed]),
+    fit$ml$max_abs_score,
+    length(stats::coef(fit)) - (scale$K - 1L)
+  )
+  fit$stats <- stats
+  fit$deviance <- c(NA_real_, -2 * fit$ml$loglik)
+  fit
+}
+
 # The rms::orm() print method is not used: its statistics (frequencies, LR
 # chi-square, R2, rank correlations) would describe the weighted refit on
 # expected transition counts from markov_ml_final_fit(), not the data.
@@ -838,8 +882,8 @@ print.orm_markov_ml <- function(x, digits = 4, ...) {
   invisible(x)
 }
 
-# rms::logLik.rms() would use the deviance of the weighted refit on expected
-# transition counts; AIC.rms() and stats::BIC() call logLik().
+# Defined from `$ml` rather than through rms::logLik.rms(), which reads
+# `deviance` and `stats`; AIC.rms() and stats::BIC() call logLik().
 #' @export
 logLik.orm_markov_ml <- function(object, ...) {
   structure(

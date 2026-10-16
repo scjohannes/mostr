@@ -195,17 +195,25 @@ finish the maximisation. The returned object is an \code{\link[rms:orm]{rms::orm
 evaluated at the maximum likelihood estimates, on one row per distinct
 combination of covariates, previous state, and state, weighted by the
 expected number of such transitions. Its \code{x} and \code{y} components therefore
-hold these combinations, not the original rows. For the same reason, the
-fit statistics that \code{\link[rms:orm]{rms::orm()}} stores (\code{stats}, \code{freq}, and \code{deviance})
-describe these expected counts, not the patients' data. \code{\link[=logLik]{logLik()}},
-\code{\link[=AIC]{AIC()}}, and \code{\link[=BIC]{BIC()}} instead use the maximised log-likelihood
+hold these combinations, not the original rows.
+
+\code{\link[=logLik]{logLik()}}, \code{\link[=AIC]{AIC()}}, and \code{\link[=BIC]{BIC()}} use the maximised log-likelihood
 \eqn{\sum_i \log L_i} (also in \verb{$ml$loglik}), with one degree of freedom
-per coefficient. Their number of observations, returned by \code{\link[=nobs]{nobs()}}, is
-the number of rows whose observation rules out at least one state; when no
-state is missing, this is the number of transitions that \code{\link[=orm_markov]{orm_markov()}}
-uses, so both functions give the same values. Printing the fit shows the
-log-likelihood, the numbers of patients and rows, and the coefficients
-with robust standard errors, Wald Z statistics, and p-values.
+per coefficient. Their number of observations, returned by \code{\link[=nobs]{nobs()}} and
+stored as \code{stats["Obs"]}, is the number of rows whose observation rules
+out at least one state; when no state is missing, this is the number of
+transitions that \code{\link[=orm_markov]{orm_markov()}} uses, so both functions give the same
+values. \code{freq} counts the exactly observed states, and the second element
+of \code{deviance} is \eqn{-2 \sum_i \log L_i}. Statistics in \code{stats} that
+compare the model with one containing only intercepts (likelihood-ratio
+and score tests, \eqn{R^2}) are \code{NA}, because that model would need its
+own fit to the incomplete data; so are those that compare predictions
+with the observed state of each row (rank correlations such as Dxy and
+rho), because rows with a missing state have none. To test terms, use
+\code{\link[=anova]{anova()}}, which gives Wald tests with the robust covariance, or compare
+\code{\link[=logLik]{logLik()}} between nested fits. Printing the fit shows the log-likelihood,
+the numbers of patients and rows, and the coefficients with robust
+standard errors, Wald Z statistics, and p-values.
 }
 
 \section{Standard errors}{
