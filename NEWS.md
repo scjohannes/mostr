@@ -22,6 +22,12 @@
   data. Printing a fit made with `orm_markov_ml_control(variance = FALSE)`
   no longer fails.
 
+* `logLik()`, `AIC()`, and `BIC()` on an `orm_markov_ml()` fit now use the
+  maximised observed-data log-likelihood instead of the internal weighted fit
+  on expected transition counts. `nobs()` returns the number of rows whose
+  observation rules out at least one state. With nothing missing, all four
+  give the same values as for `orm_markov()`.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

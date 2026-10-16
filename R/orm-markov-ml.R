@@ -96,12 +96,16 @@
 #' combination of covariates, previous state, and state, weighted by the
 #' expected number of such transitions. Its `x` and `y` components therefore
 #' hold these combinations, not the original rows. For the same reason, the
-#' fit statistics that [rms::orm()] stores (`stats`, `freq`, `deviance`, and
-#' so [logLik()] and [AIC()]) describe these expected counts, not the
-#' patients' data. Use `$ml$loglik` for the maximised log-likelihood.
-#' Printing the fit shows this log-likelihood, the numbers of patients and
-#' rows, and the coefficients with robust standard errors, Wald Z statistics,
-#' and p-values.
+#' fit statistics that [rms::orm()] stores (`stats`, `freq`, and `deviance`)
+#' describe these expected counts, not the patients' data. [logLik()],
+#' [AIC()], and [BIC()] instead use the maximised log-likelihood
+#' \eqn{\sum_i \log L_i} (also in `$ml$loglik`), with one degree of freedom
+#' per coefficient. Their number of observations, returned by [nobs()], is
+#' the number of rows whose observation rules out at least one state; when no
+#' state is missing, this is the number of transitions that [orm_markov()]
+#' uses, so both functions give the same values. Printing the fit shows the
+#' log-likelihood, the numbers of patients and rows, and the coefficients
+#' with robust standard errors, Wald Z statistics, and p-values.
 #'
 #' @section Standard errors:
 #' Standard errors use the observed information \eqn{J}, the negative second
@@ -832,4 +836,23 @@ print.orm_markov_ml <- function(x, digits = 4, ...) {
     na.print = "NA"
   )
   invisible(x)
+}
+
+# rms::logLik.rms() would use the deviance of the weighted refit on expected
+# transition counts; AIC.rms() and stats::BIC() call logLik().
+#' @export
+logLik.orm_markov_ml <- function(object, ...) {
+  structure(
+    object$ml$loglik,
+    nobs = stats::nobs(object),
+    df = length(stats::coef(object)),
+    class = "logLik"
+  )
+}
+
+# Rows whose observation rules out at least one state: the transitions
+# orm_markov() counts when nothing is missing, and `m` of the HC1 correction.
+#' @export
+nobs.orm_markov_ml <- function(object, ...) {
+  object$ml$n_informative_rows
 }

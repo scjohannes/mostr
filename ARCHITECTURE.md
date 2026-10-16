@@ -304,10 +304,15 @@ Contracts with the rest of the package:
   `$ml` header (log-likelihood, EM and Newton steps, patients and robust
   clusters, row counts, missing-information fraction) and a coefficient table
   with robust standard errors from `vcov(fit, intercepts = "all")`, Wald Z,
-  and p-values; fits with `variance = FALSE` print the estimates only. The
-  refit's `stats`, `freq`, and `deviance`, and hence `logLik()` and `AIC()`,
-  still describe the expected counts; `$ml$loglik` is the observed-data
-  log-likelihood.
+  and p-values; fits with `variance = FALSE` print the estimates only.
+- Likelihood: `logLik.orm_markov_ml()` returns `$ml$loglik` with one degree
+  of freedom per coefficient, replacing `rms::logLik.rms()`, which would use
+  the refit's `deviance`. `nobs.orm_markov_ml()` returns
+  `$ml$n_informative_rows` (rows whose mask excludes a state, the `m` of
+  HC1), replacing the refit's `stats["Obs"]`. `AIC()` (through
+  `rms::AIC.rms()`) and `BIC()` use both, and with nothing missing they equal
+  the `orm_markov()` values. The refit's `stats`, `freq`, and `deviance`
+  still describe the expected counts.
 - Patient influence: `markov_influence_components()` (`R/markov-ml-inference.R`)
   is the single accessor for coefficients, bread, scores, and cluster IDs.
   `robcov_orm()`, `score_bootstrap_components()`, and
