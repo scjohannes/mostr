@@ -5,163 +5,132 @@
 \title{Simulate Individual Patient Trajectories Using Markov Model}
 \usage{
 sim_trajectories_markov(
-  baseline_data = violet_baseline,
+  baseline_data,
   follow_up_time = 60,
-  intercepts = c(-9.353417, -4.294121, -1.389221, -0.555688, 3.127056),
-  lp_function = lp_violet,
-  extra_params = c(time = -0.738194, `time'` = 0.7464006, age = 0.010321, sofa =
-    0.046901, `yprev=1` = -8.518344, `yprev=3` = 0, `yprev=4` = 1.315332, `yprev=5` =
-    6.576662, `yprev=1 * time` = 0, `yprev=3 * time` = 0, `yprev=4 * time` = 0,
-    `yprev=5 * time` = 0),
+  intercepts,
+  lp_function,
+  extra_params = NULL,
   parameter = 0,
-  absorbing_states = 6,
+  absorbing_states = length(intercepts) + 1L,
   seed = NULL,
-  covariate_names = c("age", "sofa", "tx")
+  covariate_names = setdiff(names(baseline_data), c("id", "yprev"))
 )
 }
 \arguments{
-\item{baseline_data}{A data frame containing baseline patient characteristics.
-Must include columns: \code{id}, \code{yprev} (initial state), and any covariates
-needed by \code{lp_function}. Typically includes \code{tx}, \code{age}, \code{sofa}, etc.
-Default is \code{violet_baseline}, a dataset of 10,000 patients derived from
-the VIOLET trial (see \code{?violet_baseline} for details).}
+\item{baseline_data}{A data frame with one row per patient. Must include
+\code{id} and \code{yprev}, the state immediately before the first simulated time,
+and every covariate that \code{lp_function} uses (for example \code{tx}).}
 
 \item{follow_up_time}{Integer. Number of time periods to simulate (default: 60).}
 
-\item{intercepts}{Numeric vector of intercepts for the proportional odds model.
-Should have length = (number of states - 1). Default values are from VIOLET
-study with 6-state expansion:
-c(-9.353, -4.294, -1.389, -0.556, 3.127)}
+\item{intercepts}{Numeric vector of thresholds, one fewer than the number of
+states, in increasing order. With \code{K} states numbered from 1 (best) to \code{K}
+(worst), \code{intercepts[j]} plus the linear predictor is the log odds of
+being in state \code{K + 1 - j} or worse: \code{intercepts[1]} belongs to the worst
+state alone and \code{intercepts[K - 1]} to states 2 and worse.}
 
-\item{lp_function}{A function that calculates the linear predictor for each
-patient at each time point. Should accept parameters:
+\item{lp_function}{A function that calculates the linear predictor for one
+patient at one time point. It is called with these named arguments:
 \itemize{
-\item yprev: previous state
-\item t: current time
-\item tx: treatment indicator
-\item Additional named arguments matching columns in \code{baseline_data}
-\item parameter: treatment effect (log odds ratio)
-\item extra_params: named vector of coefficients
-Must return either one numeric value, used for every threshold in a
-proportional odds model, or a numeric vector with length equal to
-\code{length(intercepts)}, used as threshold-specific linear predictors in a
-partial proportional odds model. Default is \code{lp_violet}, which implements
-the VIOLET study model (see \code{?lp_violet} for details).
-}}
+\item \code{yprev}: previous state, a factor with levels \code{1} to \code{K}
+\item \code{t}: current time
+\item one argument for each column named in \code{covariate_names}, and \code{tx} when
+\code{baseline_data} has a \code{tx} column
+\item \code{parameter}: the value of \code{parameter}
+\item \code{extra_params}: the value of \code{extra_params}
+}
 
-\item{extra_params}{Named numeric vector of model coefficients used by
-\code{lp_function}. Default values from VIOLET study include time, spline,
-age, sofa, and previous state effects with interactions.}
+It must return either one number, added to every threshold (a
+proportional odds model), or a numeric vector with \code{length(intercepts)}
+elements, added to the corresponding thresholds (a partial proportional
+odds model). Larger values make worse states more likely.}
 
-\item{parameter}{Numeric. Treatment effect on log odds ratio scale (default: 0,
-meaning odds ratio = 1).}
+\item{extra_params}{Optional object, usually a named numeric vector of
+coefficients, passed unchanged to \code{lp_function} (default: \code{NULL}).}
+
+\item{parameter}{Numeric. Passed to \code{lp_function}; typically the treatment
+effect on the log odds ratio scale (default: 0, meaning odds ratio = 1).}
 
 \item{absorbing_states}{Integer vector of states that are absorbing (once
-entered, patients cannot leave). Default is 6 (death).}
+entered, patients cannot leave). Default is the worst state,
+\code{length(intercepts) + 1}, which is death in all models in this package.
+Use \code{integer()} when no state is absorbing.}
 
 \item{seed}{Integer. Random seed for reproducibility (default: NULL, no seed set).}
 
-\item{covariate_names}{Character vector of covariate names from \code{baseline_data}
-to pass to \code{lp_function}. Default is c("age", "sofa", "tx"). The function
-will automatically detect and pass these to \code{lp_function}.}
+\item{covariate_names}{Character vector of \code{baseline_data} columns passed to
+\code{lp_function} as arguments with the same names. Default is every column
+except \code{id} and \code{yprev}. A \code{tx} column is always passed.}
 }
 \value{
-A data frame with columns:
+A data frame with one row per patient and time point and columns:
 \itemize{
 \item id: patient identifier
 \item time: time point (1 to follow_up_time)
-\item y: observed state at this time
-\item yprev: state at previous time point
-\item all columns from baseline_data
+\item y: state at this time
+\item yprev: state at the previous time point
+\item all other columns from baseline_data
 }
 }
 \description{
-This function generates individual patient trajectories over time based on
-a proportional odds or partial proportional odds model with customizable
-intercepts, linear predictor function, and baseline patient characteristics.
+Generates daily (or other discrete-time) ordinal states for each patient
+from a first-order Markov model: the state at time \code{t} depends on the state
+at time \code{t - 1}, the patient's baseline covariates, and time, through a
+proportional odds or partial proportional odds model that you specify.
+For ready-made models of published trials, use \code{\link[=sim_actt1_markov]{sim_actt1_markov()}},
+\code{\link[=sim_actt2_markov]{sim_actt2_markov()}}, or \code{\link[=sim_violet_markov]{sim_violet_markov()}}.
 }
 \details{
-The function implements a discrete-time Markov model where transition
-probabilities are determined by a proportional odds or partial proportional
-odds model. At each time step:
+At each time step the function:
 \enumerate{
-\item Calculate linear predictor for each active patient
-\item Apply intercepts to get cumulative probabilities
-\item Convert to state probabilities
-\item Sample next state for each patient
-\item Patients in absorbing states remain there
+\item Calculates the linear predictor for each patient not in an absorbing
+state
+\item Adds it to the intercepts to get the probabilities of each state or
+worse
+\item Converts these to the probability of each state
+\item Samples the next state for each patient
+\item Keeps patients in absorbing states where they are
 }
 
-States are assumed to be ordered integers (e.g., 1=Home, 2=Hospital mild,
-3=Hospital oxygen, 4=Hospital NIV, 5=Ventilator, 6=Death). By default the
-model uses a proportional odds structure where higher intercepts represent
-more severe health states. If \code{lp_function} returns threshold-specific
-linear predictors, the induced cumulative probabilities must remain
-nondecreasing across thresholds; otherwise the function stops because the
-implied state probabilities would be negative.
+States must be consecutive integers from 1 (best) to \code{K} (worst). If
+\code{lp_function} returns threshold-specific linear predictors, the probability
+of being in a state or worse must not increase from one state to the next
+worse state; otherwise the function stops because the implied state
+probabilities would be negative.
 }
 \examples{
-\dontrun{
-# Using all defaults (violet_baseline data, lp_violet function, VIOLET params)
+# Three states: 1 = home, 2 = in hospital, 3 = dead (absorbing by default)
+baseline <- data.frame(id = 1:20, yprev = 2, tx = rep(0:1, 10))
+hospital_lp <- function(yprev, t, tx, parameter, extra_params) {
+  # Hospitalized patients are more likely to stay in hospital or die
+  5 * (yprev == "2") - 0.1 * t + parameter * tx
+}
 trajectories <- sim_trajectories_markov(
-  parameter = log(0.8),  # OR = 0.8 for treatment effect
-  seed = 12345
+  baseline_data = baseline,
+  follow_up_time = 10,
+  intercepts = c(-9, -3),
+  lp_function = hospital_lp,
+  parameter = log(0.8),
+  seed = 1
 )
+head(trajectories)
 
-# Using default function with custom baseline data
-custom_baseline <- data.frame(
-  id = 1:100,
-  yprev = sample(2:5, 100, replace = TRUE),
-  tx = rbinom(100, 1, 0.5),
-  age = rnorm(100, 60, 15),
-  sofa = rpois(100, 5)
-)
-
-trajectories_custom <- sim_trajectories_markov(
-  baseline_data = custom_baseline,
-  follow_up_time = 30,
-  seed = 12345
-)
-
-# Define a custom linear predictor function
-my_custom_lp <- function(yprev, t, age, sofa, tx, parameter = 0, extra_params) {
-  # Custom implementation
-  tx_effect <- parameter * tx
-  time_effect <- extra_params["time"] * t
-  # ... your custom logic ...
-  return(tx_effect + time_effect)
+# Partial proportional odds: treatment affects only the odds of death
+death_only_lp <- function(yprev, t, tx, parameter, extra_params) {
+  hospital_lp(yprev, t, tx = 0, parameter, extra_params) +
+    c(parameter * tx, 0)
 }
-
-trajectories_custom_lp <- sim_trajectories_markov(
-  lp_function = my_custom_lp,
-  parameter = log(0.75),
-  seed = 12345
-)
-
-# Partial proportional odds: treatment affects each threshold differently
-my_ppo_lp <- function(yprev, t, age, sofa, tx, parameter = 0, extra_params) {
-  base_lp <- lp_violet(
-    yprev = yprev,
-    t = t,
-    age = age,
-    sofa = sofa,
-    tx = 0,
-    parameter = parameter,
-    extra_params = extra_params
-  )
-  base_lp + tx * parameter * c(0.25, 0.5, 1, 1, 1)
-}
-
 trajectories_ppo <- sim_trajectories_markov(
-  lp_function = my_ppo_lp,
-  parameter = log(0.75),
-  seed = 12345
+  baseline_data = baseline,
+  follow_up_time = 10,
+  intercepts = c(-9, -3),
+  lp_function = death_only_lp,
+  parameter = log(0.8),
+  seed = 1
 )
-}
 
 }
 \seealso{
-\code{\link{lp_violet}} for the default linear predictor function
-
-\code{\link{violet_baseline}} for the default baseline dataset
+\code{\link[=sim_violet_markov]{sim_violet_markov()}}, \code{\link[=sim_actt1_markov]{sim_actt1_markov()}}, and
+\code{\link[=sim_actt2_markov]{sim_actt2_markov()}} for models of published trials.
 }

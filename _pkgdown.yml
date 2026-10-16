@@ -47,7 +47,7 @@ reference:
       - sim_trajectories_markov
       - sim_actt1_markov
       - sim_actt2_markov
-      - lp_violet
+      - sim_violet_markov
       - violet_baseline
   - title: Bootstrap and coefficient utilities
     contents:

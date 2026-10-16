@@ -1,3 +1,24 @@
+# mostr (development version)
+
+* New `sim_violet_markov()` simulates 4-state daily trajectories (home, in
+  hospital, on a ventilator or with ARDS, dead) from the Markov model that
+  Frank Harrell fitted to the VIOLET trial of vitamin D3 to create his
+  simulated trial `simlongord`. Patients are sampled from the 1,351 VIOLET
+  patients' starting states, ages, and SOFA scores. The default treatment odds
+  ratio is 0.75, as in `simlongord`, and the daily state proportions agree
+  with `simlongord` within simulation error.
+
+* `violet_baseline` now holds the 1,351 VIOLET patients as 858 distinct
+  combinations of starting state, age, and SOFA score with their counts `n`
+  (previously 250,000 resampled patients in a modified 6-state coding). Its
+  states follow `sim_violet_markov()`.
+
+* `lp_violet()` has been removed, and `sim_trajectories_markov()` no longer
+  has a default model: supply `baseline_data`, `intercepts`, and
+  `lp_function`. `extra_params` now defaults to `NULL`, `absorbing_states` to
+  the worst state (`length(intercepts) + 1`), and `covariate_names` to every
+  column of `baseline_data` except `id` and `yprev`.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

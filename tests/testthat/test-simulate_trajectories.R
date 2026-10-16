@@ -385,7 +385,11 @@ test_that("sim_trajectories_markov validates inputs and absent covariates", {
     fixed = TRUE
   )
   expect_error(
-    sim_trajectories_markov(baseline_data = baseline, lp_function = "nope"),
+    sim_trajectories_markov(
+      baseline_data = baseline,
+      intercepts = 0,
+      lp_function = "nope"
+    ),
     "lp_function must be a function",
     fixed = TRUE
   )
@@ -426,7 +430,7 @@ test_that("sim_trajectories_markov carries forward once all patients are absorbi
 test_that("sim_trajectories_markov passes tx even when not requested as a covariate", {
   baseline <- data.frame(id = 1:2, yprev = c(1, 1), tx = c(0, 1))
 
-  expect_warning(
+  expect_no_warning(
     result <- sim_trajectories_markov(
       baseline_data = baseline,
       follow_up_time = 2,
@@ -436,9 +440,7 @@ test_that("sim_trajectories_markov passes tx even when not requested as a covari
       },
       covariate_names = character(0),
       seed = 1
-    ),
-    "None of the specified covariate_names found",
-    fixed = TRUE
+    )
   )
 
   expect_equal(nrow(result), 4)

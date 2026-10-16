@@ -62,7 +62,7 @@
 #' @examples
 #' \dontrun{
 #' # After simulating trajectories
-#' trajectories <- sim_trajectories_markov(baseline_data, lp_function = my_lp)
+#' trajectories <- sim_violet_markov(n_patients = 200, seed = 1)
 #'
 #' # Basic line plot
 #' plot_sops(trajectories)

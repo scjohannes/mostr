@@ -22,7 +22,8 @@ test_that("the package exposes Markov workflows without removed APIs", {
     "summarize_power_results",
     "tidy_bootstrap_coefs",
     "tidy_po",
-    "calc_time_in_state_diff"
+    "calc_time_in_state_diff",
+    "lp_violet"
   )
   expect_equal(
     intersect(excluded, ls(asNamespace("mostr"), all.names = TRUE)),
@@ -32,6 +33,7 @@ test_that("the package exposes Markov workflows without removed APIs", {
     "sim_trajectories_markov",
     "sim_actt1_markov",
     "sim_actt2_markov",
+    "sim_violet_markov",
     "orm_markov",
     "vglm_markov",
     "blrm_markov",

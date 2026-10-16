@@ -115,8 +115,9 @@ columns. If you use `mostr`, please also consider citing `marginaleffects`:
 
 ## Data Provenance
 
-The included `violet_baseline` dataset is derived from `Hmisc::simlongord`,
-created by Frank Harrell and based on the VIOLET trial.
+The included `violet_baseline` dataset and the model in `sim_violet_markov()`
+come from `simlongord`, a simulated trial that Frank Harrell based on the
+VIOLET trial ([Harrell, 2022](https://hbiostat.org/data/repo/simlongord)).
 
 ## Funding
 

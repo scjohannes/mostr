@@ -1,159 +1,117 @@
 #' Simulate Individual Patient Trajectories Using Markov Model
 #'
-#' This function generates individual patient trajectories over time based on
-#' a proportional odds or partial proportional odds model with customizable
-#' intercepts, linear predictor function, and baseline patient characteristics.
+#' Generates daily (or other discrete-time) ordinal states for each patient
+#' from a first-order Markov model: the state at time `t` depends on the state
+#' at time `t - 1`, the patient's baseline covariates, and time, through a
+#' proportional odds or partial proportional odds model that you specify.
+#' For ready-made models of published trials, use [sim_actt1_markov()],
+#' [sim_actt2_markov()], or [sim_violet_markov()].
 #'
-#' @param baseline_data A data frame containing baseline patient characteristics.
-#'   Must include columns: `id`, `yprev` (initial state), and any covariates
-#'   needed by `lp_function`. Typically includes `tx`, `age`, `sofa`, etc.
-#'   Default is `violet_baseline`, a dataset of 10,000 patients derived from
-#'   the VIOLET trial (see `?violet_baseline` for details).
+#' @param baseline_data A data frame with one row per patient. Must include
+#'   `id` and `yprev`, the state immediately before the first simulated time,
+#'   and every covariate that `lp_function` uses (for example `tx`).
 #' @param follow_up_time Integer. Number of time periods to simulate (default: 60).
-#' @param intercepts Numeric vector of intercepts for the proportional odds model.
-#'   Should have length = (number of states - 1). Default values are from VIOLET
-#'   study with 6-state expansion:
-#'   c(-9.353, -4.294, -1.389, -0.556, 3.127)
-#' @param lp_function A function that calculates the linear predictor for each
-#'   patient at each time point. Should accept parameters:
-#'   - yprev: previous state
-#'   - t: current time
-#'   - tx: treatment indicator
-#'   - Additional named arguments matching columns in `baseline_data`
-#'   - parameter: treatment effect (log odds ratio)
-#'   - extra_params: named vector of coefficients
-#'   Must return either one numeric value, used for every threshold in a
-#'   proportional odds model, or a numeric vector with length equal to
-#'   `length(intercepts)`, used as threshold-specific linear predictors in a
-#'   partial proportional odds model. Default is `lp_violet`, which implements
-#'   the VIOLET study model (see `?lp_violet` for details).
-#' @param extra_params Named numeric vector of model coefficients used by
-#'   `lp_function`. Default values from VIOLET study include time, spline,
-#'   age, sofa, and previous state effects with interactions.
-#' @param parameter Numeric. Treatment effect on log odds ratio scale (default: 0,
-#'   meaning odds ratio = 1).
-#' @param absorbing_states Integer vector of states that are absorbing (once
-#'   entered, patients cannot leave). Default is 6 (death).
-#' @param seed Integer. Random seed for reproducibility (default: NULL, no seed set).
-#' @param covariate_names Character vector of covariate names from `baseline_data`
-#'   to pass to `lp_function`. Default is c("age", "sofa", "tx"). The function
-#'   will automatically detect and pass these to `lp_function`.
+#' @param intercepts Numeric vector of thresholds, one fewer than the number of
+#'   states, in increasing order. With `K` states numbered from 1 (best) to `K`
+#'   (worst), `intercepts[j]` plus the linear predictor is the log odds of
+#'   being in state `K + 1 - j` or worse: `intercepts[1]` belongs to the worst
+#'   state alone and `intercepts[K - 1]` to states 2 and worse.
+#' @param lp_function A function that calculates the linear predictor for one
+#'   patient at one time point. It is called with these named arguments:
+#'   - `yprev`: previous state, a factor with levels `1` to `K`
+#'   - `t`: current time
+#'   - one argument for each column named in `covariate_names`, and `tx` when
+#'     `baseline_data` has a `tx` column
+#'   - `parameter`: the value of `parameter`
+#'   - `extra_params`: the value of `extra_params`
 #'
-#' @return A data frame with columns:
+#'   It must return either one number, added to every threshold (a
+#'   proportional odds model), or a numeric vector with `length(intercepts)`
+#'   elements, added to the corresponding thresholds (a partial proportional
+#'   odds model). Larger values make worse states more likely.
+#' @param extra_params Optional object, usually a named numeric vector of
+#'   coefficients, passed unchanged to `lp_function` (default: `NULL`).
+#' @param parameter Numeric. Passed to `lp_function`; typically the treatment
+#'   effect on the log odds ratio scale (default: 0, meaning odds ratio = 1).
+#' @param absorbing_states Integer vector of states that are absorbing (once
+#'   entered, patients cannot leave). Default is the worst state,
+#'   `length(intercepts) + 1`, which is death in all models in this package.
+#'   Use `integer()` when no state is absorbing.
+#' @param seed Integer. Random seed for reproducibility (default: NULL, no seed set).
+#' @param covariate_names Character vector of `baseline_data` columns passed to
+#'   `lp_function` as arguments with the same names. Default is every column
+#'   except `id` and `yprev`. A `tx` column is always passed.
+#'
+#' @return A data frame with one row per patient and time point and columns:
 #'   - id: patient identifier
 #'   - time: time point (1 to follow_up_time)
-#'   - y: observed state at this time
-#'   - yprev: state at previous time point
-#'   - all columns from baseline_data
+#'   - y: state at this time
+#'   - yprev: state at the previous time point
+#'   - all other columns from baseline_data
 #'
 #' @details
-#' The function implements a discrete-time Markov model where transition
-#' probabilities are determined by a proportional odds or partial proportional
-#' odds model. At each time step:
-#' 1. Calculate linear predictor for each active patient
-#' 2. Apply intercepts to get cumulative probabilities
-#' 3. Convert to state probabilities
-#' 4. Sample next state for each patient
-#' 5. Patients in absorbing states remain there
+#' At each time step the function:
+#' 1. Calculates the linear predictor for each patient not in an absorbing
+#'    state
+#' 2. Adds it to the intercepts to get the probabilities of each state or
+#'    worse
+#' 3. Converts these to the probability of each state
+#' 4. Samples the next state for each patient
+#' 5. Keeps patients in absorbing states where they are
 #'
-#' States are assumed to be ordered integers (e.g., 1=Home, 2=Hospital mild,
-#' 3=Hospital oxygen, 4=Hospital NIV, 5=Ventilator, 6=Death). By default the
-#' model uses a proportional odds structure where higher intercepts represent
-#' more severe health states. If `lp_function` returns threshold-specific
-#' linear predictors, the induced cumulative probabilities must remain
-#' nondecreasing across thresholds; otherwise the function stops because the
-#' implied state probabilities would be negative.
+#' States must be consecutive integers from 1 (best) to `K` (worst). If
+#' `lp_function` returns threshold-specific linear predictors, the probability
+#' of being in a state or worse must not increase from one state to the next
+#' worse state; otherwise the function stops because the implied state
+#' probabilities would be negative.
 #'
 #' @examples
-#' \dontrun{
-#' # Using all defaults (violet_baseline data, lp_violet function, VIOLET params)
+#' # Three states: 1 = home, 2 = in hospital, 3 = dead (absorbing by default)
+#' baseline <- data.frame(id = 1:20, yprev = 2, tx = rep(0:1, 10))
+#' hospital_lp <- function(yprev, t, tx, parameter, extra_params) {
+#'   # Hospitalized patients are more likely to stay in hospital or die
+#'   5 * (yprev == "2") - 0.1 * t + parameter * tx
+#' }
 #' trajectories <- sim_trajectories_markov(
-#'   parameter = log(0.8),  # OR = 0.8 for treatment effect
-#'   seed = 12345
+#'   baseline_data = baseline,
+#'   follow_up_time = 10,
+#'   intercepts = c(-9, -3),
+#'   lp_function = hospital_lp,
+#'   parameter = log(0.8),
+#'   seed = 1
 #' )
+#' head(trajectories)
 #'
-#' # Using default function with custom baseline data
-#' custom_baseline <- data.frame(
-#'   id = 1:100,
-#'   yprev = sample(2:5, 100, replace = TRUE),
-#'   tx = rbinom(100, 1, 0.5),
-#'   age = rnorm(100, 60, 15),
-#'   sofa = rpois(100, 5)
-#' )
-#'
-#' trajectories_custom <- sim_trajectories_markov(
-#'   baseline_data = custom_baseline,
-#'   follow_up_time = 30,
-#'   seed = 12345
-#' )
-#'
-#' # Define a custom linear predictor function
-#' my_custom_lp <- function(yprev, t, age, sofa, tx, parameter = 0, extra_params) {
-#'   # Custom implementation
-#'   tx_effect <- parameter * tx
-#'   time_effect <- extra_params["time"] * t
-#'   # ... your custom logic ...
-#'   return(tx_effect + time_effect)
+#' # Partial proportional odds: treatment affects only the odds of death
+#' death_only_lp <- function(yprev, t, tx, parameter, extra_params) {
+#'   hospital_lp(yprev, t, tx = 0, parameter, extra_params) +
+#'     c(parameter * tx, 0)
 #' }
-#'
-#' trajectories_custom_lp <- sim_trajectories_markov(
-#'   lp_function = my_custom_lp,
-#'   parameter = log(0.75),
-#'   seed = 12345
-#' )
-#'
-#' # Partial proportional odds: treatment affects each threshold differently
-#' my_ppo_lp <- function(yprev, t, age, sofa, tx, parameter = 0, extra_params) {
-#'   base_lp <- lp_violet(
-#'     yprev = yprev,
-#'     t = t,
-#'     age = age,
-#'     sofa = sofa,
-#'     tx = 0,
-#'     parameter = parameter,
-#'     extra_params = extra_params
-#'   )
-#'   base_lp + tx * parameter * c(0.25, 0.5, 1, 1, 1)
-#' }
-#'
 #' trajectories_ppo <- sim_trajectories_markov(
-#'   lp_function = my_ppo_lp,
-#'   parameter = log(0.75),
-#'   seed = 12345
+#'   baseline_data = baseline,
+#'   follow_up_time = 10,
+#'   intercepts = c(-9, -3),
+#'   lp_function = death_only_lp,
+#'   parameter = log(0.8),
+#'   seed = 1
 #' )
-#' }
 #'
-#' @seealso
-#' \code{\link{lp_violet}} for the default linear predictor function
-#'
-#' \code{\link{violet_baseline}} for the default baseline dataset
+#' @seealso [sim_violet_markov()], [sim_actt1_markov()], and
+#'   [sim_actt2_markov()] for models of published trials.
 #'
 #' @importFrom stats plogis
 #'
 #' @export
 sim_trajectories_markov <- function(
-  baseline_data = violet_baseline,
+  baseline_data,
   follow_up_time = 60,
-  intercepts = c(-9.353417, -4.294121, -1.389221, -0.555688, 3.127056),
-  lp_function = lp_violet,
-  extra_params = c(
-    "time" = -0.738194,
-    "time'" = 0.7464006,
-    "age" = 0.010321,
-    "sofa" = 0.046901,
-    "yprev=1" = -8.518344,
-    "yprev=3" = 0,
-    "yprev=4" = 1.315332,
-    "yprev=5" = 6.576662,
-    "yprev=1 * time" = 0,
-    "yprev=3 * time" = 0,
-    "yprev=4 * time" = 0,
-    "yprev=5 * time" = 0
-  ),
+  intercepts,
+  lp_function,
+  extra_params = NULL,
   parameter = 0,
-  absorbing_states = 6,
+  absorbing_states = length(intercepts) + 1L,
   seed = NULL,
-  covariate_names = c("age", "sofa", "tx")
+  covariate_names = setdiff(names(baseline_data), c("id", "yprev"))
 ) {
   # Input validation
   if (!is.data.frame(baseline_data)) {
@@ -197,7 +155,7 @@ sim_trajectories_markov <- function(
 
   # Detect which covariates from baseline_data need to be passed to lp_function
   available_covariates <- intersect(covariate_names, names(baseline_data))
-  if (length(available_covariates) == 0) {
+  if (length(covariate_names) > 0 && length(available_covariates) == 0) {
     warning("None of the specified covariate_names found in baseline_data")
   }
 
@@ -248,12 +206,12 @@ sim_trajectories_markov <- function(
     }
 
     n_thresholds <- length(intercepts)
-    if (identical(lp_function, lp_violet)) {
-      lp <- do.call(lp_function, c(lp_args, more_args))
-      lp_matrix <- matrix(
-        lp,
-        nrow = length(active_idx),
-        ncol = n_thresholds
+    if (isTRUE(attr(lp_function, "mostr_vectorized_lp"))) {
+      # Package models compute all active patients in one call.
+      lp_matrix <- normalize_vectorized_markov_lp(
+        do.call(lp_function, c(lp_args, more_args)),
+        n_active = length(active_idx),
+        n_thresholds = n_thresholds
       )
     } else {
       # Arbitrary user functions retain scalar invocation and validation.
@@ -588,6 +546,203 @@ sim_actt1_markov <- function(
 }
 
 
+#' Simulate VIOLET ordinal patient trajectories
+#'
+#' @description
+#' Simulates daily 4-state trajectories resembling the
+#' [VIOLET trial](https://doi.org/10.1056/NEJMoa1911124) of early high-dose
+#' vitamin D3 versus placebo in critically ill adults with vitamin D deficiency.
+#' The transition model is the partial proportional-odds Markov model that
+#' Frank Harrell fitted to the VIOLET data to simulate his large `simlongord`
+#' trial (Harrell, 2022), and patients are drawn from the same 1,351 VIOLET
+#' patients. Its daily state proportions agree with `simlongord` within
+#' simulation error. The states are:
+#'
+#' 1. at home
+#' 2. in hospital or another health care facility
+#' 3. on a ventilator or with acute respiratory distress syndrome (ARDS)
+#' 4. dead
+#'
+#' Use `n_patients` to choose the sample size and `treatment_effect` to choose
+#' the treatment effect in the simulated data.
+#'
+#' @param n_patients Number of patients to simulate. Must be a positive integer.
+#' @param treatment_prob Probability of assignment to treatment (`tx = 1`). Must
+#'   be a numeric scalar between 0 and 1. Control patients have `tx = 0`.
+#' @param treatment_effect Log odds ratio of being in a worse state on the next
+#'   day for `tx = 1` relative to `tx = 0`, the same for every previous state.
+#'   Values below 0 mean that treatment helps. The default `log(0.75)` is the
+#'   odds ratio of 0.75 that Harrell built into `simlongord`. In VIOLET itself,
+#'   vitamin D had no detectable effect (fitted log odds ratio -0.028, standard
+#'   error 0.050).
+#' @param treatment_effect_decay Nonnegative exponential decay rate per day.
+#'   The effect on day `t` is `treatment_effect *
+#'   exp(-treatment_effect_decay * (t - 1))`. The default 0 gives a constant
+#'   effect, as in Harrell's model.
+#' @param seed Optional random-number seed. The seed is set once before
+#'   patients and treatment assignments are sampled, and trajectory generation
+#'   continues from the same random-number stream.
+#' @param ... Advanced overrides passed to [sim_trajectories_markov()], such as
+#'   `follow_up_time`. A supplied `baseline_data` replaces the sampled patients
+#'   and must contain the columns `id`, `yprev`, `age`, `sofa`, and `tx`.
+#'
+#' @return A data frame with columns `id`, `time`, `y`, `yprev`, `age`, `sofa`,
+#'   and `tx`, as described in [sim_trajectories_markov()]. The default output
+#'   contains 28 rows per patient, and dead patients stay in state 4.
+#'
+#' @details
+#' **Patients.** Each simulated patient's starting state (`yprev`), age, and
+#' SOFA (Sequential Organ Failure Assessment) score are drawn together, with
+#' replacement, from the 1,351 VIOLET patients summarized in
+#' [violet_baseline]. About 65% of patients start in hospital (state 2) and
+#' 35% on a ventilator or with ARDS (state 3). Treatment is assigned
+#' independently of these characteristics with probability `treatment_prob`.
+#'
+#' **Transition model.** Write \eqn{Y_t} for the state on day \eqn{t} and
+#' \eqn{k} for the state on the previous day. The log odds of being in state
+#' \eqn{j} or worse on day \eqn{t} is
+#' \deqn{\mathrm{logit}\,\Pr(Y_t \ge j \mid Y_{t-1} = k) = \alpha_j +
+#'   \gamma_k + \delta_j t + \delta'_j \max(t - 2, 0) +
+#'   0.0105\,\mathrm{age} + 0.046\,\mathrm{SOFA} +
+#'   \beta(t)\,\mathrm{tx}}{logit Pr(Y_t >= j | Y_{t-1} = k) = alpha_j +
+#'   gamma_k + delta_j t + delta'_j max(t - 2, 0) + 0.0105 age + 0.046 SOFA +
+#'   beta(t) tx}
+#' for the cutoffs \eqn{j = 2, 3, 4}. Here \eqn{\beta(t)} is the treatment
+#' effect on day \eqn{t} described under `treatment_effect_decay`. Positive
+#' values make worse states more likely: for example, each additional SOFA
+#' point multiplies the odds of being in a worse state by
+#' \eqn{\exp(0.046) = 1.05}.
+#'
+#' The thresholds \eqn{\alpha_j} and time slopes \eqn{\delta_j} and
+#' \eqn{\delta'_j} differ between the cutoffs, so the mix of states can change
+#' over follow-up (a partial proportional odds model for time):
+#'
+#' | Cutoff \eqn{j} | States counted | \eqn{\alpha_j} | \eqn{\delta_j} | \eqn{\delta'_j} |
+#' |---|---|---|---|---|
+#' | 4 | dead | -4.713 | 0.412 | -0.410 |
+#' | 3 | ventilator/ARDS or dead | 1.741 | -0.481 | 0.525 |
+#' | 2 | hospital or worse | 10.034 | -1.315 | 1.384 |
+#'
+#' Time enters as a straight line whose slope changes after day 2, because
+#' very few patients went home on day 1. The previous state shifts all three
+#' cutoffs equally: \eqn{\gamma_k} is -15.797 after a day at home (\eqn{k = 1}),
+#' -6.364 after a day in hospital (\eqn{k = 2}), and 0 after a day on a
+#' ventilator or with ARDS (\eqn{k = 3}). The large negative values mean that
+#' patients usually stay in, or improve from, their previous state.
+#'
+#' **Relation to Harrell's model.** Harrell numbered the states from dead
+#' (lowest) to home (highest), modeled the probability of a better state, and
+#' published the coefficients rounded to three decimals. This function numbers
+#' the states from best to worst, so each intercept and coefficient above is
+#' his printed value with the opposite sign; the transition probabilities are
+#' the same. The one exception is age. Harrell printed 0.011 (with his sign,
+#' -0.011), but `simlongord` was evidently simulated with a value close to
+#' 0.0105: refitting his model to all 250,000 simulated patients gives 0.0105
+#' (standard error 0.00015), while every other coefficient agrees with its
+#' printed value. A difference of 0.0005 per year of age moves a typical
+#' patient's log odds by about 0.03 every day, so with 0.011 about 1 percentage
+#' point fewer patients are at home by day 28 than in `simlongord`. With 0.0105
+#' the daily state proportions agree with `simlongord` within simulation
+#' error.
+#'
+#' He fitted the model to days 1 to 27, because ventilator use on day 28
+#' looked anomalous, and simulated 28 days, which is the default here. Later
+#' days extend the fitted time trends. Harrell assigned treatment once to each
+#' of the 1,351 VIOLET patients before resampling them, so in `simlongord` the
+#' arms differ slightly in their starting states and covariates (for example,
+#' 33.9% versus 36.0% start on a ventilator). This function assigns treatment
+#' independently to every simulated patient, so the arms differ only by chance.
+#'
+#' @references
+#' National Heart, Lung, and Blood Institute PETAL Clinical Trials Network
+#' (2019). "Early High-Dose Vitamin D3 for Critically Ill, Vitamin
+#' D-Deficient Patients." *New England Journal of Medicine*, 381(26),
+#' 2529-2540. \doi{10.1056/NEJMoa1911124}
+#'
+#' Harrell FE Jr (2022). "Simulating a Large Clinical Trial From VIOLET."
+#' <https://hbiostat.org/data/repo/simlongord>
+#'
+#' @examples
+#' violet <- sim_violet_markov(n_patients = 20, seed = 123)
+#' head(violet)
+#'
+#' # A trial in which treatment has no effect
+#' null_trial <- sim_violet_markov(
+#'   n_patients = 20,
+#'   treatment_effect = 0,
+#'   seed = 123
+#' )
+#'
+#' @seealso [violet_baseline] for the VIOLET patients, and
+#'   [sim_trajectories_markov()] to simulate from your own model.
+#'
+#' @export
+sim_violet_markov <- function(
+  n_patients = 1000,
+  treatment_prob = 0.5,
+  treatment_effect = log(0.75),
+  treatment_effect_decay = 0,
+  seed = NULL,
+  ...
+) {
+  validate_markov_wrapper_inputs(n_patients, treatment_prob)
+  validate_markov_treatment_effect(treatment_effect, treatment_effect_decay)
+
+  overrides <- list(...)
+  override_names <- names(overrides)
+  if (
+    length(overrides) > 0 &&
+      (is.null(override_names) || !all(nzchar(override_names)))
+  ) {
+    stop("All arguments passed through `...` must be named.", call. = FALSE)
+  }
+
+  n_patients <- as.integer(n_patients)
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+
+  violet <- violet_markov_parameters()
+  patients <- violet$baseline[
+    sample.int(
+      nrow(violet$baseline),
+      size = n_patients,
+      replace = TRUE,
+      prob = violet$baseline$n
+    ),
+    ,
+    drop = FALSE
+  ]
+  baseline_data <- data.frame(
+    id = seq_len(n_patients),
+    yprev = patients$yprev,
+    age = patients$age,
+    sofa = patients$sofa,
+    tx = stats::rbinom(n_patients, size = 1L, prob = treatment_prob)
+  )
+
+  args <- list(
+    baseline_data = baseline_data,
+    follow_up_time = 28L,
+    intercepts = violet$intercepts,
+    lp_function = violet_markov_lp,
+    extra_params = c(
+      violet$extra_params,
+      treatment_effect_decay = treatment_effect_decay
+    ),
+    parameter = treatment_effect,
+    absorbing_states = 4L,
+    seed = NULL,
+    covariate_names = c("age", "sofa", "tx")
+  )
+  # Replace whole arguments; utils::modifyList() would merge data frames
+  # column by column.
+  args[names(overrides)] <- overrides
+
+  do.call(sim_trajectories_markov, args)
+}
+
+
 actt1_markov_parameters <- function() {
   baseline_counts <- c(138, 435, 193, 285)
 
@@ -695,6 +850,63 @@ actt2_markov_lp <- function(yprev, t, tx, parameter, extra_params) {
 
   as.numeric(time_effect + previous_state_effect + treatment_effect * tx)
 }
+
+
+violet_markov_parameters <- function() {
+  # Harrell (2022) fitted VGAM::vglm(ordered(status) ~ pstatus + lsp(day, 2) +
+  # age + sofa + tx, cumulative(reverse = TRUE, parallel = FALSE ~ lsp(day, 2)))
+  # with the states ordered from dead (lowest) to home (highest), and published
+  # the coefficients rounded to three decimals:
+  # https://hbiostat.org/data/repo/simlongord
+  # mostr numbers the states from home (1) to dead (4), so every value below is
+  # Harrell's printed value with the opposite sign. Thresholds are ordered for
+  # Pr(Y >= 4), Pr(Y >= 3), and Pr(Y >= 2), which are one minus Harrell's
+  # cumulative probabilities 1, 2, and 3.
+  # Age is the exception: Harrell printed -0.011, but refitting his model to
+  # all of `simlongord` gives -0.01047 (SE 0.00015), while every other
+  # coefficient agrees with its printed value. 0.0105 is the value within the
+  # printed value's rounding interval nearest that fit; with 0.011, simulated
+  # patients reach home about 1 percentage point less often than in
+  # `simlongord` by day 28.
+  list(
+    # Lazy data is not visible from the namespace unless mostr is attached.
+    baseline = mostr::violet_baseline,
+    intercepts = c(-4.713, 1.741, 10.034),
+    extra_params = c(
+      "yprev=1" = -15.797,
+      "yprev=2" = -6.364,
+      "yprev=3" = 0,
+      "day:1" = 0.412,
+      "day:2" = -0.481,
+      "day:3" = -1.315,
+      "day':1" = -0.410,
+      "day':2" = 0.525,
+      "day':3" = 1.384,
+      "age" = 0.0105,
+      "sofa" = 0.046
+    )
+  )
+}
+
+
+violet_markov_lp <- function(yprev, t, age, sofa, tx, parameter, extra_params) {
+  previous_state_effect <- extra_params[paste0("yprev=", as.character(yprev))]
+  treatment_effect <- decayed_markov_treatment_effect(
+    parameter,
+    t,
+    extra_params
+  )
+  shared_effect <- previous_state_effect +
+    extra_params[["age"]] * age +
+    extra_params[["sofa"]] * sofa +
+    treatment_effect * tx
+  # Linear spline in time with a knot at day 2; its slopes differ by threshold.
+  time_effect <- t * extra_params[c("day:1", "day:2", "day:3")] +
+    max(t - 2, 0) * extra_params[c("day':1", "day':2", "day':3")]
+
+  outer(unname(shared_effect), unname(time_effect), `+`)
+}
+attr(violet_markov_lp, "mostr_vectorized_lp") <- TRUE
 
 
 actt_markov_rcs_basis <- function(day) {
@@ -821,4 +1033,28 @@ normalize_markov_lp <- function(lp, n_thresholds, active_index, time) {
   } else {
     lp
   }
+}
+
+
+# Linear predictors from a package model that handles all active patients in
+# one call: one value per patient, or one row per patient and one column per
+# threshold.
+normalize_vectorized_markov_lp <- function(lp, n_active, n_thresholds) {
+  if (is.null(dim(lp)) && length(lp) == n_active) {
+    lp <- matrix(lp, nrow = n_active, ncol = n_thresholds)
+  }
+  if (
+    !is.numeric(lp) ||
+      !identical(as.integer(dim(lp)), as.integer(c(n_active, n_thresholds)))
+  ) {
+    stop(
+      "A vectorized lp_function must return one value per patient or a ",
+      "matrix with one row per patient and one column per threshold"
+    )
+  }
+  if (any(!is.finite(lp))) {
+    stop("lp_function must return finite numeric values")
+  }
+
+  lp
 }

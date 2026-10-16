@@ -1,80 +1,119 @@
-## Code to prepare `violet_baseline` dataset
+## Code to prepare the `violet_baseline` dataset
 ##
-## This script creates the default baseline dataset for mostr package.
-## The dataset is based on the VIOLET trial data (Hmisc::simlongord).
+## Frank Harrell simulated a 250,000-patient trial (`simlongord`) from a Markov
+## model fitted to the VIOLET trial:
+## https://hbiostat.org/data/repo/simlongord
+## Each simulated patient's starting state, age, and SOFA score were drawn with
+## replacement from the 1,351 VIOLET patients with a day-1 record. This script
+## recovers those 1,351 records, collapsed to one row per distinct combination
+## with the number of VIOLET patients who had it.
 ##
-## Credit: Frank Harrell created the simlongord dataset in the Hmisc package.
-## This baseline dataset is derived from that source.
+## Credit: Frank Harrell created `simlongord`, which is available through
+## `Hmisc::getHdata()`.
 
 library(Hmisc)
-library(dplyr)
 
-# Load VIOLET data
 getHdata(simlongord)
 
-# Transform to 4-state model first
-simlongord <- simlongord |>
-  mutate(
-    y = case_when(
-      y == "Home" ~ 1,
-      y == "In Hospital/Facility" ~ 2,
-      y == "Vent/ARDS" ~ 3,
-      y == "Dead" ~ 4
-    ),
-    yprev = case_when(
-      yprev == "Home" ~ "1",
-      yprev == "In Hospital/Facility" ~ "2",
-      yprev == "Vent/ARDS" ~ "3"
-    ),
-    yprev = factor(yprev, levels = c(1:3))
-  )
+n_violet <- 1351L
+baseline <- simlongord[simlongord$time == 1L, c("yprev", "age", "sofa")]
+stopifnot(nrow(baseline) == 250000L)
 
-# Extract baseline data (time == 1) from first 10000 patients
-X_base_original <- simlongord |>
-  select(id, yprev, age, sofa) |>
-  # filter(id <= 10000, !is.na(yprev)) |>
-  distinct(id, .keep_all = TRUE) |>
-  mutate(
-    # Map original yprev to expanded 6-state scale
-    # Original yprev=2 (Hospital) → new states 2,3,4 with probabilities
-    # Original yprev=3 (Vent) → new state 5
-    yprev = case_when(
-      yprev == "2" ~ sample(
-        c(2, 3, 4),
-        n(),
-        replace = TRUE,
-        prob = c(0.5, 0.3, 0.2)
-      ),
-      yprev == "3" ~ 5,
-      TRUE ~ as.numeric(as.character(yprev))
-    )
-  )
-
-# Reduce proportion of ventilated patients from ~30% to ~5%
-# This makes the baseline more representative of typical respiratory illness of
-# interest for PROACT
-X_base_vent <- X_base_original |> filter(yprev == 5)
-X_base_other <- X_base_original |> filter(yprev != 5)
-
-# Calculate target sample sizes
-n_vent_original <- nrow(X_base_vent)
-n_vent_reduced <- round(n_vent_original * 0.05) # 5% ventilated
-n_other <- 250000 - n_vent_reduced # Fill the rest with non-vent
-
-# Resample with replacement to achieve target distribution
-set.seed(12345) # For reproducibility of package data
-X_base_resampled <- bind_rows(
-  X_base_vent |> slice_sample(n = n_vent_reduced, replace = TRUE),
-  X_base_other |> slice_sample(n = n_other, replace = TRUE)
+cells <- stats::aggregate(
+  list(count = rep(1L, nrow(baseline))),
+  by = list(
+    state = as.character(baseline$yprev),
+    age = baseline$age,
+    sofa = baseline$sofa
+  ),
+  FUN = sum
 )
 
-# Create final baseline dataset
-violet_baseline <- X_base_resampled |>
-  mutate(
-    id = row_number(),
-    tx = sample(c(0, 1), n(), replace = TRUE)
-  ) |>
-  select(id, yprev, age, sofa, tx)
+# A VIOLET patient is expected to be drawn 250,000 / 1,351 = 185 times, so a
+# combination's count divided by 185 estimates how many VIOLET patients had it.
+cells$expected <- cells$count * n_violet / nrow(baseline)
+cells$n <- as.integer(round(cells$expected))
 
-# Save as package data
-usethis::use_data(violet_baseline, overwrite = TRUE)
+# Counts published by Harrell for the 1,351 VIOLET patients.
+published_state <- c("Vent/ARDS" = 474L, "In Hospital/Facility" = 877L)
+published_sofa <- c(
+  87L, 123L, 112L, 136L, 158L, 134L, 135L, 106L, 89L, 76L, 65L, 54L, 32L, 17L,
+  11L, 6L, 5L, 3L, 2L
+)
+names(published_sofa) <- 0:18
+
+margin_excess <- function(n) {
+  state <- tapply(n, factor(cells$state, names(published_state)), sum)
+  sofa <- tapply(n, factor(cells$sofa, names(published_sofa)), sum)
+  list(
+    state = state - published_state,
+    sofa = sofa - published_sofa
+  )
+}
+
+loglik <- function(n) {
+  sum(stats::dbinom(cells$count, nrow(baseline), n / sum(n), log = TRUE))
+}
+
+# Rounding leaves a combination that lies about halfway between two
+# multiplicities. Remove a patient from, or add one to, the combination whose
+# starting state and SOFA score both disagree with the published counts,
+# choosing the change that best explains the simulated counts.
+repeat {
+  excess <- margin_excess(cells$n)
+  if (all(excess$state == 0L) && all(excess$sofa == 0L)) {
+    break
+  }
+  direction <- if (sum(cells$n) > n_violet) -1L else 1L
+  eligible <- which(
+    excess$state[cells$state] * direction < 0 &
+      excess$sofa[as.character(cells$sofa)] * direction < 0 &
+      cells$n + direction >= 0L
+  )
+  stopifnot(length(eligible) > 0L)
+  candidate_loglik <- vapply(
+    eligible,
+    function(i) {
+      n <- cells$n
+      n[i] <- n[i] + direction
+      loglik(n)
+    },
+    numeric(1)
+  )
+  best <- eligible[which.max(candidate_loglik)]
+  cells$n[best] <- cells$n[best] + direction
+}
+
+# Check the recovered records against Harrell's published description of the
+# 1,351 VIOLET patients.
+ages <- rep(cells$age, cells$n)
+sofa <- rep(cells$sofa, cells$n)
+stopifnot(
+  sum(cells$n) == n_violet,
+  all(cells$n > 0L),
+  length(unique(ages)) == 78L,
+  round(mean(ages), 2) == 56.31,
+  round(Hmisc::GiniMd(ages), 2) == 18.16,
+  all(
+    stats::quantile(ages, c(0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95)) ==
+      c(27, 33, 46, 58, 67.5, 76, 82)
+  ),
+  round(mean(sofa), 3) == 5.377,
+  round(Hmisc::GiniMd(sofa), 3) == 4.029
+)
+
+# mostr numbers states from best to worst: 1 = home, 2 = in hospital or
+# facility, 3 = on a ventilator or with ARDS, 4 = dead.
+state_code <- c("In Hospital/Facility" = 2L, "Vent/ARDS" = 3L)
+violet_baseline <- data.frame(
+  yprev = unname(state_code[cells$state]),
+  age = as.integer(cells$age),
+  sofa = as.integer(cells$sofa),
+  n = cells$n
+)
+violet_baseline <- violet_baseline[
+  order(violet_baseline$yprev, violet_baseline$age, violet_baseline$sofa),
+]
+rownames(violet_baseline) <- NULL
+
+usethis::use_data(violet_baseline, overwrite = TRUE, compress = "xz")

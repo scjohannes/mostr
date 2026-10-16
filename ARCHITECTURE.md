@@ -72,7 +72,7 @@ flowchart TD
 
 | Component | Source | Main symbols and role |
 |---|---|---|
-| Data generation | `R/simulate-markov.R`, `R/lp_violet.R`, `R/simulate-native.R` | `sim_trajectories_markov`, `sim_actt1_markov`, `sim_actt2_markov`; previous-state conditional categorical sampling |
+| Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_trajectories_markov` (general generator, no model defaults), `sim_actt1_markov`, `sim_actt2_markov`, `sim_violet_markov`, `violet_baseline`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R` | `sops`, `avg_sops`, `avg_time`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts |
@@ -230,14 +230,33 @@ grouped reductions, bootstrap row extraction, and baseline selection internally.
 `patchwork` is only suggested for vignette composition. Arrow,
 sdprisk, survival, and ordinal are not required.
 
-ACTT wrappers call the general Markov generator with published-model
-coefficients. The ACTT-2 coefficients come from a fit with states 1 and 2
-merged; an added lowest threshold splits them again, with `yprev = 1` and
-`yprev = 2` sharing the reference coefficient. The ACTT-2 wrapper accepts
+`sim_trajectories_markov()` is a model-free engine: callers supply baseline
+rows, thresholds, and a linear-predictor function. By default it passes every
+baseline column except `id` and `yprev` to that function and treats the worst
+state as absorbing. Trial wrappers (`sim_actt1_markov()`,
+`sim_actt2_markov()`, `sim_violet_markov()`) sample baseline rows, then call
+the engine with published-model coefficients; arguments in `...` override the
+wrapper's engine arguments. The ACTT-2 coefficients come from a fit with states
+1 and 2 merged; an added lowest threshold splits them again, with `yprev = 1`
+and `yprev = 2` sharing the reference coefficient. The ACTT-2 wrapper accepts
 `follow_up_time = 60`, which extrapolates its fitted time effect beyond 28
 days. No alternate 60-day calibration is kept.
-`violet_baseline` and its source-generation script preserve the original Hmisc
-data attribution; see `R/data.R` and `data-raw/violet_baseline.R`.
+
+`sim_violet_markov()` reproduces Frank Harrell's `simlongord` model: a 4-state
+partial proportional-odds Markov fit to VIOLET whose time spline (knot at day
+2) has threshold-specific slopes. `violet_markov_parameters()` stores his
+printed coefficients with signs flipped, because mostr numbers states from
+best (home) to worst (dead). The age coefficient is 0.0105 rather than the
+printed (rounded) 0.011, because refitting the model to `simlongord` recovers
+0.0105 and only that value reproduces its state proportions. Patients are
+drawn from `violet_baseline`, an
+858-row table of distinct starting state, age, and SOFA combinations with
+counts `n` summing to the 1,351 VIOLET patients; `data-raw/violet_baseline.R`
+recovers these counts from `simlongord` and checks them against Harrell's
+published summaries. `violet_markov_lp()` carries the internal attribute
+`mostr_vectorized_lp`, which makes the engine evaluate all active patients in
+one call (validated by `normalize_vectorized_markov_lp()`) instead of calling
+the function once per patient.
 
 ### Data-frame processing
 
