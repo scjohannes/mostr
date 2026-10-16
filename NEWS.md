@@ -36,6 +36,13 @@
   score tests, R2) or an observed state on every row (rank correlations such
   as Dxy and rho) are `NA`.
 
+* New vignette `vignette("missing-qol-recorded-deaths")` shows why dropping
+  transitions next to missing quality-of-life questionnaires overestimates
+  mortality when deaths are always recorded, and how `orm_markov_ml()` with
+  `missing_states = "non_absorbing"` avoids this. It also shows how to code
+  partially known states with `rms::Ocens()` and how to analyze patients lost
+  to follow-up.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

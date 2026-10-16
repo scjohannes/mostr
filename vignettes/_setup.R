@@ -22,3 +22,19 @@ local({
     )
   })
 })
+
+# Chunks with `fold = TRUE` show their code collapsed; output stays visible.
+local({
+  source_hook <- knitr::knit_hooks$get("source")
+  knitr::knit_hooks$set(source = function(x, options) {
+    source <- source_hook(x, options)
+    if (!isTRUE(options$fold) || !knitr::is_html_output()) {
+      return(source)
+    }
+    paste0(
+      "\n\n<details><summary>Show code</summary>\n\n",
+      source,
+      "\n\n</details>\n\n"
+    )
+  })
+})

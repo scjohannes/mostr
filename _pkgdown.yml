@@ -78,6 +78,7 @@ articles:
   - title: Missing data
     contents:
       - missing-states-ml
+      - missing-qol-recorded-deaths
   - title: Uncertainty
     contents:
       - analytical-confidence-intervals

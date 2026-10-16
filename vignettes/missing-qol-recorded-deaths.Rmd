@@ -1,0 +1,843 @@
+---
+title: "Missing Quality-of-Life Questionnaires When Deaths Are Always Recorded"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Missing Quality-of-Life Questionnaires When Deaths Are Always Recorded}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r vignette-options, include = FALSE}
+source("_setup.R", local = TRUE)
+percent <- function(x) paste0(round(100 * x), "%")
+```
+
+Studies of quality of life (QoL) collect questionnaires at regular visits, and
+some are never returned. Deaths, in contrast, are almost always recorded,
+through hospital records and death registries. A transition model that puts
+QoL and death on one ordinal scale predicts each month's state from the
+previous month's state, so one missing questionnaire removes two transitions:
+the move into the month without it and the move out of it.
+
+`orm_markov()` drops both rows; we call this *complete-row analysis*. Because
+deaths are never missing, a move into death needs one returned questionnaire,
+but a move between two living states needs two. Complete rows therefore
+contain too many deaths, and the model overestimates mortality, even when
+questionnaires are missing completely at random. `orm_markov_ml()` keeps every
+visit. For a missing questionnaire, it adds up the probabilities of all QoL
+states the patient could have been in, using the knowledge that the patient
+was alive; this is called *marginalizing* over the missing state.
+
+This article shows the bias and its cause, what `orm_markov_ml()` calculates,
+how to say with `rms::Ocens()` what is known at each visit, and how to handle
+patients who are lost to follow-up. Code that only prepares data or draws
+figures is folded: click "Show code" to see it.
+
+## Example data
+
+We simulate a two-arm trial in 1,000 patients with advanced cancer. Every
+month for 24 months, patients answer item 30 of the EORTC QLQ-C30
+questionnaire,[^qlq] which rates their overall QoL from 1 (very poor) to 7
+(excellent). We reverse the answers so that higher states are worse
+(state = 8 − answer: state 1 is excellent QoL, state 7 very poor QoL) and add
+death as state 8. Death is *absorbing*: patients stay in it.
+
+[^qlq]: Aaronson NK, Ahmedzai S, Bergman B, et al. The European Organization
+    for Research and Treatment of Cancer QLQ-C30: a quality-of-life instrument
+    for use in international clinical trials in oncology. *Journal of the
+    National Cancer Institute* 1993;85:365--376.
+    [doi:10.1093/jnci/85.5.365](https://doi.org/10.1093/jnci/85.5.365).
+
+The data come from a proportional-odds transition model, the kind of model we
+fit later. Patients tend to stay near their previous state, QoL slowly
+worsens over time, a baseline `frailty` score (mean 0, standard deviation 1,
+recorded to one decimal) makes worse states more likely, and treated patients
+have 0.75 times the odds of a worse state.
+
+```{r packages}
+library(mostr)
+library(rms)
+library(ggplot2)
+```
+
+```{r simulate, fold = TRUE}
+N_PATIENTS <- 1000
+FOLLOW_UP <- 24
+STATES <- as.character(1:8)
+LIVING <- as.character(1:7)
+ABSORB <- "8"
+
+# Thresholds for being dead, in state 7 or worse, ..., in state 2 or worse.
+INTERCEPTS <- c(-16.75, -11, -9, -7, -5, -3, -1)
+# Each step up in the previous state adds 2 to the linear predictor.
+EXTRA_PARAMS <- c(
+  setNames(2 * (0:6), paste0("yprev=", 1:7)),
+  frailty = 0.75,
+  time = 0.02
+)
+TREATMENT_LOG_OR <- log(0.75)
+BASELINE_PROBS <- c(0.10, 0.18, 0.24, 0.22, 0.14, 0.08, 0.04)
+
+lp_qol <- function(yprev, t, tx, frailty, parameter, extra_params) {
+  unname(
+    extra_params[paste0("yprev=", yprev)] +
+      extra_params["frailty"] * frailty +
+      extra_params["time"] * t +
+      parameter * tx
+  )
+}
+
+set.seed(2026)
+baseline <- data.frame(
+  id = seq_len(N_PATIENTS),
+  tx = rep(0:1, length.out = N_PATIENTS),
+  frailty = round(rnorm(N_PATIENTS), 1),
+  yprev = sample(1:7, N_PATIENTS, replace = TRUE, prob = BASELINE_PROBS)
+)
+
+full_raw <- sim_trajectories_markov(
+  baseline_data = baseline,
+  follow_up_time = FOLLOW_UP,
+  intercepts = INTERCEPTS,
+  lp_function = lp_qol,
+  extra_params = EXTRA_PARAMS,
+  parameter = TREATMENT_LOG_OR,
+  absorbing_states = 8,
+  covariate_names = c("tx", "frailty"),
+  seed = 1
+)
+full <- prepare_markov_data(full_raw, absorbing_state = 8)
+full <- full[order(full$id, full$time), ]
+```
+
+`full` holds the complete data, as if every questionnaire had been returned;
+in it, `r percent(mean(full_raw$y[full_raw$time == FOLLOW_UP] == ABSORB))` of
+patients die within 24 months.
+
+Because we know the model that generated the data, we can also calculate the
+true state occupancy probabilities (SOPs), the probability of each state in
+each month, exactly. We multiply the model's monthly transition matrices,
+starting from the distribution of baseline states, and average over the
+distribution of frailty. These are the SOPs of an infinitely large trial, and
+they serve as the ground truth below.
+
+```{r truth, fold = TRUE}
+true_transition_matrix <- function(month, tx, frailty) {
+  lp <- lp_qol(1:7, month, tx, frailty, TREATMENT_LOG_OR, EXTRA_PARAMS)
+  at_least <- plogis(outer(lp, INTERCEPTS, "+"))
+  # Columns give states 8, 7, ..., 1; reorder to 1, ..., 8.
+  probs <- cbind(at_least, 1) - cbind(0, at_least)
+  rbind(probs[, 8:1], c(rep(0, 7), 1)) # death is never left
+}
+
+# Frailty is a standard normal value rounded to one decimal.
+frailty_values <- seq(-6, 6, by = 0.1)
+frailty_probs <- pnorm(frailty_values + 0.05) - pnorm(frailty_values - 0.05)
+
+true_sops <- function(tx) {
+  sops <- matrix(0, FOLLOW_UP, length(STATES))
+  for (i in seq_along(frailty_values)) {
+    s <- c(BASELINE_PROBS, 0)
+    for (month in seq_len(FOLLOW_UP)) {
+      s <- s %*% true_transition_matrix(month, tx, frailty_values[i])
+      sops[month, ] <- sops[month, ] + frailty_probs[i] * s
+    }
+  }
+  sops
+}
+
+truth <- do.call(rbind, lapply(c(0, 1), function(z) {
+  data.frame(
+    time = rep(seq_len(FOLLOW_UP), times = length(STATES)),
+    state = rep(STATES, each = FOLLOW_UP),
+    tx = z,
+    estimate = as.vector(true_sops(z))
+  )
+}))
+
+death_24 <- function(sops) {
+  sops <- as.data.frame(sops)
+  sops <- sops[sops$state == ABSORB & sops$time == FOLLOW_UP, ]
+  setNames(sops$estimate[order(sops$tx)], c("control", "treatment"))
+}
+true_death_24 <- death_24(truth)
+true_death_24
+```
+
+Now we delete questionnaires: each month, a living patient's questionnaire is
+missing with probability 40%, independently of everything else, so the
+questionnaires are *missing completely at random*. Deaths are never missing.
+After a missing questionnaire, the next row's previous state `yprev` is unknown
+too. The rows with a missing state stay in the data: `orm_markov_ml()` needs
+one row for every scheduled visit until death or the end of follow-up.
+
+```{r make-missing, fold = TRUE}
+remove_questionnaires <- function(data, p_missing, seed) {
+  set.seed(seed)
+  alive <- data$y != ABSORB
+  missing <- alive & runif(nrow(data)) < p_missing
+  data$y[missing] <- NA
+  same_patient <- c(FALSE, data$id[-1] == data$id[-nrow(data)])
+  data$yprev[c(FALSE, missing[-nrow(data)]) & same_patient] <- NA
+  data
+}
+
+observed <- remove_questionnaires(full, p_missing = 0.4, seed = 11)
+mean(is.na(observed$y))
+```
+
+The figure shows one patient's record. Complete-row analysis uses only the
+moves between two recorded months. For this patient, it drops five of the ten
+months in which the patient survived, but keeps the move into death.
+
+```{r plot-example-patient, fold = TRUE, fig.height = 3.2}
+EXAMPLE_ID <- 485
+example <- observed[observed$id == EXAMPLE_ID, ]
+record <- data.frame(
+  month = c(0, example$time),
+  state = as.numeric(c(as.character(example$yprev[1]), as.character(example$y)))
+)
+recorded <- record[!is.na(record$state), ]
+moves <- data.frame(
+  from = head(recorded$month, -1),
+  to = recorded$month[-1],
+  from_state = head(recorded$state, -1),
+  to_state = recorded$state[-1]
+)
+moves$type <- ifelse(
+  moves$to - moves$from == 1,
+  "Used by complete-row analysis",
+  "Dropped: spans a missing questionnaire"
+)
+missing_months <- record$month[is.na(record$state)]
+
+ggplot() +
+  annotate(
+    "rect",
+    xmin = missing_months - 0.4,
+    xmax = missing_months + 0.4,
+    ymin = -Inf,
+    ymax = Inf,
+    fill = "grey88"
+  ) +
+  geom_segment(
+    data = moves,
+    aes(x = from, xend = to, y = from_state, yend = to_state, linetype = type)
+  ) +
+  geom_point(data = recorded, aes(month, state), size = 2.5) +
+  scale_x_continuous(breaks = record$month) +
+  scale_y_continuous(
+    breaks = 1:8,
+    labels = c("1 excellent", 2:6, "7 very poor", "8 dead"),
+    limits = c(1, 8)
+  ) +
+  scale_linetype_manual(values = c("dashed", "solid")) +
+  labs(x = "Month (grey: questionnaire missing)", y = "State", linetype = NULL) +
+  theme(legend.position = "bottom")
+```
+
+## Complete-row analysis
+
+The model predicts the state `y` from treatment, frailty, the previous state
+`yprev`, and a restricted cubic spline in time. `orm_markov()` drops every row
+with a missing `y` or `yprev`. We also fit it to the complete data, as a
+reference.
+
+```{r fit-cra}
+formula <- y ~ tx + frailty + yprev + rcs(time, 3)
+dd <- datadist(observed)
+options(datadist = "dd")
+
+fit_full <- orm_markov(formula, data = full, id_var = "id")
+fit_cra <- orm_markov(formula, data = observed, id_var = "id")
+```
+
+`avg_sops()` estimates the SOPs if every patient had received control
+(`tx = 0`) and if every patient had received treatment (`tx = 1`). For death,
+the SOP is the probability of having died by that month. `inferences()` adds
+95% confidence intervals; `vcov = "unconditional"` makes them account both for
+uncertainty in the coefficients and for which patients happened to be in the
+trial, so that they cover the population SOPs (see
+`vignette("analytical-confidence-intervals")`).
+
+```{r sops-cra}
+sop_cra <- avg_sops(
+  fit_cra,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  absorb = ABSORB
+) |>
+  inferences(method = "delta", vcov = "unconditional")
+```
+
+Complete-row analysis says that `r percent(death_24(sop_cra)[["control"]])`
+of control patients and `r percent(death_24(sop_cra)[["treatment"]])` of
+treated patients die by month 24. The truth is
+`r percent(true_death_24[["control"]])` and
+`r percent(true_death_24[["treatment"]])`.
+
+## Why complete-row analysis overestimates mortality
+
+Let $p$ be the probability that a living patient's questionnaire is missing,
+here $p = 0.4$. A move between two living states is a complete row with
+probability $(1 - p)^2 = 0.36$; a move into death, whose state is always
+recorded, with probability $1 - p = 0.6$. Among the complete rows of patients
+with the same previous state, month, treatment, and frailty, whose true
+probability of dying is $q$, the odds of death are therefore
+
+$$
+\frac{q\,(1 - p)}{(1 - q)\,(1 - p)^2} =
+  \frac{q}{1 - q} \times \frac{1}{1 - p},
+$$
+
+too high by the factor $1/(1 - p) \approx 1.67$. SOPs chain these monthly
+probabilities together, so the error builds up over follow-up. The bias comes
+from selecting rows by how the transition ended, not from why questionnaires
+are missing. The observed data show the selection:
+
+```{r plot-selection, fold = TRUE, fig.height = 3}
+into_death <- observed$y %in% ABSORB
+complete_row <- !is.na(observed$yprev) & !is.na(observed$y)
+selection <- data.frame(
+  panel = rep(c("Share kept as complete rows", "Share of moves into death"), each = 2),
+  group = c("Into a living state", "Into death", "All transitions", "Complete rows"),
+  share = c(
+    mean(complete_row[!into_death]),
+    mean(complete_row[into_death]),
+    mean(into_death),
+    mean(into_death[complete_row])
+  )
+)
+selection$group <- factor(selection$group, levels = selection$group)
+
+ggplot(selection, aes(group, share)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = paste0(signif(100 * share, 2), "%")), vjust = -0.4) +
+  facet_wrap(~panel, scales = "free") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(x = NULL, y = NULL)
+```
+
+Both kept shares are a little higher than 0.36 and 0.6 because the baseline
+state, the previous state in month 1, is always known; the share for deaths
+also varies by chance, because only `r sum(into_death)` patients die.
+
+## Maximum likelihood with `orm_markov_ml()`
+
+`orm_markov_ml()` takes the same formula and data as `orm_markov()`, plus the
+patient ID (each patient's rows form one chain) and the absorbing state.
+`missing_states = "non_absorbing"` says that a missing state is a living
+state: a missing questionnaire never hides a death.
+
+```{r fit-ml}
+fit_ml <- orm_markov_ml(
+  formula,
+  data = observed,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "non_absorbing"
+)
+fit_ml$ml[c("converged", "max_abs_score", "missing_info_fraction")]
+```
+
+`max_abs_score` near zero confirms that the likelihood is at its maximum.
+`missing_info_fraction` is the largest share of the information about a
+coefficient that is lost because states are missing (0: none, 1: all).
+
+### What it calculates
+
+Write $T_{it}(l \mid k)$ for the model's probability that patient $i$ moves
+from state $k$ in month $t - 1$ to state $l$ in month $t$. The patient above
+was in state 7 in month 7 and in state 6 in month 9, and was alive in month 8.
+Complete-row analysis drops months 8 and 9. `orm_markov_ml()` uses the
+probability of what was recorded, summed over the seven living states $k$ of
+month 8:
+
+$$
+\Pr(Y_{i9} = 6 \mid Y_{i7} = 7) =
+  \sum_{k=1}^{7} T_{i8}(k \mid 7)\, T_{i9}(6 \mid k).
+$$
+
+```{r plot-gap, fold = TRUE, fig.height = 3}
+transition_probs <- function(fit, from, month, patient) {
+  newdata <- data.frame(
+    tx = patient$tx[1],
+    frailty = patient$frailty[1],
+    yprev = factor(from, levels = LIVING),
+    time = month
+  )
+  setNames(
+    as.vector(predict(fit, newdata = newdata, type = "fitted.ind")),
+    STATES
+  )
+}
+
+GAP_MONTH <- 8
+state_before <- as.character(example$y[example$time == GAP_MONTH - 1])
+state_after <- as.character(example$y[example$time == GAP_MONTH + 1])
+into_gap <- transition_probs(fit_ml, state_before, GAP_MONTH, example)[LIVING]
+out_of_gap <- vapply(
+  LIVING,
+  function(k) transition_probs(fit_ml, k, GAP_MONTH + 1, example)[[state_after]],
+  numeric(1)
+)
+paths <- into_gap * out_of_gap
+
+panels <- c(
+  paste0("Into month 8: from state ", state_before, " to k"),
+  paste0("Out of month 8: from k to state ", state_after),
+  "State k in month 8, given the record"
+)
+gap_probs <- data.frame(
+  panel = factor(rep(panels, each = length(LIVING)), levels = panels),
+  state = rep(LIVING, times = 3),
+  probability = c(into_gap, out_of_gap, paths / sum(paths))
+)
+
+ggplot(gap_probs, aes(state, probability)) +
+  geom_col(width = 0.7) +
+  facet_wrap(~panel, labeller = label_wrap_gen(width = 24)) +
+  labs(x = "State k in month 8", y = "Probability")
+```
+
+The sum is `r signif(sum(paths), 2)`, the patient's factor in the likelihood
+for months 8 and 9. Death is not among the possible states in month 8, because
+the patient was alive. The right panel divides each path by the sum: the
+probability of each state in month 8, given the record.
+
+For a whole record, the same sum over all paths is computed month by month,
+like SOPs (see `vignette("full-po-sops")`), except that each month the states
+that the record rules out get probability zero. Let $\mathcal{A}_{it}$ be the
+states that agree with month $t$ (the recorded state, or the seven living
+states for a missing questionnaire), $Y_{i0}$ the baseline state, and $d_i$
+the last month. Then
+
+$$
+F_{i0}(l) = \mathbb{1}\{l = Y_{i0}\}, \qquad
+F_{it}(l) = \mathbb{1}\{l \in \mathcal{A}_{it}\}
+  \sum_{k=1}^{8} F_{i,t-1}(k)\, T_{it}(l \mid k), \qquad
+L_i = \sum_{l=1}^{8} F_{i d_i}(l),
+$$
+
+and `orm_markov_ml()` maximizes $\sum_i \log L_i$. With every month recorded,
+$L_i$ is the product of the recorded transition probabilities, the likelihood
+of `orm_markov()`. A missing questionnaire removes only the probability of
+dying that month, so $L_i$ is larger for coefficients under which surviving
+the gap was likely: the information that complete-row analysis discards. To
+find the maximum, `orm_markov_ml()` repeatedly fills each missing state with
+every living state at once, weighted by the shares in the right panel, and
+refits the model (the EM algorithm); a few Newton steps finish. No state is
+imputed, and the standard errors account for the missing information.
+
+`missing_states = "any"` would let a missing questionnaire hide a death. This
+changes nothing for a gap that ends in a living state, because death is never
+left, but it ignores that patients with a missing last questionnaire, or a
+missing questionnaire just before a recorded death, were alive at that visit.
+Because deaths are recorded here, `"non_absorbing"` is right.
+
+## Saying what is known with `Ocens()`
+
+`missing_states` applies one rule to every missing state. A response coded as
+`rms::Ocens(lower, upper)` instead lists, row by row, the possible states from
+`lower` to `upper`: `Ocens(b, b)` is a recorded state `b`, `Ocens(1, 7)` means
+"alive, QoL unknown", and `Ocens(NA, NA)` is a missing state that follows
+`missing_states`. With every missing questionnaire coded as `Ocens(1, 7)`, no
+state is missing, so the default `"any"` gives the same fit as
+`"non_absorbing"`. Because we compare only coefficients,
+`orm_markov_ml_control(variance = FALSE)` skips the standard errors to save
+time.
+
+```{r fit-ocens}
+y_value <- as.numeric(as.character(observed$y))
+observed$y_lo <- ifelse(is.na(y_value), 1, y_value)
+observed$y_hi <- ifelse(is.na(y_value), 7, y_value)
+
+fit_ocens <- orm_markov_ml(
+  Ocens(y_lo, y_hi) ~ tx + frailty + yprev + rcs(time, 3),
+  data = observed,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "any",
+  control = orm_markov_ml_control(variance = FALSE)
+)
+all.equal(coef(fit_ocens), coef(fit_ml), tolerance = 1e-8)
+```
+
+`Ocens()` is needed when what is known differs between visits, as in the
+section on loss to follow-up below. Whether a state is recorded exactly must
+not depend on the unrecorded exact state.
+
+## Comparing the estimates with the truth
+
+```{r sops-ml}
+sop_ml <- avg_sops(
+  fit_ml,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP),
+  absorb = ABSORB
+) |>
+  inferences(method = "delta", vcov = "unconditional")
+```
+
+The probability of having died, with the truth as a dashed line:
+
+```{r plot-deaths, fold = TRUE, fig.height = 3.8}
+arm_labels <- c("0" = "Control", "1" = "Treatment")
+sop_columns <- c("time", "state", "tx", "estimate", "conf.low", "conf.high")
+estimates <- rbind(
+  data.frame(as.data.frame(sop_cra)[sop_columns], method = "Complete rows"),
+  data.frame(as.data.frame(sop_ml)[sop_columns], method = "orm_markov_ml()")
+)
+estimates$state <- as.character(estimates$state)
+estimates$arm <- arm_labels[as.character(estimates$tx)]
+truth$arm <- arm_labels[as.character(truth$tx)]
+
+ggplot(
+  estimates[estimates$state == ABSORB, ],
+  aes(time, estimate, colour = method, fill = method)
+) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.15, colour = NA) +
+  geom_line() +
+  geom_line(
+    data = truth[truth$state == ABSORB, ],
+    aes(time, estimate, linetype = "Truth"),
+    inherit.aes = FALSE
+  ) +
+  scale_linetype_manual(values = "dashed") +
+  facet_wrap(~arm) +
+  labs(
+    x = "Month",
+    y = "Probability of having died",
+    colour = NULL,
+    fill = NULL,
+    linetype = NULL
+  ) +
+  theme(legend.position = "bottom")
+```
+
+Because complete-row analysis inflates death, it must take the same
+probability away from the living states, so every SOP is affected.
+`plot_sops()` shows all of them against the truth. We stack the two fits and
+the truth into one data frame, with the truth repeated for each fit:
+
+```{r sops-vs-truth, fold = TRUE}
+truth_rows <- data.frame(
+  truth[, c("time", "state", "tx", "estimate")],
+  conf.low = truth$estimate,
+  conf.high = truth$estimate,
+  arm = truth$arm
+)
+sop_vs_truth <- rbind(
+  data.frame(estimates, source = "Estimate"),
+  data.frame(truth_rows, method = "Complete rows", source = "Truth"),
+  data.frame(truth_rows, method = "orm_markov_ml()", source = "Truth")
+)
+```
+
+```{r plot-sops-vs-truth, fig.height = 6.5}
+plot_sops(sop_vs_truth, facet_var = c("arm", "method"), linetype_var = "source") +
+  labs(x = "Month", y = "State occupancy probability", linetype = NULL, title = NULL)
+```
+
+The complete-row SOPs for death (state 8) rise too steeply, mostly at the
+expense of state 7, the state from which most patients die. The
+`orm_markov_ml()` SOPs follow the truth in every state, within their
+confidence intervals.
+
+The difference between arms, treatment minus control, in the probability of
+having died comes from `avg_comparisons()`:
+
+```{r comparisons}
+compare_death <- function(fit) {
+  avg_comparisons(
+    fit,
+    variables = list(tx = c(0, 1)),
+    times = seq_len(FOLLOW_UP),
+    state_sets = list(death = ABSORB),
+    absorb = ABSORB
+  ) |>
+    inferences(method = "delta", vcov = "unconditional")
+}
+cmp_cra <- compare_death(fit_cra)
+cmp_ml <- compare_death(fit_ml)
+```
+
+```{r plot-comparisons, fold = TRUE, fig.height = 3.5}
+cmp_columns <- c("time", "estimate", "conf.low", "conf.high")
+cmp <- rbind(
+  data.frame(as.data.frame(cmp_cra)[cmp_columns], method = "Complete rows"),
+  data.frame(as.data.frame(cmp_ml)[cmp_columns], method = "orm_markov_ml()")
+)
+true_death <- truth[truth$state == ABSORB, ]
+true_difference <- data.frame(
+  time = seq_len(FOLLOW_UP),
+  estimate = true_death$estimate[true_death$tx == 1] -
+    true_death$estimate[true_death$tx == 0]
+)
+
+ggplot(cmp, aes(time, estimate, colour = method, fill = method)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.15, colour = NA) +
+  geom_line() +
+  geom_line(
+    data = true_difference,
+    aes(time, estimate, linetype = "Truth"),
+    inherit.aes = FALSE
+  ) +
+  scale_linetype_manual(values = "dashed") +
+  labs(
+    x = "Month",
+    y = "Difference in probability of death",
+    colour = NULL,
+    fill = NULL,
+    linetype = NULL
+  ) +
+  theme(legend.position = "bottom")
+```
+
+The treatment coefficient is similar in both fits
+(`r round(coef(fit_cra)[["tx"]], 2)` and `r round(coef(fit_ml)[["tx"]], 2)`;
+true value `r round(TREATMENT_LOG_OR, 2)`), because the selection inflates the
+odds of death equally in both arms. The difference in probabilities is
+nevertheless exaggerated by complete-row analysis, because it grows with the
+inflated level of mortality.
+
+## How the bias grows with the share of missing questionnaires
+
+The factor $1/(1 - p)$ is 1.11 at 10% missing questionnaires, 1.67 at 40%,
+and 2.5 at 60%. Deleting different shares of questionnaires from the same
+complete data shows the effect on mortality at month 24. The dashed line is
+the fit to the complete data of the same patients, so that only the missing
+questionnaires differ.
+
+```{r plot-missing-share, fold = TRUE, fig.height = 3.5}
+death_by_month_24 <- function(fit) {
+  death_24(avg_sops(
+    fit,
+    variables = list(tx = c(0, 1)),
+    times = seq_len(FOLLOW_UP),
+    absorb = ABSORB
+  ))
+}
+
+shares <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
+by_share <- do.call(rbind, lapply(shares, function(p_missing) {
+  data_p <- remove_questionnaires(full, p_missing, seed = 11)
+  fit_cra_p <- orm_markov(formula, data = data_p, id_var = "id")
+  fit_ml_p <- orm_markov_ml(
+    formula,
+    data = data_p,
+    id_var = "id",
+    absorbing_state = 8,
+    missing_states = "non_absorbing",
+    control = orm_markov_ml_control(variance = FALSE)
+  )
+  data.frame(
+    p_missing = p_missing,
+    method = rep(c("Complete rows", "orm_markov_ml()"), each = 2),
+    arm = rep(arm_labels, times = 2),
+    estimate = c(death_by_month_24(fit_cra_p), death_by_month_24(fit_ml_p))
+  )
+}))
+complete_data_24 <- data.frame(
+  arm = arm_labels,
+  estimate = death_by_month_24(fit_full)
+)
+
+ggplot(by_share, aes(p_missing, estimate, colour = method)) +
+  geom_hline(data = complete_data_24, aes(yintercept = estimate), linetype = "dashed") +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~arm) +
+  scale_x_continuous(labels = function(x) paste0(100 * x, "%")) +
+  labs(
+    x = "Share of missing questionnaires",
+    y = "Probability of having died by month 24",
+    colour = NULL
+  ) +
+  theme(legend.position = "bottom")
+```
+
+The complete-row estimate moves further away as more questionnaires are
+missing; `orm_markov_ml()` stays on the complete-data estimate and loses only
+precision.
+
+## Patients lost to follow-up
+
+Some patients are *lost to follow-up*: from some month on, neither their
+questionnaires nor their deaths are recorded. Here frailer patients are lost
+more often: from month 2 on, a patient is lost each month with probability
+$\mathrm{logit}^{-1}(-5 + 1.5 \times \text{frailty})$, 0.7% at average frailty
+and 2.9% one standard deviation above. Frailer patients also die more often,
+so the lost patients are not a random sample.
+
+```{r lost-to-follow-up, fold = TRUE}
+death_month <- tapply(ifelse(full$y %in% ABSORB, full$time, Inf), full$id, min)
+
+set.seed(12)
+lost_month <- 2 + rgeom(N_PATIENTS, plogis(-5 + 1.5 * baseline$frailty))
+# A patient who dies before the month of their loss has a recorded death.
+is_lost <- lost_month <= pmin(death_month, FOLLOW_UP)
+lost_month[!is_lost] <- Inf
+
+n_died_after_loss <- sum(is_lost & death_month <= FOLLOW_UP)
+c(lost = sum(is_lost), died_after_loss = n_died_after_loss)
+```
+
+A lost patient's follow-up ends at the loss, so we delete their rows from that
+month on. Before the loss every death was recorded, so a missed questionnaire
+still means "alive", and `frailty`, which predicts the loss, is in the model.
+
+```{r fit-lost}
+with_loss <- observed[observed$time < lost_month[observed$id], ]
+
+fit_lost <- orm_markov_ml(
+  formula,
+  data = with_loss,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "non_absorbing"
+)
+```
+
+Deleting rows is right only for patients whose deaths are no longer recorded.
+Patients who stop returning questionnaires but whose deaths are still
+recorded, for example through a registry, keep their rows with missing
+states: the rows tell the model that the patient was alive.
+
+Alternatively, we can keep a row for every scheduled visit through month 24
+and say what is known at each: `Ocens(1, 7)` for a missed questionnaire before
+the loss, and `NA` from the loss on, which `missing_states = "any"` lets hide
+a death. Both codings give the same fit, because visits at the end of a
+patient's rows that allow every state multiply $L_i$ by 1: from any state, the
+probabilities of the next month's states add up to one.
+
+```{r all-visits, fold = TRUE}
+lost_ids <- which(is_lost)
+after_loss <- data.frame(
+  id = rep(lost_ids, FOLLOW_UP - lost_month[lost_ids] + 1),
+  time = unlist(lapply(lost_ids, function(i) lost_month[i]:FOLLOW_UP))
+)
+after_loss$tx <- baseline$tx[after_loss$id]
+after_loss$frailty <- baseline$frailty[after_loss$id]
+after_loss$y <- NA
+after_loss$yprev <- NA
+
+all_visits <- rbind(with_loss[names(after_loss)], after_loss)
+all_visits <- all_visits[order(all_visits$id, all_visits$time), ]
+y_value <- as.numeric(as.character(all_visits$y))
+known_alive <- is.na(y_value) & all_visits$time < lost_month[all_visits$id]
+all_visits$y_lo <- ifelse(known_alive, 1, y_value)
+all_visits$y_hi <- ifelse(known_alive, 7, y_value)
+```
+
+```{r fit-lost-ocens}
+fit_lost_ocens <- orm_markov_ml(
+  Ocens(y_lo, y_hi) ~ tx + frailty + yprev + rcs(time, 3),
+  data = all_visits,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "any"
+)
+c(
+  coefficients = isTRUE(all.equal(coef(fit_lost_ocens), coef(fit_lost),
+    tolerance = 1e-6)),
+  covariance = isTRUE(all.equal(vcov(fit_lost_ocens, intercepts = "all"),
+    vcov(fit_lost, intercepts = "all"), tolerance = 1e-5))
+)
+```
+
+The figure compares the probability of having died by month 24 under five
+analyses. Two are mistakes: keeping the lost patients' rows with `NA` and
+`missing_states = "non_absorbing"`, which assumes that they all survived, and
+leaving `frailty` out of the model. The dashed line is the fit with frailty
+before any patient was lost, so that the differences come from the loss alone
+rather than from chance in this trial.
+
+```{r plot-lost, fold = TRUE, fig.height = 3.5}
+no_standard_errors <- orm_markov_ml_control(variance = FALSE)
+fit_lost_alive <- orm_markov_ml(
+  formula,
+  data = all_visits,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "non_absorbing",
+  control = no_standard_errors
+)
+formula_without_frailty <- y ~ tx + yprev + rcs(time, 3)
+fit_lost_without_frailty <- orm_markov_ml(
+  formula_without_frailty,
+  data = with_loss,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "non_absorbing",
+  control = no_standard_errors
+)
+fit_without_frailty <- orm_markov_ml(
+  formula_without_frailty,
+  data = observed,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "non_absorbing",
+  control = no_standard_errors
+)
+
+approaches <- c(
+  "No patient lost" = "fit_ml",
+  "Lost: rows deleted" = "fit_lost",
+  "Lost: assumed alive" = "fit_lost_alive",
+  "Lost: frailty left out" = "fit_lost_without_frailty",
+  "No patient lost: frailty left out" = "fit_without_frailty"
+)
+lost_24 <- do.call(rbind, lapply(names(approaches), function(label) {
+  data.frame(
+    approach = label,
+    arm = arm_labels,
+    estimate = death_by_month_24(get(approaches[[label]]))
+  )
+}))
+lost_24$approach <- factor(lost_24$approach, levels = rev(names(approaches)))
+
+ggplot(lost_24, aes(estimate, approach)) +
+  geom_vline(
+    data = lost_24[lost_24$approach == "No patient lost", ],
+    aes(xintercept = estimate),
+    linetype = "dashed"
+  ) +
+  geom_point(size = 2.5) +
+  facet_wrap(~arm, scales = "free_x") +
+  labs(x = "Probability of having died by month 24", y = NULL)
+```
+
+With frailty in the model, deleting the rows after the loss stays close to the
+analysis without loss. Assuming that lost patients survived misses the
+`r n_died_after_loss` deaths after a loss. Leaving frailty out also
+underestimates mortality, although it does little harm when no patient is
+lost: the patients who remain become less frail over time, and a model without
+frailty mistakes them for the whole cohort. With frailty in the model, the
+remaining rows still describe the transitions of patients with the same
+frailty correctly, and `avg_sops()` averages over every patient's frailty,
+the lost patients' included.
+
+## What the method assumes
+
+* **Deaths are recorded while a patient is followed.** After follow-up ends,
+  delete the rows or code them as unknown under `missing_states = "any"`.
+* **Missing at random.** Whether a questionnaire is returned, or a patient is
+  lost, may depend on recorded information (treatment, covariates in the
+  model such as frailty, earlier recorded states), but not on the unrecorded
+  QoL itself. Otherwise both methods are biased, and sensitivity analyses,
+  which are outside the scope of `orm_markov_ml()`, are needed.
+* **First order.** Transitions depend on the past only through `yprev`;
+  other covariates are fixed per patient or functions of time, and the
+  baseline state is known.
+
+## Where to go next
+
+* `vignette("missing-states-ml")`: missing states in hospital data, where a
+  missing state may hide a death; partially known states; other confidence
+  interval methods; Bayesian fits with `blrm_markov_ml()`.
+* `vignette("analytical-confidence-intervals")`: conditional and
+  unconditional variance in `inferences()`.
+* `vignette("full-po-sops")`: how SOPs are calculated and how to check a
+  transition model.

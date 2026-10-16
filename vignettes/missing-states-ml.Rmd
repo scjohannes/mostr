@@ -274,7 +274,8 @@ about why states are missing:
   complete-row analysis is biased, `orm_markov_ml()` is not (this is still
   "missing at random").
 * **Missing never hides a death** (as above): complete-row analysis is
-  biased, because the transitions it drops are all between living states.
+  biased, because the transitions it drops are all between living states
+  (`vignette("missing-qol-recorded-deaths")` works through why).
   `"non_absorbing"` or `Ocens(1, K - 1)` is unbiased. `"any"` ignores that a
   missing state at the end of a patient's rows means "alive", which can bias
   it slightly when many patients end with missing states.

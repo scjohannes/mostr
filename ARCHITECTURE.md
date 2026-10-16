@@ -29,8 +29,10 @@ the source must be set to GitHub Actions. Local previews use
 
 `man/figures/logo.png` supplies the README and pkgdown logo. All vignettes source
 `vignettes/_setup.R`, which keeps code and figures visible and wraps text output
-longer than ten lines in native HTML `details` elements. Non-HTML output retains
-the usual knitr formatting. The website workflow sets
+longer than ten lines in native HTML `details` elements. Chunks with the opt-in
+option `fold = TRUE` also wrap their code in a collapsed `details` element,
+while their output stays visible. Non-HTML output retains the usual knitr
+formatting. The website workflow sets
 `MOSTR_RUN_BAYESIAN_VIGNETTE=true` to execute the Bayesian model and its posterior
 predictions; set the same variable for a complete local website build. Routine
 package vignette builds retain the existing opt-in for this longer calculation.
@@ -436,10 +438,18 @@ test-only R reference written from the mathematics of the calculation
 `tests/testthat/helper-sops-delta-oracle.R`); these references are never
 production fallbacks. GitHub Actions runs R CMD check and runs the native and
 analytical-inference tests under address/undefined sanitizers and Valgrind.
-The ten vignettes demonstrate Markov-generated data, including a custom
+The twelve vignettes demonstrate Markov-generated data, including a custom
 30-state generator and a waning-treatment-effect simulation study comparing
 constant and time-varying treatment models on full-grid SOP and time-in-state
-contrasts.
+contrasts. Two missing-data vignettes compare complete-row `orm_markov()`
+fits with `orm_markov_ml()`: `missing-states-ml` uses ACTT-2-like hospital
+states, and `missing-qol-recorded-deaths` uses a custom eight-state generator
+(EORTC QLQ-C30 item 30, reversed, plus death) with a baseline frailty
+covariate and deaths always recorded, where complete-row analysis inflates the
+odds of death by `1 / (1 - p)` for a share `p` of missing questionnaires. It
+also shows `rms::Ocens()` coding and frailty-dependent loss to follow-up,
+where deleting rows after the loss equals keeping them as `NA` under
+`missing_states = "any"`.
 
 Numerical inference snapshots use a relative tolerance of 1e-7 to accommodate
 platform-dependent rounding while preserving the stored regression baselines.
