@@ -1,11 +1,15 @@
 # SOP model adapters and time helpers.
 
-# `orm_markov_ml()` fits are first order: reject a second previous state.
+# `orm_markov_ml()` and `blrm_markov_ml()` fits are first order: reject a
+# second previous state.
 markov_reject_ml_second_order <- function(model, p2_var) {
-  if (!is.null(p2_var) && identical(markov_model_fit_wrapper(model), "orm_markov_ml")) {
+  wrapper <- markov_model_fit_wrapper(model)
+  if (!is.null(p2_var) && isTRUE(wrapper %in% c("orm_markov_ml", "blrm_markov_ml"))) {
     stop(
-      "`p2_var` cannot be used with an `orm_markov_ml()` fit, which is a ",
-      "first-order model: transitions depend on the past only through `p_var`.",
+      "`p2_var` cannot be used with an `",
+      wrapper,
+      "()` fit, which is a first-order model: transitions depend on the past ",
+      "only through `p_var`.",
       call. = FALSE
     )
   }
@@ -30,7 +34,7 @@ validate_markov_model <- function(object) {
   }
 
   expected_wrapper <- if (inherits(model_chk, "blrm")) {
-    "blrm_markov"
+    c("blrm_markov", "blrm_markov_ml")
   } else if (inherits(model_chk, "vglm")) {
     "vglm_markov"
   } else if (inherits(model_chk, "orm")) {

@@ -605,7 +605,13 @@ markov_attach_model_data <- function(
 }
 
 markov_fit_wrappers <- function() {
-  c("orm_markov", "orm_markov_ml", "vglm_markov", "blrm_markov")
+  c(
+    "orm_markov",
+    "orm_markov_ml",
+    "vglm_markov",
+    "blrm_markov",
+    "blrm_markov_ml"
+  )
 }
 
 markov_set_fit_wrapper <- function(model, wrapper) {

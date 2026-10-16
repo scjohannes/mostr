@@ -251,7 +251,8 @@ markov_ml_setup <- function(
   p_var,
   absorbing_state,
   missing_states,
-  dots_fit
+  dots_fit,
+  extra_vars = character()
 ) {
   n <- nrow(data)
   if (n < 1L) {
@@ -274,9 +275,14 @@ markov_ml_setup <- function(
   row_pos <- stats::ave(seq_len(n), row_patient, FUN = seq_along)
   first_row <- row_pos == 1L
 
-  # Covariates other than the previous state must be observed.
+  # Covariates other than the previous state must be observed. `extra_vars`
+  # are further covariates of the model outside `formula` (partial
+  # proportional-odds terms of blrm_markov_ml()).
   rhs_vars <- all.vars(stats::delete.response(stats::terms(formula)))
-  covariate_vars <- setdiff(intersect(rhs_vars, names(sd)), p_var)
+  covariate_vars <- setdiff(
+    intersect(unique(c(rhs_vars, extra_vars)), names(sd)),
+    p_var
+  )
   for (v in covariate_vars) {
     if (anyNA(sd[[v]])) {
       stop(

@@ -13,6 +13,24 @@
   information of the observed-data likelihood. The estimates are valid when
   states are missing at random.
 
+* New experimental `blrm_markov_ml()` is the Bayesian counterpart of
+  `orm_markov_ml()`: it samples the posterior of the `blrm_markov()` model,
+  with the priors of `rmsb::blrm()` (Dirichlet prior for the intercepts,
+  `pcontrast` and `npcontrast`), using the same observed-data likelihood for
+  missing and range-coded states. Constrained partial proportional odds
+  (`ppo` with `cppo`) and a random intercept per patient (`cluster(id)`,
+  with the priors of `psigma`, `rsdmean`, and `rsdsd`) are supported; the
+  SOP functions use the patients' random intercepts with
+  `include_re = TRUE`. With nothing missing it samples the same posterior as
+  `blrm_markov()`. It runs its own
+  Stan program, which needs rstan and a C++ toolchain; the program is compiled
+  on first use and cached in `tools::R_user_dir("mostr", "cache")`. The fit
+  works with `sops()`, `avg_sops()`, `avg_time()`, and `avg_comparisons()`
+  like a `blrm_markov()` fit.
+
+* `orm_markov_ml()` now rejects random effects (`cluster()`) in the formula
+  with an informative error.
+
 * Printing an `orm_markov_ml()` fit now shows the maximised log-likelihood,
   the numbers of patients and rows, and a table of coefficients with
   patient-cluster robust standard errors, Wald Z statistics, and p-values. It

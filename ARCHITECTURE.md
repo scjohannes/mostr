@@ -63,7 +63,7 @@ cannot reuse a previous diagnostic's image URL for a different plot.
 flowchart TD
     A[Longitudinal ordinal data] --> B[prepare_markov_data]
     G[Markov generators] --> B
-    B --> C[orm_markov / orm_markov_ml / vglm_markov / blrm_markov]
+    B --> C[orm_markov / orm_markov_ml / vglm_markov / blrm_markov / blrm_markov_ml]
     C --> D[sops / avg_sops / avg_comparisons]
     D --> E[inferences]
     E --> F[Plots / time_in_state / vcov]
@@ -78,6 +78,7 @@ flowchart TD
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
 | Missing-state ML fitting (experimental) | `R/orm-markov-ml.R`, `R/markov-ml-em.R`, `R/markov-ml-inference.R` | `orm_markov_ml`, `orm_markov_ml_control`; observed-data likelihood of the first-order PO model with missing or range-coarsened states, EM with a weighted `rms::orm.fit()` M-step, Newton finish, observed information and patient-cluster sandwich |
+| Missing-state Bayesian fitting (experimental) | `R/blrm-markov-ml.R`, `inst/stan/markov_ml.stan` | `blrm_markov_ml`; the same observed-data likelihood in a Stan program with `rmsb::blrm()` priors and parameterisation, constrained partial PO and patient random intercepts, returning a `blrm`-class fit |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R` | `sops`, `avg_sops`, `avg_time`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
@@ -247,8 +248,15 @@ flowchart TD
     J --> K[orm_markov_ml object: $ml, $var, stored data]
 ```
 
-- **Set-up** (`markov_ml_setup()` in `R/markov-ml-em.R`) sorts by patient and
-  time, parses the response on the fixed state scale of exactly observed
+- **Set-up** (`markov_ml_setup()` in `R/markov-ml-em.R`) is shared with
+  `blrm_markov_ml()`, as are the argument checks in
+  `markov_ml_check_inputs()` (`R/orm-markov-ml.R`, which also rejects
+  offsets, and `cluster()` unless `random_effects = TRUE`, in which case it
+  accepts one `cluster(<id_var>)` term and returns the formula without it).
+  Its `extra_vars` argument adds
+  covariates from outside `formula` (the `ppo` terms of `blrm_markov_ml()`)
+  to the missing-covariate check and to the unique design rows. It sorts by
+  patient and time, parses the response on the fixed state scale of exactly observed
   values (`markov_ml_parse_response()`, `markov_ml_state_scale()`; rms endpoint
   rules, `Ocens2ord()` is not used), checks the baseline and `p_var`
   consistency, fits the starting `rms::orm()` on fully observed transitions,
@@ -344,10 +352,124 @@ The R recursion is the production implementation. If it moves next to
 allowed states as an independent oracle for the likelihood and posteriors.
 Benchmark and simulation scripts are in ignored `benchmarks/local/`.
 
+### Bayesian fits with missing states
+
+`blrm_markov_ml()` (`R/blrm-markov-ml.R`) samples the posterior of the
+`blrm_markov()` model with the observed-data likelihood of `orm_markov_ml()`.
+`rmsb::blrm()` cannot be reused for this because its precompiled Stan programs
+evaluate one proportional-odds term per row and cannot sum over an unknown
+previous state. The package therefore ships its own Stan program,
+`inst/stan/markov_ml.stan`, which keeps the parameters and priors of rmsb's
+`lrmconppo.stan` (centered, QR-transformed predictors; intercepts from a
+simplex `pi` of state probabilities at average predictors with a Dirichlet
+prior of concentration `conc`; normal priors on `pcontrast`/`npcontrast`
+contrasts; constrained partial proportional odds through `pposcore`;
+patient random intercepts `gamma = sigmag * gamma_raw` with rmsb's `psigma`
+priors, in the same parameter order) and replaces the per-row likelihood.
+Unconstrained partial PO, the t prior for intercepts (`iprior`), and random
+effects other than one intercept per patient are not supported. Given its
+random intercept, each patient's chain is first order, so the recursion is
+unchanged apart from adding `gamma` to the linear predictor.
+
+```mermaid
+flowchart TD
+    A[Long data with NA / Ocens rows] --> B[markov_ml_check_inputs, markov_bayes_check_ppo]
+    B --> C[markov_ml_setup: masks, design rows, runs]
+    C --> D[markov_bayes_fit_object: blrm-like metadata, ppo design via rms::Design]
+    D --> E[markov_bayes_stan_data: center and QR on fully observed transitions]
+    E --> F[markov_bayes_stan_model: compile or load cached rstan model]
+    F --> G[rstan::sampling]
+    G --> H[markov_bayes_draws: undo QR and centering]
+    H --> I[blrm_markov_ml object: draws, param, diagnostics, ml, stored data]
+    I --> J[sops / avg_sops / avg_time / avg_comparisons via blrm prediction path]
+```
+
+- **Fit object first** (`markov_bayes_fit_object()`): the `formula` design
+  metadata (`Design`, `terms`, `sformula`, `assign`) come from the starting
+  `rms::orm()` fit of `markov_ml_setup()`. With `ppo`, the transitions with
+  both states observed are rebuilt from the design rows and passed through
+  `rms::modelData()` and `rms::Design()` as in `rmsb::blrm()`, giving
+  `zDesign`, `zsformula`, `zassign`, and `tauInfo`. `normcppo` wraps `cppo`
+  in a centred and scaled closure (`markov_bayes_normalized_cppo()`). The
+  object carries placeholder `draws` and `param` because `rms::predictrms()`
+  treats a fit as Bayesian only when it has draws.
+- **Stan data** (`markov_bayes_stan_data()`): `formula` and `ppo` design rows
+  for every unique covariate row and origin come from `blrm_design_matrix()` on
+  that object, the same call prediction uses later, and the `formula` rows are
+  checked against `markov_ml_setup()`'s design. `markov_bayes_qr()` centres at
+  the count-weighted mean over fully observed transitions and takes the R
+  factor of the weighted rows, which equals rmsb's `selectedQr()` on the
+  replicated rows. Only design rows that the likelihood uses are passed.
+  With random intercepts, fully observed transitions are aggregated by
+  (design row, state, patient) instead of (design row, state), and each run
+  carries its patient index (`obs_cluster`, `seg_cluster`; patients are
+  numbered in `markov_ml_setup()`'s `patient_ids` order, which matches
+  rmsb's factor coding of numeric IDs).
+  `pcontrast` and `npcontrast` go through `rms::Xcontrast()`
+  (`markov_bayes_contrast_prior()`, with `markov_bayes_ppo_contrast_fit()`
+  swapping in the `ppo` design).
+- **Likelihood** (Stan `model` block): aggregated fully observed transitions
+  add `count * log P(observed state)`, rejecting a draw only when the
+  cumulative probabilities around that observed state cross, as rmsb does.
+  Runs that need the recursion (consecutive rows, `seg_start`/`seg_end`) use
+  a Stan copy of the scaled forward pass in `markov_ml_forward()`, over full
+  transition rows for the design rows in `cd_rows`; any crossing in those
+  rows rejects the draw because every state's probability enters the sum.
+  Whether cumulative probabilities cross does not depend on the linear
+  predictor, so the check (Stan function `ordered_cum`) runs once per design
+  row. Without random intercepts the transition rows are computed once per
+  design row; with them they are computed per row and origin with the run's
+  `gamma` (Stan function `state_probs`). Origins with zero forward
+  probability are skipped, which leaves the value and gradient unchanged.
+- **Draws** (`markov_bayes_draws()`, `markov_bayes_draws_from_array()`):
+  slopes and `ppo` coefficients are multiplied by the transposed inverse R
+  factors, and intercepts are shifted by `beta . xbar` and
+  `pposcore[j] * tau . zbar`, as in `rmsb::blrm()`. Columns are named like a
+  `blrm_markov()` fit (`y>=j`, design column names, `"<term> x f(y)"`).
+  `markov_bayes_diagnostics()` computes `Rhat`, `ess_bulk`, and `ess_tail` on
+  this original scale. With random intercepts,
+  `markov_bayes_add_random_effects()` stores `gamma_draws` (draws x patients,
+  columns named by patient ID), `gammas`, `omega` (`sigmag` draws), and
+  `clusterInfo`, and adds a `sigmag` row to the diagnostics.
+- **Compilation** (`markov_bayes_stan_model()`): the program is compiled with
+  `rstan::stan_model()` on first use. A copy named by the program's MD5 hash is
+  written to `tools::R_user_dir("mostr", "cache")` (or
+  `getOption("mostr.stan_cache_dir")`; `FALSE` disables the disk cache) and
+  compiled with `auto_write = TRUE`, so later sessions load the saved model.
+  The session cache `markov_bayes_cache` is keyed by hash and rstan version.
+
+Contracts with the rest of the package:
+
+- Provenance: `"blrm_markov_ml"` is in `markov_fit_wrappers()`;
+  `validate_markov_model()` accepts it for `blrm` fits, and
+  `markov_reject_ml_second_order()` rejects `p2_var` for both ML wrappers.
+- Class `c("blrm_markov_ml", "blrm", "rmsb", "rms")`: every `blrm` code path
+  (posterior draw selection, `predict_blrm_response_markov()`, posterior
+  summaries) applies unchanged. With `include_re = TRUE`,
+  `get_blrm_gamma_draws()` reads `gamma_draws` and
+  `blrm_random_effect_matrix()` matches its column names to the prediction
+  data's patient IDs; without `cluster()` there is no `clusterInfo` and
+  `include_re = TRUE` errors. `param` has `mean` and `median` rows only, so
+  `coef(fit, "mode")` is unavailable. `print.blrm_markov_ml()` replaces
+  `print.blrm()`, which needs `x` and `y` matrices the fit does not store.
+- Stored data: as for `orm_markov_ml()`, the original rows, missing states
+  included, are the fitted and refit data. Bayesian fits have no bootstrap or
+  delta inference, as for `blrm_markov()`.
+
+Tests (`tests/testthat/test-blrm-markov-ml.R`) check the QR transformation
+against `selectedQr()` and the back-transformation without Stan. With
+`MOSTR_TEST_STAN=true` they also compare `rstan::log_prob()` with rmsb's
+`lrmconppo` model when nothing is missing (PO, constrained PPO, and random
+intercepts) and with a plain R loop over patients' runs when states are
+missing or range-coded (up to a constant with random intercepts, whose `~`
+priors drop constants), and run small end-to-end fits, including
+`avg_sops()` and `avg_comparisons()` with `include_re = TRUE`.
+
 ## Dependencies and execution
 
 `VGAM` and `rms` fit frequentist transitions; optional `rmsb` fits Bayesian
-models. `cpp11` registers native routines. `mvtnorm` supports coefficient draws;
+models, and optional `rstan` compiles and samples the Stan program of
+`blrm_markov_ml()` (which needs a C++ toolchain at first use). `cpp11` registers native routines. `mvtnorm` supports coefficient draws;
 `future`, `future.callr`, and `furrr` support parallel inference. `ggplot2`
 produces plots. `data.table` handles repeated row binding, ordered joins,
 grouped reductions, bootstrap row extraction, and baseline selection internally.

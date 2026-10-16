@@ -231,52 +231,14 @@ orm_markov_ml <- function(
   )
   type <- match.arg(type)
   missing_states <- match.arg(missing_states)
-  if (missing(data) || !is.data.frame(data)) {
-    stop("`data` must be supplied as a data frame.", call. = FALSE)
-  }
-  if (missing(id_var) || is.null(id_var)) {
-    stop(
-      "`id_var` is required: each patient's rows form one Markov chain.",
-      call. = FALSE
-    )
-  }
-  id_var <- validate_markov_id_var(id_var, data, "data")
-  if (
-    missing(absorbing_state) ||
-      is.null(absorbing_state) ||
-      !length(absorbing_state) ||
-      anyNA(absorbing_state)
-  ) {
-    stop(
-      "`absorbing_state` is required: give the state(s) that are never left, ",
-      "such as death.",
-      call. = FALSE
-    )
-  }
-  validate_markov_id_var(time_var, data, "data")
-  if (
-    !is.character(p_var) ||
-      length(p_var) != 1L ||
-      is.na(p_var) ||
-      !p_var %in% names(data)
-  ) {
-    stop("`p_var` must name the previous-state column of `data`.", call. = FALSE)
-  }
-  if (!inherits(formula, "formula") || length(formula) != 3L) {
-    stop("`formula` must be a two-sided formula.", call. = FALSE)
-  }
-  mt <- stats::terms(formula, specials = "offset", data = data)
-  if (terms_has_offset(mt)) {
-    stop_unsupported_offset()
-  }
-  if (!p_var %in% all.vars(stats::delete.response(mt))) {
-    stop(
-      "The previous-state variable `",
-      p_var,
-      "` must appear on the right-hand side of `formula`.",
-      call. = FALSE
-    )
-  }
+  markov_ml_check_inputs(
+    formula = formula,
+    data = if (!missing(data)) data,
+    id_var = if (!missing(id_var)) id_var,
+    absorbing_state = if (!missing(absorbing_state)) absorbing_state,
+    time_var = time_var,
+    p_var = p_var
+  )
   control <- markov_ml_validate_control(control)
   if (is.null(cadjust)) {
     cadjust <- TRUE
@@ -533,6 +495,108 @@ orm_markov_ml_control <- function(
     trace = trace,
     variance = variance
   ))
+}
+
+# Checks shared by orm_markov_ml() and blrm_markov_ml(). Missing arguments are
+# passed as NULL. With `random_effects = TRUE`, `formula` may contain one
+# `cluster(<id_var>)` term (patient random intercepts). Returns `formula`
+# without that term and whether it was present.
+markov_ml_check_inputs <- function(
+  formula,
+  data,
+  id_var,
+  absorbing_state,
+  time_var,
+  p_var,
+  random_effects = FALSE
+) {
+  if (!is.data.frame(data)) {
+    stop("`data` must be supplied as a data frame.", call. = FALSE)
+  }
+  if (is.null(id_var)) {
+    stop(
+      "`id_var` is required: each patient's rows form one Markov chain.",
+      call. = FALSE
+    )
+  }
+  validate_markov_id_var(id_var, data, "data")
+  if (
+    is.null(absorbing_state) ||
+      !length(absorbing_state) ||
+      anyNA(absorbing_state)
+  ) {
+    stop(
+      "`absorbing_state` is required: give the state(s) that are never left, ",
+      "such as death.",
+      call. = FALSE
+    )
+  }
+  validate_markov_id_var(time_var, data, "data")
+  if (
+    !is.character(p_var) ||
+      length(p_var) != 1L ||
+      is.na(p_var) ||
+      !p_var %in% names(data)
+  ) {
+    stop("`p_var` must name the previous-state column of `data`.", call. = FALSE)
+  }
+  if (!inherits(formula, "formula") || length(formula) != 3L) {
+    stop("`formula` must be a two-sided formula.", call. = FALSE)
+  }
+  mt <- stats::terms(formula, specials = c("offset", "cluster"), data = data)
+  if (terms_has_offset(mt)) {
+    stop_unsupported_offset()
+  }
+  has_cluster <- !is.null(attr(mt, "specials")$cluster)
+  if (has_cluster && !random_effects) {
+    stop(
+      "Random effects (`cluster()`) are not supported: the model must be a ",
+      "first-order Markov model in which transitions depend on the past only ",
+      "through `p_var`. `blrm_markov_ml()` supports patient random effects.",
+      call. = FALSE
+    )
+  }
+  if (!p_var %in% all.vars(stats::delete.response(mt))) {
+    stop(
+      "The previous-state variable `",
+      p_var,
+      "` must appear on the right-hand side of `formula`.",
+      call. = FALSE
+    )
+  }
+  if (!has_cluster) {
+    return(invisible(list(formula = formula, random_effects = FALSE)))
+  }
+  labels <- attr(mt, "term.labels")
+  cluster_term <- grepl("^cluster\\(", labels)
+  if (
+    sum(cluster_term) != 1L ||
+      any(grepl("cluster\\(", labels[!cluster_term]))
+  ) {
+    stop(
+      "`formula` may contain one `cluster()` term, not inside an interaction.",
+      call. = FALSE
+    )
+  }
+  cluster_call <- str2lang(labels[cluster_term])
+  if (
+    length(cluster_call) != 2L ||
+      !identical(paste(deparse(cluster_call[[2L]]), collapse = ""), id_var)
+  ) {
+    stop(
+      "`cluster()` must name the patient ID column: use `cluster(",
+      id_var,
+      ")` for a random intercept per patient.",
+      call. = FALSE
+    )
+  }
+  fixed <- stats::formula(stats::drop.terms(
+    mt,
+    dropx = which(cluster_term),
+    keep.response = TRUE
+  ))
+  environment(fixed) <- environment(formula)
+  invisible(list(formula = fixed, random_effects = TRUE))
 }
 
 markov_ml_validate_control <- function(control) {

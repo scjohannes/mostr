@@ -9,6 +9,10 @@ vignette: >
 
 ```{r vignette-options, include = FALSE}
 source("_setup.R", local = TRUE)
+RUN_BAYESIAN <- identical(
+  Sys.getenv("MOSTR_RUN_BAYESIAN_VIGNETTE"),
+  "true"
+) && requireNamespace("rstan", quietly = TRUE)
 ```
 
 In longitudinal ordinal data, some visits often have no recorded state: a
@@ -31,7 +35,9 @@ This article shows
 3. how to code partially known states with `rms::Ocens()`;
 4. when complete-row analysis is biased and `orm_markov_ml()` is not;
 5. that the fit works with `avg_sops()`, `avg_comparisons()`, and
-   `inferences()`.
+   `inferences()`;
+6. how to fit the same model with Bayesian methods, using
+   `blrm_markov_ml()`.
 
 ## Example data
 
@@ -259,6 +265,72 @@ cmp[cmp$time %in% c(7, 14, 28),
 rows included). Fractional weighted bootstrap (`"fwb"`) is not available
 because `orm_markov_ml()` does not accept row weights.
 
+## Bayesian fits
+
+`blrm_markov_ml()` fits the Bayesian model of `blrm_markov()` with the same
+handling of missing states. It uses the same likelihood as `orm_markov_ml()`
+and the priors of `rmsb::blrm()`: a weak Dirichlet prior for the intercepts
+and flat priors for the other coefficients, unless `pcontrast` sets a prior
+for a contrast such as the treatment effect. It also accepts `ppo` and `cppo`
+for constrained partial proportional odds, as `blrm_markov()` does, and
+`cluster(id)` in the formula for a random intercept per patient. With random
+intercepts, `avg_sops()` and `avg_comparisons()` use each patient's own
+intercept when called with `include_re = TRUE`.
+
+`blrm_markov_ml()` runs its own Stan program, which is compiled the first time
+the function is used. Compiling needs a C++ toolchain (Rtools on Windows) and
+takes a few minutes; the compiled program is saved and reused in later
+sessions. The code in this section runs only when the environment variable
+`MOSTR_RUN_BAYESIAN_VIGNETTE` is `"true"`. It uses few iterations to keep
+running time short; a real analysis needs more and a check of the sampling
+diagnostics.
+
+```{r fit-bayes, eval = RUN_BAYESIAN}
+fit_bayes <- blrm_markov_ml(
+  formula,
+  data = observed,
+  id_var = "id",
+  absorbing_state = 8,
+  missing_states = "non_absorbing",
+  iter = 1000,
+  chains = 2,
+  cores = 2,
+  seed = 1
+)
+fit_bayes$diagnostics[terms, ]
+```
+
+`Rhat` close to 1 means the chains agree; `ess_bulk` and `ess_tail` are the
+effective numbers of independent draws for the centre and the tails of the
+posterior. With these weak priors, the posterior means and standard
+deviations are close to the maximum likelihood estimates and their
+model-based standard errors:
+
+```{r compare-bayes, eval = RUN_BAYESIAN}
+round(rbind(
+  ml_estimate = coef(fit_ml)[terms],
+  ml_se = sqrt(diag(fit_ml$ml$var_model))[terms],
+  posterior_mean = coef(fit_bayes)[terms],
+  posterior_sd = apply(fit_bayes$draws[, terms], 2, sd)
+), 3)
+```
+
+SOP functions compute their results for each posterior draw and report the
+posterior median with a 95% credible interval:
+
+```{r avg-sops-bayes, eval = RUN_BAYESIAN}
+avg_bayes <- avg_sops(
+  fit_bayes,
+  variables = list(tx = c(0, 1)),
+  times = 1:FOLLOW_UP,
+  absorb = ABSORB,
+  n_draws = 200,
+  seed = 1
+)
+avg_bayes[avg_bayes$state == ABSORB & avg_bayes$time == FOLLOW_UP,
+  c("tx", "estimate", "conf.low", "conf.high")]
+```
+
 ## When is complete-row analysis biased?
 
 Both methods assume that the model is right. They differ in what they assume
@@ -282,7 +354,8 @@ about why states are missing:
 * **Missing depends on the unobserved state itself** (for example sicker
   patients skip visits more often than others in the same previous state):
   both methods are biased. This is "missing not at random"; sensitivity
-  analyses are outside the scope of `orm_markov_ml()`.
+  analyses are outside the scope of `orm_markov_ml()` and
+  `blrm_markov_ml()`.
 
 ## Requirements and limits
 

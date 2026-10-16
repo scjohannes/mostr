@@ -37,6 +37,7 @@ Suggests:
     posterior,
     rmsb,
     rmarkdown,
+    rstan,
     tibble,
     tidyr,
     testthat (>= 3.0.0),
