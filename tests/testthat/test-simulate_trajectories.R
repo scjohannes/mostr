@@ -366,6 +366,23 @@ test_that("sim_actt2_markov validates wrapper inputs", {
   expect_snapshot(error = TRUE, sim_actt2_markov(treatment_effect_decay = -1))
 })
 
+test_that("ACTT wrappers replace generated patients with baseline_data", {
+  baseline <- data.frame(id = c(10L, 20L), yprev = c(5L, 8L), tx = c(0L, 1L))
+
+  for (simulate in list(sim_actt1_markov, sim_actt2_markov)) {
+    traj <- simulate(
+      n_patients = 50,
+      baseline_data = baseline,
+      follow_up_time = 3,
+      seed = 1
+    )
+
+    expect_equal(nrow(traj), 6)
+    expect_equal(unique(traj$id), c(10L, 20L))
+    expect_equal(traj$y[traj$id == 20L], rep(8, 3))
+  }
+})
+
 test_that("sim_trajectories_markov validates inputs and absent covariates", {
   baseline <- data.frame(id = 1:2, yprev = c(1, 1))
 

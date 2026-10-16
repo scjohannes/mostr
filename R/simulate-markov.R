@@ -387,23 +387,21 @@ sim_actt2_markov <- function(
     tx = stats::rbinom(n_patients, size = 1L, prob = treatment_prob)
   )
 
-  args <- utils::modifyList(
-    list(
-      baseline_data = baseline_data,
-      follow_up_time = 28L,
-      intercepts = rev(actt2$orm_intercepts),
-      lp_function = actt2_markov_lp,
-      extra_params = c(
-        actt2$extra_params,
-        treatment_effect_decay = treatment_effect_decay
-      ),
-      parameter = treatment_effect,
-      absorbing_states = 8L,
-      seed = NULL,
-      covariate_names = "tx"
+  args <- list(
+    baseline_data = baseline_data,
+    follow_up_time = 28L,
+    intercepts = rev(actt2$orm_intercepts),
+    lp_function = actt2_markov_lp,
+    extra_params = c(
+      actt2$extra_params,
+      treatment_effect_decay = treatment_effect_decay
     ),
-    list(...)
+    parameter = treatment_effect,
+    absorbing_states = 8L,
+    seed = NULL,
+    covariate_names = "tx"
   )
+  args <- override_markov_wrapper_args(args, list(...))
 
   do.call(sim_trajectories_markov, args)
 }
@@ -524,23 +522,21 @@ sim_actt1_markov <- function(
     tx = stats::rbinom(n_patients, size = 1L, prob = treatment_prob)
   )
 
-  args <- utils::modifyList(
-    list(
-      baseline_data = baseline_data,
-      follow_up_time = 28L,
-      intercepts = rev(actt1$orm_intercepts + actt1$average_age_sex_effect),
-      lp_function = actt1_markov_lp,
-      extra_params = c(
-        actt1$extra_params,
-        treatment_effect_decay = treatment_effect_decay
-      ),
-      parameter = treatment_effect,
-      absorbing_states = 8L,
-      seed = NULL,
-      covariate_names = "tx"
+  args <- list(
+    baseline_data = baseline_data,
+    follow_up_time = 28L,
+    intercepts = rev(actt1$orm_intercepts + actt1$average_age_sex_effect),
+    lp_function = actt1_markov_lp,
+    extra_params = c(
+      actt1$extra_params,
+      treatment_effect_decay = treatment_effect_decay
     ),
-    list(...)
+    parameter = treatment_effect,
+    absorbing_states = 8L,
+    seed = NULL,
+    covariate_names = "tx"
   )
+  args <- override_markov_wrapper_args(args, list(...))
 
   do.call(sim_trajectories_markov, args)
 }
@@ -688,15 +684,6 @@ sim_violet_markov <- function(
   validate_markov_wrapper_inputs(n_patients, treatment_prob)
   validate_markov_treatment_effect(treatment_effect, treatment_effect_decay)
 
-  overrides <- list(...)
-  override_names <- names(overrides)
-  if (
-    length(overrides) > 0 &&
-      (is.null(override_names) || !all(nzchar(override_names)))
-  ) {
-    stop("All arguments passed through `...` must be named.", call. = FALSE)
-  }
-
   n_patients <- as.integer(n_patients)
   if (!is.null(seed)) {
     set.seed(seed)
@@ -735,9 +722,7 @@ sim_violet_markov <- function(
     seed = NULL,
     covariate_names = c("age", "sofa", "tx")
   )
-  # Replace whole arguments; utils::modifyList() would merge data frames
-  # column by column.
-  args[names(overrides)] <- overrides
+  args <- override_markov_wrapper_args(args, list(...))
 
   do.call(sim_trajectories_markov, args)
 }
@@ -991,6 +976,22 @@ validate_markov_treatment_effect <- function(
       call = sys.call(-1)
     ))
   }
+}
+
+
+# Replace whole arguments: utils::modifyList() would recurse into a supplied
+# baseline_data data frame and merge it column by column into the generated one.
+override_markov_wrapper_args <- function(args, overrides) {
+  override_names <- names(overrides)
+  if (
+    length(overrides) > 0 &&
+      (is.null(override_names) || !all(nzchar(override_names)))
+  ) {
+    stop("All arguments passed through `...` must be named.", call. = FALSE)
+  }
+
+  args[override_names] <- overrides
+  args
 }
 
 

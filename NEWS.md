@@ -19,6 +19,12 @@
   the worst state (`length(intercepts) + 1`), and `covariate_names` to every
   column of `baseline_data` except `id` and `yprev`.
 
+* `sim_actt1_markov()` and `sim_actt2_markov()` now simulate exactly the
+  patients in a supplied `baseline_data`. Previously its columns were recycled
+  over the generated patients, so a 2-patient `baseline_data` with the default
+  `n_patients = 1000` gave 1,000 patients. Arguments passed through `...` must
+  now be named.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,
