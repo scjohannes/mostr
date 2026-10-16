@@ -427,6 +427,14 @@ flowchart TD
     `cd_lo`/`cd_hi` are the states the cells of each design row need. A
     run's closing row with an exact state thus needs one probability per
     cell instead of a full transition row.
+  - Impossible runs: when no state can carry probability on a visited row
+    (for example a recorded non-absorbing state, or a missing state under
+    `missing_states = "non_absorbing"`, after a recorded absorbing state), no
+    sequence of states fits the run for any coefficients, so
+    `markov_ml_stop_impossible()` stops before sampling and names the
+    patients, as `orm_markov_ml()`'s forward pass does. Fully observed
+    transitions start in a non-absorbing state and have positive probability
+    for every coefficient value, so they need no such check.
   - `check_rows`: the crossing check still covers every possible origin of
     every recursion row, as before the index lists, reduced to one row per
     distinct `ppo` design row (one row without `ppo`), because whether

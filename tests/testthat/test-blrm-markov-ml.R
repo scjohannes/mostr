@@ -268,6 +268,44 @@ test_that("the recursion visits the previous states that can have probability", 
   }
 })
 
+test_that("data that no sequence of states fits stop before sampling", {
+  data <- ml_oracle_data()
+  formula <- rms::Ocens(y_lo, y_hi) ~ time + tx + yprev
+  # Both patients die (state 4) at time 2. Patient 998's state at time 3 is
+  # missing, and patient 999 is recorded in state 2 at time 3.
+  after_death <- data.frame(
+    id = rep(c(998, 999), each = 3L),
+    time = rep(1:3, 2L),
+    y_lo = c(2, 4, NA, 2, 4, 2),
+    y_hi = c(2, 4, NA, 2, 4, 2),
+    yprev = factor(c(1, 2, NA, 1, 2, NA), levels = 1:3),
+    tx = 0
+  )
+  after_death$y <- after_death$y_lo
+  impossible <- rbind(data, after_death)
+
+  # With missing states restricted to the non-absorbing ones, neither patient
+  # can be alive at time 3 after dying at time 2.
+  expect_error(
+    bayes_setup(impossible, formula, missing_states = "non_absorbing",
+      absorbing_state = 4),
+    "zero probability.*998, 999\\."
+  )
+  # A missing state may be death, so only patient 999 has no possible states.
+  expect_error(
+    bayes_setup(impossible, formula, absorbing_state = 4),
+    "zero probability.*patient\\(s\\) 999\\."
+  )
+
+  # The fitting function stops with this error before compiling or sampling.
+  skip_if_not_installed("rstan")
+  expect_error(
+    blrm_markov_ml(formula, data = impossible, id_var = "id",
+      absorbing_state = 4, missing_states = "non_absorbing"),
+    "zero probability.*998, 999\\."
+  )
+})
+
 test_that("cluster() terms are checked and removed for set-up", {
   data <- ml_oracle_data()
   formula <- y ~ time + tx + yprev + cluster(id)

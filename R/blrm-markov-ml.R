@@ -866,6 +866,7 @@ markov_bayes_stan_data <- function(
 #   allows, as every non-absorbing state can move to every state) that are
 #   not absorbing, with the design row of the transition from each. Cells of
 #   row t are `cell_start[t]` to `cell_end[t]`.
+# Stops, naming the patients, when a run has no possible sequence of states.
 markov_bayes_recursion_index <- function(
   problem,
   seg_start,
@@ -878,13 +879,23 @@ markov_bayes_recursion_index <- function(
   is_origin <- seq_len(K) %in% problem$origins
   is_absorbing <- seq_len(K) %in% problem$absorbing
   from <- vector("list", chain$n)
+  impossible <- integer()
   for (g in seq_along(seg_start)) {
     reach <- seq_len(K) == seg_baseline[[g]]
     for (t in seg_start[[g]]:seg_end[[g]]) {
       from[[t]] <- which(reach & is_origin)
       # Absorbing states only carry their own probability forward.
       reach <- allowed[t, ] & (length(from[[t]]) > 0L | (reach & is_absorbing))
+      # No state can be reached on this row, such as a state other than death
+      # after a recorded death, so no coefficients fit this run.
+      if (!any(reach)) {
+        impossible <- c(impossible, t)
+        break
+      }
     }
+  }
+  if (length(impossible) > 0L) {
+    markov_ml_stop_impossible(chain$ids[impossible])
   }
   n_cells <- lengths(from)
   cell_row <- rep(seq_len(chain$n), n_cells)
