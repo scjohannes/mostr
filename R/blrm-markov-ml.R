@@ -675,17 +675,52 @@ markov_bayes_stan_data <- function(
     )
   }
 
-  weight <- comp$agg_count
-  qr_x <- markov_bayes_qr(X[comp$agg_design, , drop = FALSE], weight)
-  used <- sort(unique(c(comp$agg_design, as.vector(chain$DI))))
-  X_used <- sweep(X[used, , drop = FALSE], 2L, qr_x$xbar) %*% qr_x$Rinv
-
   q <- fit$pppo
   if (q > 0) {
     Z <- blrm_design_matrix(fit, problem$design_data, second = TRUE)
     if (ncol(Z) != q || any(!is.finite(Z))) {
       stop("Internal error: the partial proportional-odds design is invalid.")
     }
+  }
+
+  # Runs of rows that need the forward recursion, and for each row the
+  # previous states that can have probability.
+  if (chain$n) {
+    if (any(diff(chain$segment) < 0L)) {
+      stop("Internal error: chain rows are not grouped by run.")
+    }
+    seg_start <- which(!duplicated(chain$segment))
+    # Rows that allow every state add nothing at the end of a run (their
+    # probabilities add up to 1), so each run stops at its last row that
+    # excludes a state, and runs without such a row are left out.
+    informative <- which(rowSums(chain$C > 0) < K)
+    seg_end <- tapply(informative, chain$segment[informative], max)
+    keep <- as.integer(names(seg_end))
+    seg_start <- seg_start[keep]
+    seg_end <- as.integer(seg_end)
+    seg_baseline <- chain$baseline[keep]
+  } else {
+    seg_start <- seg_end <- seg_baseline <- integer()
+  }
+  recursion <- markov_bayes_recursion_index(problem, seg_start, seg_end,
+    seg_baseline)
+  # The recursion sums over states, so the cumulative probabilities of every
+  # possible previous state on every recursion row must not cross. Whether
+  # they cross depends only on the partial proportional-odds design row, so
+  # one row per distinct `ppo` design row is checked (one row without `ppo`).
+  check_rows <- unique(as.vector(chain$DI))
+  check_rows <- if (q > 0) {
+    check_rows[!duplicated(Z[check_rows, , drop = FALSE])]
+  } else {
+    utils::head(check_rows, 1L)
+  }
+
+  weight <- comp$agg_count
+  qr_x <- markov_bayes_qr(X[comp$agg_design, , drop = FALSE], weight)
+  used <- sort(unique(c(comp$agg_design, recursion$cell_design, check_rows)))
+  X_used <- sweep(X[used, , drop = FALSE], 2L, qr_x$xbar) %*% qr_x$Rinv
+
+  if (q > 0) {
     qr_z <- markov_bayes_qr(Z[comp$agg_design, , drop = FALSE], weight)
     Z_used <- sweep(Z[used, , drop = FALSE], 2L, qr_z$xbar) %*% qr_z$Rinv
     pposcore <- as.numeric(fit$cppo(problem$labels))
@@ -723,19 +758,15 @@ markov_bayes_stan_data <- function(
     )
   }
 
-  if (chain$n) {
-    if (any(diff(chain$segment) < 0L)) {
-      stop("Internal error: chain rows are not grouped by run.")
-    }
-    seg_start <- which(!duplicated(chain$segment))
-    seg_end <- c(seg_start[-1L] - 1L, chain$n)
-    seg_cluster <- if (random_effects) chain$patient[seg_start] else integer()
-    cd_rows <- sort(unique(as.vector(chain$DI)))
-    chain_design <- matrix(match(chain$DI, cd_rows), nrow = chain$n)
-  } else {
-    seg_start <- seg_end <- cd_rows <- seg_cluster <- integer()
-    chain_design <- matrix(integer(), nrow = 0L, ncol = problem$n_origin)
-  }
+  # Design rows used by the cells, with the range of states that the cells
+  # of each need (for probabilities shared by rows without random effects).
+  cd_rows <- sort(unique(recursion$cell_design))
+  cell_cd <- match(recursion$cell_design, cd_rows)
+  cd_factor <- factor(cell_cd, levels = seq_along(cd_rows))
+  cd_lo <- as.integer(tapply(recursion$row_lo[recursion$cell_row], cd_factor,
+    min))
+  cd_hi <- as.integer(tapply(recursion$row_hi[recursion$cell_row], cd_factor,
+    max))
 
   contrast <- markov_bayes_contrast_prior(
     pcontrast,
@@ -768,20 +799,32 @@ markov_bayes_stan_data <- function(
     obs_state = as.array(as.integer(obs$state)),
     obs_count = as.array(as.numeric(obs$count)),
     obs_cluster = as.array(as.integer(obs$cluster)),
-    n_origin = problem$n_origin,
-    origins = as.array(as.integer(problem$origins)),
     n_absorbing = length(problem$absorbing),
     absorbing = as.array(as.integer(problem$absorbing)),
     n_seg = length(seg_start),
-    seg_baseline = as.array(as.integer(chain$baseline)),
+    seg_baseline = as.array(as.integer(seg_baseline)),
     seg_start = as.array(as.integer(seg_start)),
     seg_end = as.array(as.integer(seg_end)),
-    seg_cluster = as.array(as.integer(seg_cluster)),
+    n_chain = chain$n,
+    chain_mask = unname(chain$C),
+    chain_cluster = as.array(
+      if (random_effects) as.integer(chain$patient) else integer()
+    ),
+    row_lo = as.array(recursion$row_lo),
+    row_hi = as.array(recursion$row_hi),
+    row_gappy = as.array(recursion$row_gappy),
+    row_full = as.array(recursion$row_full),
+    cell_start = as.array(recursion$cell_start),
+    cell_end = as.array(recursion$cell_end),
+    n_cell = length(cell_cd),
+    cell_origin = as.array(recursion$cell_origin),
+    cell_cd = as.array(cell_cd),
     n_cd = length(cd_rows),
     cd_rows = as.array(match(cd_rows, used)),
-    n_chain = chain$n,
-    chain_design = chain_design,
-    chain_mask = unname(chain$C),
+    cd_lo = as.array(cd_lo),
+    cd_hi = as.array(cd_hi),
+    n_check = length(check_rows),
+    check_rows = as.array(match(check_rows, used)),
     conc = conc,
     cn = nrow(contrast$C),
     C = contrast$C,
@@ -797,6 +840,7 @@ markov_bayes_stan_data <- function(
   )
   list(
     data = data,
+    design_rows = used,
     xbar = qr_x$xbar,
     Rinv = qr_x$Rinv,
     zbar = qr_z$xbar,
@@ -806,6 +850,60 @@ markov_bayes_stan_data <- function(
     tau_names = fit$tauInfo$name,
     contrast = contrast$contrast,
     ncontrast = ncontrast$contrast
+  )
+}
+
+# Index lists for the forward recursion over the runs `seg_start[g]` to
+# `seg_end[g]` of chain rows, starting from state `seg_baseline[g]`, derived
+# from the masks before sampling:
+# * `row_lo`, `row_hi`: the lowest and highest state allowed on each row; the
+#   recursion computes probabilities of these states only. `row_gappy` marks
+#   rows that also exclude states in between, so the mask is still applied.
+#   `row_full` marks rows that allow every state, whose summed probability is
+#   1.
+# * cells: for each row, the previous states that can have probability (the
+#   run's baseline on its first row; after that, the states the previous row
+#   allows, as every non-absorbing state can move to every state) that are
+#   not absorbing, with the design row of the transition from each. Cells of
+#   row t are `cell_start[t]` to `cell_end[t]`.
+markov_bayes_recursion_index <- function(
+  problem,
+  seg_start,
+  seg_end,
+  seg_baseline
+) {
+  chain <- problem$chain
+  K <- problem$K
+  allowed <- chain$C > 0
+  is_origin <- seq_len(K) %in% problem$origins
+  is_absorbing <- seq_len(K) %in% problem$absorbing
+  from <- vector("list", chain$n)
+  for (g in seq_along(seg_start)) {
+    reach <- seq_len(K) == seg_baseline[[g]]
+    for (t in seg_start[[g]]:seg_end[[g]]) {
+      from[[t]] <- which(reach & is_origin)
+      # Absorbing states only carry their own probability forward.
+      reach <- allowed[t, ] & (length(from[[t]]) > 0L | (reach & is_absorbing))
+    }
+  }
+  n_cells <- lengths(from)
+  cell_row <- rep(seq_len(chain$n), n_cells)
+  cell_origin <- as.integer(unlist(from))
+  cell_design <- chain$DI[cbind(cell_row, match(cell_origin, problem$origins))]
+  row_lo <- max.col(allowed * 1, ties.method = "first")
+  row_hi <- max.col(allowed * 1, ties.method = "last")
+  row_gappy <- rowSums(allowed) < row_hi - row_lo + 1L
+  cell_start <- cumsum(c(1L, n_cells))[seq_len(chain$n)]
+  list(
+    row_lo = as.integer(row_lo),
+    row_hi = as.integer(row_hi),
+    row_gappy = as.integer(row_gappy),
+    row_full = as.integer(row_lo == 1L & row_hi == K & !row_gappy),
+    cell_start = as.integer(cell_start),
+    cell_end = as.integer(cell_start + n_cells - 1L),
+    cell_row = cell_row,
+    cell_origin = cell_origin,
+    cell_design = as.integer(cell_design)
   )
 }
 

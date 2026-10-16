@@ -12,19 +12,53 @@
 // the observed state, and every run of rows with a missing or range-coded
 // state sums over the states the patient could have been in (scaled forward
 // recursion). Given its random intercept, each patient's chain is first order.
+// The recursion computes only the transition probabilities it uses: from the
+// previous states that can have probability (index lists built in R) to the
+// states each row allows.
 
 functions {
-  // Probabilities of the k states for linear predictor `lin` (without the
-  // intercepts) and partial PO term `zeta`. The caller ensures that the
-  // cumulative probabilities decrease across states.
-  row_vector state_probs(vector alpha, real lin, real zeta, vector pposcore) {
-    int k = num_elements(alpha) + 1;
-    row_vector[k] out;
-    vector[k - 1] cum;
-    for (j in 2:k) cum[j - 1] = alpha[j - 1] + lin + pposcore[j] * zeta;
-    out[1] = exp(log1m_inv_logit(cum[1]));
-    for (j in 2:(k - 1)) out[j] = exp(log_inv_logit_diff(cum[j - 1], cum[j]));
-    out[k] = inv_logit(cum[k - 1]);
+  // Linear predictor of P(Y >= j), j = 2..k, of a transition: the entry of
+  // its design row (built for its row and previous state) in the linear
+  // predictors without offset `x0`, plus the offset of its row (0, or the
+  // patient's random intercept).
+  real cum_logit(int j, row_vector x0, real offset) {
+    return x0[j - 1] + offset;
+  }
+
+  // Probabilities of states lo..hi of that transition, as differences of
+  // the cumulative probabilities P(Y >= j). Each of these is held as its
+  // smaller tail, P(Y >= j) or P(Y < j), so that probabilities near 1 are
+  // not subtracted from each other. The caller ensures that the cumulative
+  // probabilities decrease across states.
+  row_vector range_probs(int lo, int hi, row_vector x0, real offset) {
+    int k = num_elements(x0) + 1;
+    row_vector[hi - lo + 1] out;
+    // P(Y >= j) is 1 - tail when `upper` (above 1/2) and tail otherwise.
+    real tail = 0;   // P(Y >= 1) = 1
+    int upper = 1;
+    if (lo > 1) {
+      real x = cum_logit(lo, x0, offset);
+      upper = x > 0;
+      tail = inv_logit(upper ? -x : x);
+    }
+    for (j in lo:hi) {
+      real tail_next = 0;   // P(Y >= k + 1) = 0
+      int upper_next = 0;
+      if (j < k) {
+        real x = cum_logit(j + 1, x0, offset);
+        upper_next = x > 0;
+        tail_next = inv_logit(upper_next ? -x : x);
+      }
+      if (upper == upper_next) {
+        out[j - lo + 1] = upper ? tail_next - tail : tail - tail_next;
+      } else if (upper) {
+        out[j - lo + 1] = 1 - tail - tail_next;
+      } else {
+        out[j - lo + 1] = tail + tail_next - 1;   // crossing
+      }
+      tail = tail_next;
+      upper = upper_next;
+    }
     return out;
   }
 
@@ -60,22 +94,37 @@ data {
   array[Nc == 0 ? 0 : n_obs] int<lower = 1, upper = Nc> obs_cluster;
 
   // Runs of rows that need the recursion, each starting from an observed
-  // state. Rows of a run are consecutive in `chain_design` and `chain_mask`,
-  // whose entries index the `n_cd` design rows in `cd_rows`.
-  int<lower = 1, upper = k> n_origin;
-  array[n_origin] int<lower = 1, upper = k> origins;
+  // state `seg_baseline` and covering rows seg_start..seg_end.
   int<lower = 0, upper = k> n_absorbing;
   array[n_absorbing] int<lower = 1, upper = k> absorbing;
   int<lower = 0> n_seg;
   array[n_seg] int<lower = 1, upper = k> seg_baseline;
   array[n_seg] int<lower = 1> seg_start;
   array[n_seg] int<lower = 1> seg_end;
-  array[Nc == 0 ? 0 : n_seg] int<lower = 1, upper = Nc> seg_cluster;
-  int<lower = 0> n_cd;
-  array[n_cd] int<lower = 1, upper = D> cd_rows;
   int<lower = 0> n_chain;
-  array[n_chain, n_origin] int<lower = 1, upper = n_cd> chain_design;
-  matrix<lower = 0, upper = 1>[n_chain, k] chain_mask;
+  matrix<lower = 0, upper = 1>[n_chain, k] chain_mask;   // allowed states
+  array[Nc == 0 ? 0 : n_chain] int<lower = 1, upper = Nc> chain_cluster;
+  // Lowest and highest allowed state of each row; rows that exclude states in
+  // between are `gappy`, rows that allow every state are `full`.
+  array[n_chain] int<lower = 1, upper = k> row_lo;
+  array[n_chain] int<lower = 1, upper = k> row_hi;
+  array[n_chain] int<lower = 0, upper = 1> row_gappy;
+  array[n_chain] int<lower = 0, upper = 1> row_full;
+  // Cells: the previous states of a row that can have probability, with the
+  // design row (`cd_rows[cell_cd]`) of the transition from each. Cells of row
+  // t are cell_start[t]..cell_end[t].
+  array[n_chain] int<lower = 1> cell_start;
+  array[n_chain] int<lower = 0> cell_end;
+  int<lower = 0> n_cell;
+  array[n_cell] int<lower = 1, upper = k> cell_origin;
+  int<lower = 0> n_cd;
+  array[n_cell] int<lower = 1, upper = n_cd> cell_cd;
+  array[n_cd] int<lower = 1, upper = D> cd_rows;
+  array[n_cd] int<lower = 1, upper = k> cd_lo;  // states needed by the cells
+  array[n_cd] int<lower = 1, upper = k> cd_hi;  // of each design row
+  // Design rows whose cumulative probabilities must not cross.
+  int<lower = 0> n_check;
+  array[n_check] int<lower = 1, upper = D> check_rows;
 
   // Priors.
   real<lower = 0> conc;
@@ -90,6 +139,11 @@ data {
   int<lower = 1, upper = 2> psigma;  // 1 = t(4, rsdmean, rsdsd), 2 = exponential
   array[Nc == 0 ? 0 : 1] real<lower = 0> rsdmean;
   array[Nc == 0 || psigma == 2 ? 0 : 1] real<lower = 0> rsdsd;
+}
+
+transformed data {
+  // Without random effects the offset of every recursion row is 0.
+  int shared = Nc == 0;
 }
 
 parameters {
@@ -134,46 +188,72 @@ model {
   if (n_seg > 0) {
     // Every state's probability enters the sum, so all must be valid.
     int valid = 1;
-    for (c in 1:n_cd) {
-      if (ordered_cum(alpha, zeta[cd_rows[c]], pposcore) == 0) valid = 0;
+    for (c in 1:n_check) {
+      if (ordered_cum(alpha, zeta[check_rows[c]], pposcore) == 0) valid = 0;
     }
     if (valid == 0) {
       target += negative_infinity();
     } else {
-      // Without random intercepts the transition rows are shared by patients.
-      matrix[Nc == 0 ? n_cd : 0, k] P;
-      if (Nc == 0) {
+      // Linear predictors of P(Y >= j), j = 2..k (columns), of the
+      // transitions of the design rows the cells use, before the offset of
+      // their row. The offset is the patient's random intercept, and the
+      // only part of the recursion that random effects change. Without them
+      // it is 0 on every row, so each design row's probabilities are computed
+      // once and shared.
+      matrix[n_cd, k - 1] L = rep_matrix(alpha', n_cd)
+        + rep_matrix(eta[cd_rows], k - 1);
+      vector[shared ? 0 : n_chain] offset;
+      matrix[shared ? n_cd : 0, k] P;
+      if (q > 0) L += zeta[cd_rows] * pposcore[2:k]';
+      if (shared) {
         for (c in 1:n_cd) {
-          P[c] = state_probs(alpha, eta[cd_rows[c]], zeta[cd_rows[c]], pposcore);
+          P[c, cd_lo[c]:cd_hi[c]] = range_probs(cd_lo[c], cd_hi[c], L[c], 0);
         }
+      } else {
+        offset = gamma[chain_cluster];
       }
       for (g in 1:n_seg) {
-        real shift = 0;
         row_vector[k] f = rep_row_vector(0, k);
-        if (Nc > 0) shift = gamma[seg_cluster[g]];
         f[seg_baseline[g]] = 1;
         for (t in seg_start[g]:seg_end[g]) {
+          int lo = row_lo[t];
+          int hi = row_hi[t];
+          int first = cell_start[t];
+          int last = cell_end[t];
           row_vector[k] next_f = rep_row_vector(0, k);
-          real s;
-          for (a in 1:n_origin) {
-            // Origins without probability contribute nothing.
-            if (f[origins[a]] > 0) {
-              int c = chain_design[t, a];
-              if (Nc == 0) {
-                next_f += f[origins[a]] * P[c];
+          if (last >= first) {
+            // Transition probabilities from the cells' previous states.
+            matrix[last - first + 1, hi - lo + 1] Pt;
+            for (c in first:last) {
+              if (shared) {
+                Pt[c - first + 1] = P[cell_cd[c], lo:hi];
               } else {
-                next_f += f[origins[a]] *
-                  state_probs(alpha, eta[cd_rows[c]] + shift, zeta[cd_rows[c]], pposcore);
+                Pt[c - first + 1] = range_probs(lo, hi, L[cell_cd[c]], offset[t]);
               }
+            }
+            if (t == seg_start[g]) {
+              // The run starts with probability 1 at its baseline, its only
+              // cell.
+              next_f[lo:hi] = Pt[1];
+            } else {
+              next_f[lo:hi] = f[cell_origin[first:last]] * Pt;
             }
           }
           for (b in 1:n_absorbing) {
-            next_f[absorbing[b]] += f[absorbing[b]];
+            if (chain_mask[t, absorbing[b]] > 0) {
+              next_f[absorbing[b]] += f[absorbing[b]];
+            }
           }
-          next_f = next_f .* chain_mask[t];
-          s = sum(next_f);
-          target += log(s);
-          f = next_f / s;
+          if (row_gappy[t]) next_f = next_f .* chain_mask[t];
+          if (row_full[t]) {
+            // The probabilities of all states add up to 1.
+            f = next_f;
+          } else {
+            real s = sum(next_f[lo:hi]);
+            target += log(s);
+            // The last row's distribution is not used.
+            if (t < seg_end[g]) f = next_f / s;
+          }
         }
       }
     }

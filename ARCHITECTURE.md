@@ -376,7 +376,7 @@ flowchart TD
     A[Long data with NA / Ocens rows] --> B[markov_ml_check_inputs, markov_bayes_check_ppo]
     B --> C[markov_ml_setup: masks, design rows, runs]
     C --> D[markov_bayes_fit_object: blrm-like metadata, ppo design via rms::Design]
-    D --> E[markov_bayes_stan_data: center and QR on fully observed transitions]
+    D --> E[markov_bayes_stan_data: center and QR on fully observed transitions, recursion index lists]
     E --> F[markov_bayes_stan_model: compile or load cached rstan model]
     F --> G[rstan::sampling]
     G --> H[markov_bayes_draws: undo QR and centering]
@@ -399,28 +399,61 @@ flowchart TD
   checked against `markov_ml_setup()`'s design. `markov_bayes_qr()` centres at
   the count-weighted mean over fully observed transitions and takes the R
   factor of the weighted rows, which equals rmsb's `selectedQr()` on the
-  replicated rows. Only design rows that the likelihood uses are passed.
-  With random intercepts, fully observed transitions are aggregated by
-  (design row, state, patient) instead of (design row, state), and each run
-  carries its patient index (`obs_cluster`, `seg_cluster`; patients are
-  numbered in `markov_ml_setup()`'s `patient_ids` order, which matches
-  rmsb's factor coding of numeric IDs).
+  replicated rows. Only design rows that the likelihood uses are passed
+  (returned as `design_rows`). With random intercepts, fully observed
+  transitions are aggregated by (design row, state, patient) instead of
+  (design row, state), and every fully observed transition and recursion
+  row carries its patient index (`obs_cluster`, `chain_cluster`; patients
+  are numbered in `markov_ml_setup()`'s `patient_ids` order, which matches
+  rmsb's factor coding of the IDs).
   `pcontrast` and `npcontrast` go through `rms::Xcontrast()`
   (`markov_bayes_contrast_prior()`, with `markov_bayes_ppo_contrast_fit()`
   swapping in the `ppo` design).
+- **Recursion index lists** (`markov_bayes_stan_data()` and
+  `markov_bayes_recursion_index()`), derived from the masks before sampling
+  so that the recursion computes only the probabilities it uses:
+  - Each run (`seg_start`, `seg_end`, `seg_baseline`) ends at its last row
+    that excludes a state; rows after it allow every state, add log 1 = 0,
+    and are not visited. Runs without such a row are dropped.
+  - Per row: the lowest and highest allowed state (`row_lo`, `row_hi`), and
+    whether the mask excludes states in between (`row_gappy`, the mask is
+    then applied) or allows every state (`row_full`, the step adds nothing
+    to the likelihood and needs no normalisation).
+  - Cells: for each row, the non-absorbing previous states that can carry
+    probability (the run's baseline on its first row, afterwards the states
+    the previous row allows, since every non-absorbing state reaches every
+    state; absorbing states only carry their own probability), each with
+    the design row of its transition (`cell_cd` into `cd_rows`).
+    `cd_lo`/`cd_hi` are the states the cells of each design row need. A
+    run's closing row with an exact state thus needs one probability per
+    cell instead of a full transition row.
+  - `check_rows`: the crossing check still covers every possible origin of
+    every recursion row, as before the index lists, reduced to one row per
+    distinct `ppo` design row (one row without `ppo`), because whether
+    cumulative probabilities cross depends only on that row.
 - **Likelihood** (Stan `model` block): aggregated fully observed transitions
-  add `count * log P(observed state)`, rejecting a draw only when the
-  cumulative probabilities around that observed state cross, as rmsb does.
-  Runs that need the recursion (consecutive rows, `seg_start`/`seg_end`) use
-  a Stan copy of the scaled forward pass in `markov_ml_forward()`, over full
-  transition rows for the design rows in `cd_rows`; any crossing in those
-  rows rejects the draw because every state's probability enters the sum.
-  Whether cumulative probabilities cross does not depend on the linear
-  predictor, so the check (Stan function `ordered_cum`) runs once per design
-  row. Without random intercepts the transition rows are computed once per
-  design row; with them they are computed per row and origin with the run's
-  `gamma` (Stan function `state_probs`). Origins with zero forward
-  probability are skipped, which leaves the value and gradient unchanged.
+  add `count * log P(observed state)` with `log_inv_logit_diff()`, rejecting
+  a draw only when the cumulative probabilities around that observed state
+  cross, as rmsb does; this is the only active part with nothing missing,
+  and it is kept identical to rmsb's terms. Runs that need the recursion use
+  a Stan copy of the scaled forward pass in `markov_ml_forward()`, restricted
+  to the cells and allowed states; any crossing in a check row rejects the
+  draw because every state's probability can enter the sum (Stan function
+  `ordered_cum`). The matrix `L` holds the linear predictors of
+  `P(Y >= j)` for each cell design row without offset. Each recursion row
+  adds its offset, the patient's random intercept (`offset`, from
+  `chain_cluster`); this offset is the only part of the recursion that
+  random effects change (Stan function `cum_logit`). `range_probs` turns the
+  linear predictors into the probabilities of states `row_lo..row_hi` as
+  differences of inverse logits, holding each cumulative probability as its
+  smaller tail so that probabilities near 1 are not subtracted. Without
+  random effects (`shared`) the offset is 0, so each design row's
+  probabilities are computed once in `P` and shared by the cells. A forward
+  step multiplies the previous state distribution over the cells by the
+  cells' probability matrix (on a run's first row, the baseline's
+  probabilities are used directly), carries absorbing states, applies gappy
+  masks, and adds `log(s)` and normalises except on full rows; the last
+  row's distribution is not normalised.
 - **Draws** (`markov_bayes_draws()`, `markov_bayes_draws_from_array()`):
   slopes and `ppo` coefficients are multiplied by the transposed inverse R
   factors, and intercepts are shifted by `beta . xbar` and
@@ -457,13 +490,30 @@ Contracts with the rest of the package:
   delta inference, as for `blrm_markov()`.
 
 Tests (`tests/testthat/test-blrm-markov-ml.R`) check the QR transformation
-against `selectedQr()` and the back-transformation without Stan. With
-`MOSTR_TEST_STAN=true` they also compare `rstan::log_prob()` with rmsb's
-`lrmconppo` model when nothing is missing (PO, constrained PPO, and random
-intercepts) and with a plain R loop over patients' runs when states are
-missing or range-coded (up to a constant with random intercepts, whose `~`
-priors drop constants), and run small end-to-end fits, including
-`avg_sops()` and `avg_comparisons()` with `include_re = TRUE`.
+against `selectedQr()`, the back-transformation, and the recursion index
+lists (against a forward pass with equal transition probabilities) without
+Stan. With `MOSTR_TEST_STAN=true` they also:
+
+- compare `rstan::log_prob()` with rmsb's `lrmconppo` model when nothing is
+  missing: PO, constrained PPO (`normcppo`, `rcs()` terms in `ppo`),
+  `pcontrast`, `npcontrast`, a non-default `conc`, random intercepts with
+  both `psigma` priors and non-default `rsdmean`/`rsdsd`, and factor and
+  character responses. rmsb's Stan data come from a short `rmsb::blrm()`
+  run, because `standata = TRUE` returns them before the contrast priors
+  are added;
+- pass the Stan-scale draws of a short `blrm_markov()` run through
+  `markov_bayes_draws_from_array()`, check that they reproduce its `draws`,
+  and check that a `blrm_markov_ml()` fit carrying the same draws (random
+  intercepts labelled by `markov_bayes_add_random_effects()`, with IDs whose
+  sorted order differs from their numeric order) gives the same
+  `avg_sops()` and `avg_comparisons()` draws, with and without
+  `include_re`;
+- compare the density with a plain R loop over patients' runs when states
+  are missing or range-coded, under both `missing_states` rules and with
+  masks that have gaps, with and without random intercepts (up to a
+  constant with random intercepts, whose `~` priors drop constants);
+- run small end-to-end fits, including `avg_sops()` and `avg_comparisons()`
+  with `include_re = TRUE`.
 
 ## Dependencies and execution
 
