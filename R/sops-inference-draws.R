@@ -14,8 +14,7 @@ generate_sop_coefficient_draws <- function(
   by,
   return_draws,
   prediction_data = baseline_data,
-  attach_individual_weights = TRUE,
-  use_prediction_weights = TRUE
+  attach_individual_weights = TRUE
 ) {
   out <- list(
     beta_draws = NULL,
@@ -51,21 +50,6 @@ generate_sop_coefficient_draws <- function(
       "`vcov` cannot be supplied when `engine = \"score_bootstrap\"` because ",
       "draws are generated from score perturbations."
     )
-  }
-
-  # Results that are never averaged over the prediction profiles need only the
-  # perturbed coefficients, not the matching patient weights.
-  if (!use_prediction_weights) {
-    out$beta_draws <- generate_score_bootstrap_draws(
-      model = model,
-      baseline_data = NULL,
-      id_var = id_var,
-      n_draws = n_draws,
-      score_weight_dist = score_weight_dist,
-      cluster = cluster,
-      return_baseline_weights = FALSE
-    )$beta_draws
-    return(out)
   }
 
   return_baseline_weights <- !newdata_supplied

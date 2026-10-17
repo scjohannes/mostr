@@ -8,7 +8,10 @@
   `avg_comparisons(by = ...)`. `rmsb::blrm()` fits get posterior intervals
   from paired draws. For frequentist fits, `inferences()` adds intervals with
   `method = "mvn"`, `"score_bootstrap"`, or `"fwb"`, computing each
-  comparison within every draw, and with `method = "delta"` (conditional
+  comparison within every draw; for the stored patients, score-bootstrap and
+  FWB draws carry each patient's weight (`score_weight` or `fwb_weight`), and
+  weighting a draw's comparisons by it reproduces the `avg_comparisons()`
+  draw. Intervals are also available with `method = "delta"` (conditional
   variance) for differences in SOPs or time in states; `vcov()` returns the
   covariance between rows. `plot_comparisons()` draws the comparisons of one
   profile and explains how to plot or average several.

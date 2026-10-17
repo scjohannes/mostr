@@ -179,7 +179,10 @@ fits; \code{\link[stats:vcov]{stats::vcov()}} then returns the covariance betwee
 \item \code{method = "mvn"}, \code{"score_bootstrap"}, or \code{"fwb"} predict every
 profile under each compared value within each coefficient draw or
 weighted refit, and compute the comparisons within that draw before
-forming the intervals.
+forming the intervals. For the stored profiles, score-bootstrap and FWB
+draws also carry each patient's weight in that draw (\code{score_weight} or
+\code{fwb_weight}); averaging a draw's comparisons with these weights
+reproduces the \code{\link[=avg_comparisons]{avg_comparisons()}} draw. See \code{\link[=get_draws]{get_draws()}}.
 }
 The ordinary resampling bootstrap (\code{method = "bootstrap"}) is not
 available, because a resampled data set can lack outcome states that the

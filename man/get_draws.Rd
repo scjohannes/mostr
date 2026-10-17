@@ -20,7 +20,7 @@ A data frame with columns:
 \item estimate: The original point estimate from the model
 \item conf.low, conf.high, std.error: Summary statistics from the point estimate object
 \item fwb_weight or score_weight: Optional draw-specific patient weight
-for eligible ungrouped stored-data \code{sops()} draws
+for eligible ungrouped stored-data \code{sops()} or \code{\link[=comparisons]{comparisons()}} draws
 \item Additional columns from the original object (covariates, etc.)
 }
 Each row represents one draw for a specific result row.
@@ -38,8 +38,12 @@ that all metadata is preserved. To avoid conflict, the \code{estimate} column fr
 the draws is renamed to \code{draw}.
 
 Draw-specific patient weights are included only when they are meaningful for
-manual downstream averaging: ungrouped \code{sops()} output from FWB or score
-bootstrap on the stored empirical prediction cohort. They are not included for
+manual downstream averaging: ungrouped \code{sops()} and \code{\link[=comparisons]{comparisons()}} output
+from FWB or score bootstrap on the stored empirical prediction cohort. For
+\code{\link[=comparisons]{comparisons()}} draws, the weighted mean of a draw's comparisons,
+\eqn{\sum_i w_i x_i / \sum_i w_i} over patients \eqn{i} with weights
+\eqn{w_i} and draw values \eqn{x_i}, reproduces the corresponding
+\code{\link[=avg_comparisons]{avg_comparisons()}} draw. They are not included for
 \code{avg_sops()} or grouped \code{sops()} because those draws are already averaged, and
 they are not included when the original SOP object used user-supplied
 prediction profiles. The column names \code{fwb_weight} and \code{score_weight} are

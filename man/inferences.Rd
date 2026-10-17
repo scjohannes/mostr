@@ -132,9 +132,9 @@ the object also has \code{statistic}, \code{p.value}, and \code{s.value} columns
 For simulation and bootstrap methods, \code{return_draws = TRUE} also stores a
 \code{"draws"} attribute containing all individual draws. Delta results instead
 store a low-rank \code{"analytical"} attribute and never store draws. For
-ungrouped \code{sops()} objects evaluated on the stored prediction
-cohort, score-bootstrap and FWB draws include the draw-specific
-\code{score_weight} or \code{fwb_weight} column.
+ungrouped \code{sops()} objects and \code{\link[=comparisons]{comparisons()}} results evaluated on the
+stored prediction cohort, score-bootstrap and FWB draws include the
+draw-specific \code{score_weight} or \code{fwb_weight} column.
 }
 \description{
 Adds confidence intervals to SOP, average-time, and comparison objects using
@@ -245,11 +245,13 @@ because ordinary resampling can drop outcome-state support needed by fixed
 individual prediction rows. Fractional weighted bootstrap keeps every row in
 the refit data with positive patient-level weights, so it is available for
 individual \code{sops()} objects. The same holds for \code{\link[=comparisons]{comparisons()}} results,
-which also support \code{method = "mvn"} and \code{method = "score_bootstrap"}; there
-the patient weights affect only the refits or coefficient draws, because
-each profile's comparison is not averaged. For FWB, the same patient weights used for
+which also support \code{method = "mvn"} and \code{method = "score_bootstrap"}. For
+FWB, the same patient weights used for
 refitting are used for marginal or subgroup averaging. Ungrouped stored-data
-\code{sops()} draws expose the patient weight as \code{fwb_weight}; grouped \code{sops()} and
+\code{sops()} draws and stored-data \code{\link[=comparisons]{comparisons()}} draws expose the patient
+weight as \code{fwb_weight} (or \code{score_weight} for the score bootstrap);
+averaging each draw's comparisons with these weights reproduces the
+\code{\link[=avg_comparisons]{avg_comparisons()}} draws. Grouped \code{sops()} and
 \code{avg_sops()} use the weights internally and return already averaged draws.
 Prediction data for such ungrouped draw output must not already contain a
 column named \code{fwb_weight} or \code{score_weight}, because those names are reserved

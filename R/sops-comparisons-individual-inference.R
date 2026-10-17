@@ -40,7 +40,8 @@ inferences_comparisons <- function(
       n_boot = n_draws,
       workers = workers,
       update_datadist = update_datadist,
-      use_coefstart = use_coefstart
+      use_coefstart = use_coefstart,
+      return_draws = return_draws
     )
   } else {
     comparison_simulation_draws(
@@ -51,7 +52,8 @@ inferences_comparisons <- function(
       n_draws = n_draws,
       vcov = vcov,
       cluster = cluster,
-      workers = workers
+      workers = workers,
+      return_draws = return_draws
     )
   }
 
@@ -73,11 +75,19 @@ inferences_comparisons <- function(
       comparison_key_columns(object),
       drop = FALSE
     ]
-    attr(result, "draws") <- posterior_draw_matrix_to_df(
+    draws_df <- posterior_draw_matrix_to_df(
       draws$values,
       keys,
       draws$draw_ids
     )
+    # Each row gets its patient's weight in that draw, in the same
+    # draw-by-row order as the estimates.
+    if (isTRUE(draws$metadata$draw_weights_attached)) {
+      draws_df[[draws$metadata$draw_weight_col]] <- as.vector(t(
+        draws$weights[, keys$rowid, drop = FALSE]
+      ))
+    }
+    attr(result, "draws") <- draws_df
   }
   result
 }
@@ -301,11 +311,13 @@ comparison_simulation_draws <- function(
   n_draws,
   vcov,
   cluster,
-  workers
+  workers,
+  return_draws
 ) {
-  # Comparisons for each profile are not averaged, so no patient weights are
-  # drawn or attached.
-  beta_draws <- generate_sop_coefficient_draws(
+  # Score-bootstrap patient weights are not used here, because nothing is
+  # averaged, but they are returned with the draws as `score_weight`, as for
+  # `sops()`, so the profiles' comparisons can be averaged afterwards.
+  simulation_draws <- generate_sop_coefficient_draws(
     model = model,
     engine = engine,
     score_weight_dist = "exponential",
@@ -317,10 +329,10 @@ comparison_simulation_draws <- function(
     newdata_supplied = setup$newdata_supplied,
     is_avg = FALSE,
     by = NULL,
-    return_draws = FALSE,
-    prediction_data = setup$newdata_pred,
-    use_prediction_weights = FALSE
-  )$beta_draws
+    return_draws = return_draws,
+    prediction_data = setup$newdata_pred
+  )
+  beta_draws <- simulation_draws$beta_draws
   predict_array <- comparison_coefficient_predictor(model, setup)
 
   analysis_fn <- function(i) {
@@ -352,10 +364,25 @@ comparison_simulation_draws <- function(
   if (length(successful) == 0L) {
     stop("All simulation draws failed.")
   }
+  weights <- simulation_draws$baseline_weights_draws
+  weight_col <- simulation_draws$draw_weight_col
   list(
     values = do.call(rbind, results[successful]),
     draw_ids = successful,
-    metadata = list(n_successful = length(successful))
+    weights = if (!is.null(weight_col) && !is.null(weights)) {
+      weights[successful, , drop = FALSE]
+    },
+    metadata = c(
+      list(n_successful = length(successful)),
+      if (identical(engine, "score_bootstrap")) {
+        list(
+          draw_weights_attached = simulation_draws$draw_weights_attached,
+          draw_weight_col = weight_col,
+          draw_weight_omission_reason =
+            simulation_draws$draw_weight_omission_reason
+        )
+      }
+    )
   )
 }
 
@@ -367,14 +394,27 @@ comparison_fwb_draws <- function(
   n_boot,
   workers,
   update_datadist,
-  use_coefstart
+  use_coefstart,
+  return_draws
 ) {
   refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, setup$id_var, setup$time_var)
   factor_cols <- intersect(c("y", setup$p_var, setup$p2_var), names(refit_data))
 
-  # The patient weights enter only through the refits: the profiles' own
-  # comparisons are not averaged.
+  # The patient weights enter the comparisons only through the refits, but,
+  # as for `sops()`, the stored patients' weights are returned with the draws
+  # as `fwb_weight` so the comparisons can be averaged afterwards. Supplied
+  # profiles cannot be matched to the bootstrap patients.
+  weight_col <- if (setup$newdata_supplied) NULL else "fwb_weight"
+  if (is.null(weight_col)) {
+    if (isTRUE(return_draws)) {
+      warn_fixed_profile_draw_weights("FWB")
+    }
+  } else {
+    validate_prediction_weight_ids(setup$baseline_data, setup$id_var)
+    validate_draw_weight_column_available(setup$newdata_pred, weight_col)
+  }
+
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
     boot_result <- bootstrap_analysis_wrapper(
       boot_data = boot_data,
@@ -419,7 +459,12 @@ comparison_fwb_draws <- function(
     if (is.null(sops_array)) {
       return(NULL)
     }
-    reduce_draw(sops_array)
+    list(
+      estimate = reduce_draw(sops_array),
+      weight = if (!is.null(weight_col)) {
+        fwb_baseline_weights(fwb_weights, setup$baseline_data, setup$id_var)
+      }
+    )
   }
 
   fwb_samples <- generate_fwb_bootstrap_weights(
@@ -441,7 +486,8 @@ comparison_fwb_draws <- function(
       "factor_cols",
       "update_datadist",
       "use_coefstart",
-      "reduce_draw"
+      "reduce_draw",
+      "weight_col"
     )
   )
   results <- Filter(Negate(is.null), results)
@@ -449,11 +495,19 @@ comparison_fwb_draws <- function(
     stop("All bootstrap iterations failed.")
   }
   list(
-    values = do.call(rbind, results),
+    values = do.call(rbind, lapply(results, `[[`, "estimate")),
     draw_ids = seq_along(results),
+    weights = if (!is.null(weight_col)) {
+      do.call(rbind, lapply(results, `[[`, "weight"))
+    },
     metadata = list(
       n_boot = n_boot,
       n_successful = length(results),
+      draw_weights_attached = !is.null(weight_col) && isTRUE(return_draws),
+      draw_weight_col = weight_col,
+      draw_weight_omission_reason = if (is.null(weight_col)) {
+        "user_supplied_newdata"
+      },
       fwb_weight_type = "exponential",
       fwb_weight_scale = "cluster_mean_1"
     )

@@ -127,6 +127,10 @@ test_that("comparisons() starts real-time totals from a set starting state", {
   expect_equal(mean(unit$estimate), average$estimate, tolerance = 1e-10)
   stored <- attr(unit, "comparison_baseline_data")
   expect_equal(unit$yprev, stored$yprev[unit$rowid])
+  # Stored starting profiles carry internal bookkeeping columns that are not
+  # patient variables.
+  expect_true(".markov_source_row" %in% names(stored))
+  expect_false(any(startsWith(names(unit), ".markov_")))
 })
 
 test_that("comparisons(by = ) hands off to avg_comparisons()", {
@@ -318,15 +322,15 @@ test_that("posterior comparisons summarize paired draws for each profile", {
 
 # Draws of paired SOP differences in state `state` for each profile, from one
 # `sops()` call on the profiles stacked under `tx = 0` and `tx = 1`, so both
-# scenarios share each coefficient draw or refit.
-paired_sop_draws <- function(case, method, n_draws, seed, state = "1") {
+# scenarios share each coefficient draw or refit. `...` goes to `sops()`.
+paired_sop_draws <- function(case, method, n_draws, seed, state = "1", ...) {
   lo <- case$profiles
   lo$tx <- 0
   hi <- case$profiles
   hi$tx <- 1
   # User-supplied profiles get no draw weights; that warning is expected.
   inferred <- suppressWarnings(inferences(
-    sops(case$model, newdata = rbind(lo, hi), times = 1:4, absorb = 3),
+    sops(case$model, newdata = rbind(lo, hi), times = 1:4, absorb = 3, ...),
     method = method,
     n_draws = n_draws,
     seed = seed
@@ -364,17 +368,32 @@ test_that("draw-based intervals reduce each draw to paired profile comparisons",
     list(method = "score_bootstrap", n_draws = 6L, seed = 102),
     list(method = "fwb", n_draws = 3L, seed = 103)
   )) {
-    inferred <- inferences(
-      cmp,
-      method = setting$method,
-      n_draws = setting$n_draws,
-      seed = setting$seed
-    )
+    run <- function() {
+      inferences(
+        cmp,
+        method = setting$method,
+        n_draws = setting$n_draws,
+        seed = setting$seed
+      )
+    }
+    # Supplied profiles cannot be matched to the bootstrap patients, so the
+    # patient-weighted methods warn that no draw weights are attached.
+    if (identical(setting$method, "mvn")) {
+      inferred <- run()
+    } else {
+      expect_warning(inferred <- run(), "draw weights were not attached")
+      expect_false(attr(inferred, "draw_weights_attached"))
+      expect_identical(
+        attr(inferred, "draw_weight_omission_reason"),
+        "user_supplied_newdata"
+      )
+    }
     expect_s3_class(inferred, "markov_comparisons")
     expect_identical(attr(inferred, "method"), setting$method)
     expect_equal(inferred$estimate, cmp$estimate)
     draws <- attr(inferred, "draws")
     expect_identical(nrow(draws), setting$n_draws * nrow(cmp))
+    expect_false(any(c("score_weight", "fwb_weight") %in% names(draws)))
     expected <- paired_sop_draws(
       case,
       setting$method,
@@ -439,6 +458,57 @@ test_that("averaging real-time comparison draws reproduces avg_comparisons()", {
   }
 })
 
+test_that("weighted averages of profile draws reproduce avg_comparisons()", {
+  case <- make_comparisons_case()
+  args <- list(
+    case$model,
+    variables = list(tx = c(0, 1)),
+    state_sets = "1",
+    times = 1:4,
+    absorb = 3
+  )
+  for (setting in list(
+    list(method = "score_bootstrap", n_draws = 4L, seed = 301),
+    list(method = "fwb", n_draws = 3L, seed = 302)
+  )) {
+    weight_col <- if (setting$method == "fwb") "fwb_weight" else "score_weight"
+    unit <- inferences(
+      do.call(comparisons, args),
+      method = setting$method,
+      n_draws = setting$n_draws,
+      seed = setting$seed
+    )
+    average <- inferences(
+      do.call(avg_comparisons, args),
+      method = setting$method,
+      n_draws = setting$n_draws,
+      seed = setting$seed
+    )
+    expect_true(attr(unit, "draw_weights_attached"))
+    expect_identical(attr(unit, "draw_weight_col"), weight_col)
+    draws <- attr(unit, "draws")
+    expect_true(weight_col %in% names(draws))
+    # One weight per patient and draw, shared by all of that patient's rows.
+    n_profiles <- length(unique(draws$rowid))
+    expect_identical(
+      nrow(unique(draws[, c("draw_id", "rowid", weight_col)])),
+      setting$n_draws * n_profiles
+    )
+    expect_true(weight_col %in% names(get_draws(unit)))
+
+    key <- paste(draws$draw_id, draws$time)
+    weights <- draws[[weight_col]]
+    manual <- c(tapply(draws$estimate * weights, key, sum)) /
+      c(tapply(weights, key, sum))
+    average_draws <- attr(average, "draws")
+    expect_equal(
+      unname(manual[paste(average_draws$draw_id, average_draws$time)]),
+      average_draws$estimate,
+      tolerance = 1e-10
+    )
+  }
+})
+
 test_that("comparison intervals add null tests and replace earlier inference", {
   case <- make_comparisons_case()
   cmp <- comparisons(
@@ -493,4 +563,96 @@ test_that("comparison inference rejects unsupported methods and large draws", {
     inferences(cmp, n_draws = 5),
     "mostr.max_sops_draw_cells"
   )
+})
+
+# Checks one model setup end to end: point estimates against paired `sops()`
+# differences, every draw method against paired `sops()` draws, and
+# real-time totals against `avg_comparisons()`. `...` goes to every call.
+expect_comparisons_match_paired_sops <- function(case, ...) {
+  cmp <- comparisons(
+    case$model,
+    newdata = case$profiles,
+    variables = list(tx = c(0, 1)),
+    state_sets = "1",
+    times = 1:4,
+    absorb = 3,
+    ...
+  )
+  lo <- sops_with_value(case, "tx", 0, ...)
+  hi <- sops_with_value(case, "tx", 1, ...)
+  keep <- as.character(hi$state) == "1"
+  expect_identical(as.character(cmp$time), as.character(hi$time[keep]))
+  expect_equal(cmp$estimate, hi$estimate[keep] - lo$estimate[keep])
+
+  for (setting in list(
+    list(method = "mvn", n_draws = 5L, seed = 401),
+    list(method = "score_bootstrap", n_draws = 4L, seed = 402),
+    list(method = "fwb", n_draws = 2L, seed = 403)
+  )) {
+    inferred <- suppressWarnings(inferences(
+      cmp,
+      method = setting$method,
+      n_draws = setting$n_draws,
+      seed = setting$seed
+    ))
+    draws <- attr(inferred, "draws")
+    expected <- paired_sop_draws(
+      case,
+      setting$method,
+      setting$n_draws,
+      setting$seed,
+      ...
+    )
+    index <- match(
+      paste(draws$rowid, draws$time, draws$draw_id),
+      paste(expected$rowid, expected$time, expected$draw_id)
+    )
+    expect_false(anyNA(index))
+    expect_equal(draws$estimate, expected$estimate[index], tolerance = 1e-10)
+  }
+
+  args <- list(
+    case$model,
+    variables = list(tx = c(0, 1)),
+    estimand = "time_in_state",
+    state_sets = "1",
+    times = 1:4,
+    absorb = 3,
+    time_map = case$time_map,
+    ...
+  )
+  unit <- inferences(
+    do.call(comparisons, args),
+    method = "mvn",
+    n_draws = 4,
+    seed = 404
+  )
+  average <- inferences(
+    do.call(avg_comparisons, args),
+    method = "mvn",
+    n_draws = 4,
+    seed = 404
+  )
+  expect_equal(mean(unit$estimate), average$estimate, tolerance = 1e-10)
+  unit_means <- stats::aggregate(estimate ~ draw_id, attr(unit, "draws"), mean)
+  average_draws <- attr(average, "draws")
+  expect_equal(
+    unit_means$estimate,
+    average_draws$estimate[match(unit_means$draw_id, average_draws$draw_id)],
+    tolerance = 1e-10
+  )
+  invisible(cmp)
+}
+
+test_that("comparisons() works with factor visit times", {
+  case <- make_factor_comparisons_case()
+  cmp <- expect_comparisons_match_paired_sops(case)
+  expect_identical(as.character(unique(cmp$time)), as.character(1:4))
+})
+
+test_that("comparisons() works with second-order models", {
+  case <- make_second_order_comparisons_case()
+  cmp <- expect_comparisons_match_paired_sops(case, p2_var = "ypprev")
+  expect_identical(attr(cmp, "p2_var"), "ypprev")
+  expect_error(inferences(cmp, method = "delta"), "second-order")
 })

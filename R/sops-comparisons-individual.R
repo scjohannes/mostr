@@ -75,7 +75,10 @@
 #'   \item `method = "mvn"`, `"score_bootstrap"`, or `"fwb"` predict every
 #'     profile under each compared value within each coefficient draw or
 #'     weighted refit, and compute the comparisons within that draw before
-#'     forming the intervals.
+#'     forming the intervals. For the stored profiles, score-bootstrap and FWB
+#'     draws also carry each patient's weight in that draw (`score_weight` or
+#'     `fwb_weight`); averaging a draw's comparisons with these weights
+#'     reproduces the [avg_comparisons()] draw. See [get_draws()].
 #' }
 #' The ordinary resampling bootstrap (`method = "bootstrap"`) is not
 #' available, because a resampled data set can lack outcome states that the
@@ -314,9 +317,11 @@ resolve_comparisons_by <- function(by) {
 
 # Profile columns are copied into the output next to the comparison columns,
 # so they must not reuse those names. The profile's visit column is dropped:
-# it holds the starting visit, not a prediction time.
+# it holds the starting visit, not a prediction time. So are columns that
+# mostr adds for its own bookkeeping, such as `.markov_source_row`.
 comparison_profile_columns <- function(baseline_data, time_var, estimand) {
   profile_cols <- setdiff(names(baseline_data), c("rowid", time_var))
+  profile_cols <- profile_cols[!startsWith(profile_cols, ".markov_")]
   reserved <- c(
     "estimand",
     "state_set",

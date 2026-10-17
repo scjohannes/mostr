@@ -107,9 +107,9 @@
 #'   For simulation and bootstrap methods, `return_draws = TRUE` also stores a
 #'   `"draws"` attribute containing all individual draws. Delta results instead
 #'   store a low-rank `"analytical"` attribute and never store draws. For
-#'   ungrouped `sops()` objects evaluated on the stored prediction
-#'   cohort, score-bootstrap and FWB draws include the draw-specific
-#'   `score_weight` or `fwb_weight` column.
+#'   ungrouped `sops()` objects and [comparisons()] results evaluated on the
+#'   stored prediction cohort, score-bootstrap and FWB draws include the
+#'   draw-specific `score_weight` or `fwb_weight` column.
 #'
 #' @details
 #' ## Analytical Delta Method
@@ -206,11 +206,13 @@
 #' individual prediction rows. Fractional weighted bootstrap keeps every row in
 #' the refit data with positive patient-level weights, so it is available for
 #' individual `sops()` objects. The same holds for [comparisons()] results,
-#' which also support `method = "mvn"` and `method = "score_bootstrap"`; there
-#' the patient weights affect only the refits or coefficient draws, because
-#' each profile's comparison is not averaged. For FWB, the same patient weights used for
+#' which also support `method = "mvn"` and `method = "score_bootstrap"`. For
+#' FWB, the same patient weights used for
 #' refitting are used for marginal or subgroup averaging. Ungrouped stored-data
-#' `sops()` draws expose the patient weight as `fwb_weight`; grouped `sops()` and
+#' `sops()` draws and stored-data [comparisons()] draws expose the patient
+#' weight as `fwb_weight` (or `score_weight` for the score bootstrap);
+#' averaging each draw's comparisons with these weights reproduces the
+#' [avg_comparisons()] draws. Grouped `sops()` and
 #' `avg_sops()` use the weights internally and return already averaged draws.
 #' Prediction data for such ungrouped draw output must not already contain a
 #' column named `fwb_weight` or `score_weight`, because those names are reserved

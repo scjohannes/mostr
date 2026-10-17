@@ -37,3 +37,51 @@ sops_with_value <- function(case, var, value, times = 1:4, ...) {
   profiles[[var]] <- value
   sops(case$model, newdata = profiles, times = times, absorb = 3, ...)
 }
+
+# The same trajectories with visits stored as a factor, so the model has one
+# coefficient per visit and `first_followup_time` must be given explicitly.
+make_factor_comparisons_case <- function() {
+  case <- make_comparisons_case()
+  data <- case$data
+  data$time <- factor(data$time, levels = sort(unique(data$time)))
+  model <- vglm_markov(
+    ordered(y) ~ time + tx + marker + yprev,
+    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+    data = data,
+    first_followup_time = "1",
+    id_var = "id"
+  )
+  list(
+    model = model,
+    data = data,
+    profiles = data[data$time == "1", , drop = FALSE],
+    time_map = case$time_map
+  )
+}
+
+# The same trajectories with the state two visits back, `ypprev`, for a
+# second-order model. Before the first visit only one state is known, so
+# `ypprev` repeats `yprev` there.
+make_second_order_comparisons_case <- function() {
+  case <- make_comparisons_case()
+  data <- case$data[order(case$data$id, case$data$time), , drop = FALSE]
+  data$ypprev <- stats::ave(
+    as.integer(as.character(data$yprev)),
+    data$id,
+    FUN = function(x) c(x[1L], utils::head(x, -1L))
+  )
+  data$ypprev <- factor(data$ypprev, levels = levels(data$yprev))
+  model <- vglm_markov(
+    ordered(y) ~ time + tx + yprev + ypprev,
+    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+    data = data,
+    first_followup_time = 1,
+    id_var = "id"
+  )
+  list(
+    model = model,
+    data = data,
+    profiles = data[data$time == 1, , drop = FALSE],
+    time_map = case$time_map
+  )
+}

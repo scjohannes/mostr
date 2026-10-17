@@ -264,7 +264,9 @@ flowchart TD
   `time_benefit_from_counterfactual_array()` also uses before averaging.
 - The output keeps each profile's observed covariates and starting state; the
   compared variable keeps its observed value, and the profile's visit column is
-  dropped because output times are prediction times.
+  dropped because output times are prediction times. Bookkeeping columns that
+  mostr adds to stored profiles (names starting with `.markov_`, such as
+  `.markov_source_row`) are dropped too.
 - For `blrm`, every posterior draw is reduced to the same rows, and
   `summarize_posterior_draw_matrix()` summarizes them column by column, so
   estimates come from paired draws rather than from SOP summaries. Draws are
@@ -280,14 +282,23 @@ frequentist ones to `inferences_comparisons()`
 (`R/sops-comparisons-individual-inference.R`):
 
 - `method = "mvn"` and `"score_bootstrap"` draw coefficients with
-  `generate_sop_coefficient_draws(use_prediction_weights = FALSE)`, which skips
-  the patient weights used for averaging, and predict the stacked profiles
-  through the compiled execution plan (`comparison_coefficient_predictor()`,
-  with the `soprob_markov()` fallback). `method = "fwb"` refits with
-  `bootstrap_analysis_wrapper()` on the stored refit data and predicts the same
-  stacked profiles. The ordinary resampling bootstrap is rejected, as for
-  individual `sops()`. `sets_starting_state()` covers only averaged classes,
-  so a set starting state keeps these methods: no patient average is formed.
+  `generate_sop_coefficient_draws()`, as for individual `sops()`, and predict
+  the stacked profiles through the compiled execution plan
+  (`comparison_coefficient_predictor()`, with the `soprob_markov()` fallback).
+  `method = "fwb"` refits with `bootstrap_analysis_wrapper()` on the stored
+  refit data and predicts the same stacked profiles. The ordinary resampling
+  bootstrap is rejected, as for individual `sops()`. `sets_starting_state()`
+  covers only averaged classes, so a set starting state keeps these methods:
+  no patient average is formed.
+- The comparisons are not averaged, but for stored profiles the score-bootstrap
+  and FWB patient weights of each draw are kept (`baseline_weights_draws`, or
+  `fwb_baseline_weights()` per refit) and returned with the draws as
+  `score_weight` or `fwb_weight`, matched to rows by `rowid`, with the same
+  `draw_weights_attached`, `draw_weight_col`, and
+  `draw_weight_omission_reason` metadata as `sops()`. The weighted mean of a
+  draw's comparisons equals the `avg_comparisons()` draw. Supplied profiles
+  cannot be matched to bootstrap patients, so they get no weights and the
+  same warning as `sops()`.
 - `comparison_draw_reducer()` turns each draw's stacked array into the result
   rows immediately: visit-scale estimands reshape it
   (`stacked_to_counterfactual_array()`) for `individual_comparisons_from_array()`;
@@ -300,7 +311,8 @@ frequentist ones to `inferences_comparisons()`
   to rows by position. `validate_comparison_draw_cells()` stops before drawing
   when draws x rows exceeds `mostr.max_sops_draw_cells`.
 - Intervals come from `summarize_sop_draw_matrix()`; returned draws carry only
-  the comparison key columns, and `get_draws()` joins the profile columns.
+  the comparison key columns (plus any draw weight), and `get_draws()` joins
+  the profile columns.
   Earlier inference columns and metadata are cleared first
   (`clear_comparison_inference()`).
 

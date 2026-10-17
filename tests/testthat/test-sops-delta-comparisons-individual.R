@@ -153,3 +153,59 @@ test_that("delta comparison inference keeps its restrictions", {
   )
   expect_true(all(is.finite(scored$std.error)))
 })
+
+test_that("delta comparisons handle factor visit times", {
+  case <- make_factor_comparisons_case()
+  cmp <- comparisons(
+    case$model,
+    newdata = case$profiles,
+    variables = list(tx = c(0, 1)),
+    state_sets = "1",
+    times = 1:4,
+    absorb = 3
+  )
+  inferred <- inferences(cmp, method = "delta")
+  lo <- case$profiles
+  lo$tx <- 0
+  hi <- case$profiles
+  hi$tx <- 1
+  ind <- inferences(
+    sops(case$model, newdata = rbind(lo, hi), times = 1:4, absorb = 3),
+    method = "delta"
+  )
+  ind_jacobian <- get_jacobian(ind)
+  ind_key <- paste(ind$rowid, ind$time, ind$state)
+  n <- nrow(case$profiles)
+  expected <- ind_jacobian[
+    match(paste(cmp$rowid + n, cmp$time, "1"), ind_key),
+    ,
+    drop = FALSE
+  ] -
+    ind_jacobian[match(paste(cmp$rowid, cmp$time, "1"), ind_key), , drop = FALSE]
+  expect_equal(
+    unname(get_jacobian(inferred)),
+    unname(expected),
+    tolerance = 1e-10
+  )
+
+  args <- list(
+    case$model,
+    variables = list(tx = c(0, 1)),
+    estimand = "time_in_state",
+    state_sets = "1",
+    times = 1:4,
+    absorb = 3,
+    time_map = case$time_map
+  )
+  unit <- inferences(do.call(comparisons, args), method = "delta")
+  average <- inferences(
+    do.call(avg_comparisons, args),
+    method = "delta",
+    vcov = "conditional"
+  )
+  expect_equal(
+    colMeans(get_jacobian(unit)),
+    get_jacobian(average)[1, ],
+    tolerance = 1e-10
+  )
+})
