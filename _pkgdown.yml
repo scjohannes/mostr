@@ -26,6 +26,7 @@ reference:
       - avg_sops
       - avg_time
       - avg_comparisons
+      - comparisons
       - inferences
       - time_in_state
       - interpolate_sops

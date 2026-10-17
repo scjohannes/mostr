@@ -62,7 +62,7 @@ flowchart TD
     A[Longitudinal ordinal data] --> B[prepare_markov_data]
     G[Markov generators] --> B
     B --> C[orm_markov / vglm_markov / blrm_markov]
-    C --> D[sops / avg_sops / avg_comparisons]
+    C --> D[sops / avg_sops / comparisons / avg_comparisons]
     D --> E[inferences]
     E --> F[Plots / time_in_state / vcov]
     C --> H[Transition and correlation diagnostics]
@@ -75,7 +75,7 @@ flowchart TD
 | Data generation | `R/simulate-markov.R`, `R/lp_violet.R`, `R/simulate-native.R` | `sim_trajectories_markov`, `sim_actt1_markov`, `sim_actt2_markov`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
-| Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R` | `sops`, `avg_sops`, `avg_time`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts |
+| Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R` | `sops`, `avg_sops`, `avg_time`, `comparisons`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts for each profile or averaged |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
@@ -85,8 +85,9 @@ flowchart TD
 Longitudinal rows use `id`, `time`, `y`, `yprev`, and covariates such as `tx`.
 Wrappers preserve the patient starting profiles used when `newdata` is omitted.
 Second-order workflows additionally carry `ypprev` or the configured second lag.
-The `markov_sops`, `markov_avg_sops`, `markov_avg_time`, and
-`markov_avg_comparisons` S3 classes describe result semantics. Package-qualified
+The `markov_sops`, `markov_avg_sops`, `markov_avg_time`,
+`markov_comparisons`, and `markov_avg_comparisons` S3 classes describe result
+semantics. Package-qualified
 calls, native registration symbols, and package options use `mostr`.
 
 `inferences()` adds Wald null tests (`statistic`, `p.value`, `s.value`, and a
@@ -103,7 +104,8 @@ fire only when the user supplied a numeric null.
 Ordinary and fractional weighted bootstrap refits (`update_bootstrap_model()` in
 `R/bootstrap_helpers.R`) are restricted to wrapper fits. They always resample
 the refit data stored on the fit (`markov_model_refit_data()`); the public API
-(`sops()`, `avg_sops()`, `avg_comparisons()`, `avg_time()`, and the plots) has
+(`sops()`, `avg_sops()`, `comparisons()`, `avg_comparisons()`, `avg_time()`,
+and the plots) has
 no argument for separate refit data. SOP results carry the stored data in their
 internal `refit_data` attribute, and `stored_refit_bootstrap_data()` in
 `R/sops-bootstrap-inference.R` reads it back or errors when a model has none.
@@ -219,6 +221,62 @@ Time inference uses Wald intervals and the existing memory guards and covariance
 accessors; it does not modify the native recursion or infer uncertainty by
 interpolating standard errors. Fresh replay replaces previous uncertainty
 metadata when callers change inference methods.
+
+### Comparisons for each profile
+
+`comparisons()` (`R/sops-comparisons-individual.R`) returns one comparison per
+prediction profile instead of their average. Its arguments and estimands match
+`avg_comparisons()`. As in marginaleffects, `by = TRUE` or a character `by`
+returns `avg_comparisons()` with the same arguments (`resolve_comparisons_by()`),
+so averaged ratios remain ratios of averaged summaries; only `by = FALSE` or
+`NULL` reaches the code described here.
+
+```mermaid
+flowchart TD
+    A[comparisons] --> B[avg_comparison_setup: one copy of the profiles per value]
+    B --> C[sops on the stacked copies]
+    C --> D{time_map and a time total?}
+    D -- yes --> E[interpolate_sops]
+    D -- no --> F[counterfactual_array_from_tidy]
+    E --> F
+    F --> G[individual_comparisons_from_array]
+    G --> H[add_comparison_profile_columns]
+    H --> I[set_avg_comparison_attrs, class markov_comparisons]
+```
+
+- Argument checks, including `comparison_profile_columns()`, which rejects
+  profile columns that would reuse an output name, run before any prediction.
+- Prediction reuses `avg_comparison_setup()`: the profiles are stacked once per
+  value of the compared variable and predicted with one `sops()` call. `sops()`
+  renumbers `rowid` over the stacked rows, and `counterfactual_array_from_tidy()`
+  recovers each row's scenario and profile from its block position, giving a
+  scenario x profile x time x state array.
+- Real-time time totals interpolate the stacked individual SOPs, so each row
+  starts from its own starting state, or from the state set in `variables` when
+  it sets `p_var`. As in `avg_comparisons()`, `time_map` does not apply to
+  `estimand = "sop"`.
+- `individual_comparisons_from_array()` sums each state set
+  (`state_set_occupancy()`), totals time per profile (`profile_time_totals()`),
+  and applies `comparison_value()`. Rows are ordered by state set, comparison
+  level, visit, then profile. Time benefit uses
+  `time_benefit_profile_values()`, `comparison_scenario()`, and
+  `trapezoid_row_totals()` in `R/sops-comparisons-reduce.R`, which
+  `time_benefit_from_counterfactual_array()` also uses before averaging.
+- The output keeps each profile's observed covariates and starting state; the
+  compared variable keeps its observed value, and the profile's visit column is
+  dropped because output times are prediction times.
+- For `blrm`, every posterior draw is reduced to the same rows, and
+  `summarize_posterior_draw_matrix()` summarizes them column by column, so
+  estimates come from paired draws rather than from SOP summaries. Draws are
+  returned only with `return_draws = TRUE`.
+- Attributes use the same layout as average comparisons (`avg_args` with
+  `by = NULL`, `comparison_args`, the stacked prediction data, and the setup
+  fields), so inference can replay the calculation.
+
+`markov_comparisons` inherits from neither `markov_sops` nor
+`markov_avg_comparisons`, because analytical and draw-based inference dispatch
+on those classes. `inferences()` currently returns `blrm` results unchanged and
+rejects frequentist ones; `get_draws()` accepts the class.
 
 ## Dependencies and execution
 

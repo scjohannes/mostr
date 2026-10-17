@@ -201,7 +201,8 @@ get_draws <- function(x) {
         "markov_avg_sops",
         "markov_sops",
         "markov_avg_time",
-        "markov_avg_comparisons"
+        "markov_avg_comparisons",
+        "markov_comparisons"
       )
     )
   ) {

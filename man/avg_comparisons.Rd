@@ -157,5 +157,6 @@ avg_comparisons(
 
 }
 \seealso{
-\code{\link[=avg_sops]{avg_sops()}}, \code{\link[=sops]{sops()}}, \code{\link[=inferences]{inferences()}}
+\code{\link[=comparisons]{comparisons()}} for the comparison of each profile before
+averaging, \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=sops]{sops()}}, \code{\link[=inferences]{inferences()}}
 }

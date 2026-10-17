@@ -1,3 +1,13 @@
+# mostr (development version)
+
+* New `comparisons()` returns a separate comparison for each prediction
+  profile (by default, each fitted patient): SOP differences or ratios,
+  time in states, or time benefit, with the compared variable set to each
+  requested value for that same profile. Averaging these per-profile
+  differences gives `avg_comparisons()`, and `comparisons(by = ...)` returns
+  `avg_comparisons(by = ...)`. `rmsb::blrm()` fits get posterior intervals;
+  confidence intervals for frequentist fits are not yet available.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

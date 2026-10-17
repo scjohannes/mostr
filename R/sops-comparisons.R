@@ -80,7 +80,8 @@
 #' for coefficient estimation. User-supplied `newdata` requires the conditional
 #' choice. See [inferences()] for model restrictions.
 #'
-#' @seealso [avg_sops()], [sops()], [inferences()]
+#' @seealso [comparisons()] for the comparison of each profile before
+#'   averaging, [avg_sops()], [sops()], [inferences()]
 #'
 #' @examples
 #' \dontrun{
@@ -127,27 +128,12 @@ avg_comparisons <- function(
   ...
 ) {
   extra_args <- list(...)
-  legacy_args <- intersect(names(extra_args), c("origin_time", "origin"))
-  if (length(legacy_args) > 0L) {
-    stop(
-      "`",
-      legacy_args[1L],
-      "` is no longer supported; use `baseline_time` instead.",
-      call. = FALSE
-    )
-  }
+  stop_legacy_baseline_args(extra_args)
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)
 
-  if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `avg_comparisons()`.")
-  }
-  if (anyDuplicated(times)) {
-    stop(
-      "`times` must not contain duplicate visits; each visit is counted once."
-    )
-  }
+  validate_comparison_times(times, "avg_comparisons()")
   conf_level <- validate_conf_level(conf_level)
   variables <- validate_avg_comparison_variables(variables)
   validate_avg_comparison_estimand(estimand, state_sets, comparison)

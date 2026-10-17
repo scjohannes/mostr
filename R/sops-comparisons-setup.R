@@ -1,6 +1,34 @@
 # Average comparison setup helpers.
 
-validate_avg_comparison_variables <- function(variables) {
+stop_legacy_baseline_args <- function(extra_args) {
+  legacy_args <- intersect(names(extra_args), c("origin_time", "origin"))
+  if (length(legacy_args) > 0L) {
+    stop(
+      "`",
+      legacy_args[1L],
+      "` is no longer supported; use `baseline_time` instead.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
+validate_comparison_times <- function(times, fn) {
+  if (missing(times) || is.null(times)) {
+    stop("`times` must be supplied to `", fn, "`.")
+  }
+  if (anyDuplicated(times)) {
+    stop(
+      "`times` must not contain duplicate visits; each visit is counted once."
+    )
+  }
+  invisible(NULL)
+}
+
+validate_avg_comparison_variables <- function(
+  variables,
+  fn = "avg_comparisons()"
+) {
   if (missing(variables) || is.null(variables)) {
     stop("`variables` must be a named list with one counterfactual variable.")
   }
@@ -8,7 +36,7 @@ validate_avg_comparison_variables <- function(variables) {
     stop("`variables` must be a named list, for example `list(tx = c(0, 1))`.")
   }
   if (length(variables) != 1L || !nzchar(names(variables)[1])) {
-    stop("`avg_comparisons()` supports exactly one named variable in v1.")
+    stop("`", fn, "` supports exactly one named variable.")
   }
 
   values <- variables[[1]]
@@ -262,7 +290,8 @@ set_avg_comparison_attrs <- function(
   baseline_time,
   target_times,
   time_unit,
-  extra_args
+  extra_args,
+  class_name = "markov_avg_comparisons"
 ) {
   result <- as.data.frame(result)
   attrs <- list(
@@ -327,6 +356,6 @@ set_avg_comparison_attrs <- function(
   }
 
   result <- order_estimate_columns(result)
-  class(result) <- c("markov_avg_comparisons", "data.frame")
+  class(result) <- c(class_name, "data.frame")
   result
 }

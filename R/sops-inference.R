@@ -401,13 +401,14 @@ inferences_impl <- function(
         "markov_avg_sops",
         "markov_sops",
         "markov_avg_time",
-        "markov_avg_comparisons"
+        "markov_avg_comparisons",
+        "markov_comparisons"
       )
     )
   ) {
     stop(
-      "inferences() requires a 'markov_avg_sops', 'markov_sops', 'markov_avg_time', or ",
-      "'markov_avg_comparisons' object. ",
+      "inferences() requires a 'markov_avg_sops', 'markov_sops', 'markov_avg_time', ",
+      "'markov_avg_comparisons', or 'markov_comparisons' object. ",
       "Got: ",
       paste(class(x), collapse = ", ")
     )
@@ -446,6 +447,18 @@ inferences_impl <- function(
 
   if (!inherits(attr(x, "model"), "blrm")) {
     attr(x, "baseline_anchor_draws") <- NULL
+  }
+
+  if (
+    inherits(x, "markov_comparisons") &&
+      !inherits(attr(x, "model"), "blrm")
+  ) {
+    stop(
+      "Frequentist inference for `comparisons()` results is not yet ",
+      "available; use `avg_comparisons()` for average comparisons with ",
+      "confidence intervals.",
+      call. = FALSE
+    )
   }
 
   if (identical(method, "delta")) {
@@ -595,7 +608,9 @@ resolve_inference_null <- function(null, x) {
   if (is.character(null) && !identical(null, "auto")) {
     stop("`null` must be \"auto\", NULL, or a single finite numeric value.")
   }
-  comparison <- if (inherits(x, "markov_avg_comparisons")) {
+  comparison <- if (
+    inherits(x, c("markov_avg_comparisons", "markov_comparisons"))
+  ) {
     attr(x, "comparison_args")$comparison %||%
       unique(as.character(x$comparison))
   }
