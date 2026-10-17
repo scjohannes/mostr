@@ -165,6 +165,90 @@ test_that("comparisons(by = ) hands off to avg_comparisons()", {
   )
 })
 
+test_that("avg_comparisons() follows marginaleffects' by values", {
+  case <- make_comparisons_case()
+  args <- list(
+    case$model,
+    variables = list(tx = c(0, 1)),
+    estimand = "time_in_state",
+    comparison = "ratio",
+    times = 1:4,
+    absorb = 3
+  )
+  averaged <- do.call(avg_comparisons, args)
+  expect_s3_class(averaged, "markov_avg_comparisons")
+  expect_identical(nrow(averaged), 3L)
+  expect_equal(do.call(avg_comparisons, c(args, list(by = TRUE))), averaged)
+
+  # `by = FALSE`, like `NULL`, returns one comparison per patient.
+  per_patient <- do.call(comparisons, args)
+  expect_equal(do.call(avg_comparisons, c(args, list(by = FALSE))), per_patient)
+  expect_equal(do.call(avg_comparisons, c(args, list(by = NULL))), per_patient)
+  expect_error(do.call(avg_comparisons, c(args, list(by = 1))), "`by` must be")
+
+  # Per-patient results have no average over sampled patients.
+  expect_error(
+    inferences(
+      do.call(avg_comparisons, c(args, list(by = FALSE))),
+      method = "delta",
+      vcov = "unconditional"
+    ),
+    "avg_comparisons(by = FALSE)",
+    fixed = TRUE
+  )
+})
+
+test_that("bare variable names compare observed levels with the first", {
+  case <- make_comparisons_case()
+  args <- list(case$model, state_sets = "1", times = 1:4, absorb = 3)
+  expect_equal(
+    do.call(comparisons, c(args, list(variables = "tx"))),
+    do.call(comparisons, c(args, list(variables = list(tx = c(0, 1)))))
+  )
+  expect_equal(
+    do.call(avg_comparisons, c(args, list(variables = "tx"))),
+    do.call(avg_comparisons, c(args, list(variables = list(tx = c(0, 1)))))
+  )
+  starts <- factor(c("1", "2"), levels = levels(case$data$yprev))
+  by_start <- do.call(avg_comparisons, c(args, list(variables = "yprev")))
+  expect_identical(unique(by_start$contrast), "2 - 1")
+  expect_equal(
+    by_start,
+    do.call(avg_comparisons, c(args, list(variables = list(yprev = starts))))
+  )
+
+  expect_error(
+    do.call(comparisons, c(args, list(variables = c("tx", "marker")))),
+    "exactly one named variable"
+  )
+  expect_error(
+    do.call(comparisons, c(args, list(variables = "missing_column"))),
+    "Variables not in data: missing_column"
+  )
+})
+
+test_that("bare variable names choose values like marginaleffects", {
+  expect_equal(
+    comparison_variable_values(factor(c("b", "a", "b"), c("b", "a", "c")), "x"),
+    factor(c("b", "a"), levels = c("b", "a", "c"))
+  )
+  expect_identical(
+    comparison_variable_values(c(TRUE, FALSE, NA), "x"),
+    c(FALSE, TRUE)
+  )
+  expect_identical(comparison_variable_values(c("x", "b", "x"), "x"), c("b", "x"))
+  expect_identical(comparison_variable_values(c(1, 0, 1), "x"), c(0, 1))
+  expect_identical(comparison_variable_values(c(1L, 0L), "x"), c(0L, 1L))
+  expect_error(
+    comparison_variable_values(c(40, 52.5, 61), "age"),
+    "list(age = ",
+    fixed = TRUE
+  )
+  expect_error(comparison_variable_values(c(2, 3), "dose"), "list(dose = ", fixed = TRUE)
+  expect_error(comparison_variable_values(c(1, 1, NA), "x"), "at least two")
+  expect_error(comparison_variable_values(as.Date("2026-01-01"), "x"), "values")
+})
+
 test_that("comparisons() validates arguments before predicting", {
   case <- make_comparisons_case()
   local_mocked_bindings(

@@ -226,10 +226,25 @@ metadata when callers change inference methods.
 
 `comparisons()` (`R/sops-comparisons-individual.R`) returns one comparison per
 prediction profile instead of their average. Its arguments and estimands match
-`avg_comparisons()`. As in marginaleffects, `by = TRUE` or a character `by`
-returns `avg_comparisons()` with the same arguments (`resolve_comparisons_by()`),
-so averaged ratios remain ratios of averaged summaries; only `by = FALSE` or
-`NULL` reaches the code described here.
+`avg_comparisons()`, and both functions read `by` as marginaleffects does
+(`resolve_comparisons_by()`): `TRUE` averages over all profiles, a character
+vector averages within groups, and `FALSE` or `NULL` returns one comparison
+per profile. The two functions differ only in their default (`FALSE` for
+`comparisons()`, `TRUE` for `avg_comparisons()`), and each hands the other
+case to the other function: `comparisons(by = TRUE)` calls
+`avg_comparisons(by = TRUE)`, and `avg_comparisons(by = FALSE)` calls
+`comparisons(by = FALSE)`. Internally, averaged results keep `by = NULL` for
+the overall average, so `avg_args$by` and the averaging code are unchanged.
+Averaged ratios remain ratios of averaged summaries.
+
+Both functions also accept a bare variable name. `resolve_comparison_variables()`
+turns it into a named list before any other validation, with values from
+`comparison_variable_values()` read from the model's stored refit data (or
+from `newdata` when there is none): observed factor levels in level order,
+sorted character values, `FALSE`/`TRUE`, or `0`/`1`. Other numeric variables
+are rejected, because marginaleffects' default for them, each row's value
+plus one, is not a comparison of fixed values. Inference replays use the
+resolved list stored in `avg_args$variables`.
 
 ```mermaid
 flowchart TD
@@ -318,9 +333,10 @@ frequentist ones to `inferences_comparisons()`
 
 Analytical inference (`inferences_delta_individual_comparisons()` in
 `R/sops-delta-comparisons-individual.R`) supports conditional variance only:
-`delta_individual_function()` makes `delta_resolve_vcov()` and
+`delta_individual_subject()` makes `delta_resolve_vcov()` and
 `delta_validate_target()` treat `markov_comparisons` like individual
-`markov_sops`. Scope matches analytical average comparisons: Wald intervals,
+`markov_sops`, and names `comparisons()` and `avg_comparisons(by = FALSE)` in
+the error for unconditional variance. Scope matches analytical average comparisons: Wald intervals,
 differences, and `estimand = "sop"` or `"time_in_state"` on first-order full
 proportional-odds models.
 

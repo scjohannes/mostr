@@ -9,8 +9,14 @@
 #' @param model A fitted Markov transition model supported by [avg_sops()].
 #' @param newdata Optional data frame of standardization profiles. See
 #'   [avg_sops()].
-#' @param variables A named list with one counterfactual variable. The variable
-#'   must contain at least two values, for example `list(tx = c(0, 1))`.
+#' @param variables The variable to compare: a bare name such as `"tx"`, or a
+#'   named list giving its values, such as `list(tx = c(0, 1))`. The first
+#'   value is the reference. A bare name compares every observed value with
+#'   the first, as in the marginaleffects package: factor levels in level
+#'   order, character values in sorted order, `FALSE` then `TRUE`, or `0` then
+#'   `1` for a numeric variable coded 0/1. Other numeric variables need their
+#'   values listed. The values are read from the data stored with the model,
+#'   or from `newdata` for a model without stored data.
 #' @param estimand Character scalar. One of `"sop"`, `"time_in_state"`, or
 #'   `"time_benefit"`.
 #' @param state_sets State selection for `"sop"` and `"time_in_state"`. `NULL`
@@ -19,8 +25,13 @@
 #' @param comparison Character scalar. `"difference"` computes comparison level
 #'   minus reference level. `"ratio"` computes comparison level divided by
 #'   reference level. `"time_benefit"` only supports `"difference"`.
-#' @param by Optional character vector of variables to stratify by after
-#'   standardization.
+#' @param by How to average the comparisons of the individual profiles, as in
+#'   the marginaleffects package. `TRUE` (the default) averages over all
+#'   profiles. A character vector of column names averages within the groups
+#'   those columns define. `FALSE` or `NULL` does not average and returns the
+#'   [comparisons()] result, one comparison per profile; analytical intervals
+#'   for it use conditional variance only, and the ordinary bootstrap is not
+#'   available.
 #' @param times Required visit-scale time points. See [avg_sops()].
 #' @param y_levels A vector of state levels. See [avg_sops()].
 #' @param absorb The absorbing state. See [avg_sops()].
@@ -59,7 +70,8 @@
 #'   Frequentist uncertainty draws are stored by [inferences()].
 #' @param ... Additional arguments reserved for future extensions.
 #'
-#' @return A data frame of class `markov_avg_comparisons`.
+#' @return A data frame of class `markov_avg_comparisons`, or, with
+#'   `by = FALSE`, of class `markov_comparisons`.
 #'
 #' @details
 #' `estimand = "sop"` and `estimand = "time_in_state"` are computed from marginal
@@ -105,7 +117,7 @@ avg_comparisons <- function(
   estimand = c("sop", "time_in_state", "time_benefit"),
   state_sets = NULL,
   comparison = c("difference", "ratio"),
-  by = NULL,
+  by = TRUE,
   times,
   y_levels = NULL,
   absorb = NULL,
@@ -132,11 +144,52 @@ avg_comparisons <- function(
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)
+  by_choice <- resolve_comparisons_by(by)
 
   validate_comparison_times(times, "avg_comparisons()")
   conf_level <- validate_conf_level(conf_level)
-  variables <- validate_avg_comparison_variables(variables)
+  variables <- resolve_comparison_variables(
+    variables,
+    model = model,
+    newdata = newdata,
+    fn = "avg_comparisons()"
+  )
   validate_avg_comparison_estimand(estimand, state_sets, comparison)
+
+  if (!by_choice$average) {
+    return(comparisons(
+      model = model,
+      newdata = newdata,
+      variables = variables,
+      estimand = estimand,
+      state_sets = state_sets,
+      comparison = comparison,
+      by = FALSE,
+      times = times,
+      y_levels = y_levels,
+      absorb = absorb,
+      time_map = time_map,
+      baseline_time = baseline_time,
+      target_times = target_times,
+      time_unit = time_unit,
+      id_var = id_var,
+      time_var = time_var,
+      p_var = p_var,
+      p2_var = p2_var,
+      gap_var = gap_var,
+      time_covariates = time_covariates,
+      include_re = include_re,
+      n_draws = n_draws,
+      seed = seed,
+      posterior_summary = posterior_summary,
+      conf_level = conf_level,
+      return_draws = return_draws,
+      ...
+    ))
+  }
+  # From here on, `by` holds the grouping columns, or `NULL` to average over
+  # all profiles.
+  by <- by_choice$by
 
   if (estimand == "time_benefit") {
     setup <- avg_comparison_setup(

@@ -121,7 +121,10 @@ test_that("delta comparison inference keeps its restrictions", {
   cmp <- do.call(comparisons, args)
   expect_error(
     inferences(cmp, method = "delta", vcov = "unconditional"),
-    "`comparisons()` delta inference supports only",
+    paste(
+      "Delta inference for `comparisons()` and `avg_comparisons(by = FALSE)`",
+      "supports only `vcov = \"conditional\"`"
+    ),
     fixed = TRUE
   )
   expect_error(

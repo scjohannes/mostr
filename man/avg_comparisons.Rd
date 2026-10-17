@@ -11,7 +11,7 @@ avg_comparisons(
   estimand = c("sop", "time_in_state", "time_benefit"),
   state_sets = NULL,
   comparison = c("difference", "ratio"),
-  by = NULL,
+  by = TRUE,
   times,
   y_levels = NULL,
   absorb = NULL,
@@ -40,8 +40,14 @@ avg_comparisons(
 \item{newdata}{Optional data frame of standardization profiles. See
 \code{\link[=avg_sops]{avg_sops()}}.}
 
-\item{variables}{A named list with one counterfactual variable. The variable
-must contain at least two values, for example \code{list(tx = c(0, 1))}.}
+\item{variables}{The variable to compare: a bare name such as \code{"tx"}, or a
+named list giving its values, such as \code{list(tx = c(0, 1))}. The first
+value is the reference. A bare name compares every observed value with
+the first, as in the marginaleffects package: factor levels in level
+order, character values in sorted order, \code{FALSE} then \code{TRUE}, or \code{0} then
+\code{1} for a numeric variable coded 0/1. Other numeric variables need their
+values listed. The values are read from the data stored with the model,
+or from \code{newdata} for a model without stored data.}
 
 \item{estimand}{Character scalar. One of \code{"sop"}, \code{"time_in_state"}, or
 \code{"time_benefit"}.}
@@ -54,8 +60,13 @@ state set. A named list returns one result per named state set.}
 minus reference level. \code{"ratio"} computes comparison level divided by
 reference level. \code{"time_benefit"} only supports \code{"difference"}.}
 
-\item{by}{Optional character vector of variables to stratify by after
-standardization.}
+\item{by}{How to average the comparisons of the individual profiles, as in
+the marginaleffects package. \code{TRUE} (the default) averages over all
+profiles. A character vector of column names averages within the groups
+those columns define. \code{FALSE} or \code{NULL} does not average and returns the
+\code{\link[=comparisons]{comparisons()}} result, one comparison per profile; analytical intervals
+for it use conditional variance only, and the ordinary bootstrap is not
+available.}
 
 \item{times}{Required visit-scale time points. See \code{\link[=avg_sops]{avg_sops()}}.}
 
@@ -115,7 +126,8 @@ Frequentist uncertainty draws are stored by \code{\link[=inferences]{inferences(
 \item{...}{Additional arguments reserved for future extensions.}
 }
 \value{
-A data frame of class \code{markov_avg_comparisons}.
+A data frame of class \code{markov_avg_comparisons}, or, with
+\code{by = FALSE}, of class \code{markov_comparisons}.
 }
 \description{
 Computes average contrasts between counterfactual state occupancy summaries.

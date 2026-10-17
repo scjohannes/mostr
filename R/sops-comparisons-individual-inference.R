@@ -15,10 +15,11 @@ inferences_comparisons <- function(
 ) {
   if (identical(method, "bootstrap")) {
     stop(
-      "Standard refit bootstrap is not supported for `comparisons()` results ",
-      "because ordinary resampling can drop outcome-state support needed by ",
-      "the fixed prediction profiles. Use `method = \"fwb\"`, or ",
-      "`avg_comparisons()` for averaged bootstrap inference.",
+      "Standard refit bootstrap is not supported for comparisons of each ",
+      "profile, from `comparisons()` or `avg_comparisons(by = FALSE)`, ",
+      "because a resample can lack outcome states that the fixed profiles ",
+      "need. Use `method = \"fwb\"`, or average the comparisons (`by = TRUE` ",
+      "or grouping columns) for ordinary bootstrap inference.",
       call. = FALSE
     )
   }

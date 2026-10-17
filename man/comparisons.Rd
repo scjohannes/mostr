@@ -43,9 +43,10 @@ comparisons. If \code{NULL}, uses the starting profiles stored by
 \code{\link[=orm_markov]{orm_markov()}}, \code{\link[=blrm_markov]{blrm_markov()}}, or \code{\link[=vglm_markov]{vglm_markov()}}, one per fitted
 patient.}
 
-\item{variables}{A named list with one variable and at least two values,
-for example \code{list(tx = c(0, 1))}. Each profile is predicted with the
-variable set to each value. The first value is the reference level.}
+\item{variables}{The variable to compare: a bare name such as \code{"tx"}, or a
+named list giving its values, such as \code{list(tx = c(0, 1))}. Each profile
+is predicted with the variable set to each value, and the first value is
+the reference. See \code{\link[=avg_comparisons]{avg_comparisons()}} for the values a bare name selects.}
 
 \item{estimand}{Character scalar. One of \code{"sop"}, \code{"time_in_state"}, or
 \code{"time_benefit"}.}
@@ -58,12 +59,12 @@ state set. A named list returns one result per named state set.}
 minus reference level. \code{"ratio"} computes comparison level divided by
 reference level. \code{"time_benefit"} only supports \code{"difference"}.}
 
-\item{by}{\code{FALSE} (the default) returns one comparison per profile. \code{TRUE}
-averages the comparisons over all profiles, and a character vector of
-column names averages them within the groups those columns define. Both
-return the result of \code{\link[=avg_comparisons]{avg_comparisons()}} with the same arguments. For
-\code{comparison = "ratio"}, that average is the ratio of the averaged
-summaries, not the average of the profiles' ratios.}
+\item{by}{\code{FALSE} (the default) or \code{NULL} returns one comparison per
+profile. \code{TRUE} averages the comparisons over all profiles, and a
+character vector of column names averages them within the groups those
+columns define. Both return the result of \code{\link[=avg_comparisons]{avg_comparisons()}} with the
+same arguments. For \code{comparison = "ratio"}, that average is the ratio of
+the averaged summaries, not the average of the profiles' ratios.}
 
 \item{times}{Required visit-scale time points. See \code{\link[=avg_sops]{avg_sops()}}.}
 

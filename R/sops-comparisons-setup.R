@@ -25,6 +25,76 @@ validate_comparison_times <- function(times, fn) {
   invisible(NULL)
 }
 
+# Turns a bare variable name into the named list of values to compare, then
+# validates the list. Values come from the data stored with the model, or
+# from `newdata` for a model without stored data, as marginaleffects uses the
+# model's data.
+resolve_comparison_variables <- function(variables, model, newdata, fn) {
+  if (!missing(variables) && is.character(variables)) {
+    if (length(variables) != 1L || is.na(variables) || !nzchar(variables)) {
+      stop("`", fn, "` supports exactly one named variable.")
+    }
+    data_res <- resolve_markov_source_data(model, newdata)
+    data <- data_res$refit_data %||% data_res$source_data
+    if (!variables %in% names(data)) {
+      stop("Variables not in data: ", variables)
+    }
+    variables <- stats::setNames(
+      list(comparison_variable_values(data[[variables]], variables)),
+      variables
+    )
+  }
+  validate_avg_comparison_variables(variables, fn)
+}
+
+# Values that a bare variable name compares, matching marginaleffects'
+# defaults: every observed factor level in level order, sorted character
+# values, FALSE then TRUE, or 0 then 1. The first value is the reference.
+# marginaleffects compares other numeric variables with each row's value plus
+# one, which a comparison of fixed values cannot express.
+comparison_variable_values <- function(x, name) {
+  explicit <- paste0(
+    "list the values to compare instead, for example `variables = list(",
+    name,
+    " = c(...))`."
+  )
+  observed <- x[!is.na(x)]
+  values <- if (is.factor(x)) {
+    factor(levels(x)[levels(x) %in% as.character(observed)], levels = levels(x))
+  } else if (is.logical(x) || is.character(x)) {
+    sort(unique(observed))
+  } else if (is.numeric(x) && !is.object(x)) {
+    unique_values <- sort(unique(observed))
+    if (!all(unique_values %in% c(0, 1))) {
+      stop(
+        "`",
+        name,
+        "` is numeric with values other than 0 and 1, so a bare name cannot ",
+        "choose values to compare; ",
+        explicit,
+        call. = FALSE
+      )
+    }
+    unique_values
+  } else {
+    stop(
+      "A bare variable name supports factor, character, logical, or 0/1 ",
+      "numeric variables; ",
+      explicit,
+      call. = FALSE
+    )
+  }
+  if (length(values) < 2L) {
+    stop(
+      "`",
+      name,
+      "` needs at least two observed values to compare.",
+      call. = FALSE
+    )
+  }
+  values
+}
+
 validate_avg_comparison_variables <- function(
   variables,
   fn = "avg_comparisons()"

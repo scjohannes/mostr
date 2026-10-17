@@ -26,19 +26,30 @@ stop_starting_state_conditional_only <- function() {
 }
 
 # Results with one row per prediction profile support only conditional
-# variance; this names the function that made them in errors.
-delta_individual_function <- function(object) {
+# variance: there is no average over sampled patients. Returns the subject
+# of the error that says so, naming the functions that make such results.
+delta_individual_subject <- function(object) {
   if (inherits(object, "markov_comparisons")) {
-    return("comparisons()")
+    return(
+      "Delta inference for `comparisons()` and `avg_comparisons(by = FALSE)`"
+    )
   }
   if (inherits(object, "markov_sops")) {
-    return("sops()")
+    return("`sops()` delta inference")
   }
   NULL
 }
 
+stop_individual_conditional_only <- function(object) {
+  stop(
+    delta_individual_subject(object),
+    ' supports only `vcov = "conditional"` or a coefficient covariance matrix.',
+    call. = FALSE
+  )
+}
+
 delta_resolve_vcov <- function(object, vcov) {
-  individual <- !is.null(delta_individual_function(object))
+  individual <- !is.null(delta_individual_subject(object))
   choice <- if (is.null(vcov)) {
     if (individual) "conditional" else "unconditional"
   } else if (is.character(vcov)) {
@@ -57,12 +68,7 @@ delta_resolve_vcov <- function(object, vcov) {
     "conditional"
   }
   if (individual && identical(choice, "unconditional")) {
-    stop(
-      "`",
-      delta_individual_function(object),
-      '` delta inference supports only `vcov = "conditional"` or a coefficient covariance matrix.',
-      call. = FALSE
-    )
+    stop_individual_conditional_only(object)
   }
   if (identical(choice, "unconditional") && sets_starting_state(object)) {
     stop_starting_state_conditional_only()
@@ -81,17 +87,10 @@ delta_resolve_vcov <- function(object, vcov) {
 }
 
 delta_validate_target <- function(object, target) {
-  individual <- delta_individual_function(object)
-  if (!is.null(individual)) {
+  if (!is.null(delta_individual_subject(object))) {
     target <- target %||% "fixed"
     if (!identical(target, "fixed")) {
-      stop(
-        "`",
-        individual,
-        "` delta inference supports only `vcov = \"conditional\"` ",
-        "or a coefficient covariance matrix.",
-        call. = FALSE
-      )
+      stop_individual_conditional_only(object)
     }
     return(target)
   }

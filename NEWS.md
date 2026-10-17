@@ -1,5 +1,18 @@
 # mostr (development version)
 
+* `avg_comparisons()` now treats `by` as the marginaleffects package does.
+  The default is `by = TRUE`, which averages over all profiles as before,
+  and a character `by` still averages within groups. `by = FALSE` or
+  `by = NULL` no longer averages: it returns one comparison per profile, the
+  result of `comparisons()`. Code that passed `by = NULL` explicitly to get
+  the overall average should drop it or use `by = TRUE`.
+
+* `avg_comparisons()` and `comparisons()` accept a bare variable name, such
+  as `variables = "tx"`. As in marginaleffects, every observed value is
+  compared with the first: factor levels in level order, character values in
+  sorted order, `FALSE` then `TRUE`, or `0` then `1` for a 0/1 numeric
+  variable. Other numeric variables still need their values listed.
+
 * New `comparisons()` returns a separate comparison for each prediction
   profile (by default, each fitted patient): SOP differences or ratios,
   time in states, or time benefit, with the compared variable set to each

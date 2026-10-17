@@ -14,15 +14,16 @@
 #'   comparisons. If `NULL`, uses the starting profiles stored by
 #'   [orm_markov()], [blrm_markov()], or [vglm_markov()], one per fitted
 #'   patient.
-#' @param variables A named list with one variable and at least two values,
-#'   for example `list(tx = c(0, 1))`. Each profile is predicted with the
-#'   variable set to each value. The first value is the reference level.
-#' @param by `FALSE` (the default) returns one comparison per profile. `TRUE`
-#'   averages the comparisons over all profiles, and a character vector of
-#'   column names averages them within the groups those columns define. Both
-#'   return the result of [avg_comparisons()] with the same arguments. For
-#'   `comparison = "ratio"`, that average is the ratio of the averaged
-#'   summaries, not the average of the profiles' ratios.
+#' @param variables The variable to compare: a bare name such as `"tx"`, or a
+#'   named list giving its values, such as `list(tx = c(0, 1))`. Each profile
+#'   is predicted with the variable set to each value, and the first value is
+#'   the reference. See [avg_comparisons()] for the values a bare name selects.
+#' @param by `FALSE` (the default) or `NULL` returns one comparison per
+#'   profile. `TRUE` averages the comparisons over all profiles, and a
+#'   character vector of column names averages them within the groups those
+#'   columns define. Both return the result of [avg_comparisons()] with the
+#'   same arguments. For `comparison = "ratio"`, that average is the ratio of
+#'   the averaged summaries, not the average of the profiles' ratios.
 #' @param return_draws Logical. For `blrm`, store the posterior draws of each
 #'   comparison for extraction with [get_draws()].
 #'
@@ -171,7 +172,12 @@ comparisons <- function(
   by <- resolve_comparisons_by(by)
   validate_comparison_times(times, "comparisons()")
   conf_level <- validate_conf_level(conf_level)
-  variables <- validate_avg_comparison_variables(variables, "comparisons()")
+  variables <- resolve_comparison_variables(
+    variables,
+    model = model,
+    newdata = newdata,
+    fn = "comparisons()"
+  )
   validate_avg_comparison_estimand(estimand, state_sets, comparison)
 
   if (by$average) {
@@ -182,7 +188,7 @@ comparisons <- function(
       estimand = estimand,
       state_sets = state_sets,
       comparison = comparison,
-      by = by$by,
+      by = by$by %||% TRUE,
       times = times,
       y_levels = y_levels,
       absorb = absorb,
