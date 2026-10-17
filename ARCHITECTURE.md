@@ -78,7 +78,7 @@ flowchart TD
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R` | `sops`, `avg_sops`, `avg_time`, `comparisons`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts for each profile or averaged |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
-| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
+| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
 | Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
 
@@ -275,8 +275,33 @@ flowchart TD
 
 `markov_comparisons` inherits from neither `markov_sops` nor
 `markov_avg_comparisons`, because analytical and draw-based inference dispatch
-on those classes. `inferences()` currently returns `blrm` results unchanged and
-rejects frequentist ones; `get_draws()` accepts the class.
+on those classes. `inferences()` returns `blrm` results unchanged and sends
+frequentist ones to `inferences_comparisons()`
+(`R/sops-comparisons-individual-inference.R`):
+
+- `method = "mvn"` and `"score_bootstrap"` draw coefficients with
+  `generate_sop_coefficient_draws(use_prediction_weights = FALSE)`, which skips
+  the patient weights used for averaging, and predict the stacked profiles
+  through the compiled execution plan (`comparison_coefficient_predictor()`,
+  with the `soprob_markov()` fallback). `method = "fwb"` refits with
+  `bootstrap_analysis_wrapper()` on the stored refit data and predicts the same
+  stacked profiles. The ordinary resampling bootstrap is rejected, as for
+  individual `sops()`; analytical inference is not yet available.
+- `comparison_draw_reducer()` turns each draw's stacked array into the result
+  rows immediately: visit-scale estimands reshape it
+  (`stacked_to_counterfactual_array()`) for `individual_comparisons_from_array()`;
+  real-time totals rebuild individual SOPs with only the previous-state column
+  (`time_benefit_sops_from_array()`) and reuse
+  `comparisons_from_individual_sops()`, so draws and point estimates share the
+  interpolation and anchors. Only the draws x rows matrix is kept.
+- `check_comparison_replay()` first reduces the fitted model's predictions and
+  requires them to reproduce the stored estimates, because draws are matched
+  to rows by position. `validate_comparison_draw_cells()` stops before drawing
+  when draws x rows exceeds `mostr.max_sops_draw_cells`.
+- Intervals come from `summarize_sop_draw_matrix()`; returned draws carry only
+  the comparison key columns, and `get_draws()` joins the profile columns.
+  Earlier inference columns and metadata are cleared first
+  (`clear_comparison_inference()`).
 
 ## Dependencies and execution
 

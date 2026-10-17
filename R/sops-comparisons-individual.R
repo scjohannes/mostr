@@ -60,29 +60,42 @@
 #' profiles equals the [avg_comparisons()] estimate. For ratios it does not,
 #' because [avg_comparisons()] divides averaged probabilities.
 #'
+#' For frequentist models, pass the result to [inferences()] with
+#' `method = "mvn"`, `"score_bootstrap"`, or `"fwb"`. Each coefficient draw or
+#' weighted refit predicts every profile under each compared value, and the
+#' comparisons are computed within that draw before the intervals are formed.
+#' Because each profile's starting state and covariates are held as given,
+#' these intervals reflect uncertainty in the model coefficients only. The
+#' ordinary resampling bootstrap (`method = "bootstrap"`) is not available,
+#' because a resampled data set can lack outcome states that the fixed
+#' profiles need; analytical `method = "delta"` is not yet available.
+#'
 #' For `rmsb::blrm()` models, each posterior draw gives a comparison for each
 #' profile. The estimate and interval summarize those paired draws, so they
 #' can differ from a comparison of [sops()] posterior summaries, especially
-#' with `posterior_summary = "median"`. Confidence intervals for frequentist
-#' models are not yet available for these results; use [avg_comparisons()]
-#' with [inferences()] for average comparisons.
+#' with `posterior_summary = "median"`.
 #'
 #' The result has one row per profile, visit (for SOPs), state set, and
 #' comparison level, plus a column for each profile variable. Requesting fewer
-#' `times`, fewer state sets, or fewer profiles reduces its size.
+#' `times`, fewer state sets, or fewer profiles reduces its size. Interval
+#' calculations keep every draw of every row, so [inferences()] stops before
+#' drawing when `n_draws` times the number of rows exceeds the option
+#' `mostr.max_sops_draw_cells` (50 million by default, about 400 MB).
 #'
 #' @seealso [avg_comparisons()] for averaged comparisons, [sops()] for each
 #'   profile's state occupancy probabilities.
 #'
 #' @examples
 #' \dontrun{
-#' # One SOP difference per patient, visit, and state.
+#' # One SOP difference per patient, visit, and state, with intervals from
+#' # coefficient draws.
 #' comparisons(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:30,
 #'   absorb = 6
-#' )
+#' ) |>
+#'   inferences(method = "mvn", n_draws = 500)
 #'
 #' # Time in state 1 under treatment versus control for chosen profiles.
 #' comparisons(

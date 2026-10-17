@@ -22,8 +22,9 @@ inferences(
 }
 \arguments{
 \item{x}{A \code{markov_avg_sops} object from \code{avg_sops()}, a
-\code{markov_sops} object from \code{sops()}, a \code{markov_avg_comparisons} object
-from \code{\link[=avg_comparisons]{avg_comparisons()}}, or a \code{markov_avg_time} object from \code{\link[=avg_time]{avg_time()}}.}
+\code{markov_sops} object from \code{sops()}, a \code{markov_comparisons} object from
+\code{\link[=comparisons]{comparisons()}}, a \code{markov_avg_comparisons} object from
+\code{\link[=avg_comparisons]{avg_comparisons()}}, or a \code{markov_avg_time} object from \code{\link[=avg_time]{avg_time()}}.}
 
 \item{method}{Character. Inference method:
 \itemize{
@@ -91,7 +92,8 @@ columns: the Wald \code{statistic}, (estimate - \code{null}) / \code{std.error};
 two-sided normal \code{p.value}; and the \code{s.value}, \eqn{-\log_2(p)}, which
 expresses the evidence against the null in bits.
 \itemize{
-\item \code{"auto"} (the default): tests \code{\link[=avg_comparisons]{avg_comparisons()}} results against
+\item \code{"auto"} (the default): tests \code{\link[=comparisons]{comparisons()}} and
+\code{\link[=avg_comparisons]{avg_comparisons()}} results against
 "no effect", which is 0 for \code{comparison = "difference"} and 1 for
 \code{comparison = "ratio"}. SOPs and average times have no natural null
 value, so they are not tested.
@@ -121,7 +123,8 @@ The input object with added columns:
 \item{std.error}{Standard error from analytical delta propagation,
 simulation, or bootstrap}
 
-When a null value is tested (by default, for \code{\link[=avg_comparisons]{avg_comparisons()}} results),
+When a null value is tested (by default, for \code{\link[=comparisons]{comparisons()}} and
+\code{\link[=avg_comparisons]{avg_comparisons()}} results),
 the object also has \code{statistic}, \code{p.value}, and \code{s.value} columns; see
 \code{null}.
 
@@ -240,7 +243,10 @@ Standard bootstrap is intentionally limited to marginal \code{avg_sops()} object
 because ordinary resampling can drop outcome-state support needed by fixed
 individual prediction rows. Fractional weighted bootstrap keeps every row in
 the refit data with positive patient-level weights, so it is available for
-individual \code{sops()} objects. For FWB, the same patient weights used for
+individual \code{sops()} objects. The same holds for \code{\link[=comparisons]{comparisons()}} results,
+which also support \code{method = "mvn"} and \code{method = "score_bootstrap"}; there
+the patient weights affect only the refits or coefficient draws, because
+each profile's comparison is not averaged. For FWB, the same patient weights used for
 refitting are used for marginal or subgroup averaging. Ungrouped stored-data
 \code{sops()} draws expose the patient weight as \code{fwb_weight}; grouped \code{sops()} and
 \code{avg_sops()} use the weights internally and return already averaged draws.

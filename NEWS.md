@@ -5,8 +5,10 @@
   time in states, or time benefit, with the compared variable set to each
   requested value for that same profile. Averaging these per-profile
   differences gives `avg_comparisons()`, and `comparisons(by = ...)` returns
-  `avg_comparisons(by = ...)`. `rmsb::blrm()` fits get posterior intervals;
-  confidence intervals for frequentist fits are not yet available.
+  `avg_comparisons(by = ...)`. `rmsb::blrm()` fits get posterior intervals
+  from paired draws. For frequentist fits, `inferences()` adds intervals with
+  `method = "mvn"`, `"score_bootstrap"`, or `"fwb"`, computing each
+  comparison within every draw.
 
 # mostr 0.1.1
 

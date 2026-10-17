@@ -353,3 +353,183 @@ test_that("posterior comparisons summarize paired draws for each profile", {
   )
   expect_equal(compact$estimate, means$estimate[index])
 })
+
+# Draws of paired SOP differences in state `state` for each profile, from one
+# `sops()` call on the profiles stacked under `tx = 0` and `tx = 1`, so both
+# scenarios share each coefficient draw or refit.
+paired_sop_draws <- function(case, method, n_draws, seed, state = "1") {
+  lo <- case$profiles
+  lo$tx <- 0
+  hi <- case$profiles
+  hi$tx <- 1
+  # User-supplied profiles get no draw weights; that warning is expected.
+  inferred <- suppressWarnings(inferences(
+    sops(case$model, newdata = rbind(lo, hi), times = 1:4, absorb = 3),
+    method = method,
+    n_draws = n_draws,
+    seed = seed
+  ))
+  draws <- attr(inferred, "draws")
+  draws <- draws[
+    as.character(draws$state) == state,
+    c("rowid", "time", "draw_id", "estimate")
+  ]
+  n <- nrow(case$profiles)
+  lo_draws <- draws[draws$rowid <= n, , drop = FALSE]
+  hi_draws <- draws[draws$rowid > n, , drop = FALSE]
+  hi_draws$rowid <- hi_draws$rowid - n
+  paired <- merge(hi_draws, lo_draws, by = c("rowid", "time", "draw_id"))
+  data.frame(
+    rowid = paired$rowid,
+    time = paired$time,
+    draw_id = paired$draw_id,
+    estimate = paired$estimate.x - paired$estimate.y
+  )
+}
+
+test_that("draw-based intervals reduce each draw to paired profile comparisons", {
+  case <- make_comparisons_case()
+  cmp <- comparisons(
+    case$model,
+    newdata = case$profiles,
+    variables = list(tx = c(0, 1)),
+    state_sets = "1",
+    times = 1:4,
+    absorb = 3
+  )
+  for (setting in list(
+    list(method = "mvn", n_draws = 8L, seed = 101),
+    list(method = "score_bootstrap", n_draws = 6L, seed = 102),
+    list(method = "fwb", n_draws = 3L, seed = 103)
+  )) {
+    inferred <- inferences(
+      cmp,
+      method = setting$method,
+      n_draws = setting$n_draws,
+      seed = setting$seed
+    )
+    expect_s3_class(inferred, "markov_comparisons")
+    expect_identical(attr(inferred, "method"), setting$method)
+    expect_equal(inferred$estimate, cmp$estimate)
+    draws <- attr(inferred, "draws")
+    expect_identical(nrow(draws), setting$n_draws * nrow(cmp))
+    expected <- paired_sop_draws(
+      case,
+      setting$method,
+      setting$n_draws,
+      setting$seed
+    )
+    index <- match(
+      paste(draws$rowid, draws$time, draws$draw_id),
+      paste(expected$rowid, expected$time, expected$draw_id)
+    )
+    expect_false(anyNA(index))
+    expect_equal(draws$estimate, expected$estimate[index], tolerance = 1e-10)
+
+    for (i in c(1L, nrow(inferred))) {
+      values <- draws$estimate[
+        draws$rowid == inferred$rowid[i] & draws$time == inferred$time[i]
+      ]
+      expect_equal(inferred$std.error[i], stats::sd(values))
+      expect_equal(
+        inferred$conf.low[i],
+        unname(stats::quantile(values, 0.025))
+      )
+      expect_equal(
+        inferred$conf.high[i],
+        unname(stats::quantile(values, 0.975))
+      )
+    }
+  }
+})
+
+test_that("averaging real-time comparison draws reproduces avg_comparisons()", {
+  case <- make_comparisons_case()
+  for (estimand in c("time_in_state", "time_benefit")) {
+    args <- list(
+      case$model,
+      variables = list(tx = c(0, 1)),
+      estimand = estimand,
+      state_sets = if (estimand == "time_in_state") "1",
+      times = 1:4,
+      absorb = 3,
+      time_map = case$time_map
+    )
+    unit <- inferences(
+      do.call(comparisons, args),
+      method = "mvn",
+      n_draws = 6,
+      seed = 202
+    )
+    average <- inferences(
+      do.call(avg_comparisons, args),
+      method = "mvn",
+      n_draws = 6,
+      seed = 202
+    )
+    unit_means <- stats::aggregate(estimate ~ draw_id, attr(unit, "draws"), mean)
+    average_draws <- attr(average, "draws")
+    expect_equal(
+      unit_means$estimate,
+      average_draws$estimate[match(unit_means$draw_id, average_draws$draw_id)],
+      tolerance = 1e-10
+    )
+  }
+})
+
+test_that("comparison intervals add null tests and replace earlier inference", {
+  case <- make_comparisons_case()
+  cmp <- comparisons(
+    case$model,
+    newdata = case$profiles,
+    variables = list(tx = c(0, 1)),
+    estimand = "time_in_state",
+    times = 1:4,
+    absorb = 3
+  )
+  first <- inferences(cmp, n_draws = 5, seed = 11)
+  expect_identical(attr(first, "null"), 0)
+  expect_equal(first$statistic, first$estimate / first$std.error)
+  expect_true(all(c("p.value", "s.value") %in% names(first)))
+  draws <- get_draws(first)
+  expect_true(all(c("draw", "draw_id", "tx", "id") %in% names(draws)))
+
+  again <- inferences(first, n_draws = 5, seed = 11)
+  expect_identical(names(again), names(first))
+  expect_equal(again$std.error, first$std.error)
+
+  compact <- inferences(cmp, n_draws = 5, seed = 11, return_draws = FALSE)
+  expect_null(attr(compact, "draws"))
+  expect_equal(compact$std.error, first$std.error)
+
+  ratio <- comparisons(
+    case$model,
+    newdata = case$profiles,
+    variables = list(tx = c(0, 1)),
+    estimand = "time_in_state",
+    comparison = "ratio",
+    times = 1:4,
+    absorb = 3
+  )
+  expect_identical(attr(inferences(ratio, n_draws = 5, seed = 11), "null"), 1)
+})
+
+test_that("comparison inference rejects unsupported methods and large draws", {
+  case <- make_comparisons_case()
+  cmp <- comparisons(
+    case$model,
+    variables = list(tx = c(0, 1)),
+    times = 1:4,
+    absorb = 3
+  )
+  expect_error(
+    inferences(cmp, method = "bootstrap", n_draws = 2),
+    "`method = \"fwb\"`"
+  )
+  expect_error(inferences(cmp, method = "delta"), "not yet available")
+  withr::local_options(mostr.max_sops_draw_cells = 10)
+  expect_error(
+    inferences(cmp, n_draws = 5),
+    "mostr.max_sops_draw_cells"
+  )
+})

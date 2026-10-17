@@ -10,8 +10,9 @@
 #' errors for `blrm` objects.
 #'
 #' @param x A `markov_avg_sops` object from `avg_sops()`, a
-#'   `markov_sops` object from `sops()`, a `markov_avg_comparisons` object
-#'   from [avg_comparisons()], or a `markov_avg_time` object from [avg_time()].
+#'   `markov_sops` object from `sops()`, a `markov_comparisons` object from
+#'   [comparisons()], a `markov_avg_comparisons` object from
+#'   [avg_comparisons()], or a `markov_avg_time` object from [avg_time()].
 #' @param method Character. Inference method:
 #'   \itemize{
 #'     \item `"mvn"`: Multivariate-normal coefficient draws.
@@ -70,7 +71,8 @@
 #'   two-sided normal `p.value`; and the `s.value`, \eqn{-\log_2(p)}, which
 #'   expresses the evidence against the null in bits.
 #'   \itemize{
-#'     \item `"auto"` (the default): tests [avg_comparisons()] results against
+#'     \item `"auto"` (the default): tests [comparisons()] and
+#'       [avg_comparisons()] results against
 #'       "no effect", which is 0 for `comparison = "difference"` and 1 for
 #'       `comparison = "ratio"`. SOPs and average times have no natural null
 #'       value, so they are not tested.
@@ -96,7 +98,8 @@
 #'   \item{std.error}{Standard error from analytical delta propagation,
 #'     simulation, or bootstrap}
 #'
-#'   When a null value is tested (by default, for [avg_comparisons()] results),
+#'   When a null value is tested (by default, for [comparisons()] and
+#'   [avg_comparisons()] results),
 #'   the object also has `statistic`, `p.value`, and `s.value` columns; see
 #'   `null`.
 #'
@@ -201,7 +204,10 @@
 #' because ordinary resampling can drop outcome-state support needed by fixed
 #' individual prediction rows. Fractional weighted bootstrap keeps every row in
 #' the refit data with positive patient-level weights, so it is available for
-#' individual `sops()` objects. For FWB, the same patient weights used for
+#' individual `sops()` objects. The same holds for [comparisons()] results,
+#' which also support `method = "mvn"` and `method = "score_bootstrap"`; there
+#' the patient weights affect only the refits or coefficient draws, because
+#' each profile's comparison is not averaged. For FWB, the same patient weights used for
 #' refitting are used for marginal or subgroup averaging. Ungrouped stored-data
 #' `sops()` draws expose the patient weight as `fwb_weight`; grouped `sops()` and
 #' `avg_sops()` use the weights internally and return already averaged draws.
@@ -449,24 +455,20 @@ inferences_impl <- function(
     attr(x, "baseline_anchor_draws") <- NULL
   }
 
-  if (
-    inherits(x, "markov_comparisons") &&
-      !inherits(attr(x, "model"), "blrm")
-  ) {
-    stop(
-      "Frequentist inference for `comparisons()` results is not yet ",
-      "available; use `avg_comparisons()` for average comparisons with ",
-      "confidence intervals.",
-      call. = FALSE
-    )
-  }
-
   if (identical(method, "delta")) {
     if (inherits(attr(x, "model"), "blrm")) {
       stop(
         "Analytical delta inference is not available for `blrm` models; ",
         "use the posterior intervals returned by `sops()`, `avg_sops()`, ",
         "`avg_comparisons()`, or `avg_time()`.",
+        call. = FALSE
+      )
+    }
+    if (inherits(x, "markov_comparisons")) {
+      stop(
+        "Analytical delta inference for `comparisons()` results is not yet ",
+        "available; use `method = \"mvn\"`, `\"score_bootstrap\"`, or ",
+        "`\"fwb\"`.",
         call. = FALSE
       )
     }
@@ -536,6 +538,20 @@ inferences_impl <- function(
 
   if (inherits(x, "markov_avg_time")) {
     result <- inferences_avg_time(
+      object = x,
+      method = method,
+      n_draws = n_draws,
+      vcov = vcov,
+      cluster = cluster,
+      workers = workers,
+      conf_level = conf_level,
+      conf_type = conf_type,
+      return_draws = return_draws,
+      update_datadist = update_datadist,
+      use_coefstart = use_coefstart
+    )
+  } else if (inherits(x, "markov_comparisons")) {
+    result <- inferences_comparisons(
       object = x,
       method = method,
       n_draws = n_draws,
