@@ -289,6 +289,21 @@ inferences_bootstrap <- function(
       id_var = id_var,
       n_boot = n_boot
     )
+    # Supplied profiles are fixed and always contain every group. Otherwise
+    # each resample's profiles come from its own rows, as in `analysis_fn`.
+    if (!newdata_supplied && !is.null(by)) {
+      check_bootstrap_by_groups(
+        boot_ids,
+        baseline_data = resolve_markov_prediction_data(
+          refit_data,
+          id_var = id_var,
+          time_var = time_var,
+          data_label = "refit data"
+        ),
+        id_var = id_var,
+        by = by
+      )
+    }
 
     boot_results <- apply_to_bootstrap(
       boot_samples = boot_ids,
@@ -712,6 +727,58 @@ stored_refit_bootstrap_data <- function(object, model) {
     )
   }
   refit_data
+}
+
+# The ordinary bootstrap resamples patients, so a small `by` group can be
+# absent from a resample. That resample then has no estimate for the group,
+# and the group's interval would rest on fewer resamples without notice. The
+# sampled IDs are checked against the stored starting profiles before any
+# refit. Profiles with a missing `by` value belong to no group.
+check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
+  if (is.null(by)) {
+    return(invisible(NULL))
+  }
+  complete <- stats::complete.cases(baseline_data[, by, drop = FALSE])
+  ids <- as.character(baseline_data[[id_var]])[complete]
+  labels <- do.call(
+    paste,
+    c(
+      lapply(by, function(col) {
+        paste(col, "=", as.character(baseline_data[[col]][complete]))
+      }),
+      sep = ", "
+    )
+  )
+  groups <- unique(labels)
+  missing_counts <- stats::setNames(integer(length(groups)), groups)
+  for (sample in boot_ids) {
+    present <- labels[match(as.character(sample$original_id), ids)]
+    absent <- setdiff(groups, present)
+    missing_counts[absent] <- missing_counts[absent] + 1L
+  }
+  missing_counts <- missing_counts[missing_counts > 0L]
+  if (length(missing_counts) == 0L) {
+    return(invisible(NULL))
+  }
+  shown <- utils::head(missing_counts, 5L)
+  stop(
+    "The ordinary bootstrap left out every patient of ",
+    paste0(
+      "`",
+      names(shown),
+      "` in ",
+      shown,
+      " of ",
+      length(boot_ids),
+      " resamples",
+      collapse = "; "
+    ),
+    if (length(missing_counts) > length(shown)) "; and other groups",
+    ", so those groups' intervals would rest on fewer resamples. Use ",
+    "`method = \"fwb\"`, which keeps every patient in every refit, or ",
+    "combine small groups.",
+    call. = FALSE
+  )
 }
 
 validate_refit_bootstrap_data <- function(refit_data, id_var, time_var) {

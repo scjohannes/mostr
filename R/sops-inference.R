@@ -203,7 +203,11 @@
 #' predicted, not which data are refitted.
 #' Standard bootstrap is intentionally limited to marginal `avg_sops()` objects
 #' because ordinary resampling can drop outcome-state support needed by fixed
-#' individual prediction rows. Fractional weighted bootstrap keeps every row in
+#' individual prediction rows. For averages within `by` groups, a resample can
+#' also leave out every patient of a small group, and that resample would then
+#' have no estimate for the group. `inferences()` checks the resamples before
+#' refitting and stops if any resample lacks a group; the fractional weighted
+#' bootstrap keeps every patient in every refit and has no such gaps. Fractional weighted bootstrap keeps every row in
 #' the refit data with positive patient-level weights, so it is available for
 #' individual `sops()` objects. The same holds for [comparisons()] results,
 #' which also support `method = "mvn"` and `method = "score_bootstrap"`. For

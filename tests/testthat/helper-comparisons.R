@@ -15,6 +15,8 @@ make_comparisons_case <- function() {
   ) |>
     prepare_markov_data(absorbing_state = 3)
   data$marker <- data$id %% 2
+  # A group of two patients, often absent from an ordinary bootstrap resample.
+  data$rare <- data$id <= 2
   model <- vglm_markov(
     ordered(y) ~ time + tx + marker + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),

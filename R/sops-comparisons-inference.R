@@ -439,6 +439,15 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       id_var = setup$id_var,
       n_boot = n_boot
     )
+    # Supplied profiles are fixed and always contain every group.
+    if (!newdata_supplied) {
+      check_bootstrap_by_groups(
+        boot_ids,
+        baseline_data = setup$baseline_data,
+        id_var = setup$id_var,
+        by = setup$by
+      )
+    }
     boot_results <- apply_to_bootstrap(
       boot_samples = boot_ids,
       analysis_fn = analysis_fn,

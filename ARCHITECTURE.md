@@ -116,6 +116,18 @@ helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample_indexed()`,
 `apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
 `relevel_factors_consecutive()`) are internal.
 
+The ordinary bootstrap refits each resample on all of its patients, so a state
+missing from one `by` group but present elsewhere still has its coefficients.
+A whole group can, however, be absent from a resample, leaving that draw
+without an estimate for the group. For stored-profile averages with `by`,
+`check_bootstrap_by_groups()` maps each resample's sampled IDs
+(`fast_group_bootstrap()`) to the starting profiles' group values before any
+refit, and stops with the missing groups, their resample counts, and a pointer
+to FWB. It runs in `inferences_bootstrap()` (which also serves `avg_time()` and
+the SOP and time-in-state estimands of `avg_comparisons()`) and in the
+time-benefit bootstrap. Supplied `newdata` profiles are fixed, so every group
+is always present.
+
 Refits rebuild the fitted model's stored call with the resampled data,
 bootstrap weights, and optional starting coefficients. The
 wrappers store the values of the arguments the user passed at fit time

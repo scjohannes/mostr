@@ -1,5 +1,11 @@
 # mostr (development version)
 
+* `inferences(method = "bootstrap")` on averages within `by` groups now
+  stops before refitting when a resample leaves out every patient of a group,
+  naming the group and how many resamples lack it. Previously that group's
+  interval silently rested on fewer resamples. Use `method = "fwb"`, which
+  keeps every patient, or combine small groups.
+
 * `avg_comparisons()` now treats `by` as the marginaleffects package does.
   The default is `by = TRUE`, which averages over all profiles as before,
   and a character `by` still averages within groups. `by = FALSE` or
