@@ -164,15 +164,26 @@ For differences and time benefit, the mean of these comparisons over the
 profiles equals the \code{\link[=avg_comparisons]{avg_comparisons()}} estimate. For ratios it does not,
 because \code{\link[=avg_comparisons]{avg_comparisons()}} divides averaged probabilities.
 
-For frequentist models, pass the result to \code{\link[=inferences]{inferences()}} with
-\code{method = "mvn"}, \code{"score_bootstrap"}, or \code{"fwb"}. Each coefficient draw or
-weighted refit predicts every profile under each compared value, and the
-comparisons are computed within that draw before the intervals are formed.
-Because each profile's starting state and covariates are held as given,
-these intervals reflect uncertainty in the model coefficients only. The
-ordinary resampling bootstrap (\code{method = "bootstrap"}) is not available,
-because a resampled data set can lack outcome states that the fixed
-profiles need; analytical \code{method = "delta"} is not yet available.
+For frequentist models, pass the result to \code{\link[=inferences]{inferences()}}. Because each
+profile's starting state and covariates are held as given, every method
+reflects uncertainty in the model coefficients only:
+\itemize{
+\item \code{method = "delta"} uses conditional variance. For one profile, the
+derivative of a difference with respect to the coefficients is the
+derivative of the comparison scenario's summary minus that of the
+reference scenario, and its variance is \eqn{G V_\beta G^\top}, where
+\eqn{G} holds these derivatives and \eqn{V_\beta} is the coefficient
+covariance. It supports differences of SOPs and of time in states for
+first-order full proportional-odds \code{orm}, \code{vglm}, and \code{robcov_vglm}
+fits; \code{\link[stats:vcov]{stats::vcov()}} then returns the covariance between rows.
+\item \code{method = "mvn"}, \code{"score_bootstrap"}, or \code{"fwb"} predict every
+profile under each compared value within each coefficient draw or
+weighted refit, and compute the comparisons within that draw before
+forming the intervals.
+}
+The ordinary resampling bootstrap (\code{method = "bootstrap"}) is not
+available, because a resampled data set can lack outcome states that the
+fixed profiles need.
 
 For \code{rmsb::blrm()} models, each posterior draw gives a comparison for each
 profile. The estimate and interval summarize those paired draws, so they

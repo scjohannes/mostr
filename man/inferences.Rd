@@ -46,8 +46,9 @@ to change posterior draws.}
 standardization covariates as fixed; \code{"unconditional"} includes their
 sampling variability and its cross-term with coefficient estimation.
 \code{NULL} (the default) selects unconditional inference for \code{avg_sops()} and
-\code{avg_comparisons()}, and conditional inference for \code{sops()}. Individual
-\code{sops()} results support only conditional inference. A complete, named
+\code{avg_comparisons()}, and conditional inference for \code{sops()} and
+\code{\link[=comparisons]{comparisons()}}. Results for each profile, from \code{sops()} or
+\code{\link[=comparisons]{comparisons()}}, support only conditional inference. A complete, named
 coefficient covariance matrix selects conditional inference and overrides
 the model covariance. Character choices are available only for delta
 inference; other methods retain their existing matrix/\code{NULL} behavior.
@@ -291,7 +292,9 @@ support only conditional variance: use \code{method = "delta"} with
 \code{method = "mvn"}. Unconditional delta inference and the score-bootstrap,
 bootstrap, and FWB methods error, because they also account for which
 patients were sampled, and that calculation is not supported once the
-starting state is set.
+starting state is set. \code{\link[=comparisons]{comparisons()}} results are not averaged over
+patients, so with a set starting state they keep the conditional delta,
+MVN, score-bootstrap, and FWB methods.
 }
 }
 \examples{

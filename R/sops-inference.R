@@ -31,8 +31,9 @@
 #'   standardization covariates as fixed; `"unconditional"` includes their
 #'   sampling variability and its cross-term with coefficient estimation.
 #'   `NULL` (the default) selects unconditional inference for `avg_sops()` and
-#'   `avg_comparisons()`, and conditional inference for `sops()`. Individual
-#'   `sops()` results support only conditional inference. A complete, named
+#'   `avg_comparisons()`, and conditional inference for `sops()` and
+#'   [comparisons()]. Results for each profile, from `sops()` or
+#'   [comparisons()], support only conditional inference. A complete, named
 #'   coefficient covariance matrix selects conditional inference and overrides
 #'   the model covariance. Character choices are available only for delta
 #'   inference; other methods retain their existing matrix/`NULL` behavior.
@@ -249,7 +250,9 @@
 #' `method = "mvn"`. Unconditional delta inference and the score-bootstrap,
 #' bootstrap, and FWB methods error, because they also account for which
 #' patients were sampled, and that calculation is not supported once the
-#' starting state is set.
+#' starting state is set. [comparisons()] results are not averaged over
+#' patients, so with a set starting state they keep the conditional delta,
+#' MVN, score-bootstrap, and FWB methods.
 #'
 #' @seealso [avg_sops()], [sops()], [get_draws()],
 #'   [robcov_vglm()], [set_coef()]
@@ -435,7 +438,12 @@ inferences_impl <- function(
   if (identical(conf_type, "auto")) {
     conf_type <- if (!identical(method, "delta")) {
       "perc"
-    } else if (inherits(x, c("markov_avg_comparisons", "markov_avg_time"))) {
+    } else if (
+      inherits(
+        x,
+        c("markov_comparisons", "markov_avg_comparisons", "markov_avg_time")
+      )
+    ) {
       "wald"
     } else {
       "logit"
@@ -464,18 +472,19 @@ inferences_impl <- function(
         call. = FALSE
       )
     }
-    if (inherits(x, "markov_comparisons")) {
-      stop(
-        "Analytical delta inference for `comparisons()` results is not yet ",
-        "available; use `method = \"mvn\"`, `\"score_bootstrap\"`, or ",
-        "`\"fwb\"`.",
-        call. = FALSE
-      )
-    }
     covariance <- delta_resolve_vcov(x, vcov)
     target <- covariance$target
     vcov <- covariance$vcov
-    result <- if (inherits(x, "markov_avg_time")) {
+    result <- if (inherits(x, "markov_comparisons")) {
+      inferences_delta_individual_comparisons(
+        object = x,
+        target = target,
+        vcov = vcov,
+        cluster = cluster,
+        conf_level = conf_level,
+        conf_type = conf_type
+      )
+    } else if (inherits(x, "markov_avg_time")) {
       inferences_delta_avg_time(
         object = x,
         target = target,

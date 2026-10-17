@@ -77,7 +77,7 @@ flowchart TD
 | Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R` | `sops`, `avg_sops`, `avg_time`, `comparisons`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts for each profile or averaged |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
-| Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
+| Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
 | Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
@@ -286,7 +286,8 @@ frequentist ones to `inferences_comparisons()`
   with the `soprob_markov()` fallback). `method = "fwb"` refits with
   `bootstrap_analysis_wrapper()` on the stored refit data and predicts the same
   stacked profiles. The ordinary resampling bootstrap is rejected, as for
-  individual `sops()`; analytical inference is not yet available.
+  individual `sops()`. `sets_starting_state()` covers only averaged classes,
+  so a set starting state keeps these methods: no patient average is formed.
 - `comparison_draw_reducer()` turns each draw's stacked array into the result
   rows immediately: visit-scale estimands reshape it
   (`stacked_to_counterfactual_array()`) for `individual_comparisons_from_array()`;
@@ -302,6 +303,28 @@ frequentist ones to `inferences_comparisons()`
   the comparison key columns, and `get_draws()` joins the profile columns.
   Earlier inference columns and metadata are cleared first
   (`clear_comparison_inference()`).
+
+Analytical inference (`inferences_delta_individual_comparisons()` in
+`R/sops-delta-comparisons-individual.R`) supports conditional variance only:
+`delta_individual_function()` makes `delta_resolve_vcov()` and
+`delta_validate_target()` treat `markov_comparisons` like individual
+`markov_sops`. Scope matches analytical average comparisons: Wald intervals,
+differences, and `estimand = "sop"` or `"time_in_state"` on first-order full
+proportional-odds models.
+
+- `delta_comparison_block()` runs the native derivative recursion
+  (`run_sop_delta_plan()`, individual output) on one scenario's block of the
+  stacked profiles at a time, so only two scenarios' derivative arrays are
+  held at once. It sums states into each state set and, for time totals,
+  applies `delta_comparison_time_weights()`: ones on the visit scale, or
+  `delta_real_time_weights()` for real time, plus the baseline weight times
+  each row's starting-state indicator, which has no coefficient derivative.
+- Each result row's derivative row is the comparison block's row minus the
+  reference block's row for the same profile, time, and state set
+  (`delta_comparison_row_index()`). The same weights reproduce the stored
+  estimates, which are checked before `delta_coefficient_state()` forms the
+  standard errors. The coefficient representation is stored, so
+  `vcov.markov_comparisons()` returns covariance blocks through `delta_vcov()`.
 
 ## Dependencies and execution
 

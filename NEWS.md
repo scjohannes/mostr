@@ -8,7 +8,9 @@
   `avg_comparisons(by = ...)`. `rmsb::blrm()` fits get posterior intervals
   from paired draws. For frequentist fits, `inferences()` adds intervals with
   `method = "mvn"`, `"score_bootstrap"`, or `"fwb"`, computing each
-  comparison within every draw.
+  comparison within every draw, and with `method = "delta"` (conditional
+  variance) for differences in SOPs or time in states; `vcov()` returns the
+  covariance between rows.
 
 # mostr 0.1.1
 
