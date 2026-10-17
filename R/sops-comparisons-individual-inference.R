@@ -1,6 +1,27 @@
-# Draw-based inference for SOP comparisons of each prediction profile.
+# Draw-based inference for results with one row per prediction profile:
+# comparisons from `comparisons()` and times from `state_time()`.
 
-inferences_comparisons <- function(
+# "comparison" or "time", selecting the reduction in `profile_array_reducer()`.
+profile_result_kind <- function(object) {
+  if (inherits(object, "markov_state_time")) "time" else "comparison"
+}
+
+# The functions that return such a result, for error messages.
+profile_result_source <- function(object) {
+  if (identical(profile_result_kind(object), "time")) {
+    "`state_time()` or `avg_state_time(by = FALSE)`"
+  } else {
+    "`comparisons()` or `avg_comparisons(by = FALSE)`"
+  }
+}
+
+# The profile (patient) of each row: `rowidcf` when scenarios repeat the
+# profiles, otherwise `rowid`.
+profile_index <- function(data) {
+  if ("rowidcf" %in% names(data)) data$rowidcf else data$rowid
+}
+
+inferences_profile_results <- function(
   object,
   method,
   n_draws,
@@ -15,11 +36,12 @@ inferences_comparisons <- function(
 ) {
   if (identical(method, "bootstrap")) {
     stop(
-      "Standard refit bootstrap is not supported for comparisons of each ",
-      "profile, from `comparisons()` or `avg_comparisons(by = FALSE)`, ",
-      "because a resample can lack outcome states that the fixed profiles ",
-      "need. Use `method = \"fwb\"`, or average the comparisons (`by = TRUE` ",
-      "or grouping columns) for ordinary bootstrap inference.",
+      "Standard refit bootstrap is not supported for results with one row ",
+      "per profile, from ",
+      profile_result_source(object),
+      ", because a resample can lack outcome states that the fixed profiles ",
+      "need. Use `method = \"fwb\"`, or average over the profiles ",
+      "(`by = TRUE` or grouping columns) for ordinary bootstrap inference.",
       call. = FALSE
     )
   }
@@ -29,7 +51,7 @@ inferences_comparisons <- function(
   }
   validate_comparison_draw_cells(n_draws, nrow(object))
   setup <- setup_from_avg_comparison_object(object)
-  reduce_draw <- comparison_draw_reducer(object, setup)
+  reduce_draw <- profile_draw_reducer(object, setup)
   check_comparison_replay(object, setup, reduce_draw, model)
 
   draws <- if (identical(method, "fwb")) {
@@ -85,7 +107,7 @@ inferences_comparisons <- function(
     # draw-by-row order as the estimates.
     if (isTRUE(draws$metadata$draw_weights_attached)) {
       draws_df[[draws$metadata$draw_weight_col]] <- as.vector(t(
-        draws$weights[, keys$rowid, drop = FALSE]
+        draws$weights[, profile_index(keys), drop = FALSE]
       ))
     }
     attr(result, "draws") <- draws_df
@@ -100,12 +122,12 @@ validate_comparison_draw_cells <- function(n_draws, n_rows) {
   n_cells <- as.double(n_draws) * n_rows
   if (n_cells > max_cells) {
     stop(
-      "Inference for `comparisons()` would keep ",
+      "Inference for one row per profile would keep ",
       format(n_cells, scientific = FALSE),
       " draw values (draws x result rows), above the current limit of ",
       format(max_cells, scientific = FALSE),
       ". Lower `n_draws`; request fewer `times`, state sets, or profiles; ",
-      "use `avg_comparisons()` for averaged comparisons; or increase option ",
+      "average over the profiles (`by = TRUE`); or increase option ",
       "`mostr.max_sops_draw_cells` if this allocation is intentional.",
       call. = FALSE
     )
@@ -117,6 +139,7 @@ comparison_key_columns <- function(object) {
   intersect(
     c(
       "rowid",
+      "rowidcf",
       "estimand",
       "time",
       "state_set",
@@ -160,11 +183,11 @@ clear_comparison_inference <- function(object) {
 }
 
 # Returns a function that reduces one stacked SOP array
-# [scenario x profile, time, state] to the comparison estimates, in the row
-# order of `object`.
-comparison_draw_reducer <- function(object, setup) {
+# [scenario x profile, time, state] to the estimates, in the row order of
+# `object`.
+profile_draw_reducer <- function(object, setup) {
   args <- attr(object, "comparison_args")
-  real_time <- !is.null(args$time_map) && !identical(args$estimand, "sop")
+  reducer <- profile_array_reducer(profile_result_kind(object), args)
   # Interpolation needs each row's starting state only; the other profile
   # columns would be copied into every interpolated row.
   slim_setup <- setup
@@ -174,34 +197,26 @@ comparison_draw_reducer <- function(object, setup) {
   ]
 
   function(sops_array) {
-    out <- if (real_time) {
-      comparisons_from_individual_sops(
+    out <- if (reducer$real_time) {
+      profile_results_from_individual_sops(
         x = time_benefit_sops_from_array(sops_array, slim_setup),
         setup = setup,
-        estimand = args$estimand,
-        state_sets = args$state_sets,
-        comparison = args$comparison,
+        reducer = reducer,
         time_map = args$time_map,
         baseline_time = args$baseline_time,
         target_times = args$target_times,
-        time_unit = args$time_unit,
         posterior_summary = "mean",
         conf_level = 0.95,
         return_draws = FALSE
       )
     } else {
-      individual_comparisons_from_array(
-        sops_array = stacked_to_counterfactual_array(
+      reducer$reduce_array(
+        stacked_to_counterfactual_array(
           sops_array,
           n_cf = setup$n_cf,
           n_each = setup$n_each
         ),
-        setup = setup,
-        estimand = args$estimand,
-        state_sets = args$state_sets,
-        comparison = args$comparison,
-        real_time = FALSE,
-        time_unit = args$time_unit
+        setup = setup
       )
     }
     out$estimate

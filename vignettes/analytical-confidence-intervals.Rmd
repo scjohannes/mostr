@@ -163,7 +163,7 @@ t2 <- Sys.time()
 t2 - t1
 
 # compute time in state
-time_conditional <- avg_time(
+time_conditional <- avg_state_time(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
@@ -254,7 +254,7 @@ avg_unconditional <- avg_sops(
 )
 
 # compute time in state
-time_unconditional <- avg_time(
+time_unconditional <- avg_state_time(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),

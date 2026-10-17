@@ -25,17 +25,22 @@ validate_comparison_times <- function(times, fn) {
   invisible(NULL)
 }
 
+# Data in which bare variable names are looked up: the data stored with the
+# model, or `newdata` for a model without stored data, as marginaleffects
+# uses the model's data.
+bare_variable_data <- function(model, newdata) {
+  data_res <- resolve_markov_source_data(model, newdata)
+  data_res$refit_data %||% data_res$source_data
+}
+
 # Turns a bare variable name into the named list of values to compare, then
-# validates the list. Values come from the data stored with the model, or
-# from `newdata` for a model without stored data, as marginaleffects uses the
-# model's data.
+# validates the list.
 resolve_comparison_variables <- function(variables, model, newdata, fn) {
   if (!missing(variables) && is.character(variables)) {
     if (length(variables) != 1L || is.na(variables) || !nzchar(variables)) {
       stop("`", fn, "` supports exactly one named variable.")
     }
-    data_res <- resolve_markov_source_data(model, newdata)
-    data <- data_res$refit_data %||% data_res$source_data
+    data <- bare_variable_data(model, newdata)
     if (!variables %in% names(data)) {
       stop("Variables not in data: ", variables)
     }
@@ -47,43 +52,80 @@ resolve_comparison_variables <- function(variables, model, newdata, fn) {
   validate_avg_comparison_variables(variables, fn)
 }
 
-# Values that a bare variable name compares, matching marginaleffects'
-# defaults: every observed factor level in level order, sorted character
-# values, FALSE then TRUE, or 0 then 1. The first value is the reference.
-# marginaleffects compares other numeric variables with each row's value plus
-# one, which a comparison of fixed values cannot express.
-comparison_variable_values <- function(x, name) {
+# Turns bare variable names for predictions (`sops()`, `avg_sops()`,
+# `state_time()`, `avg_state_time()`) into a named list of values. `NULL`
+# and named lists are returned unchanged.
+resolve_prediction_variables <- function(variables, model, newdata) {
+  if (is.null(variables) || !is.character(variables)) {
+    return(variables)
+  }
+  if (anyNA(variables) || any(!nzchar(variables)) || anyDuplicated(variables)) {
+    stop("Bare variable names must be unique, non-missing, and non-empty.")
+  }
+  data <- bare_variable_data(model, newdata)
+  missing_vars <- setdiff(variables, names(data))
+  if (length(missing_vars) > 0L) {
+    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+  }
+  stats::setNames(
+    lapply(variables, function(name) {
+      prediction_variable_values(data[[name]], name)
+    }),
+    variables
+  )
+}
+
+# Observed values of a variable named without values, chosen as in
+# marginaleffects: factor levels in level order, sorted character values,
+# FALSE then TRUE, or 0 then 1. `numeric` decides other numeric variables:
+# predictions use their five-number summary, as marginaleffects'
+# predictions() does; comparisons stop, because marginaleffects' default for
+# them (each row's value plus one) is not a comparison of fixed values.
+bare_variable_values <- function(x, name, numeric = c("error", "fivenum")) {
+  numeric <- match.arg(numeric)
   explicit <- paste0(
-    "list the values to compare instead, for example `variables = list(",
+    "list the values instead, for example `variables = list(",
     name,
     " = c(...))`."
   )
   observed <- x[!is.na(x)]
-  values <- if (is.factor(x)) {
-    factor(levels(x)[levels(x) %in% as.character(observed)], levels = levels(x))
-  } else if (is.logical(x) || is.character(x)) {
-    sort(unique(observed))
-  } else if (is.numeric(x) && !is.object(x)) {
-    unique_values <- sort(unique(observed))
-    if (!all(unique_values %in% c(0, 1))) {
-      stop(
-        "`",
-        name,
-        "` is numeric with values other than 0 and 1, so a bare name cannot ",
-        "choose values to compare; ",
-        explicit,
-        call. = FALSE
-      )
-    }
-    unique_values
-  } else {
+  if (is.factor(x)) {
+    return(factor(
+      levels(x)[levels(x) %in% as.character(observed)],
+      levels = levels(x)
+    ))
+  }
+  if (is.logical(x) || is.character(x)) {
+    return(sort(unique(observed)))
+  }
+  if (!is.numeric(x) || is.object(x)) {
     stop(
-      "A bare variable name supports factor, character, logical, or 0/1 ",
-      "numeric variables; ",
+      "A bare variable name supports factor, character, logical, or numeric ",
+      "variables; ",
       explicit,
       call. = FALSE
     )
   }
+  unique_values <- sort(unique(observed))
+  if (all(unique_values %in% c(0, 1))) {
+    return(unique_values)
+  }
+  if (identical(numeric, "fivenum")) {
+    return(unique(stats::fivenum(observed)))
+  }
+  stop(
+    "`",
+    name,
+    "` is numeric with values other than 0 and 1, so a bare name cannot ",
+    "choose values to compare; ",
+    explicit,
+    call. = FALSE
+  )
+}
+
+# The first value is the reference of every comparison.
+comparison_variable_values <- function(x, name) {
+  values <- bare_variable_values(x, name, numeric = "error")
   if (length(values) < 2L) {
     stop(
       "`",
@@ -91,6 +133,14 @@ comparison_variable_values <- function(x, name) {
       "` needs at least two observed values to compare.",
       call. = FALSE
     )
+  }
+  values
+}
+
+prediction_variable_values <- function(x, name) {
+  values <- bare_variable_values(x, name, numeric = "fivenum")
+  if (length(values) < 1L) {
+    stop("`", name, "` needs at least one observed value.", call. = FALSE)
   }
   values
 }
@@ -176,9 +226,9 @@ avg_comparison_setup <- function(
     validate_markov_id_var(id_var, newdata_orig, "stored model data")
   }
 
-  varname <- names(variables)[1]
-  if (!varname %in% names(newdata_orig)) {
-    stop("Variables not in data: ", varname)
+  missing_vars <- setdiff(names(variables), names(newdata_orig))
+  if (length(missing_vars) > 0L) {
+    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
 
   baseline_data <- if (newdata_supplied) {
@@ -285,7 +335,9 @@ avg_comparison_replay_avg_sops <- function(
       model = model,
       newdata = newdata,
       variables = variables,
-      by = by,
+      # Stored averages keep `by = NULL` for the overall average, which
+      # `avg_sops()` spells `by = TRUE`.
+      by = by %||% TRUE,
       times = times,
       y_levels = y_levels,
       absorb = absorb,

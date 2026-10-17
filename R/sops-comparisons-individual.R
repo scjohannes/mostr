@@ -169,7 +169,7 @@ comparisons <- function(
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)
-  by <- resolve_comparisons_by(by)
+  by <- resolve_by_choice(by)
   validate_comparison_times(times, "comparisons()")
   conf_level <- validate_conf_level(conf_level)
   variables <- resolve_comparison_variables(
@@ -264,24 +264,32 @@ comparisons <- function(
     )
   }
 
-  result <- comparisons_from_individual_sops(
+  reducer <- profile_array_reducer(
+    "comparison",
+    list(
+      estimand = estimand,
+      state_sets = state_sets,
+      comparison = comparison,
+      time_map = time_map,
+      time_unit = time_unit
+    )
+  )
+  result <- profile_results_from_individual_sops(
     x = ind,
     setup = setup,
-    estimand = estimand,
-    state_sets = state_sets,
-    comparison = comparison,
+    reducer = reducer,
     time_map = time_map,
     baseline_time = baseline_time,
     target_times = target_times,
-    time_unit = time_unit,
     posterior_summary = posterior_summary,
     conf_level = conf_level,
     return_draws = return_draws
   )
-  result <- add_comparison_profile_columns(
+  result <- add_profile_columns(
     result,
-    setup$baseline_data,
-    profile_cols
+    data = setup$baseline_data,
+    index = result$rowid,
+    cols = profile_cols
   )
 
   set_avg_comparison_attrs(
@@ -305,29 +313,7 @@ comparisons <- function(
   )
 }
 
-resolve_comparisons_by <- function(by) {
-  if (is.null(by) || isFALSE(by)) {
-    return(list(average = FALSE, by = NULL))
-  }
-  if (isTRUE(by)) {
-    return(list(average = TRUE, by = NULL))
-  }
-  if (is.character(by) && length(by) > 0L && !anyNA(by) && all(nzchar(by))) {
-    return(list(average = TRUE, by = by))
-  }
-  stop(
-    "`by` must be `FALSE`, `TRUE`, or a character vector of column names.",
-    call. = FALSE
-  )
-}
-
-# Profile columns are copied into the output next to the comparison columns,
-# so they must not reuse those names. The profile's visit column is dropped:
-# it holds the starting visit, not a prediction time. So are columns that
-# mostr adds for its own bookkeeping, such as `.markov_source_row`.
 comparison_profile_columns <- function(baseline_data, time_var, estimand) {
-  profile_cols <- setdiff(names(baseline_data), c("rowid", time_var))
-  profile_cols <- profile_cols[!startsWith(profile_cols, ".markov_")]
   reserved <- c(
     "estimand",
     "state_set",
@@ -344,10 +330,23 @@ comparison_profile_columns <- function(baseline_data, time_var, estimand) {
   if (identical(estimand, "sop")) {
     reserved <- c(reserved, "time")
   }
+  profile_output_columns(baseline_data, time_var, reserved, "comparisons()")
+}
+
+# Profile columns are copied into a result next to its own columns, so they
+# must not reuse those (`reserved`) names. The profile's visit column is
+# dropped: it holds the starting visit, not a prediction time. So are the
+# row numbers and columns that mostr adds for its own bookkeeping, such as
+# `.markov_source_row`.
+profile_output_columns <- function(data, time_var, reserved, fn) {
+  profile_cols <- setdiff(names(data), c("rowid", "rowidcf", time_var))
+  profile_cols <- profile_cols[!startsWith(profile_cols, ".markov_")]
   clash <- intersect(profile_cols, reserved)
   if (length(clash) > 0L) {
     stop(
-      "`comparisons()` uses the column name(s) ",
+      "`",
+      fn,
+      "` uses the column name(s) ",
       paste0("`", clash, "`", collapse = ", "),
       " for its output, so the prediction profiles cannot contain them. ",
       "Rename these columns.",
@@ -357,10 +356,10 @@ comparison_profile_columns <- function(baseline_data, time_var, estimand) {
   profile_cols
 }
 
-add_comparison_profile_columns <- function(result, baseline_data, profile_cols) {
-  index <- result$rowid
-  for (col in profile_cols) {
-    values <- baseline_data[[col]]
+# Adds `cols` of `data`, taking row `index[i]` for result row `i`.
+add_profile_columns <- function(result, data, index, cols) {
+  for (col in cols) {
+    values <- data[[col]]
     result[[col]] <- if (is.matrix(values)) {
       values[index, , drop = FALSE]
     } else {
@@ -370,22 +369,55 @@ add_comparison_profile_columns <- function(result, baseline_data, profile_cols) 
   result
 }
 
-comparisons_from_individual_sops <- function(
+# How a result with one row per profile is computed from a
+# [scenario, profile, time, state] array of SOPs. `kind` is "comparison"
+# (contrasts between scenarios, from `comparisons()`) or "time" (time in
+# each state set under each scenario, from `state_time()`); `args` holds the
+# stored estimand, state sets, comparison, `time_map`, and `time_unit`.
+profile_array_reducer <- function(kind, args) {
+  if (identical(kind, "time")) {
+    real_time <- !is.null(args$time_map)
+    reduce_array <- function(sops_array, setup, value_col = "estimate") {
+      individual_times_from_array(
+        sops_array = sops_array,
+        setup = setup,
+        state_sets = args$state_sets,
+        real_time = real_time,
+        value_col = value_col,
+        time_unit = args$time_unit
+      )
+    }
+  } else {
+    # As in `avg_comparisons()`, `time_map` applies to time totals only.
+    real_time <- !is.null(args$time_map) && !identical(args$estimand, "sop")
+    reduce_array <- function(sops_array, setup, value_col = "estimate") {
+      individual_comparisons_from_array(
+        sops_array = sops_array,
+        setup = setup,
+        estimand = args$estimand,
+        state_sets = args$state_sets,
+        comparison = args$comparison,
+        real_time = real_time,
+        value_col = value_col,
+        time_unit = args$time_unit
+      )
+    }
+  }
+  list(reduce_array = reduce_array, real_time = real_time)
+}
+
+profile_results_from_individual_sops <- function(
   x,
   setup,
-  estimand,
-  state_sets,
-  comparison,
+  reducer,
   time_map,
   baseline_time,
   target_times,
-  time_unit,
   posterior_summary,
   conf_level,
   return_draws
 ) {
-  # As in `avg_comparisons()`, `time_map` applies to time totals only.
-  real_time <- !is.null(time_map) && !identical(estimand, "sop")
+  real_time <- reducer$real_time
   if (real_time) {
     target_times <- comparison_real_time_target_times(
       x,
@@ -407,19 +439,14 @@ comparisons_from_individual_sops <- function(
   reduce_setup$y_levels <- attr(x, "y_levels")
 
   reduce <- function(data, value_col) {
-    individual_comparisons_from_array(
-      sops_array = counterfactual_array_from_tidy(
+    reducer$reduce_array(
+      counterfactual_array_from_tidy(
         data = data,
         value_col = value_col,
         setup = reduce_setup
       ),
       setup = reduce_setup,
-      estimand = estimand,
-      state_sets = state_sets,
-      comparison = comparison,
-      real_time = real_time,
-      value_col = value_col,
-      time_unit = time_unit
+      value_col = value_col
     )
   }
   point <- reduce(as.data.frame(x), "estimate")
@@ -549,6 +576,46 @@ individual_comparisons_from_array <- function(
         by_time = by_time
       )
     }
+  }
+  bind_rows_fill(pieces)
+}
+
+# `sops_array` is [scenario, profile, time, state]. Returns each profile's
+# time in each state set under each scenario: one row per state set,
+# scenario, and profile, with the profile fastest. `rowid` numbers the
+# scenario-profile pairs in the order of the stacked prediction data, and
+# `rowidcf` gives the profile when `variables` set scenarios.
+individual_times_from_array <- function(
+  sops_array,
+  setup,
+  state_sets,
+  real_time,
+  value_col = "estimate",
+  time_unit = NULL
+) {
+  n_cf <- dim(sops_array)[1]
+  n_each <- dim(sops_array)[2]
+  state_labels <- as_state_labels(setup$y_levels)
+  pieces <- vector("list", length(state_sets))
+  for (set_i in seq_along(state_sets)) {
+    totals <- profile_time_totals(
+      state_set_occupancy(
+        sops_array,
+        match(as_state_labels(state_sets[[set_i]]), state_labels)
+      ),
+      setup$times,
+      real_time
+    )
+    out <- data.frame(rowid = seq_len(n_cf * n_each))
+    if (length(setup$variables) > 0L) {
+      out$rowidcf <- rep(seq_len(n_each), times = n_cf)
+    }
+    out$state_set <- names(state_sets)[set_i]
+    if (!is.null(time_unit)) {
+      out$time_unit <- time_unit
+    }
+    out[[value_col]] <- as.vector(t(totals))
+    pieces[[set_i]] <- out
   }
   bind_rows_fill(pieces)
 }

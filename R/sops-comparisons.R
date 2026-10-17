@@ -144,7 +144,7 @@ avg_comparisons <- function(
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)
-  by_choice <- resolve_comparisons_by(by)
+  by_choice <- resolve_by_choice(by)
 
   validate_comparison_times(times, "avg_comparisons()")
   conf_level <- validate_conf_level(conf_level)

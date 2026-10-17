@@ -204,7 +204,8 @@ get_draws <- function(x) {
       c(
         "markov_avg_sops",
         "markov_sops",
-        "markov_avg_time",
+        "markov_avg_state_time",
+        "markov_state_time",
         "markov_avg_comparisons",
         "markov_comparisons"
       )

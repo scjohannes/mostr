@@ -100,7 +100,8 @@ delta_analytical <- function(x) {
         "markov_avg_sops",
         "markov_comparisons",
         "markov_avg_comparisons",
-        "markov_avg_time"
+        "markov_state_time",
+        "markov_avg_state_time"
       )
     )
   ) {
@@ -216,9 +217,9 @@ delta_vcov <- function(object, rows = NULL) {
 #' extract smaller blocks within the analytical memory limit. Standard errors
 #' are computed without materializing the full covariance matrix.
 #'
-#' @param object A `markov_sops`, `markov_avg_sops`, `markov_avg_time`,
-#'   `markov_comparisons`, or `markov_avg_comparisons` object returned by
-#'   `inferences(method = "delta")`.
+#' @param object A `markov_sops`, `markov_avg_sops`, `markov_state_time`,
+#'   `markov_avg_state_time`, `markov_comparisons`, or `markov_avg_comparisons`
+#'   object returned by `inferences(method = "delta")`.
 #' @param rows Optional numeric or logical row selection, or analytical row-key
 #'   values. `NULL` returns every result row.
 #' @param ... Reserved for the `stats::vcov()` generic.
@@ -249,6 +250,12 @@ vcov.markov_avg_comparisons <- function(object, rows = NULL, ...) {
 
 #' @rdname vcov.markov_sops
 #' @export
-vcov.markov_avg_time <- function(object, rows = NULL, ...) {
+vcov.markov_state_time <- function(object, rows = NULL, ...) {
+  delta_vcov(object, rows = rows)
+}
+
+#' @rdname vcov.markov_sops
+#' @export
+vcov.markov_avg_state_time <- function(object, rows = NULL, ...) {
   delta_vcov(object, rows = rows)
 }

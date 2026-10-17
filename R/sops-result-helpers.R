@@ -177,6 +177,27 @@ with_local_seed <- function(seed, code) {
   force(code)
 }
 
+# `by` as in the marginaleffects package: `FALSE` or `NULL` keeps one row per
+# profile, `TRUE` averages over all profiles, and column names average within
+# groups. Grouping by no columns (`character(0)`) is the overall average.
+# Returns whether to average and the grouping columns (`NULL` for the overall
+# average).
+resolve_by_choice <- function(by) {
+  if (is.null(by) || isFALSE(by)) {
+    return(list(average = FALSE, by = NULL))
+  }
+  if (isTRUE(by) || identical(by, character(0))) {
+    return(list(average = TRUE, by = NULL))
+  }
+  if (is.character(by) && length(by) > 0L && !anyNA(by) && all(nzchar(by))) {
+    return(list(average = TRUE, by = by))
+  }
+  stop(
+    "`by` must be `FALSE`, `TRUE`, or a character vector of column names.",
+    call. = FALSE
+  )
+}
+
 create_counterfactual_grid <- function(variables) {
   if (length(variables)) {
     do.call(expand.grid, variables)
@@ -206,6 +227,30 @@ create_counterfactual_data <- function(baseline_data, grid, variables) {
     cf_data_list[[i]] <- dt_copy
   }
   do.call(rbind, cf_data_list)
+}
+
+# Stacks one copy of the profiles for each combination of `variables`, with
+# those columns set, as marginaleffects' predictions() does: `rowid` numbers
+# the stacked rows and `rowidcf` records each row's profile.
+stack_prediction_profiles <- function(profiles, variables) {
+  missing_vars <- setdiff(names(variables), names(profiles))
+  if (length(missing_vars) > 0L) {
+    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+  }
+  grid <- create_counterfactual_grid(variables)
+  stacked <- create_counterfactual_data(profiles, grid, variables)
+  stacked$rowidcf <- rep(profiles$rowid, times = nrow(grid))
+  rownames(stacked) <- NULL
+  ensure_markov_rowid(stacked)
+}
+
+# The distinct patients among prediction rows, one row each: the first copy
+# of each profile when `variables` stacked copies of them.
+prediction_weight_profiles <- function(data) {
+  if (!"rowidcf" %in% names(data)) {
+    return(data)
+  }
+  data[!duplicated(data$rowidcf), , drop = FALSE]
 }
 
 validate_sops_weights <- function(weights, n, arg = "weights") {

@@ -494,7 +494,11 @@ inferences_bootstrap_sops_fwb <- function(
 
   prediction_data <- ensure_markov_rowid(prediction_data)
   if (!newdata_supplied) {
-    validate_prediction_weight_ids(prediction_data, id_var)
+    # Copies of a profile from `variables` share their patient's weight.
+    validate_prediction_weight_ids(
+      prediction_weight_profiles(prediction_data),
+      id_var
+    )
   } else if (!is.null(by)) {
     warn_fixed_profile_bootstrap_weights("FWB")
   } else if (isTRUE(return_draws)) {

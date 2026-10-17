@@ -2,11 +2,11 @@
 
 #' Plot Average Time in States
 #'
-#' Plots output from [avg_time()], either as stacked horizontal bars that
+#' Plots output from [avg_state_time()], either as stacked horizontal bars that
 #' divide follow-up into the average time spent in each state, or as points
 #' with confidence intervals.
 #'
-#' @param x A `markov_avg_time` object returned by [avg_time()], optionally
+#' @param x A `markov_avg_state_time` object returned by [avg_state_time()], optionally
 #'   after [inferences()].
 #' @param type Character string. The kind of plot:
 #'   \itemize{
@@ -48,17 +48,17 @@
 #' @details
 #' A stacked bar only makes sense when no state is counted twice. With
 #' `type = "bar"`, the state sets in `x` must therefore not overlap, which
-#' holds for the default `state_sets = NULL` of [avg_time()] (every state
+#' holds for the default `state_sets = NULL` of [avg_state_time()] (every state
 #' separately). When the sets also include every state, each bar's length is
 #' the total follow-up: the number of visits, or the elapsed time covered when
-#' `avg_time()` used `time_map`.
+#' `avg_state_time()` used `time_map`.
 #'
 #' To compare scenarios with a confidence interval for the difference, use
 #' `avg_comparisons(estimand = "time_in_state")` and [plot_comparisons()].
 #'
 #' @examples
 #' \dontrun{
-#' tis <- avg_time(
+#' tis <- avg_state_time(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:28,
@@ -95,8 +95,8 @@ plot_time <- function(
   plot_validate_scalar(bar_width, "bar_width", lower = 0, upper = 1)
   plot_validate_scalar(point_size, "point_size", lower = 0)
   plot_validate_scalar(line_width, "line_width", lower = 0)
-  if (!inherits(x, "markov_avg_time")) {
-    stop("`x` must be a `markov_avg_time` object returned by `avg_time()`.")
+  if (!inherits(x, "markov_avg_state_time")) {
+    stop("`x` must be a `markov_avg_state_time` object returned by `avg_state_time()`.")
   }
 
   data <- as.data.frame(x)
@@ -162,7 +162,7 @@ plot_validate_flag <- function(x, arg) {
 plot_time_validate_partition <- function(state_sets, y_levels, scale) {
   if (is.null(state_sets)) {
     stop(
-      "`x` has no stored state sets; recreate it with `avg_time()`.",
+      "`x` has no stored state sets; recreate it with `avg_state_time()`.",
       call. = FALSE
     )
   }
@@ -172,7 +172,7 @@ plot_time_validate_partition <- function(state_sets, y_levels, scale) {
       "Stacked bars need state sets that do not overlap; state(s) ",
       paste(unique(states[duplicated(states)]), collapse = ", "),
       " appear in more than one set. Use `type = \"pointrange\"` or ",
-      "non-overlapping `state_sets` in `avg_time()`.",
+      "non-overlapping `state_sets` in `avg_state_time()`.",
       call. = FALSE
     )
   }

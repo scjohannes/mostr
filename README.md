@@ -103,7 +103,7 @@ in Frank Harrell's *Regression Modeling Strategies*.
 The design of `mostr` is heavily inspired by the philosophy and workflow of
 the [`marginaleffects`](https://marginaleffects.com/) package: fit a model
 first, then compute the quantities you care about from it. Functions such as
-`avg_sops()`, `avg_time()`, and `avg_comparisons()` average predictions over
+`avg_sops()`, `avg_state_time()`, and `avg_comparisons()` average predictions over
 patients, `inferences()` adds uncertainty in a separate step, and results are
 plain data frames with `estimate`, `std.error`, `conf.low`, and `conf.high`
 columns. If you use `mostr`, please also consider citing `marginaleffects`:

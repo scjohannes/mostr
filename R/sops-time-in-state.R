@@ -221,7 +221,7 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'   `time_map` is supplied. This controls the interpolation grid used for AUC,
 #'   for example `target_times = 1:28` with `baseline_time = 0` uses day 0 as an
 #'   anchor but starts the AUC at day 1. If `NULL`, integration runs from
-#'   `baseline_time` through the mapped follow-up times, matching [avg_time()]
+#'   `baseline_time` through the mapped follow-up times, matching [avg_state_time()]
 #'   and [avg_comparisons()]. With `baseline_time = NULL`, it starts at the
 #'   first mapped follow-up time.
 #'
@@ -271,7 +271,7 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #' }
 #'
 #' @keywords time-in-state auc bootstrap
-#' @seealso [avg_time()] for model-level average time estimates with analytical,
+#' @seealso [avg_state_time()] for model-level average time estimates with analytical,
 #'   simulation, bootstrap, or posterior uncertainty.
 #' @export
 time_in_state <- function(

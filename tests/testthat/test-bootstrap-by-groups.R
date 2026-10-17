@@ -14,7 +14,7 @@ test_that("ordinary bootstrap stops when a resample lacks a `by` group", {
   )
   expect_error(
     inferences(
-      avg_time(case$model, by = "rare", times = 1:3, absorb = 3),
+      avg_state_time(case$model, by = "rare", times = 1:3, absorb = 3),
       method = "bootstrap",
       n_draws = 40,
       seed = 11

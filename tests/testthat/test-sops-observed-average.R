@@ -1,14 +1,14 @@
 test_that("avg_sops averages observed covariates overall and within groups", {
   case <- make_observed_average_case()
   individual <- sops(case$model, times = case$times, absorb = case$absorb)
-  for (by in list(NULL, "tx")) {
+  for (by in list(TRUE, "tx")) {
     average <- avg_sops(
       case$model,
       by = by,
       times = case$times,
       absorb = case$absorb
     )
-    keys <- c("time", "state", by)
+    keys <- c("time", "state", if (is.character(by)) by)
     manual <- stats::aggregate(individual$estimate, individual[keys], mean)
     names(manual)[names(manual) == "x"] <- "manual"
     compared <- merge(average, manual, by = keys)

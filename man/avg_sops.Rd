@@ -8,7 +8,7 @@ avg_sops(
   model,
   newdata = NULL,
   variables = NULL,
-  by = NULL,
+  by = TRUE,
   times,
   y_levels = NULL,
   absorb = NULL,
@@ -38,14 +38,24 @@ covariates. The internal \code{rowid} column is regenerated. If \code{NULL}, use
 \code{\link[=orm_markov]{orm_markov()}}, \code{\link[=blrm_markov]{blrm_markov()}}, or \code{\link[=vglm_markov]{vglm_markov()}} and requires exactly
 one complete designated starting profile per fitted patient.}
 
-\item{variables}{Optional named list specifying covariates to set before
-averaging. E.g., \code{list(tx = c(0, 1))} estimates probabilities if every
-patient received control or treatment. The default, \code{NULL}, averages with
-each patient's observed covariates, including their observed treatment.}
+\item{variables}{Optional covariates to set before averaging: a named list
+of values, such as \code{list(tx = c(0, 1))} for probabilities if every patient
+received control or treatment, or bare names, such as \code{"tx"}. As in
+marginaleffects' \code{predictions()}, a bare name uses every observed value:
+factor levels in level order, character values in sorted order, \code{FALSE}
+and \code{TRUE}, or \code{0} and \code{1} for a 0/1 numeric variable. Other numeric
+variables use their five-number summary (minimum, lower quartile,
+median, upper quartile, maximum). Values are read from the data stored
+with the model, or from \code{newdata} for a model without stored data. The
+default, \code{NULL}, averages with each patient's observed covariates,
+including their observed treatment.}
 
-\item{by}{Optional character vector of additional variables to group by
-after standardization. Rows missing any grouping value are omitted; an
-error is raised if none remain.}
+\item{by}{How to average, as in the marginaleffects package. \code{TRUE} (the
+default) averages over all profiles. A character vector of column names
+averages within the groups those columns define after standardization;
+rows missing any grouping value are omitted, and an error is raised if
+none remain. \code{FALSE} or \code{NULL} does not average and returns the \code{\link[=sops]{sops()}}
+result, one row per profile, value of \code{variables}, time, and state.}
 
 \item{times}{Required visit-scale time points. Numeric time variables use
 numeric values; factor-valued visit indices use fitted visit levels.}
@@ -99,7 +109,8 @@ extraction with \code{get_draws()}.}
 \item{...}{Additional arguments reserved for future extensions.}
 }
 \value{
-A data frame of class \code{markov_avg_sops} with columns:
+With \code{by = FALSE}, the \code{markov_sops} result of \code{\link[=sops]{sops()}}. Otherwise
+a data frame of class \code{markov_avg_sops} with columns:
 \item{time}{Time point}
 \item{state}{State level}
 \item{(variables)}{Values requested in \code{variables}, when supplied}

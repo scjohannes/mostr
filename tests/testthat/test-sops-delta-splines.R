@@ -64,7 +64,8 @@ replay_spline_avg_sops <- function(object, model) {
   avg_sops(
     model = model,
     variables = avg_args$variables,
-    by = avg_args$by,
+    # Stored averages use `by = NULL` for the overall average.
+    by = avg_args$by %||% TRUE,
     times = avg_args$times,
     y_levels = attr(object, "y_levels"),
     absorb = attr(object, "absorb"),

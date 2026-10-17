@@ -6,13 +6,24 @@
 #' follow-up period, including time accumulated across repeated visits to a
 #' state. With `variables = NULL`, averages over patients using their observed
 #' starting states and covariates. Supply `variables` to calculate averages
-#' under specified counterfactual scenarios.
+#' under specified counterfactual scenarios. [state_time()] gives each
+#' patient's time before averaging.
+#'
+#' `avg_time()` is the previous name of `avg_state_time()`. It still works but
+#' gives a deprecation warning.
 #'
 #' @inheritParams avg_sops
 #' @inheritParams avg_comparisons
-#' @param variables Optional named list of covariates to set before averaging,
-#'   for example `list(tx = c(0, 1))` for average times under each treatment.
-#'   The default, `NULL`, uses each patient's observed covariates.
+#' @param variables Optional covariates to set before averaging: a named list
+#'   of values, for example `list(tx = c(0, 1))` for average times under each
+#'   treatment, or bare names such as `"tx"`, whose values are chosen as in
+#'   [avg_sops()]. The default, `NULL`, uses each patient's observed
+#'   covariates.
+#' @param by How to average, as in the marginaleffects package. `TRUE` (the
+#'   default) averages over all profiles, and a character vector of column
+#'   names averages within the groups those columns define. `FALSE` or `NULL`
+#'   does not average and returns the [state_time()] result, one total per
+#'   profile, value of `variables`, and state set.
 #' @param state_sets States to summarize. `NULL` returns every state separately.
 #'   A vector pools its states into one total; a named list returns one total
 #'   per named state set, for example
@@ -42,7 +53,7 @@
 #' @param return_draws Logical. For `blrm`, retain posterior time-total draws
 #'   for [get_draws()]. Frequentist draws are retained through [inferences()].
 #'
-#' @return A data frame of class `markov_avg_time`, with `state_set`, any
+#' @return A data frame of class `markov_avg_state_time`, with `state_set`, any
 #'   counterfactual and grouping columns, and `estimate` (average total time).
 #'   Rows follow the order of `state_sets`. If supplied, `time_unit` is
 #'   included as a label; it does not rescale time. For `blrm`, posterior
@@ -104,29 +115,29 @@
 #' @examples
 #' \dontrun{
 #' # Average over the fitted patients' observed starting states and covariates.
-#' avg_time(fit, times = 1:30) |>
+#' avg_state_time(fit, times = 1:30) |>
 #'   inferences(method = "delta")
 #'
-#' avg_time(
+#' avg_state_time(
 #'   fit, variables = list(tx = c(0, 1)), times = 1:30,
 #'   state_sets = list(home = "1", hospital = c("2", "3"))
 #' ) |>
 #'   inferences(method = "delta", vcov = "conditional")
 #'
 #' # Visits on days 3, 7, 14, and 28; totals cover days 0 to 28.
-#' avg_time(
+#' avg_state_time(
 #'   fit, times = 1:4, time_map = c("1" = 3, "2" = 7, "3" = 14, "4" = 28),
 #'   time_unit = "days"
 #' ) |>
 #'   inferences(method = "fwb", n_draws = 500)
 #' }
 #' @export
-avg_time <- function(
+avg_state_time <- function(
   model,
   newdata = NULL,
   variables = NULL,
   state_sets = NULL,
-  by = NULL,
+  by = TRUE,
   times,
   y_levels = NULL,
   absorb = NULL,
@@ -148,33 +159,57 @@ avg_time <- function(
   return_draws = FALSE,
   ...
 ) {
-  if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `avg_time()`.")
-  }
-  if (anyDuplicated(times)) {
-    stop(
-      "`times` must not contain duplicate visits; each visit is counted once."
-    )
-  }
-  if (!missing(baseline_time) && !is.null(baseline_time) && is.null(time_map)) {
-    stop(
-      "`baseline_time` requires `time_map`; without `time_map`, totals sum ",
-      "occupancy probabilities at the requested visits."
-    )
-  }
-  if (!is.null(target_times) && is.null(time_map)) {
-    stop("`target_times` requires `time_map` for real-time integration.")
-  }
-  if (!is.null(target_times) && !length(target_times)) {
-    stop("`target_times` must contain at least one time.")
-  }
-  if (
-    !is.null(time_unit) &&
-      (!is.character(time_unit) || length(time_unit) != 1L || is.na(time_unit))
-  ) {
-    stop("`time_unit` must be a single non-missing character label or NULL.")
-  }
+  validate_state_time_arguments(
+    times,
+    baseline_time = baseline_time,
+    baseline_time_supplied = !missing(baseline_time),
+    time_map = time_map,
+    target_times = target_times,
+    time_unit = time_unit,
+    fn = "avg_state_time()"
+  )
   posterior_summary <- match.arg(posterior_summary)
+  by_choice <- resolve_by_choice(by)
+  if (!by_choice$average) {
+    # `baseline_time` is passed on only if supplied, because supplying it
+    # without `time_map` is an error.
+    return(do.call(
+      state_time,
+      c(
+        list(
+          model = model,
+          newdata = newdata,
+          variables = variables,
+          state_sets = state_sets,
+          by = FALSE,
+          times = times,
+          y_levels = y_levels,
+          absorb = absorb,
+          time_map = time_map,
+          target_times = target_times,
+          time_unit = time_unit,
+          id_var = id_var,
+          time_var = time_var,
+          p_var = p_var,
+          p2_var = p2_var,
+          gap_var = gap_var,
+          time_covariates = time_covariates,
+          include_re = include_re,
+          n_draws = n_draws,
+          seed = seed,
+          posterior_summary = posterior_summary,
+          conf_level = conf_level,
+          return_draws = return_draws
+        ),
+        if (!missing(baseline_time)) list(baseline_time = baseline_time),
+        list(...)
+      )
+    ))
+  }
+  # From here on, `by` holds the grouping columns, or `NULL` to average over
+  # all profiles.
+  by <- by_choice$by
+  variables <- resolve_prediction_variables(variables, model, newdata)
   reserved <- intersect(
     c(names(variables), by),
     c("state_set", if (!is.null(time_unit)) "time_unit")
@@ -230,6 +265,55 @@ avg_time <- function(
   )
   result <- avg_time_from_sops(avg, args, return_draws)
   set_avg_time_attrs(result, avg, args)
+}
+
+#' @rdname avg_state_time
+#' @usage NULL
+#' @export
+avg_time <- function(...) {
+  .Deprecated("avg_state_time", package = "mostr")
+  avg_state_time(...)
+}
+
+# Checks shared by `avg_state_time()` and `state_time()` that need no
+# predictions. `baseline_time_supplied` says whether the caller passed
+# `baseline_time`, whose default needs no `time_map`.
+validate_state_time_arguments <- function(
+  times,
+  baseline_time,
+  baseline_time_supplied,
+  time_map,
+  target_times,
+  time_unit,
+  fn
+) {
+  if (missing(times) || is.null(times)) {
+    stop("`times` must be supplied to `", fn, "`.")
+  }
+  if (anyDuplicated(times)) {
+    stop(
+      "`times` must not contain duplicate visits; each visit is counted once."
+    )
+  }
+  if (baseline_time_supplied && !is.null(baseline_time) && is.null(time_map)) {
+    stop(
+      "`baseline_time` requires `time_map`; without `time_map`, totals sum ",
+      "occupancy probabilities at the requested visits."
+    )
+  }
+  if (!is.null(target_times) && is.null(time_map)) {
+    stop("`target_times` requires `time_map` for real-time integration.")
+  }
+  if (!is.null(target_times) && !length(target_times)) {
+    stop("`target_times` must contain at least one time.")
+  }
+  if (
+    !is.null(time_unit) &&
+      (!is.character(time_unit) || length(time_unit) != 1L || is.na(time_unit))
+  ) {
+    stop("`time_unit` must be a single non-missing character label or NULL.")
+  }
+  invisible(NULL)
 }
 
 # Structural `state_sets` checks that do not need the model's state levels, so
@@ -401,7 +485,7 @@ set_avg_time_attrs <- function(result, avg, args) {
     attr(result, name) <- attr(avg, name)
   }
   attr(result, "time_args") <- args
-  class(result) <- c("markov_avg_time", "data.frame")
+  class(result) <- c("markov_avg_state_time", "data.frame")
   result
 }
 

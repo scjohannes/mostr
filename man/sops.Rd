@@ -10,7 +10,8 @@ sops(
   times,
   y_levels = NULL,
   absorb = NULL,
-  by = NULL,
+  variables = NULL,
+  by = FALSE,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -47,14 +48,18 @@ infer the levels from \code{model}.}
 
 \item{absorb}{The absorbing state.}
 
-\item{by}{Optional character vector of variable names to stratify by. When
-provided, the function aggregates (averages) SOPs within each stratum
-defined by combinations of these variables. E.g., \code{by = "ecog"} aggregates
-within ECOG levels; \code{by = c("ecog", "age_group")} aggregates within each
-combination of ECOG and age group. Rows missing any grouping value are
-omitted; an error is raised if none remain. This is simple aggregation
-within observed strata, not G-computation standardization (use
-\code{avg_sops()} for that).}
+\item{variables}{Optional covariates to set before predicting: a named list
+of values, such as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}.
+Each profile is then predicted once for every combination of the values,
+with those columns set to the combination. For the values a bare name
+selects, see \code{\link[=avg_sops]{avg_sops()}}. The default, \code{NULL}, predicts each profile with
+its own covariates.}
+
+\item{by}{How to average the profiles' SOPs, as in the marginaleffects
+package. \code{FALSE} (the default) or \code{NULL} returns one row per profile,
+time, and state. \code{TRUE} averages over all profiles, and a character
+vector of column names averages within the groups those columns define;
+both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same arguments.}
 
 \item{id_var}{Character ID column used when \code{include_re = TRUE}. For \code{blrm},
 \code{NULL} is inferred from wrapper metadata, then \code{model$clusterInfo$name}
@@ -97,20 +102,26 @@ memory.}
 \item{...}{Additional arguments (currently unused).}
 }
 \value{
-A data frame of class \code{markov_sops} containing:
-\item{rowid}{Row identifier from newdata (omitted if \code{by} is specified)}
+A data frame of class \code{markov_sops}, or, with \code{by = TRUE} or
+grouping columns, the \code{markov_avg_sops} result of \code{\link[=avg_sops]{avg_sops()}}. The
+per-profile result contains:
+\item{rowid}{Row number of the prediction: the profile, or with
+\code{variables}, the profile and value combination.}
+\item{rowidcf}{With \code{variables}, the profile that the row predicts.}
 \item{time}{Time point}
 \item{state}{State name}
-\item{estimate}{Probability of being in the state (individual-level or stratum average)}
+\item{estimate}{Probability that the profile is in the state.}
 \item{conf.low, conf.high, std.error}{For \code{blrm} fits, posterior
 uncertainty summaries computed directly from SOP draws}
-\item{(by variables)}{Stratification variables if \code{by} is specified}
-Plus all columns from \code{newdata} (for individual-level results).
+Plus all profile columns, with the \code{variables} columns holding the value
+used for the row.
 }
 \description{
-Computes individual-level state occupation probabilities (SOPs) for each row
-in a dataset. Optionally aggregates results within strata defined by grouping
-variables.
+Computes state occupation probabilities (SOPs) for each prediction profile,
+by default each fitted patient's starting state and covariates. With
+\code{variables}, each profile is predicted once for every requested value, as
+in marginaleffects' \code{predictions()}. \code{\link[=avg_sops]{avg_sops()}} averages these SOPs over
+the profiles.
 }
 \details{
 For supported frequentist models, pass the result to
@@ -121,8 +132,8 @@ treating the starting states and covariates used for prediction as given.
 for model restrictions and other inference methods.
 
 This function wraps \code{soprob_markov()} and converts its array output to a tidy
-data frame. The output contains one row per patient-time-state combination
-(or stratum-time-state if \code{by} is used).
+data frame. The output contains one row per profile (and value of
+\code{variables}), time, and state.
 
 Automatic prediction from a wrapper-fitted model uses the cohort-wide
 designated \code{first_followup_time} retained before response-driven model-frame
@@ -147,40 +158,32 @@ because the package's Markov simulation logic expects
 higher-numbered states to represent worse outcomes, and uses reverse cumulative
 probabilities to model the probability of being in state k or worse.
 
-\strong{Stratification:}
+\strong{Averages:}
 
-When \code{by} is specified, the function:
-\enumerate{
-\item Computes individual-level SOPs for all patients
-\item Groups results by time, state, and the specified variables
-\item Averages the SOPs within each group
-}
-
-This aggregation preserves heterogeneity across observed strata without
-creating counterfactual scenarios (unlike G-computation in \code{avg_sops()}).
-
-For computing marginal/standardized SOPs (G-computation), use \code{avg_sops()}
-instead, which creates counterfactual datasets and averages over individuals.
+The average of the profiles' SOPs over all profiles (\code{by = TRUE}), or within
+groups such as ECOG levels (\code{by = "ecog"}), is the \code{\link[=avg_sops]{avg_sops()}} result, so
+\code{sops()} returns it directly. With \code{variables}, the average is the
+standardized (G-computation) probability under each value.
 }
 \examples{
 \dontrun{
-# Individual-level SOPs
+# SOPs for each profile
 sops_ind <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6)
 
-# Stratified by ECOG performance status
+# Each profile's SOPs under control and under treatment
+sops_cf <- sops(fit, newdata = baseline_data, variables = list(tx = c(0, 1)),
+                times = 1:30, y_levels = 1:6)
+
+# Averaged within ECOG levels; the same as avg_sops(by = "ecog")
 sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
                   by = "ecog")
 
-# Stratified by multiple variables
-sops_strat <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
-                   by = c("ecog", "age_group"))
-
 # Compatible with inferences()
-sops_strat |> inferences(method = "mvn", n_draws = 1000)
+sops_cf |> inferences(method = "mvn", n_draws = 1000)
 }
 
 }
 \seealso{
-\code{\link[=avg_sops]{avg_sops()}} for marginal SOPs, \code{\link[=soprob_markov]{soprob_markov()}} for the underlying
-computation.
+\code{\link[=avg_sops]{avg_sops()}} for averaged SOPs, \code{\link[=soprob_markov]{soprob_markov()}} for the
+underlying computation.
 }

@@ -19,7 +19,7 @@ plot_time(
 )
 }
 \arguments{
-\item{x}{A \code{markov_avg_time} object returned by \code{\link[=avg_time]{avg_time()}}, optionally
+\item{x}{A \code{markov_avg_state_time} object returned by \code{\link[=avg_state_time]{avg_state_time()}}, optionally
 after \code{\link[=inferences]{inferences()}}.}
 
 \item{type}{Character string. The kind of plot:
@@ -70,24 +70,24 @@ intervals when \code{conf.low} and \code{conf.high} exist.}
 A ggplot object.
 }
 \description{
-Plots output from \code{\link[=avg_time]{avg_time()}}, either as stacked horizontal bars that
+Plots output from \code{\link[=avg_state_time]{avg_state_time()}}, either as stacked horizontal bars that
 divide follow-up into the average time spent in each state, or as points
 with confidence intervals.
 }
 \details{
 A stacked bar only makes sense when no state is counted twice. With
 \code{type = "bar"}, the state sets in \code{x} must therefore not overlap, which
-holds for the default \code{state_sets = NULL} of \code{\link[=avg_time]{avg_time()}} (every state
+holds for the default \code{state_sets = NULL} of \code{\link[=avg_state_time]{avg_state_time()}} (every state
 separately). When the sets also include every state, each bar's length is
 the total follow-up: the number of visits, or the elapsed time covered when
-\code{avg_time()} used \code{time_map}.
+\code{avg_state_time()} used \code{time_map}.
 
 To compare scenarios with a confidence interval for the difference, use
 \code{avg_comparisons(estimand = "time_in_state")} and \code{\link[=plot_comparisons]{plot_comparisons()}}.
 }
 \examples{
 \dontrun{
-tis <- avg_time(
+tis <- avg_state_time(
   fit,
   variables = list(tx = c(0, 1)),
   times = 1:28,

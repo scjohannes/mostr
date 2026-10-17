@@ -50,7 +50,7 @@ test_that("average-time conditional variance agrees with numerical derivatives",
   case <- delta_avg_time_case(factor_time = TRUE)
   for (real_time in c(FALSE, TRUE)) {
     point <- function(model) {
-      avg_time(
+      avg_state_time(
         model,
         variables = list(tx = c(0, 1)),
         times = case$times,
@@ -102,7 +102,7 @@ test_that("unconditional average time includes baseline sampling and joint covar
   )
   variables <- list(tx = c(0, 1))
   target_times <- c(0, 1, 4, 9, 14)
-  point <- avg_time(
+  point <- avg_state_time(
     case$fit,
     variables = variables,
     times = case$times,
@@ -194,7 +194,7 @@ test_that("average-time contrasts agree with analytical average comparisons", {
     time_map = case$time_map,
     target_times = 0:14
   )
-  point <- do.call(avg_time, args)
+  point <- do.call(avg_state_time, args)
   comparison <- do.call(
     avg_comparisons,
     c(args, list(estimand = "time_in_state"))
@@ -220,7 +220,7 @@ test_that("real-time covariance respects omitted anchors and zero-length interva
   case <- delta_avg_time_case()
   # A grid of mapped visit times only never reaches the starting-state time, so
   # the result matches omitting the starting state altogether.
-  anchored <- avg_time(
+  anchored <- avg_state_time(
     case$fit,
     times = case$times,
     time_map = case$time_map,
@@ -228,7 +228,7 @@ test_that("real-time covariance respects omitted anchors and zero-length interva
     absorb = 6
   ) |>
     inferences(method = "delta")
-  unanchored <- avg_time(
+  unanchored <- avg_state_time(
     case$fit,
     times = case$times,
     time_map = case$time_map,
@@ -243,7 +243,7 @@ test_that("real-time covariance respects omitted anchors and zero-length interva
     tolerance = 1e-12
   )
 
-  point <- avg_time(
+  point <- avg_state_time(
     case$fit,
     times = case$times,
     time_map = case$time_map,
@@ -259,7 +259,7 @@ test_that("real-time covariance respects omitted anchors and zero-length interva
 
 test_that("unconditional observed-cohort times agree with patient-weight refits", {
   case <- delta_avg_time_case()
-  point <- avg_time(
+  point <- avg_state_time(
     case$fit,
     times = case$times,
     state_sets = list(lower = c("1", "2")),
@@ -320,13 +320,13 @@ test_that("unconditional observed-cohort times agree with patient-weight refits"
 
 test_that("average-time analytical inference preserves restrictions and row alignment", {
   case <- delta_avg_time_case()
-  point <- avg_time(case$fit, times = case$times, absorb = 6)
+  point <- avg_state_time(case$fit, times = case$times, absorb = 6)
   inferred <- inferences(point, method = "delta")
   reordered <- point[nrow(point):1L, , drop = FALSE]
   result <- inferences(reordered, method = "delta")
   expect_equal(result$std.error, rev(inferred$std.error), tolerance = 1e-12)
 
-  supplied <- avg_time(
+  supplied <- avg_state_time(
     case$fit,
     newdata = attr(point, "newdata_pred"),
     times = case$times,
@@ -338,7 +338,7 @@ test_that("average-time analytical inference preserves restrictions and row alig
     inferences(point, method = "delta", conf_type = "logit"),
     error = TRUE
   )
-  grouped <- avg_time(case$fit, times = case$times, absorb = 6, by = "tx")
+  grouped <- avg_state_time(case$fit, times = case$times, absorb = 6, by = "tx")
   expect_snapshot(inferences(grouped, method = "delta"), error = TRUE)
 })
 
@@ -369,7 +369,7 @@ test_that("counterfactual starting states anchor the baseline at the set state",
     "newdata_pred"
   )$yprev)
   starts <- factor(c("1", "2"), levels = levels)
-  result <- avg_time(
+  result <- avg_state_time(
     case$fit,
     variables = list(yprev = starts),
     times = case$times,
@@ -414,7 +414,7 @@ test_that("counterfactual starting states allow only conditional variance", {
   )$yprev)
   variables <- list(yprev = factor(c("1", "2"), levels = levels))
   point_fun <- function(model) {
-    avg_time(
+    avg_state_time(
       model,
       variables = variables,
       times = case$times,
@@ -508,7 +508,7 @@ test_that("interpolated SOP estimates and draws start at the set starting state"
 
 test_that("mapped totals include the baseline interval by default", {
   case <- delta_avg_time_case()
-  default <- avg_time(
+  default <- avg_state_time(
     case$fit,
     variables = list(tx = c(0, 1)),
     times = case$times,
@@ -516,7 +516,7 @@ test_that("mapped totals include the baseline interval by default", {
     absorb = 6,
     time_map = case$time_map
   )
-  explicit <- avg_time(
+  explicit <- avg_state_time(
     case$fit,
     variables = list(tx = c(0, 1)),
     times = case$times,
@@ -549,7 +549,7 @@ test_that("mapped totals include the baseline interval by default", {
     )$estimate,
     tolerance = 1e-12
   )
-  unanchored <- avg_time(
+  unanchored <- avg_state_time(
     case$fit,
     times = case$times,
     state_sets = list(all = as.character(1:6)),

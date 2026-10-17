@@ -7,7 +7,7 @@ sets_starting_state <- function(object) {
   if (
     !inherits(
       object,
-      c("markov_avg_sops", "markov_avg_time", "markov_avg_comparisons")
+      c("markov_avg_sops", "markov_avg_state_time", "markov_avg_comparisons")
     )
   ) {
     return(FALSE)
@@ -32,6 +32,11 @@ delta_individual_subject <- function(object) {
   if (inherits(object, "markov_comparisons")) {
     return(
       "Delta inference for `comparisons()` and `avg_comparisons(by = FALSE)`"
+    )
+  }
+  if (inherits(object, "markov_state_time")) {
+    return(
+      "Delta inference for `state_time()` and `avg_state_time(by = FALSE)`"
     )
   }
   if (inherits(object, "markov_sops")) {

@@ -6,18 +6,44 @@
   interval silently rested on fewer resamples. Use `method = "fwb"`, which
   keeps every patient, or combine small groups.
 
-* `avg_comparisons()` now treats `by` as the marginaleffects package does.
-  The default is `by = TRUE`, which averages over all profiles as before,
-  and a character `by` still averages within groups. `by = FALSE` or
-  `by = NULL` no longer averages: it returns one comparison per profile, the
-  result of `comparisons()`. Code that passed `by = NULL` explicitly to get
-  the overall average should drop it or use `by = TRUE`.
+* `avg_time()` is renamed `avg_state_time()`, and its result class
+  `markov_avg_time` is now `markov_avg_state_time`. `avg_time()` still works
+  but gives a deprecation warning.
 
-* `avg_comparisons()` and `comparisons()` accept a bare variable name, such
-  as `variables = "tx"`. As in marginaleffects, every observed value is
-  compared with the first: factor levels in level order, character values in
+* New `state_time()` returns each prediction profile's expected time in each
+  state set, under each value of `variables` if given; its mean over the
+  profiles is `avg_state_time()`. `inferences()` adds intervals with the
+  same methods as for `comparisons()`.
+
+* `by` now works as in the marginaleffects package in every function that
+  has it. Per-profile functions (`sops()`, `state_time()`, `comparisons()`)
+  default to `by = FALSE`, and averaging functions (`avg_sops()`,
+  `avg_state_time()`, `avg_comparisons()`) default to `by = TRUE`. In all of
+  them, `TRUE` averages over all profiles, a character vector averages within
+  groups, and `FALSE` or `NULL` returns one row per profile. Each function
+  hands the other case to its partner. This changes three results:
+  * `avg_sops()`, `avg_state_time()`, and `avg_comparisons()` with
+    `by = NULL` now return per-profile rows instead of the overall average;
+    drop `by` or use `by = TRUE` for the average.
+  * `sops(by = "x")` now returns `avg_sops(by = "x")`, a `markov_avg_sops`
+    object, instead of a grouped `markov_sops` object. The estimates are the
+    same.
+  * `sops(by = TRUE)` now returns the overall average instead of an error.
+
+* `sops()` gains `variables`, as marginaleffects' `predictions()`: each
+  profile is predicted once for every value, `rowid` numbers the predictions,
+  and the new `rowidcf` column gives the profile. Score-bootstrap and FWB
+  draws give every copy of a patient's profile that patient's weight.
+
+* Bare variable names, such as `variables = "tx"`, choose values as
+  marginaleffects does: factor levels in level order, character values in
   sorted order, `FALSE` then `TRUE`, or `0` then `1` for a 0/1 numeric
-  variable. Other numeric variables still need their values listed.
+  variable. Other numeric variables use their five-number summary in
+  `sops()`, `avg_sops()`, `state_time()`, and `avg_state_time()`, and must
+  be listed with values in `comparisons()` and `avg_comparisons()`, which now
+  also accept bare names. Values come from the data stored with the model.
+  Previously `avg_sops()` used every unique value of the prediction profiles
+  in order of appearance.
 
 * New `comparisons()` returns a separate comparison for each prediction
   profile (by default, each fitted patient): SOP differences or ratios,

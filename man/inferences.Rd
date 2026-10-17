@@ -21,10 +21,11 @@ inferences(
 )
 }
 \arguments{
-\item{x}{A \code{markov_avg_sops} object from \code{avg_sops()}, a
-\code{markov_sops} object from \code{sops()}, a \code{markov_comparisons} object from
-\code{\link[=comparisons]{comparisons()}}, a \code{markov_avg_comparisons} object from
-\code{\link[=avg_comparisons]{avg_comparisons()}}, or a \code{markov_avg_time} object from \code{\link[=avg_time]{avg_time()}}.}
+\item{x}{A result with one row per profile, from \code{\link[=sops]{sops()}} (\code{markov_sops}),
+\code{\link[=state_time]{state_time()}} (\code{markov_state_time}), or \code{\link[=comparisons]{comparisons()}}
+(\code{markov_comparisons}), or an average, from \code{\link[=avg_sops]{avg_sops()}}
+(\code{markov_avg_sops}), \code{\link[=avg_state_time]{avg_state_time()}} (\code{markov_avg_state_time}), or
+\code{\link[=avg_comparisons]{avg_comparisons()}} (\code{markov_avg_comparisons}).}
 
 \item{method}{Character. Inference method:
 \itemize{
@@ -45,10 +46,11 @@ to change posterior draws.}
 \item{vcov}{For \code{method = "delta"}, \code{"conditional"} treats prediction or
 standardization covariates as fixed; \code{"unconditional"} includes their
 sampling variability and its cross-term with coefficient estimation.
-\code{NULL} (the default) selects unconditional inference for \code{avg_sops()} and
-\code{avg_comparisons()}, and conditional inference for \code{sops()} and
-\code{\link[=comparisons]{comparisons()}}. Results for each profile, from \code{sops()} or
-\code{\link[=comparisons]{comparisons()}}, support only conditional inference. A complete, named
+\code{NULL} (the default) selects unconditional inference for averages and
+conditional inference for results with one row per profile. Results for
+each profile, from \code{sops()}, \code{\link[=state_time]{state_time()}}, or \code{\link[=comparisons]{comparisons()}}, support
+only conditional inference, because they do not average over sampled
+patients. A complete, named
 coefficient covariance matrix selects conditional inference and overrides
 the model covariance. Character choices are available only for delta
 inference; other methods retain their existing matrix/\code{NULL} behavior.
@@ -132,8 +134,9 @@ the object also has \code{statistic}, \code{p.value}, and \code{s.value} columns
 For simulation and bootstrap methods, \code{return_draws = TRUE} also stores a
 \code{"draws"} attribute containing all individual draws. Delta results instead
 store a low-rank \code{"analytical"} attribute and never store draws. For
-ungrouped \code{sops()} objects and \code{\link[=comparisons]{comparisons()}} results evaluated on the
-stored prediction cohort, score-bootstrap and FWB draws include the
+per-profile results from \code{sops()}, \code{\link[=state_time]{state_time()}}, and \code{\link[=comparisons]{comparisons()}}
+evaluated on the stored prediction cohort, score-bootstrap and FWB draws
+include the
 draw-specific \code{score_weight} or \code{fwb_weight} column.
 }
 \description{
@@ -288,7 +291,7 @@ standard errors and confidence intervals, not the point estimates.
 
 \subsection{Setting the Starting State}{
 
-When \code{variables} in \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_time]{avg_time()}}, or \code{\link[=avg_comparisons]{avg_comparisons()}} sets
+When \code{variables} in \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_state_time]{avg_state_time()}}, or \code{\link[=avg_comparisons]{avg_comparisons()}} sets
 the previous-state variable, for example
 \code{variables = list(yprev = c("1", "2"))}, every patient starts in the set
 state in each scenario. Real-time summaries then start from that state
@@ -298,7 +301,8 @@ support only conditional variance: use \code{method = "delta"} with
 \code{method = "mvn"}. Unconditional delta inference and the score-bootstrap,
 bootstrap, and FWB methods error, because they also account for which
 patients were sampled, and that calculation is not supported once the
-starting state is set. \code{\link[=comparisons]{comparisons()}} results are not averaged over
+starting state is set. \code{\link[=state_time]{state_time()}} and \code{\link[=comparisons]{comparisons()}} results are not
+averaged over
 patients, so with a set starting state they keep the conditional delta,
 MVN, score-bootstrap, and FWB methods.
 }

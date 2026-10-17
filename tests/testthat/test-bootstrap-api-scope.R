@@ -3,7 +3,7 @@
 # bootstrap helpers are internal.
 
 test_that("SOP functions do not accept separate refit data", {
-  for (fun in list(sops, avg_sops, avg_comparisons, avg_time)) {
+  for (fun in list(sops, avg_sops, avg_comparisons, avg_state_time)) {
     expect_false("refit_data" %in% names(formals(fun)))
   }
 })

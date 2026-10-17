@@ -38,7 +38,7 @@ outputs. The default \code{0} supplies a fixed interpolation anchor to
 \code{time_map} is supplied. This controls the interpolation grid used for AUC,
 for example \code{target_times = 1:28} with \code{baseline_time = 0} uses day 0 as an
 anchor but starts the AUC at day 1. If \code{NULL}, integration runs from
-\code{baseline_time} through the mapped follow-up times, matching \code{\link[=avg_time]{avg_time()}}
+\code{baseline_time} through the mapped follow-up times, matching \code{\link[=avg_state_time]{avg_state_time()}}
 and \code{\link[=avg_comparisons]{avg_comparisons()}}. With \code{baseline_time = NULL}, it starts at the
 first mapped follow-up time.}
 }
@@ -108,7 +108,7 @@ boot_effects <- time_in_state(avg_boot, target_states = 1)
 
 }
 \seealso{
-\code{\link[=avg_time]{avg_time()}} for model-level average time estimates with analytical,
+\code{\link[=avg_state_time]{avg_state_time()}} for model-level average time estimates with analytical,
 simulation, bootstrap, or posterior uncertainty.
 }
 \keyword{auc}

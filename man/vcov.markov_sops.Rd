@@ -5,7 +5,8 @@
 \alias{vcov.markov_avg_sops}
 \alias{vcov.markov_comparisons}
 \alias{vcov.markov_avg_comparisons}
-\alias{vcov.markov_avg_time}
+\alias{vcov.markov_state_time}
+\alias{vcov.markov_avg_state_time}
 \title{Analytical Covariance for SOPs, Average Times, and Comparisons}
 \usage{
 \method{vcov}{markov_sops}(object, rows = NULL, ...)
@@ -16,12 +17,14 @@
 
 \method{vcov}{markov_avg_comparisons}(object, rows = NULL, ...)
 
-\method{vcov}{markov_avg_time}(object, rows = NULL, ...)
+\method{vcov}{markov_state_time}(object, rows = NULL, ...)
+
+\method{vcov}{markov_avg_state_time}(object, rows = NULL, ...)
 }
 \arguments{
-\item{object}{A \code{markov_sops}, \code{markov_avg_sops}, \code{markov_avg_time},
-\code{markov_comparisons}, or \code{markov_avg_comparisons} object returned by
-\code{inferences(method = "delta")}.}
+\item{object}{A \code{markov_sops}, \code{markov_avg_sops}, \code{markov_state_time},
+\code{markov_avg_state_time}, \code{markov_comparisons}, or \code{markov_avg_comparisons}
+object returned by \code{inferences(method = "delta")}.}
 
 \item{rows}{Optional numeric or logical row selection, or analytical row-key
 values. \code{NULL} returns every result row.}

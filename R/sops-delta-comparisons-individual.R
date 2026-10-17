@@ -1,6 +1,7 @@
-# Analytical propagation for SOP comparisons of each prediction profile.
+# Analytical propagation for results with one row per prediction profile:
+# comparisons from `comparisons()` and times from `state_time()`.
 
-inferences_delta_individual_comparisons <- function(
+inferences_delta_profile_results <- function(
   object,
   target,
   vcov,
@@ -10,22 +11,24 @@ inferences_delta_individual_comparisons <- function(
 ) {
   args <- attr(object, "comparison_args")
   if (is.null(args)) {
-    stop("Stored comparison arguments are required for delta inference.")
+    stop("Stored result arguments are required for delta inference.")
   }
   if (!identical(conf_type, "wald")) {
     stop(
-      "Analytical comparisons require `conf_type = \"wald\"`.",
+      "Analytical intervals for one row per profile require ",
+      "`conf_type = \"wald\"`.",
       call. = FALSE
     )
   }
-  if (!identical(args$comparison, "difference")) {
+  is_time <- identical(profile_result_kind(object), "time")
+  if (!is_time && !identical(args$comparison, "difference")) {
     stop(
       "Analytical comparisons currently support differences only; ratios ",
       "are not yet supported.",
       call. = FALSE
     )
   }
-  if (!args$estimand %in% c("sop", "time_in_state")) {
+  if (!is_time && !args$estimand %in% c("sop", "time_in_state")) {
     stop(
       "Analytical comparisons currently support `estimand = \"sop\"` or ",
       "`\"time_in_state\"`; time benefit is not yet supported.",
@@ -38,7 +41,11 @@ inferences_delta_individual_comparisons <- function(
   }
   model_plan <- delta_validate_sop_scope(object, model, by = NULL)
   setup <- setup_from_avg_comparison_object(object)
-  index <- delta_comparison_row_index(object, setup, args)
+  index <- if (is_time) {
+    delta_time_row_index(object, setup, args)
+  } else {
+    delta_comparison_row_index(object, setup, args)
+  }
   time_weights <- delta_comparison_time_weights(setup, args)
 
   block_values <- function(block) {
@@ -51,30 +58,50 @@ inferences_delta_individual_comparisons <- function(
       time_weights = time_weights
     )
   }
-  # Scenarios are differentiated one block of profiles at a time, so the
-  # derivative arrays of only two scenarios are held at once.
-  reference <- block_values(1L)
-  n_coef <- length(reference$coefficient_names)
-  delta_assert_bytes(
-    as.double(nrow(object)) * n_coef * 8,
-    "Analytical comparison derivatives"
-  )
-  jacobian <- matrix(
-    NA_real_,
-    nrow = nrow(object),
-    ncol = n_coef,
-    dimnames = list(NULL, reference$coefficient_names)
-  )
+  jacobian <- NULL
   estimate <- rep(NA_real_, nrow(object))
-  for (level in unique(index$level)) {
-    comparison <- block_values(level)
-    for (set in unique(index$set[index$level == level])) {
-      rows <- which(index$level == level & index$set == set)
-      cells <- index$profile[rows] + setup$n_each * (index$time[rows] - 1L)
-      jacobian[rows, ] <- comparison$jacobian[[set]][cells, , drop = FALSE] -
-        reference$jacobian[[set]][cells, , drop = FALSE]
-      estimate[rows] <- comparison$value[[set]][cells] -
-        reference$value[[set]][cells]
+  start_jacobian <- function(coefficient_names) {
+    delta_assert_bytes(
+      as.double(nrow(object)) * length(coefficient_names) * 8,
+      "Analytical derivatives for one row per profile"
+    )
+    matrix(
+      NA_real_,
+      nrow = nrow(object),
+      ncol = length(coefficient_names),
+      dimnames = list(NULL, coefficient_names)
+    )
+  }
+
+  # Scenarios are differentiated one block of profiles at a time, so the
+  # derivative arrays of at most two scenarios are held at once.
+  if (is_time) {
+    # A profile's time under one scenario uses that scenario's derivatives.
+    for (scenario in unique(index$scenario)) {
+      block <- block_values(scenario)
+      jacobian <- jacobian %||% start_jacobian(block$coefficient_names)
+      for (set in unique(index$set[index$scenario == scenario])) {
+        rows <- which(index$scenario == scenario & index$set == set)
+        cells <- index$profile[rows]
+        jacobian[rows, ] <- block$jacobian[[set]][cells, , drop = FALSE]
+        estimate[rows] <- block$value[[set]][cells]
+      }
+    }
+  } else {
+    # A comparison's derivative is the comparison scenario's minus the
+    # reference scenario's, for the same profile.
+    reference <- block_values(1L)
+    jacobian <- start_jacobian(reference$coefficient_names)
+    for (level in unique(index$level)) {
+      comparison <- block_values(level)
+      for (set in unique(index$set[index$level == level])) {
+        rows <- which(index$level == level & index$set == set)
+        cells <- index$profile[rows] + setup$n_each * (index$time[rows] - 1L)
+        jacobian[rows, ] <- comparison$jacobian[[set]][cells, , drop = FALSE] -
+          reference$jacobian[[set]][cells, , drop = FALSE]
+        estimate[rows] <- comparison$value[[set]][cells] -
+          reference$value[[set]][cells]
+      }
     }
   }
 
@@ -87,8 +114,8 @@ inferences_delta_individual_comparisons <- function(
       )
   ) {
     stop(
-      "The analytical comparison calculation did not reproduce the stored ",
-      "point estimates.",
+      "The analytical calculation did not reproduce the stored point ",
+      "estimates.",
       call. = FALSE
     )
   }
@@ -129,6 +156,24 @@ delta_comparison_row_index <- function(object, setup, args) {
       any(index$level < 2L)
   ) {
     stop("Comparison rows do not align with the stored prediction profiles.")
+  }
+  index
+}
+
+# Positions of each `state_time()` row's profile, scenario, and state set.
+# `rowid` numbers the scenario-profile pairs as the stacked prediction data do.
+delta_time_row_index <- function(object, setup, args) {
+  index <- list(
+    profile = as.integer(profile_index(object)),
+    scenario = as.integer((object$rowid - 1L) %/% setup$n_each + 1L),
+    set = match(as.character(object$state_set), names(args$state_sets))
+  )
+  if (
+    anyNA(unlist(index, use.names = FALSE)) ||
+      any(index$profile < 1L | index$profile > setup$n_each) ||
+      any(index$scenario > setup$n_cf)
+  ) {
+    stop("Time rows do not align with the stored prediction profiles.")
   }
   index
 }

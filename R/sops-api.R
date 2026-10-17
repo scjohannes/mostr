@@ -2,9 +2,11 @@
 
 #' Calculate Individual State Occupation Probabilities
 #'
-#' Computes individual-level state occupation probabilities (SOPs) for each row
-#' in a dataset. Optionally aggregates results within strata defined by grouping
-#' variables.
+#' Computes state occupation probabilities (SOPs) for each prediction profile,
+#' by default each fitted patient's starting state and covariates. With
+#' `variables`, each profile is predicted once for every requested value, as
+#' in marginaleffects' `predictions()`. [avg_sops()] averages these SOPs over
+#' the profiles.
 #'
 #' For supported frequentist models, pass the result to
 #' `inferences(method = "delta", vcov = "conditional")` for analytical
@@ -28,14 +30,17 @@
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
 #'   infer the levels from `model`.
 #' @param absorb The absorbing state.
-#' @param by Optional character vector of variable names to stratify by. When
-#'   provided, the function aggregates (averages) SOPs within each stratum
-#'   defined by combinations of these variables. E.g., `by = "ecog"` aggregates
-#'   within ECOG levels; `by = c("ecog", "age_group")` aggregates within each
-#'   combination of ECOG and age group. Rows missing any grouping value are
-#'   omitted; an error is raised if none remain. This is simple aggregation
-#'   within observed strata, not G-computation standardization (use
-#'   `avg_sops()` for that).
+#' @param variables Optional covariates to set before predicting: a named list
+#'   of values, such as `list(tx = c(0, 1))`, or bare names, such as `"tx"`.
+#'   Each profile is then predicted once for every combination of the values,
+#'   with those columns set to the combination. For the values a bare name
+#'   selects, see [avg_sops()]. The default, `NULL`, predicts each profile with
+#'   its own covariates.
+#' @param by How to average the profiles' SOPs, as in the marginaleffects
+#'   package. `FALSE` (the default) or `NULL` returns one row per profile,
+#'   time, and state. `TRUE` averages over all profiles, and a character
+#'   vector of column names averages within the groups those columns define;
+#'   both return the result of [avg_sops()] with the same arguments.
 #' @param id_var Character ID column used when `include_re = TRUE`. For `blrm`,
 #'   `NULL` is inferred from wrapper metadata, then `model$clusterInfo$name`
 #'   when available, otherwise `"id"`. For frequentist models, `id_var` is used
@@ -64,20 +69,24 @@
 #'   memory.
 #' @param ... Additional arguments (currently unused).
 #'
-#' @return A data frame of class `markov_sops` containing:
-#'   \item{rowid}{Row identifier from newdata (omitted if `by` is specified)}
+#' @return A data frame of class `markov_sops`, or, with `by = TRUE` or
+#'   grouping columns, the `markov_avg_sops` result of [avg_sops()]. The
+#'   per-profile result contains:
+#'   \item{rowid}{Row number of the prediction: the profile, or with
+#'     `variables`, the profile and value combination.}
+#'   \item{rowidcf}{With `variables`, the profile that the row predicts.}
 #'   \item{time}{Time point}
 #'   \item{state}{State name}
-#'   \item{estimate}{Probability of being in the state (individual-level or stratum average)}
+#'   \item{estimate}{Probability that the profile is in the state.}
 #'   \item{conf.low, conf.high, std.error}{For `blrm` fits, posterior
 #'     uncertainty summaries computed directly from SOP draws}
-#'   \item{(by variables)}{Stratification variables if `by` is specified}
-#'   Plus all columns from `newdata` (for individual-level results).
+#'   Plus all profile columns, with the `variables` columns holding the value
+#'   used for the row.
 #'
 #' @details
 #' This function wraps `soprob_markov()` and converts its array output to a tidy
-#' data frame. The output contains one row per patient-time-state combination
-#' (or stratum-time-state if `by` is used).
+#' data frame. The output contains one row per profile (and value of
+#' `variables`), time, and state.
 #'
 #' Automatic prediction from a wrapper-fitted model uses the cohort-wide
 #' designated `first_followup_time` retained before response-driven model-frame
@@ -102,37 +111,31 @@
 #' higher-numbered states to represent worse outcomes, and uses reverse cumulative
 #' probabilities to model the probability of being in state k or worse.
 #'
-#' **Stratification:**
+#' **Averages:**
 #'
-#' When `by` is specified, the function:
-#' 1. Computes individual-level SOPs for all patients
-#' 2. Groups results by time, state, and the specified variables
-#' 3. Averages the SOPs within each group
+#' The average of the profiles' SOPs over all profiles (`by = TRUE`), or within
+#' groups such as ECOG levels (`by = "ecog"`), is the [avg_sops()] result, so
+#' `sops()` returns it directly. With `variables`, the average is the
+#' standardized (G-computation) probability under each value.
 #'
-#' This aggregation preserves heterogeneity across observed strata without
-#' creating counterfactual scenarios (unlike G-computation in `avg_sops()`).
-#'
-#' For computing marginal/standardized SOPs (G-computation), use `avg_sops()`
-#' instead, which creates counterfactual datasets and averages over individuals.
-#'
-#' @seealso [avg_sops()] for marginal SOPs, [soprob_markov()] for the underlying
-#'   computation.
+#' @seealso [avg_sops()] for averaged SOPs, [soprob_markov()] for the
+#'   underlying computation.
 #'
 #' @examples
 #' \dontrun{
-#' # Individual-level SOPs
+#' # SOPs for each profile
 #' sops_ind <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6)
 #'
-#' # Stratified by ECOG performance status
+#' # Each profile's SOPs under control and under treatment
+#' sops_cf <- sops(fit, newdata = baseline_data, variables = list(tx = c(0, 1)),
+#'                 times = 1:30, y_levels = 1:6)
+#'
+#' # Averaged within ECOG levels; the same as avg_sops(by = "ecog")
 #' sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
 #'                   by = "ecog")
 #'
-#' # Stratified by multiple variables
-#' sops_strat <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
-#'                    by = c("ecog", "age_group"))
-#'
 #' # Compatible with inferences()
-#' sops_strat |> inferences(method = "mvn", n_draws = 1000)
+#' sops_cf |> inferences(method = "mvn", n_draws = 1000)
 #' }
 #'
 #' @importFrom stats model.frame
@@ -143,7 +146,8 @@ sops <- function(
   times,
   y_levels = NULL,
   absorb = NULL,
-  by = NULL,
+  variables = NULL,
+  by = FALSE,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -165,6 +169,34 @@ sops <- function(
     stop("`times` must be supplied to `sops()`.")
   }
   conf_level <- validate_conf_level(conf_level)
+  by_choice <- resolve_by_choice(by)
+  if (by_choice$average) {
+    return(avg_sops(
+      model = model,
+      newdata = newdata,
+      variables = variables,
+      by = by_choice$by %||% TRUE,
+      times = times,
+      y_levels = y_levels,
+      absorb = absorb,
+      id_var = id_var,
+      time_var = time_var,
+      p_var = p_var,
+      p2_var = p2_var,
+      gap_var = gap_var,
+      time_covariates = time_covariates,
+      include_re = include_re,
+      n_draws = n_draws,
+      seed = seed,
+      posterior_summary = posterior_summary,
+      conf_level = conf_level,
+      return_draws = return_draws,
+      ...
+    ))
+  }
+  # One row per profile from here on; averaging is left to `avg_sops()`.
+  by <- NULL
+  variables <- resolve_prediction_variables(variables, model, newdata)
 
   data_res <- resolve_markov_source_data(
     model,
@@ -225,6 +257,9 @@ sops <- function(
     )
   }
   newdata <- ensure_markov_rowid(newdata)
+  if (length(variables) > 0L) {
+    newdata <- stack_prediction_profiles(newdata, variables)
+  }
 
   if (is.null(y_levels)) {
     # Try to infer from model
@@ -715,13 +750,23 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   covariates. The internal `rowid` column is regenerated. If `NULL`, uses data stored by
 #'   [orm_markov()], [blrm_markov()], or [vglm_markov()] and requires exactly
 #'   one complete designated starting profile per fitted patient.
-#' @param variables Optional named list specifying covariates to set before
-#'   averaging. E.g., `list(tx = c(0, 1))` estimates probabilities if every
-#'   patient received control or treatment. The default, `NULL`, averages with
-#'   each patient's observed covariates, including their observed treatment.
-#' @param by Optional character vector of additional variables to group by
-#'   after standardization. Rows missing any grouping value are omitted; an
-#'   error is raised if none remain.
+#' @param variables Optional covariates to set before averaging: a named list
+#'   of values, such as `list(tx = c(0, 1))` for probabilities if every patient
+#'   received control or treatment, or bare names, such as `"tx"`. As in
+#'   marginaleffects' `predictions()`, a bare name uses every observed value:
+#'   factor levels in level order, character values in sorted order, `FALSE`
+#'   and `TRUE`, or `0` and `1` for a 0/1 numeric variable. Other numeric
+#'   variables use their five-number summary (minimum, lower quartile,
+#'   median, upper quartile, maximum). Values are read from the data stored
+#'   with the model, or from `newdata` for a model without stored data. The
+#'   default, `NULL`, averages with each patient's observed covariates,
+#'   including their observed treatment.
+#' @param by How to average, as in the marginaleffects package. `TRUE` (the
+#'   default) averages over all profiles. A character vector of column names
+#'   averages within the groups those columns define after standardization;
+#'   rows missing any grouping value are omitted, and an error is raised if
+#'   none remain. `FALSE` or `NULL` does not average and returns the [sops()]
+#'   result, one row per profile, value of `variables`, time, and state.
 #' @param times Required visit-scale time points. Numeric time variables use
 #'   numeric values; factor-valued visit indices use fitted visit levels.
 #' @param y_levels A vector of state levels in fitted outcome order. Its length
@@ -758,7 +803,8 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   extraction with `get_draws()`.
 #' @param ... Additional arguments reserved for future extensions.
 #'
-#' @return A data frame of class `markov_avg_sops` with columns:
+#' @return With `by = FALSE`, the `markov_sops` result of [sops()]. Otherwise
+#'   a data frame of class `markov_avg_sops` with columns:
 #'   \item{time}{Time point}
 #'   \item{state}{State level}
 #'   \item{(variables)}{Values requested in `variables`, when supplied}
@@ -847,7 +893,7 @@ avg_sops <- function(
   model,
   newdata = NULL,
   variables = NULL,
-  by = NULL,
+  by = TRUE,
   times,
   y_levels = NULL,
   absorb = NULL,
@@ -873,9 +919,35 @@ avg_sops <- function(
   }
   conf_level <- validate_conf_level(conf_level)
 
-  if (!length(by)) {
-    by <- NULL
+  by_choice <- resolve_by_choice(by)
+  if (!by_choice$average) {
+    return(sops(
+      model = model,
+      newdata = newdata,
+      variables = variables,
+      by = FALSE,
+      times = times,
+      y_levels = y_levels,
+      absorb = absorb,
+      id_var = id_var,
+      time_var = time_var,
+      p_var = p_var,
+      p2_var = p2_var,
+      gap_var = gap_var,
+      time_covariates = time_covariates,
+      include_re = include_re,
+      n_draws = n_draws,
+      seed = seed,
+      posterior_summary = posterior_summary,
+      conf_level = conf_level,
+      return_draws = return_draws,
+      ...
+    ))
   }
+  # From here on, `by` holds the grouping columns, or `NULL` to average over
+  # all profiles.
+  by <- by_choice$by
+  var_list <- resolve_prediction_variables(variables, model, newdata)
 
   data_res <- resolve_markov_source_data(
     model,
@@ -907,7 +979,7 @@ avg_sops <- function(
   }
 
   # Validate variables exist in data
-  missing_vars <- setdiff(names(variables), names(newdata_orig))
+  missing_vars <- setdiff(names(var_list), names(newdata_orig))
   if (length(missing_vars) > 0) {
     stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
@@ -929,15 +1001,6 @@ avg_sops <- function(
   # --- 3. Create Counterfactual Datasets ---
   # For each combination in variables, create a copy of baseline_data with
   # the variable(s) set to that value
-
-  if (!is.null(variables) && !is.list(variables)) {
-    var_list <- list()
-    for (i in seq_along(variables)) {
-      var_list[[variables[i]]] <- unique(baseline_data[[variables[i]]])
-    }
-  } else {
-    var_list <- variables
-  }
 
   grid <- create_counterfactual_grid(var_list)
 
