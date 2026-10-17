@@ -2,10 +2,12 @@
 
 #' Plot Average Comparisons
 #'
-#' Plots output from [avg_comparisons()] on the comparison scale.
+#' Plots output from [avg_comparisons()], or the [comparisons()] of a single
+#' profile, on the comparison scale.
 #'
 #' @param x A `markov_avg_comparisons` object returned by
-#'   [avg_comparisons()], optionally after [inferences()].
+#'   [avg_comparisons()], or the rows of a [comparisons()] result for one
+#'   profile, optionally after [inferences()].
 #' @param x_var Character string or `NULL`. X-axis variable. If `NULL`, uses
 #'   `"time"` when available, then `"state_set"` when available, and otherwise
 #'   `"contrast"`.
@@ -30,6 +32,14 @@
 #' The y axis is the contrast scale: difference contrasts are centered on a
 #' dashed reference line at 0, and ratio contrasts are centered on a dashed
 #' reference line at 1. A single plot must contain only one comparison scale.
+#'
+#' The plot shows one estimate per time, state set, and contrast. A
+#' [comparisons()] result has one comparison per profile, identified by
+#' `rowid`, so plot one profile at a time, for example with
+#' `subset(x, rowid == 1)`, or average the profiles with
+#' `comparisons(by = TRUE)` or [avg_comparisons()]. To show how the
+#' comparisons vary across profiles, plot the data frame directly with
+#' ggplot2, for example as a histogram of `estimate`.
 #'
 #' @examples
 #' \dontrun{
@@ -202,7 +212,10 @@ plot_comparisons <- function(
 
 plot_comparisons_validate_data <- function(data, estimate_var) {
   if (!is.data.frame(data)) {
-    stop("`data` must be a data frame returned by `avg_comparisons()`.")
+    stop(
+      "`data` must be a data frame returned by `avg_comparisons()` or ",
+      "`comparisons()`."
+    )
   }
   required <- c("estimand", "comparison", "contrast", estimate_var)
   missing_vars <- setdiff(required, names(data))
@@ -219,6 +232,21 @@ plot_comparisons_validate_data <- function(data, estimate_var) {
     stop(
       "`plot_comparisons()` requires one comparison scale: ",
       "`difference` or `ratio`.",
+      call. = FALSE
+    )
+  }
+  # `comparisons()` results identify their profiles by `rowid`; lines and
+  # intervals would otherwise join estimates of different profiles.
+  n_profiles <- if ("rowid" %in% names(data)) length(unique(data$rowid)) else 1L
+  if (n_profiles > 1L) {
+    stop(
+      "`plot_comparisons()` shows one estimate per time, state set, and ",
+      "contrast, but `x` holds comparisons for ",
+      n_profiles,
+      " profiles (see its `rowid` column), as returned by `comparisons()`. ",
+      "Plot one profile with `subset(x, rowid == 1)`, average the profiles ",
+      "with `comparisons(by = TRUE)` or `avg_comparisons()`, or plot the data ",
+      "frame directly with ggplot2.",
       call. = FALSE
     )
   }
@@ -329,10 +357,15 @@ plot_comparisons_axis_label <- function(var) {
 }
 
 plot_comparisons_title <- function(data) {
+  one_profile <- "rowid" %in% names(data)
   estimand <- unique(as.character(data$estimand))
   estimand <- estimand[!is.na(estimand)]
   if (length(estimand) != 1) {
-    return("Average Comparisons")
+    return(if (one_profile) {
+      "Comparisons for One Profile"
+    } else {
+      "Average Comparisons"
+    })
   }
   metric_label <- switch(
     estimand,
@@ -341,5 +374,8 @@ plot_comparisons_title <- function(data) {
     time_benefit = "Time-Benefit",
     estimand
   )
+  if (one_profile) {
+    return(paste(metric_label, "Comparisons for One Profile"))
+  }
   paste("Average", metric_label, "Comparisons")
 }

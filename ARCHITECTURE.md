@@ -326,6 +326,14 @@ proportional-odds models.
   standard errors. The coefficient representation is stored, so
   `vcov.markov_comparisons()` returns covariance blocks through `delta_vcov()`.
 
+`plot_comparisons()` (`R/viz-comparisons.R`) draws one estimate per time,
+state set, and contrast, so `plot_comparisons_validate_data()` accepts
+`comparisons()` rows only when their `rowid` column holds a single profile,
+and otherwise errors with how to select, average, or plot the profiles
+directly; the title then names one profile instead of an average. Displays
+across profiles, such as distributions of the comparisons, are left to
+ggplot2 on the data frame.
+
 ## Dependencies and execution
 
 `VGAM` and `rms` fit frequentist transitions; optional `rmsb` fits Bayesian

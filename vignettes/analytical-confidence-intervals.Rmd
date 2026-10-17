@@ -25,6 +25,7 @@ This article explains
 - how the two variances are calculated;
 - which patients enter the calculation, and why patient IDs matter;
 - how the confidence limits are formed;
+- how to compare treatments for each patient;
 - how to extract variances and covariances; and
 - which models and comparisons are supported.
 
@@ -102,8 +103,9 @@ early in follow-up, when SOPs depend strongly on the patients' starting
 states.
 
 Averaged SOPs from `avg_sops()` and comparisons from `avg_comparisons()` use
-unconditional variance by default. Patient-level SOPs from `sops()` support
-only conditional variance, since there is no average over sampled patients.
+unconditional variance by default. Patient-level SOPs from `sops()` and
+patient-level comparisons from `comparisons()` support only conditional
+variance, since there is no average over sampled patients.
 
 ## Conditional variance
 
@@ -426,6 +428,103 @@ instead, as in the plots above. For visits recorded as a factor, supply the
 elapsed time of each visit; `vignette("factor-time-orm-sops")` shows how, and
 how to include the observed baseline state.
 
+## Comparisons for each patient
+
+`avg_comparisons()` reports comparisons averaged over patients.
+`comparisons()` takes the same arguments but reports each patient's own
+comparison: it predicts the patient once with `tx = 0` and once with
+`tx = 1`, both times from that patient's starting state and covariates, and
+subtracts. The example compares the expected number of days outside hospital
+(states 1 and 2) during the 30 days.
+
+A patient's comparison involves only that patient, so no average over
+sampled patients is formed, and analytical intervals use conditional
+variance; `inferences(method = "delta")` selects it automatically. MVN
+simulation, the score bootstrap, and the fractional weighted bootstrap are
+also available, through `method = "mvn"`, `"score_bootstrap"`, and `"fwb"`.
+
+```{r patient-comparisons}
+patient_difference <- comparisons(
+  fit,
+  variables = list(tx = c(0, 1)),
+  estimand = "time_in_state",
+  state_sets = c("1", "2"),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit$yunique,
+  absorb = ABSORB
+) |>
+  inferences(method = "delta")
+
+head(patient_difference[, c(
+  "rowid", "id", "yprev", "tx", "estimate", "conf.low", "conf.high"
+)])
+```
+
+Each row is one patient. `yprev` and `tx` hold the patient's observed
+starting state and treatment; the comparison itself always sets `tx` to 1 and
+to 0. Averaging the patients' differences gives the averaged comparison, and
+`comparisons(by = TRUE)` returns the same result as `avg_comparisons()`:
+
+```{r patient-comparisons-average}
+averaged <- comparisons(
+  fit,
+  variables = list(tx = c(0, 1)),
+  estimand = "time_in_state",
+  state_sets = c("1", "2"),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit$yunique,
+  absorb = ABSORB,
+  by = TRUE
+)
+
+c(
+  mean_of_patients = mean(patient_difference$estimate),
+  averaged = averaged$estimate
+)
+```
+
+This holds for differences. For `comparison = "ratio"`, `avg_comparisons()`
+divides the averaged times, which is not the average of the patients' ratios.
+
+Apart from treatment, the starting state is the model's only patient
+covariate, so patients who start in the same state have the same comparison.
+One row per starting state shows how the expected benefit depends on it:
+
+```{r patient-comparisons-by-start}
+by_start <- patient_difference[
+  !duplicated(patient_difference$yprev),
+  c("yprev", "estimate", "conf.low", "conf.high")
+]
+by_start[order(by_start$yprev), ]
+```
+
+Each interval describes how precisely the model estimates that patient's
+expected difference. It is not a range for the outcome the patient will
+actually experience.
+
+`plot_comparisons()` draws the comparisons of one patient. Supplying
+`newdata` restricts the calculation to chosen profiles; here we take a
+patient who starts in hospital needing supplemental oxygen (state 5) and
+compare the probability of being outside hospital on each day.
+
+```{r patient-comparisons-plot}
+starts_on_oxygen <- model_data$time == 1 & model_data$yprev == "5"
+oxygen_patient <- model_data[which(starts_on_oxygen)[1], ]
+
+comparisons(
+  fit,
+  newdata = oxygen_patient,
+  variables = list(tx = c(0, 1)),
+  state_sets = c("1", "2"),
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit$yunique,
+  absorb = ABSORB
+) |>
+  inferences(method = "delta") |>
+  plot_comparisons() +
+  labs(x = "Day", y = "Difference in probability of being outside hospital")
+```
+
 ## Extract variances and covariances
 
 The output of `inferences()` already contains standard errors and confidence
@@ -476,6 +575,9 @@ Analytical confidence intervals are available for:
   (including the `robcov_vglm` object that `vglm_markov()` returns);
 - patient-level SOPs from `sops()` with conditional variance, and averaged
   SOPs from `avg_sops()` with conditional or unconditional variance;
+- patient-level comparisons from `comparisons()` with conditional variance,
+  and averaged comparisons from `avg_comparisons()` with conditional or
+  unconditional variance;
 - differences with `estimand = "sop"` or `estimand = "time_in_state"`; and
 - numeric or factor visit times.
 

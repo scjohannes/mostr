@@ -280,6 +280,27 @@ test_that("plot_comparisons plots ratios with point intervals and ratio referenc
   expect_equal(plot$labels$y, "Ratio")
 })
 
+test_that("plot_comparisons draws one profile and rejects several", {
+  data <- make_comparison_plot_data()
+  data$rowid <- 1L
+  class(data) <- c("markov_comparisons", "data.frame")
+
+  plot <- plot_comparisons(data)
+  expect_s3_class(plot, "ggplot")
+  expect_s3_class(plot$layers[[3]]$geom, "GeomLine")
+  expect_equal(plot$labels$title, "SOP Comparisons for One Profile")
+
+  several <- rbind(data, transform(data, rowid = 2L))
+  expect_error(plot_comparisons(several), "2 profiles")
+  expect_error(
+    plot_comparisons(as.data.frame(several)),
+    "subset(x, rowid == 1)",
+    fixed = TRUE
+  )
+  chosen <- plot_comparisons(several[several$rowid == 2, ])
+  expect_equal(nrow(chosen$data), nrow(data))
+})
+
 test_that("plot_comparisons accepts custom grouping labels", {
   data <- make_comparison_plot_data(comparison = "ratio", with_time = FALSE)
   data$initial_y <- c("1", "2")

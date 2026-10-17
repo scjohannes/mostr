@@ -10,7 +10,10 @@
   `method = "mvn"`, `"score_bootstrap"`, or `"fwb"`, computing each
   comparison within every draw, and with `method = "delta"` (conditional
   variance) for differences in SOPs or time in states; `vcov()` returns the
-  covariance between rows.
+  covariance between rows. `plot_comparisons()` draws the comparisons of one
+  profile and explains how to plot or average several.
+  `vignette("analytical-confidence-intervals")` has a new section on
+  comparisons for each patient.
 
 # mostr 0.1.1
 
