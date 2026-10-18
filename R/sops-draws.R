@@ -125,7 +125,7 @@ compute_ci_from_draws <- function(
 #'     \item estimate: The original point estimate from the model
 #'     \item conf.low, conf.high, std.error: Summary statistics from the point estimate object
 #'     \item fwb_weight or score_weight: Optional draw-specific patient weight
-#'       for eligible ungrouped stored-data `sops()` or [comparisons()] draws
+#'       for eligible stored-data `sops()` or [comparisons()] draws
 #'     \item Additional columns from the original object (covariates, etc.)
 #'   }
 #'   Each row represents one draw for a specific result row.
@@ -137,13 +137,13 @@ compute_ci_from_draws <- function(
 #' the draws is renamed to `draw`.
 #'
 #' Draw-specific patient weights are included only when they are meaningful for
-#' manual downstream averaging: ungrouped `sops()` and [comparisons()] output
+#' manual downstream averaging: `sops()` and [comparisons()] output
 #' from FWB or score bootstrap on the stored empirical prediction cohort. For
 #' [comparisons()] draws, the weighted mean of a draw's comparisons,
 #' \eqn{\sum_i w_i x_i / \sum_i w_i} over patients \eqn{i} with weights
 #' \eqn{w_i} and draw values \eqn{x_i}, reproduces the corresponding
 #' [avg_comparisons()] draw. They are not included for
-#' `avg_sops()` or grouped `sops()` because those draws are already averaged, and
+#' `avg_sops()` because its draws are already averaged, and
 #' they are not included when the original SOP object used user-supplied
 #' prediction profiles. The column names `fwb_weight` and `score_weight` are
 #' reserved for these draw weights when they are attached.

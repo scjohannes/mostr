@@ -662,16 +662,11 @@ test_that("low-level SOP helpers validate model families and state metadata", {
     fixed = TRUE
   )
 
-  expect_warning(
-    no_rowid <- mostr:::array_to_df_individual(
-      array(1, dim = c(1, 1, 1)),
-      times = 1,
-      y_levels = 1,
-      newdata = data.frame(id = 10),
-      by = "missing"
-    ),
-    "Variables in 'by' not found",
-    fixed = TRUE
+  no_rowid <- mostr:::array_to_df_individual(
+    array(1, dim = c(1, 1, 1)),
+    times = 1,
+    y_levels = 1,
+    newdata = data.frame(id = 10)
   )
   expect_equal(no_rowid$rowid, 1)
 })

@@ -9,7 +9,6 @@ array_to_df_individual(
   times,
   y_levels,
   newdata,
-  by = NULL,
   weights = NULL,
   weight_col = NULL
 )
@@ -23,14 +22,12 @@ array_to_df_individual(
 
 \item{newdata}{Original data with rowid.}
 
-\item{by}{Optional character vector of variables to aggregate by.}
-
 \item{weights}{Optional patient-level weights aligned to \code{newdata}.}
 
 \item{weight_col}{Optional output column name for draw-specific weights.}
 }
 \value{
-Data frame with individual SOPs (or aggregated if by is specified).
+Data frame with one row per profile, time, and state.
 }
 \description{
 Convert SOPs Array to Individual-Level Data Frame

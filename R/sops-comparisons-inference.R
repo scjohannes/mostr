@@ -216,7 +216,6 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
     id_var = setup$id_var,
     newdata_supplied = newdata_supplied,
     is_avg = TRUE,
-    by = setup$by,
     return_draws = return_draws,
     prediction_data = setup$newdata_pred,
     attach_individual_weights = FALSE
@@ -629,8 +628,7 @@ time_benefit_sops_from_array <- function(sops_array, setup) {
     sops_array = sops_array,
     times = setup$times,
     y_levels = setup$y_levels,
-    newdata = newdata,
-    by = NULL
+    newdata = newdata
   )
   attr(out, "y_levels") <- setup$y_levels
   attr(out, "call_args") <- setup$call_args %||%

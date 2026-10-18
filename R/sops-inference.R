@@ -215,13 +215,13 @@
 #' individual `sops()` objects. The same holds for [comparisons()] results,
 #' which also support `method = "mvn"` and `method = "score_bootstrap"`. For
 #' FWB, the same patient weights used for
-#' refitting are used for marginal or subgroup averaging. Ungrouped stored-data
+#' refitting are used for marginal or subgroup averaging. Stored-data
 #' `sops()` draws and stored-data [comparisons()] draws expose the patient
 #' weight as `fwb_weight` (or `score_weight` for the score bootstrap);
 #' averaging each draw's comparisons with these weights reproduces the
-#' [avg_comparisons()] draws. Grouped `sops()` and
-#' `avg_sops()` use the weights internally and return already averaged draws.
-#' Prediction data for such ungrouped draw output must not already contain a
+#' [avg_comparisons()] draws. `avg_sops()` uses the weights internally and
+#' returns already averaged draws.
+#' Prediction data for such per-profile draw output must not already contain a
 #' column named `fwb_weight` or `score_weight`, because those names are reserved
 #' for bootstrap draw weights.
 #'
@@ -755,10 +755,10 @@ inferences_simulation <- function(
     times <- avg_args$times
     id_var <- avg_args$id_var
   } else {
-    # For individual sops objects
+    # For individual sops objects: one row per profile, never averaged
     times <- call_args$times
     variables <- NULL
-    by <- call_args$by %||% attr(object, "by")
+    by <- NULL
     id_var <- attr(object, "id_var") %||% markov_model_id_var(model)
   }
 
@@ -814,7 +814,6 @@ inferences_simulation <- function(
     id_var = id_var,
     newdata_supplied = newdata_supplied,
     is_avg = is_avg,
-    by = by,
     return_draws = return_draws,
     prediction_data = newdata_pred
   )
@@ -844,10 +843,8 @@ inferences_simulation <- function(
     if (!is.null(by)) {
       group_cols <- unique(c(group_cols, by))
     }
-  } else if (is.null(by)) {
-    group_cols <- c("rowid", "time", "state")
   } else {
-    group_cols <- unique(c("time", "state", by))
+    group_cols <- c("rowid", "time", "state")
   }
   object_keys <- sop_draw_cell_key(object, group_cols)
 
@@ -926,15 +923,12 @@ inferences_simulation <- function(
             times,
             y_levels,
             newdata_pred,
-            by = by,
             weights = baseline_weights,
             weight_col = draw_weight_col
           )
         }
 
-        baseline_anchor <- if (
-          !is.null(baseline_weights) && (is_avg || !is.null(by))
-        ) {
+        baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
           empirical_baseline_anchor_from_data(
             x = object,
             baseline = baseline_data,
@@ -1015,15 +1009,12 @@ inferences_simulation <- function(
           times,
           y_levels,
           newdata_pred,
-          by = by,
           weights = baseline_weights,
           weight_col = draw_weight_col
         )
       }
 
-      baseline_anchor <- if (
-        !is.null(baseline_weights) && (is_avg || !is.null(by))
-      ) {
+      baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
         empirical_baseline_anchor_from_data(
           x = object,
           baseline = baseline_data,

@@ -256,6 +256,23 @@ Internally, averaged results still store `by = NULL` for the overall average
 average SOPs goes through `avg_comparison_replay_avg_sops()`, which passes
 `by %||% TRUE` so it keeps getting averages.
 
+Grouping therefore exists only on averaged results, in `avg_args$by`. A
+`markov_sops` result always has one row per profile, time, and state, and
+stores no `by` attribute or `call_args$by`. The code that reads it assumes
+this: `sops()` and `sops_blrm()` (`R/sops-api.R`) and
+`array_to_df_individual()` (`R/sops-result-helpers.R`) build per-profile rows
+only; `inferences_simulation()` (`R/sops-inference.R`) and
+`inferences_bootstrap_sops_fwb()` (`R/sops-bootstrap-inference.R`) match draws
+to rows by `rowid`, `time`, and `state`, attach score-bootstrap or FWB patient
+weights for stored profiles, and build no baseline-anchor draws, because each
+profile's anchor is its own fixed starting state. `generate_sop_coefficient_draws()`
+(`R/sops-inference-draws.R`) uses only `is_avg` to decide between averaging
+with the patient weights and attaching them to the draws.
+In `R/sops-interpolate.R`, `empirical_baseline_anchor()` anchors per-profile
+SOPs at each row's `p_var` value and errors if that column is missing, while
+`empirical_baseline_anchor_from_data()` and `baseline_rows_for_anchor()` serve
+averaged results, reading their scenarios and groups from `avg_args`.
+
 `sops(variables = ...)` predicts each profile once per combination of values,
 as marginaleffects' `predictions()`: `stack_prediction_profiles()` stacks the
 copies, renumbers `rowid` over them, and records the profile in `rowidcf`.

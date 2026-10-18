@@ -472,7 +472,6 @@ inferences_bootstrap_sops_fwb <- function(
   absorb <- attr(object, "absorb")
   gap_var <- attr(object, "gap_var")
   time_covariates <- attr(object, "time_covariates")
-  by <- call_args$by %||% attr(object, "by")
   times <- call_args$times
   id_var <- attr(object, "id_var") %||% markov_model_id_var(model)
 
@@ -499,25 +498,15 @@ inferences_bootstrap_sops_fwb <- function(
       prediction_weight_profiles(prediction_data),
       id_var
     )
-  } else if (!is.null(by)) {
-    warn_fixed_profile_bootstrap_weights("FWB")
   } else if (isTRUE(return_draws)) {
     warn_fixed_profile_draw_weights("FWB")
   }
 
-  draw_weight_col <- if (!newdata_supplied && is.null(by)) {
-    "fwb_weight"
-  } else {
-    NULL
-  }
+  draw_weight_col <- if (newdata_supplied) NULL else "fwb_weight"
   validate_draw_weight_column_available(prediction_data, draw_weight_col)
   draw_weights_attached <- !is.null(draw_weight_col) && isTRUE(return_draws)
-  draw_weight_omission_reason <- if (draw_weights_attached) {
-    NULL
-  } else if (newdata_supplied) {
+  draw_weight_omission_reason <- if (newdata_supplied) {
     "user_supplied_newdata"
-  } else if (!is.null(by)) {
-    "grouped_sops"
   } else {
     NULL
   }
@@ -590,24 +579,14 @@ inferences_bootstrap_sops_fwb <- function(
       )
     }
 
-    result <- array_to_df_individual(
+    array_to_df_individual(
       sops_array,
       times,
       factor(boot_ylevels),
       prediction_data,
-      by = by,
       weights = prediction_weights,
       weight_col = draw_weight_col
     )
-    if (!newdata_supplied && !is.null(by)) {
-      attr(result, "baseline_anchor") <- empirical_baseline_anchor_from_data(
-        x = object,
-        baseline = prediction_data,
-        baseline_time = 0,
-        weights = prediction_weights
-      )
-    }
-    result
   }
 
   fwb_samples <- generate_fwb_bootstrap_weights(
@@ -625,7 +604,6 @@ inferences_bootstrap_sops_fwb <- function(
     packages = c("rms", "VGAM", "Hmisc", "stats"),
     globals = c(
       "model",
-      "object",
       "prediction_data",
       "refit_data",
       "times",
@@ -640,7 +618,6 @@ inferences_bootstrap_sops_fwb <- function(
       "factor_cols",
       "use_coefstart",
       "id_var",
-      "by",
       "newdata_supplied",
       "draw_weight_col"
     )
@@ -650,21 +627,13 @@ inferences_bootstrap_sops_fwb <- function(
   if (length(boot_results) == 0) {
     stop("All bootstrap iterations failed.")
   }
-  baseline_anchor_draws <- combine_baseline_anchor_draws(
-    lapply(boot_results, attr, "baseline_anchor"),
-    seq_along(boot_results)
-  )
 
   for (i in seq_along(boot_results)) {
     boot_results[[i]]$draw_id <- i
   }
   boot_df <- bind_rows_fill(boot_results)
 
-  if (is.null(by)) {
-    group_cols <- c("rowid", "time", "state")
-  } else {
-    group_cols <- unique(c("time", "state", by))
-  }
+  group_cols <- c("rowid", "time", "state")
 
   summary_stats <- compute_ci_from_draws(
     draws_df = boot_df,
@@ -703,9 +672,6 @@ inferences_bootstrap_sops_fwb <- function(
 
   if (return_draws) {
     attr(final_result, "draws") <- boot_df
-    if (!is.null(baseline_anchor_draws)) {
-      attr(final_result, "baseline_anchor_draws") <- baseline_anchor_draws
-    }
   }
 
   final_result

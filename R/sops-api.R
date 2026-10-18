@@ -195,7 +195,6 @@ sops <- function(
     ))
   }
   # One row per profile from here on; averaging is left to `avg_sops()`.
-  by <- NULL
   variables <- resolve_prediction_variables(variables, model, newdata)
 
   data_res <- resolve_markov_source_data(
@@ -296,7 +295,6 @@ sops <- function(
       p2_var = p2_var,
       gap_var = gap_var,
       time_covariates = time_covariates,
-      by = by,
       include_re = include_re,
       id_var = id_var,
       n_draws = n_draws,
@@ -324,19 +322,15 @@ sops <- function(
     time_covariates = time_covariates
   )
 
-  # --- 3. Validate 'by' Parameter ---
-  validate_sops_by(by, newdata)
-
-  # --- 4. Tidy the Output ---
+  # --- 3. Tidy the Output ---
   result <- array_to_df_individual(
     sops_array,
     times,
     y_levels,
-    newdata,
-    by = by
+    newdata
   )
 
-  # --- 6. Store Attributes for Downstream Use ---
+  # --- 4. Store Attributes for Downstream Use ---
   set_sops_attrs(
     result,
     class_name = "markov_sops",
@@ -349,8 +343,7 @@ sops <- function(
       p_var,
       p2_var,
       gap_var,
-      time_covariates,
-      by = by
+      time_covariates
     ),
     time_var = time_var,
     p_var = p_var,
@@ -359,7 +352,6 @@ sops <- function(
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates,
-    by = by,
     newdata_orig = newdata_orig,
     extra_attrs = list(
       newdata_pred = newdata,
@@ -381,7 +373,6 @@ sops_blrm <- function(
   p2_var,
   gap_var,
   time_covariates,
-  by,
   include_re,
   id_var,
   n_draws,
@@ -393,33 +384,20 @@ sops_blrm <- function(
   refit_data,
   newdata_supplied
 ) {
-  validate_sops_by(by, newdata)
-
-  group_setup <- if (is.null(by)) NULL else posterior_group_setup(newdata, by)
-  prediction_data <- if (is.null(group_setup)) {
-    newdata
-  } else {
-    newdata[group_setup$rows, , drop = FALSE]
-  }
   draw_indices <- select_posterior_draws(model, n_draws, seed)
-  n_pat <- nrow(prediction_data)
+  n_pat <- nrow(newdata)
   n_times <- length(times)
   n_states <- length(y_levels)
   n_cells <- n_pat * n_times * n_states
   n_requested <- length(draw_indices)
-  n_output_cells <- if (is.null(group_setup)) {
-    n_cells
-  } else {
-    group_setup$n_groups * n_times * n_states
-  }
   # `sops()` keeps individual-level draw summaries in memory. The default
   # guard is 50 million numeric cells, about 400 MB before data-frame overhead.
   max_draw_cells <- getOption("mostr.max_sops_draw_cells", 5e7)
 
-  if (n_output_cells * n_requested > max_draw_cells) {
+  if (n_cells * n_requested > max_draw_cells) {
     stop(
       "`sops()` for `blrm` would require ",
-      format(n_output_cells * n_requested, scientific = FALSE),
+      format(n_cells * n_requested, scientific = FALSE),
       " posterior draw cells, above the current limit of ",
       format(max_draw_cells, scientific = FALSE),
       ". This limit protects memory because individual-level `sops()` stores ",
@@ -429,7 +407,7 @@ sops_blrm <- function(
     )
   }
 
-  draw_values <- matrix(NA_real_, nrow = n_requested, ncol = n_output_cells)
+  draw_values <- matrix(NA_real_, nrow = n_requested, ncol = n_cells)
   rownames(draw_values) <- draw_indices
   chunks <- split_draw_indices(
     draw_indices,
@@ -453,7 +431,7 @@ sops_blrm <- function(
     }
     arr <- soprob_markov(
       model = model,
-      newdata = prediction_data,
+      newdata = newdata,
       times = times,
       y_levels = y_levels,
       absorb = absorb,
@@ -473,65 +451,31 @@ sops_blrm <- function(
       ),
       .prediction_cache = prediction_cache
     )
-    if (is.null(group_setup)) {
-      for (i in seq_along(chunk)) {
-        draw_values[row_cursor, ] <- as.vector(arr[i, , , ])
-        row_cursor <- row_cursor + 1L
-      }
-    } else {
-      reduced <- reduce_sops_draw_array(
-        arr,
-        group_setup$groups,
-        group_setup$n_groups
-      )
-      reduced <- aperm(reduced, c(1L, 3L, 4L, 2L))
-      rows <- row_cursor:(row_cursor + length(chunk) - 1L)
-      draw_values[rows, ] <- matrix(
-        as.numeric(reduced),
-        nrow = length(chunk)
-      )
-      row_cursor <- row_cursor + length(chunk)
+    for (i in seq_along(chunk)) {
+      draw_values[row_cursor, ] <- as.vector(arr[i, , , ])
+      row_cursor <- row_cursor + 1L
     }
   }
 
-  if (is.null(by)) {
-    stats <- summarize_posterior_draw_matrix(
-      draw_values,
-      posterior_summary = posterior_summary,
-      conf_level = conf_level
-    )
-    idx_pat <- rep(seq_len(n_pat), times = n_times * n_states)
-    result <- newdata[idx_pat, , drop = FALSE]
-    result$time <- rep(rep(times, each = n_pat), times = n_states)
-    result$state <- rep(y_levels, each = n_pat * n_times)
-    result$estimate <- stats$estimate
-    result$conf.low <- stats$conf.low
-    result$conf.high <- stats$conf.high
-    result$std.error <- stats$std.error
-    rownames(result) <- NULL
+  stats <- summarize_posterior_draw_matrix(
+    draw_values,
+    posterior_summary = posterior_summary,
+    conf_level = conf_level
+  )
+  idx_pat <- rep(seq_len(n_pat), times = n_times * n_states)
+  result <- newdata[idx_pat, , drop = FALSE]
+  result$time <- rep(rep(times, each = n_pat), times = n_states)
+  result$state <- rep(y_levels, each = n_pat * n_times)
+  result$estimate <- stats$estimate
+  result$conf.low <- stats$conf.low
+  result$conf.high <- stats$conf.high
+  result$std.error <- stats$std.error
+  rownames(result) <- NULL
 
-    draws_df <- if (return_draws) {
-      sops_draw_matrix_to_df(draw_values, result, draw_indices)
-    } else {
-      NULL
-    }
+  draws_df <- if (return_draws) {
+    sops_draw_matrix_to_df(draw_values, result, draw_indices)
   } else {
-    cells <- posterior_group_cells(
-      group_setup$metadata,
-      times,
-      y_levels
-    )
-    stats <- summarize_posterior_draw_matrix(
-      draw_values,
-      posterior_summary = posterior_summary,
-      conf_level = conf_level
-    )
-    result <- cbind(cells, stats)
-    draws_df <- if (return_draws) {
-      posterior_draw_matrix_to_df(draw_values, cells, draw_indices)
-    } else {
-      NULL
-    }
+    NULL
   }
 
   set_sops_attrs(
@@ -547,7 +491,6 @@ sops_blrm <- function(
       p2_var,
       gap_var,
       time_covariates,
-      by = by,
       include_re = include_re,
       id_var = id_var,
       n_draws = n_draws,
@@ -562,7 +505,6 @@ sops_blrm <- function(
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates,
-    by = by,
     newdata_orig = newdata_orig,
     extra_attrs = list(
       method = "posterior",
@@ -1336,7 +1278,6 @@ avg_sops_blrm <- function(
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates,
-    by = by,
     avg_args = list(
       variables = variables,
       by = by,

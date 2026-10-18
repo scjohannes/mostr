@@ -344,7 +344,6 @@ comparison_simulation_draws <- function(
     id_var = setup$id_var,
     newdata_supplied = setup$newdata_supplied,
     is_avg = FALSE,
-    by = NULL,
     return_draws = return_draws,
     prediction_data = setup$newdata_pred
   )

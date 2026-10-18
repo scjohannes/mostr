@@ -499,8 +499,7 @@ delta_individual_cells <- function(
     sops_array = probabilities,
     times = times,
     y_levels = y_levels,
-    newdata = newdata,
-    by = NULL
+    newdata = newdata
   )
 }
 
@@ -613,7 +612,7 @@ inferences_delta_sops <- function(
   }
   avg_args <- attr(object, "avg_args")
   call_args <- attr(object, "call_args")
-  by <- if (is_average) avg_args$by else call_args$by %||% attr(object, "by")
+  by <- if (is_average) avg_args$by else NULL
   model_plan <- delta_validate_sop_scope(object, model, by)
   score_components <- if (identical(target, "unconditional")) {
     get_delta_score_components(

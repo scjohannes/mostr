@@ -28,7 +28,6 @@ sops_call_args <- function(
   p2_var,
   gap_var,
   time_covariates,
-  by = NULL,
   ...
 ) {
   c(
@@ -40,8 +39,7 @@ sops_call_args <- function(
       p_var = p_var,
       p2_var = p2_var,
       gap_var = gap_var,
-      time_covariates = time_covariates,
-      by = by
+      time_covariates = time_covariates
     ),
     list(...)
   )
@@ -59,7 +57,6 @@ set_sops_attrs <- function(
   absorb,
   gap_var,
   time_covariates,
-  by = NULL,
   newdata_orig = NULL,
   avg_args = NULL,
   extra_attrs = list()
@@ -74,7 +71,6 @@ set_sops_attrs <- function(
   attr(result, "absorb") <- absorb
   attr(result, "gap_var") <- gap_var
   attr(result, "time_covariates") <- time_covariates
-  attr(result, "by") <- by
   attr(result, "newdata_orig") <- newdata_orig
   attr(result, "avg_args") <- avg_args
 
@@ -416,7 +412,6 @@ marginalize_sops_array <- function(
       times = times,
       y_levels = y_levels,
       newdata = newdata,
-      by = NULL,
       weights = expanded_weights,
       weight_col = weight_col
     )
@@ -479,11 +474,10 @@ marginalize_sops_array <- function(
 #' @param times Vector of time points.
 #' @param y_levels Vector of state levels.
 #' @param newdata Original data with rowid.
-#' @param by Optional character vector of variables to aggregate by.
 #' @param weights Optional patient-level weights aligned to `newdata`.
 #' @param weight_col Optional output column name for draw-specific weights.
 #'
-#' @return Data frame with individual SOPs (or aggregated if by is specified).
+#' @return Data frame with one row per profile, time, and state.
 #'
 #' @keywords internal
 array_to_df_individual <- function(
@@ -491,7 +485,6 @@ array_to_df_individual <- function(
   times,
   y_levels,
   newdata,
-  by = NULL,
   weights = NULL,
   weight_col = NULL
 ) {
@@ -527,29 +520,6 @@ array_to_df_individual <- function(
     result[[weight_col]] <- weights[idx_pat]
   }
   rownames(result) <- NULL
-
-  # Apply stratified aggregation if 'by' is specified
-  if (!is.null(by)) {
-    # Validate that by variables exist
-    missing_vars <- setdiff(by, names(result))
-    if (length(missing_vars) > 0) {
-      warning(
-        "Variables in 'by' not found in result: ",
-        paste(missing_vars, collapse = ", "),
-        ". Skipping aggregation."
-      )
-      return(result)
-    }
-
-    # Group by time, state, and stratification variables, then average
-    group_cols <- unique(c("time", "state", by))
-
-    result <- aggregate_sops_estimates(
-      result,
-      group_cols,
-      weight_col = if (is.null(weights)) NULL else weight_col
-    )
-  }
 
   result
 }
