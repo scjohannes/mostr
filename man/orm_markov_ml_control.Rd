@@ -9,7 +9,6 @@ orm_markov_ml_control(
   reltol = 1e-06,
   coef_tol = 1e-07,
   newton_steps = 10L,
-  info_step = 1e-04,
   trace = FALSE,
   variance = TRUE
 )
@@ -29,11 +28,6 @@ value.}
 \item{newton_steps}{Maximum number of Newton steps after EM. They stop
 early once the Newton decrement (roughly how much the log-likelihood could
 still rise) is below \code{1e-20}.}
-
-\item{info_step}{Relative step size for the numerical derivative of the
-score that gives the observed information. Only rows whose state is
-missing or a range, and the rows after them, use it; transitions with
-both states observed add their exact information.}
 
 \item{trace}{Print the log-likelihood after each EM iteration?}
 

@@ -43,11 +43,19 @@
   as `orm_markov()`, also with many states: it uses the `rms::orm()` fit and
   its exact information directly instead of running EM, Newton steps, and
   numerical derivatives over every row (with 500 states this took about an
-  hour). The missing-information fraction is then exactly 0. With missing
-  states, transitions with both states observed now add their exact
-  information, so numerical derivatives cover only the rows next to a missing
-  or range-coded state. A new "Computing time" section in `?orm_markov_ml`
-  explains how the time grows with missing states and the number of states.
+  hour). The missing-information fraction is then exactly 0. A new
+  "Computing time" section in `?orm_markov_ml` explains how the time grows
+  with missing states and the number of states.
+
+* `orm_markov_ml()` with missing or range-coded states now computes the
+  observed information exactly (Louis' identity) instead of by numerical
+  derivatives, which took two passes over the rows next to a missing state
+  per coefficient. With 100 states and 5,000 patients followed for 30 visits,
+  a fit with standard errors and 0.5% of the states missing now takes about
+  15 seconds instead of 4 minutes, and one with 10% missing about 2.5
+  minutes instead of more than an hour. Standard errors and the
+  missing-information fraction are now exact. `orm_markov_ml_control()` no
+  longer has `info_step`.
 
 * Printing an `orm_markov_ml()` fit now shows the maximised log-likelihood,
   the numbers of patients and rows, and a table of coefficients with

@@ -130,30 +130,47 @@
 #' directly and takes about as long as [orm_markov()], even for large data
 #' with many states.
 #'
-#' Missing states and ranges make the fit much slower, and the time rises
-#' steeply with the number of states \eqn{K}. A row whose state is missing or
-#' a range, and the row after it, need the probability of every possible
-#' transition: about \eqn{K^2} numbers per row. The fit computes these
+#' Missing states and ranges make the fit slower, and the time rises steeply
+#' with the number of states \eqn{K}. A row whose state is missing or a range,
+#' and the row after it, need the probability of every possible transition:
+#' about \eqn{K^2} numbers per row. The fit goes through these rows
 #'
 #' * once per EM iteration. The more information the missing states hold
 #'   (`missing_info_fraction`, below), the more iterations EM needs.
-#' * twice per coefficient for the observed information \eqn{J}, which the
-#'   Newton steps and the standard errors use. With many states there is about
-#'   one coefficient per state, so this part grows roughly with \eqn{K^3}.
-#'   With `orm_markov_ml_control(variance = FALSE)`, \eqn{J} is computed once
-#'   instead of twice.
+#' * about twice per Newton step. A few steps usually suffice.
+#' * about three times for the observed information \eqn{J}, which the
+#'   Newton steps and the standard errors use. \eqn{J} is computed once, and
+#'   again for the standard errors if the Newton steps changed the estimates;
+#'   with `orm_markov_ml_control(variance = FALSE)` only once. In a run of
+#'   consecutive missing states, every missing state after the first adds
+#'   work for \eqn{J} that grows with \eqn{K^3} instead of \eqn{K^2}.
 #'
-#' Transitions with both states observed add little time. As a guide, with 20
-#' states, 1,000 patients followed for 15 days, and 10% of states missing, a
-#' fit takes seconds. With 500 states, a handful of missing states already
-#' takes minutes, and many missing states can take hours. Before fitting
-#' large data with many states and many missing states, time a fit on a
-#' random subset of patients.
+#' Transitions with both states observed add little time. As a guide, on a
+#' recent laptop with states missing completely at random, a fit with
+#' standard errors took
+#'
+#' * with 100 states and 5,000 patients followed for 30 visits (about
+#'   140,000 rows): about 15 seconds with 0.5% of the states missing, just
+#'   over a minute with 5%, two and a half minutes with 10%, and under five
+#'   minutes with 20%.
+#' * with 500 states and 1,000 patients followed for 15 days (about 15,000
+#'   rows): about half a minute with 50 missing states and three minutes with
+#'   500.
+#'
+#' Before fitting large data with many states and many missing states, time a
+#' fit on a random subset of patients.
 #'
 #' @section Standard errors:
 #' Standard errors use the observed information \eqn{J}, the negative second
-#' derivative of \eqn{\sum_i \log L_i}, computed from exact patient scores
-#' \eqn{U_i}. The model-based covariance is \eqn{J^{-1}}. The covariance
+#' derivative of \eqn{\sum_i \log L_i}, and the patient scores \eqn{U_i}, the
+#' first derivatives of \eqn{\log L_i}. Both are computed exactly, without
+#' numerical derivatives. \eqn{J} is the information the transitions would
+#' hold if every state were observed, averaged over the states each patient
+#' could have been in given everything observed, minus the variance of the
+#' derivative of the log-likelihood over these same states (Louis' identity).
+#' The subtracted part is the information lost because states are missing;
+#' `missing_info_fraction` compares it with the first part.
+#' The model-based covariance is \eqn{J^{-1}}. The covariance
 #' returned by [vcov()] and used by [inferences()] is the patient-cluster
 #' robust covariance \eqn{J^{-1} (\sum_i U_i U_i^\top) J^{-1}}, multiplied by
 #' the same corrections as in [orm_markov()]: `type = "HC1"` uses
@@ -223,9 +240,7 @@
 #'     is absorbing).
 #'   * `missing_info_fraction`: largest share of information lost because
 #'     states are missing or known only up to a range, from 0 (none lost) to 1.
-#'     It is exactly 0 when every state is observed. Otherwise part of
-#'     \eqn{J} comes from numerical derivatives, so values very close to 0 are
-#'     accurate only to about `info_step^2` (`1e-8` by default).
+#'     It is exactly 0 when every state is observed.
 #'   * `start_coefficients`: estimates from transitions with both states
 #'     observed (the [orm_markov()] fit on those rows).
 #'   * `states`, `absorbing_state`: the states of the model and those that are
@@ -326,7 +341,7 @@ orm_markov_ml <- function(
         call. = FALSE
       )
     }
-    information <- markov_ml_information(problem, em$theta, control$info_step)
+    information <- markov_ml_information(problem, em$theta, em$state)
     newton <- markov_ml_newton(
       problem,
       em$theta,
@@ -380,11 +395,7 @@ orm_markov_ml <- function(
   information_pd <- NA
   if (isTRUE(control$variance)) {
     if (newton$steps > 0L) {
-      information <- markov_ml_information(
-        problem,
-        theta_hat,
-        control$info_step
-      )
+      information <- markov_ml_information(problem, theta_hat, state)
     }
     var_model <- markov_ml_invert_information(information)
     information_pd <- !is.null(var_model)
@@ -540,10 +551,6 @@ orm_markov_ml <- function(
 #' @param newton_steps Maximum number of Newton steps after EM. They stop
 #'   early once the Newton decrement (roughly how much the log-likelihood could
 #'   still rise) is below `1e-20`.
-#' @param info_step Relative step size for the numerical derivative of the
-#'   score that gives the observed information. Only rows whose state is
-#'   missing or a range, and the rows after them, use it; transitions with
-#'   both states observed add their exact information.
 #' @param trace Print the log-likelihood after each EM iteration?
 #' @param variance Compute covariances? Bootstrap refits set this to `FALSE`
 #'   because they need only the coefficients. When states are missing, the
@@ -556,7 +563,6 @@ orm_markov_ml_control <- function(
   reltol = 1e-6,
   coef_tol = 1e-7,
   newton_steps = 10L,
-  info_step = 1e-4,
   trace = FALSE,
   variance = TRUE
 ) {
@@ -565,7 +571,6 @@ orm_markov_ml_control <- function(
     reltol = reltol,
     coef_tol = coef_tol,
     newton_steps = newton_steps,
-    info_step = info_step,
     trace = trace,
     variance = variance
   ))
@@ -683,7 +688,6 @@ markov_ml_validate_control <- function(control) {
     reltol = 1e-6,
     coef_tol = 1e-7,
     newton_steps = 10L,
-    info_step = 1e-4,
     trace = FALSE,
     variance = TRUE
   )
@@ -708,7 +712,7 @@ markov_ml_validate_control <- function(control) {
   if (!count(control$newton_steps, 0)) {
     stop("`newton_steps` must be a non-negative integer.")
   }
-  for (nm in c("reltol", "coef_tol", "info_step")) {
+  for (nm in c("reltol", "coef_tol")) {
     if (!positive_number(control[[nm]])) {
       stop("`", nm, "` must be a positive number.")
     }

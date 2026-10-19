@@ -318,27 +318,205 @@ markov_ml_total_score <- function(problem, theta) {
   out
 }
 
-# Observed information: exact for the fully observed transitions, plus
-# central differences of the score of the rows that need the recursion.
-markov_ml_information <- function(problem, theta, step = 1e-4) {
+# Exact observed information: the proportional-odds information of the fully
+# observed transitions plus that of the segment rows
+# (markov_ml_chain_information()). `state` is the forward-backward pass at
+# `theta`; it is computed when NULL and some rows need the recursion.
+markov_ml_information <- function(problem, theta, state = NULL) {
   J <- markov_ml_complete_information(problem, theta)
   if (problem$chain$n) {
-    chain_problem <- markov_ml_chain_problem(problem)
-    for (k in seq_along(theta)) {
-      h <- step * max(1, abs(theta[[k]]))
-      up <- theta
-      down <- theta
-      up[[k]] <- up[[k]] + h
-      down[[k]] <- down[[k]] - h
-      J[, k] <- J[, k] -
-        (markov_ml_chain_score(chain_problem, up) -
-          markov_ml_chain_score(chain_problem, down)) /
-          (2 * h)
+    if (is.null(state)) {
+      state <- markov_ml_estep(problem, theta)
     }
-    J <- (J + t(J)) / 2
+    if (!identical(unname(state$theta), unname(theta))) {
+      stop("Internal error: the forward-backward pass is not at `theta`.")
+    }
+    J <- J + markov_ml_chain_information(problem, state)
   }
   dimnames(J) <- list(problem$coef_names, problem$coef_names)
   J
+}
+
+# Observed information of the segment rows by Louis' identity.
+#
+# In a segment, the state Z_0 before the first row is observed and Z_1, ...,
+# Z_T are not (the last may be). Row t contributes log P_t(Z_{t-1}, Z_t) to
+# the complete-data log-likelihood, with score s_t and negative Hessian h_t,
+# and the observed information is
+#   E[sum_t h_t | O] - Var(sum_t s_t | O).
+# Segments are independent given the observed states, so their terms add up.
+# With dP and d2P the first and second derivatives of P_t(a, b) and the
+# posterior xi_t(a, b) = FP_t(a) P_t(a, b) Q_t(b) of the forward-backward pass:
+# * Within rows, h - s s' = -d2P / P, so E[h_t - s_t s_t' | O] =
+#   -sum_ab FP_t(a) Q_t(b) d2P(a, b).
+# * Between rows, the rows before t depend on the rows from t on only through
+#   Z_{t-1}, so sum_{u < t} E[s_u s_t' | O] = sum_a W_{t-1}(a) G_t(a)', with
+#   G_t(a) = sum_b Q_t(b) dP(a, b) and W_{t-1}(a) = FP_t(a) times the expected
+#   score of the earlier rows of the segment given Z_{t-1} = a and the
+#   observations up to row t - 1. This term enters twice (u < t and u > t).
+# * The squared expectation adds E[S | O] E[S | O]' with E[S | O] the
+#   segment's score (Fisher's identity).
+# W follows the forward pass, with c_t = C_t / s_t (allowed states over the
+# scaling constant): W_0 = 0 and
+#   W_t(b) = c_t(b) [sum_a P_t(a, b) W_{t-1}(a) + sum_a FP_t(a) dP(a, b)].
+# No term divides by a transition probability. W_1 starts from the observed
+# state and is sparse (markov_ml_first_row_terms()), so segments of one or two
+# rows cost about one recursion pass; only longer segments carry a dense K x p
+# matrix per row.
+markov_ml_chain_information <- function(problem, state) {
+  chain <- problem$chain
+  K <- problem$K
+  n_int <- problem$n_int
+  X <- problem$X
+  thresholds <- seq_len(n_int)
+  slopes <- n_int + seq_len(ncol(X))
+  p <- n_int + ncol(X)
+  origins <- problem$origins
+  FP <- state$fwd$FP
+  dQ <- state$Q[, -1L, drop = FALSE] - state$Q[, -K, drop = FALSE]
+
+  # Within rows. Here F_j = plogis(alpha_j + eta) = P(Y > j) for coefficient
+  # j = 1, ..., K - 1 (`cum`), f_j = F_j (1 - F_j) (`dens`), and
+  # P(a, b) = F_{b-1} - F_b. The second derivative of P(a, b) in alpha_j is
+  # f'_j = f_j (1 - 2 F_j) for b = j + 1 and -f'_j for b = j; the entries for
+  # alpha_j and a slope are x times these, and those for two slopes x x'.
+  # So sum_b Q(b) d2P(a, b) needs only f'_j (Q(j + 1) - Q(j)), and
+  # FP_t(a) (Q_t(j + 1) - Q_t(j)) is summed by design row first.
+  R <- matrix(0, nrow = nrow(X), ncol = n_int)
+  for (ai in seq_along(origins)) {
+    agg <- rowsum(FP[, origins[[ai]]] * dQ, chain$DI[, ai], reorder = TRUE)
+    rows <- as.integer(rownames(agg))
+    R[rows, ] <- R[rows, ] + agg
+  }
+  M <- state$probs$dens * (1 - 2 * state$probs$cum) * R
+  J <- matrix(0, nrow = p, ncol = p)
+  J[cbind(thresholds, thresholds)] <- -colSums(M)
+  cross <- -crossprod(M, X)
+  J[thresholds, slopes] <- cross
+  J[slopes, thresholds] <- t(cross)
+  J[slopes, slopes] <- -crossprod(X, X * rowSums(M))
+
+  segment_scores <- rowsum(
+    markov_ml_chain_scores(problem, state),
+    chain$segment,
+    reorder = TRUE
+  )
+  between <- markov_ml_chain_between(problem, state, dQ)
+  J + crossprod(segment_scores) - between - t(between)
+}
+
+# W_1 of the first rows `r` of segments (see markov_ml_chain_information()).
+# With b0 the observed state before the segment, f the densities f_j of its
+# thresholds, x0 its design row, and c = C_1 / s_1, W_1(b) = c_b dP(b0, b) has
+# threshold entries c_b f_{b-1} (alpha_{b-1}) and -c_b f_b (alpha_b) and slope
+# entries c_b (f_{b-1} - f_b) x0. A segment starting in an absorbing state has
+# f = 0: nothing in it depends on the coefficients.
+markov_ml_first_row_terms <- function(problem, state, r) {
+  chain <- problem$chain
+  ai0 <- match(chain$baseline[chain$segment[r]], problem$origins)
+  live <- !is.na(ai0)
+  d0 <- rep(1L, length(r))
+  d0[live] <- chain$DI[cbind(r[live], ai0[live])]
+  f <- state$probs$dens[d0, , drop = FALSE]
+  f[!live, ] <- 0
+  list(
+    c = chain$C[r, , drop = FALSE] / state$fwd$s[r],
+    f = f,
+    x0 = problem$X[d0, , drop = FALSE]
+  )
+}
+
+# Between-row terms of markov_ml_chain_information(): the sum over segments
+# of sum_t sum_a W_{t-1}(a) G_t(a)' (p x p).
+markov_ml_chain_between <- function(problem, state, dQ) {
+  chain <- problem$chain
+  K <- problem$K
+  n_int <- problem$n_int
+  X <- problem$X
+  thresholds <- seq_len(n_int)
+  slopes <- n_int + seq_len(ncol(X))
+  p <- n_int + ncol(X)
+  origins <- problem$origins
+  absorbing <- problem$absorbing
+  dens <- state$probs$dens
+  out <- matrix(0, nrow = p, ncol = p)
+  if (length(chain$rows_by_pos) < 2L) {
+    return(out)
+  }
+
+  # Second rows, all segments at once using the sparse W_1. A segment's rows
+  # are consecutive, so its first row precedes its second. Origin a adds
+  # c_a f_{a-1} G(a) to the row of alpha_{a-1}, -c_a f_a G(a) to the row of
+  # alpha_a, and c_a (f_{a-1} - f_a) G(a) times x0 to the slope rows.
+  r2 <- chain$rows_by_pos[[2L]]
+  first <- markov_ml_first_row_terms(problem, state, r2 - 1L)
+  f <- first$f
+  weight <- first$c * (cbind(0, f) - cbind(f, 0))
+  dQ2 <- dQ[r2, , drop = FALSE]
+  slope_terms <- matrix(0, nrow = length(r2), ncol = p)
+  for (ai in seq_along(origins)) {
+    a <- origins[[ai]]
+    d <- chain$DI[r2, ai]
+    G <- dens[d, , drop = FALSE] * dQ2
+    G <- cbind(G, X[d, , drop = FALSE] * rowSums(G))
+    if (a >= 2L) {
+      out[a - 1L, ] <- out[a - 1L, ] +
+        drop(crossprod(first$c[, a] * f[, a - 1L], G))
+    }
+    if (a <= n_int) {
+      out[a, ] <- out[a, ] - drop(crossprod(first$c[, a] * f[, a], G))
+    }
+    slope_terms <- slope_terms + weight[, a] * G
+  }
+  out[slopes, ] <- out[slopes, ] + crossprod(first$x0, slope_terms)
+
+  # Third and later rows: segment by segment with a dense W.
+  length_of <- tabulate(chain$segment, chain$N)
+  long <- which(length_of >= 3L)
+  if (!length(long)) {
+    return(out)
+  }
+  start <- integer(chain$N)
+  start[chain$pats_by_pos[[1L]]] <- chain$rows_by_pos[[1L]]
+  first <- markov_ml_first_row_terms(problem, state, start[long])
+  above <- cbind(thresholds + 1L, thresholds)
+  diagonal <- cbind(thresholds, thresholds)
+  for (k in seq_along(long)) {
+    c1 <- first$c[k, ]
+    f1 <- first$f[k, ]
+    W <- matrix(0, nrow = K, ncol = p)
+    W[above] <- c1[-1L] * f1
+    W[diagonal] <- -c1[-K] * f1
+    W[, slopes] <- outer(c1 * (c(0, f1) - c(f1, 0)), first$x0[k, ])
+    rows <- start[long[[k]]] + seq_len(length_of[long[[k]]]) - 1L
+    for (t in 2:length(rows)) {
+      r <- rows[[t]]
+      d <- chain$DI[r, ]
+      D <- dens[d, , drop = FALSE]
+      if (t >= 3L) {
+        G <- D * rep(dQ[r, ], each = length(d))
+        G <- cbind(G, X[d, , drop = FALSE] * rowSums(G))
+        out <- out + crossprod(W[origins, , drop = FALSE], G)
+      }
+      if (t < length(rows)) {
+        fp <- state$fwd$FP[r, origins]
+        V <- crossprod(
+          state$probs$P[d, , drop = FALSE],
+          W[origins, , drop = FALSE]
+        )
+        if (length(absorbing)) {
+          V[absorbing, ] <- V[absorbing, ] + W[absorbing, ]
+        }
+        fd <- drop(fp %*% D)
+        V[above] <- V[above] + fd
+        V[diagonal] <- V[diagonal] - fd
+        V[, slopes] <- V[, slopes] +
+          crossprod(fp * (cbind(0, D) - cbind(D, 0)), X[d, , drop = FALSE])
+        W <- V * (chain$C[r, ] / state$fwd$s[r])
+      }
+    }
+  }
+  out
 }
 
 # Inverse of the observed information, or NULL when it is not positive

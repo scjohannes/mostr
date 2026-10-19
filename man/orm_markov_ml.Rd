@@ -89,9 +89,7 @@ and may be any state (under \code{missing_states = "any"}, or when no state
 is absorbing).
 \item \code{missing_info_fraction}: largest share of information lost because
 states are missing or known only up to a range, from 0 (none lost) to 1.
-It is exactly 0 when every state is observed. Otherwise part of
-\eqn{J} comes from numerical derivatives, so values very close to 0 are
-accurate only to about \code{info_step^2} (\code{1e-8} by default).
+It is exactly 0 when every state is observed.
 \item \code{start_coefficients}: estimates from transitions with both states
 observed (the \code{\link[=orm_markov]{orm_markov()}} fit on those rows).
 \item \code{states}, \code{absorbing_state}: the states of the model and those that are
@@ -241,33 +239,51 @@ When every state is observed, \code{orm_markov_ml()} uses the \code{\link[rms:or
 directly and takes about as long as \code{\link[=orm_markov]{orm_markov()}}, even for large data
 with many states.
 
-Missing states and ranges make the fit much slower, and the time rises
-steeply with the number of states \eqn{K}. A row whose state is missing or
-a range, and the row after it, need the probability of every possible
-transition: about \eqn{K^2} numbers per row. The fit computes these
+Missing states and ranges make the fit slower, and the time rises steeply
+with the number of states \eqn{K}. A row whose state is missing or a range,
+and the row after it, need the probability of every possible transition:
+about \eqn{K^2} numbers per row. The fit goes through these rows
 \itemize{
 \item once per EM iteration. The more information the missing states hold
 (\code{missing_info_fraction}, below), the more iterations EM needs.
-\item twice per coefficient for the observed information \eqn{J}, which the
-Newton steps and the standard errors use. With many states there is about
-one coefficient per state, so this part grows roughly with \eqn{K^3}.
-With \code{orm_markov_ml_control(variance = FALSE)}, \eqn{J} is computed once
-instead of twice.
+\item about twice per Newton step. A few steps usually suffice.
+\item about three times for the observed information \eqn{J}, which the
+Newton steps and the standard errors use. \eqn{J} is computed once, and
+again for the standard errors if the Newton steps changed the estimates;
+with \code{orm_markov_ml_control(variance = FALSE)} only once. In a run of
+consecutive missing states, every missing state after the first adds
+work for \eqn{J} that grows with \eqn{K^3} instead of \eqn{K^2}.
 }
 
-Transitions with both states observed add little time. As a guide, with 20
-states, 1,000 patients followed for 15 days, and 10\% of states missing, a
-fit takes seconds. With 500 states, a handful of missing states already
-takes minutes, and many missing states can take hours. Before fitting
-large data with many states and many missing states, time a fit on a
-random subset of patients.
+Transitions with both states observed add little time. As a guide, on a
+recent laptop with states missing completely at random, a fit with
+standard errors took
+\itemize{
+\item with 100 states and 5,000 patients followed for 30 visits (about
+140,000 rows): about 15 seconds with 0.5\% of the states missing, just
+over a minute with 5\%, two and a half minutes with 10\%, and under five
+minutes with 20\%.
+\item with 500 states and 1,000 patients followed for 15 days (about 15,000
+rows): about half a minute with 50 missing states and three minutes with
+500.
+}
+
+Before fitting large data with many states and many missing states, time a
+fit on a random subset of patients.
 }
 
 \section{Standard errors}{
 
 Standard errors use the observed information \eqn{J}, the negative second
-derivative of \eqn{\sum_i \log L_i}, computed from exact patient scores
-\eqn{U_i}. The model-based covariance is \eqn{J^{-1}}. The covariance
+derivative of \eqn{\sum_i \log L_i}, and the patient scores \eqn{U_i}, the
+first derivatives of \eqn{\log L_i}. Both are computed exactly, without
+numerical derivatives. \eqn{J} is the information the transitions would
+hold if every state were observed, averaged over the states each patient
+could have been in given everything observed, minus the variance of the
+derivative of the log-likelihood over these same states (Louis' identity).
+The subtracted part is the information lost because states are missing;
+\code{missing_info_fraction} compares it with the first part.
+The model-based covariance is \eqn{J^{-1}}. The covariance
 returned by \code{\link[=vcov]{vcov()}} and used by \code{\link[=inferences]{inferences()}} is the patient-cluster
 robust covariance \eqn{J^{-1} (\sum_i U_i U_i^\top) J^{-1}}, multiplied by
 the same corrections as in \code{\link[=orm_markov]{orm_markov()}}: \code{type = "HC1"} uses

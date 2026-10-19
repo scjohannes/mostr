@@ -336,9 +336,24 @@ flowchart TD
   complete-row score (`markov_ml_complete_score()`) to the segment score of
   `markov_ml_chain_problem()`, a reduced problem holding only the design rows
   that `chain$DI` references (remapped) and no complete part.
-  `markov_ml_information()` is the exact complete-row information plus central
-  differences (`info_step`) of that reduced problem's score, so each
-  perturbation costs one forward-backward pass over the segment rows only.
+  `markov_ml_information()` is exact: the complete-row information plus
+  `markov_ml_chain_information()`, which applies Louis' identity per segment
+  (expected complete-data information minus the conditional variance of the
+  complete-data score) to the forward-backward pass already computed at the
+  same coefficients (`state`; the EM state for the Newton steps and the final
+  E-step for the covariance), so it runs no pass of its own. Its within-row
+  part needs only `f'_j = f_j (1 - 2 F_j)` (from `probs$cum`) summed by design
+  row; the segment scores add their outer products; the between-row part
+  (`markov_ml_chain_between()`) carries `W`, the forward-weighted expected
+  score of earlier segment rows per state. `W_1` starts from the observed
+  state and is sparse (`markov_ml_first_row_terms()`: bidiagonal in the
+  thresholds, rank one in the slopes), so second rows are handled for all
+  segments at once in a loop over origins; only segments with three or more
+  rows carry a dense K x p `W`, segment by segment. No term divides by a
+  transition probability, and nothing is differentiated numerically; tests
+  compare with central differences of `markov_ml_total_score()` and with
+  brute-force enumeration over completions (`ml_oracle()` with
+  `information = TRUE`).
   `markov_ml_missing_info_fraction()` returns 0 when both matrices are the
   same object. `markov_ml_sandwich()` reuses `markov_assemble_sandwich()`.
   HC1 counts rows whose mask excludes a state; `cadjust` counts patients with
@@ -346,10 +361,13 @@ flowchart TD
 - **Cost**: without segment rows a fit costs the starting `rms::orm()` fit
   plus linear-in-rows score and information sums, about the same as
   `orm_markov()`. With segment rows, each forward-backward pass costs about
-  segment rows x origins x states, once per EM iteration and twice per
-  coefficient for each information evaluation (once for the Newton steps, and
-  again for the covariance after a Newton step), so with K states it grows
-  roughly with K^3. The design matrix `X` and `complete_part$W` still have one
+  segment rows x origins x states (K^2 per row), once per EM iteration and
+  once per Newton step plus forward passes in its line search. Each
+  information evaluation (once for the Newton steps, and again for the
+  covariance after a Newton step) costs about one more pass over the segment
+  rows, plus K x K x p and K x p x p matrix products (K^3 per row) for the
+  third and later rows of a segment, that is for each missing state after
+  the first in a run. The design matrix `X` and `complete_part$W` still have one
   row per unique covariate row x origin; continuous covariates make these
   approach rows x origins.
 

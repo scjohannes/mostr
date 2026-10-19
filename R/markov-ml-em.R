@@ -615,7 +615,7 @@ markov_ml_transition_probs <- function(problem, theta, strict = TRUE) {
     )
   }
   P[P < 0] <- 0
-  list(P = P, dens = cum * (1 - cum), theta = theta)
+  list(P = P, cum = cum, dens = cum * (1 - cum), theta = theta)
 }
 
 # ---------------------------------------------------------------------------

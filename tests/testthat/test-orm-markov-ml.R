@@ -393,59 +393,111 @@ test_that("the observed information matches a numerical Hessian", {
   expect_equal(unname(fit$ml$information), -H, tolerance = 1e-4)
 })
 
-test_that("the observed information differentiates only rows that need the recursion", {
-  data <- make_test_data(n_patients = 60, follow_up_time = 8)
-  data <- data[order(data$id, data$time), ]
-  # Two untreated patients miss their day-4 state, so only their day-4 and
-  # day-5 rows need the forward-backward recursion.
-  day4 <- data$time == 4 & data$tx == 0 & data$y != 6
-  ids <- utils::head(intersect(data$id[day4], data$id[data$time == 5]), 2L)
-  data$y[data$id %in% ids & data$time == 4] <- NA
-  data$yprev[data$id %in% ids & data$time == 5] <- NA
+test_that("the observed information equals enumeration over completions", {
+  # Ranges, gaps, trailing runs, and runs of three to five missing states.
+  data <- ml_oracle_data(long_runs = TRUE)
+  for (rule in c("any", "non_absorbing")) {
+    problem <- ml_oracle_problem(data, missing_states = rule)
+    theta0 <- stats::coef(problem$start_fit)
+    for (seed in 1:2) {
+      theta <- ml_random_theta(theta0, problem$n_int, seed)
+      oracle <- ml_oracle(data, problem$start_fit, theta,
+        missing_states = rule, information = TRUE)
+      expect_equal(
+        markov_ml_information(problem, theta),
+        oracle$information,
+        tolerance = 1e-12
+      )
+    }
+  }
+})
+
+test_that("without an absorbing state the observed information equals enumeration", {
+  data <- ml_oracle_data_no_absorbing(long_runs = TRUE)
+  problem <- markov_ml_setup(rms::Ocens(y_lo, y_hi) ~ time + tx + yprev,
+    data, "id", "time", "yprev", NULL, "any", list())
+  theta <- ml_random_theta(stats::coef(problem$start_fit), problem$n_int, 3)
+  oracle <- ml_oracle(data, problem$start_fit, theta, K = 3L,
+    absorbing = integer(), information = TRUE)
+  expect_equal(
+    markov_ml_information(problem, theta),
+    oracle$information,
+    tolerance = 1e-12
+  )
+})
+
+test_that("the observed information equals central differences of the score", {
+  # A third of the states missing: gaps and trailing runs of many lengths.
+  data <- ml_sim_missing(n_patients = 60, follow_up_time = 8, missing = 0.3)
+  formula <- y ~ rms::rcs(time, 3) + tx + yprev
+  for (rule in c("any", "non_absorbing")) {
+    problem <- markov_ml_setup(formula, data, "id", "time", "yprev", 6, rule,
+      list())
+    theta <- ml_random_theta(stats::coef(problem$start_fit), problem$n_int, 5)
+    p <- length(theta)
+    reference <- matrix(0, p, p)
+    for (k in seq_len(p)) {
+      h <- 1e-5 * max(1, abs(theta[[k]]))
+      e <- replace(numeric(p), k, h)
+      reference[, k] <- -(markov_ml_total_score(problem, theta + e) -
+        markov_ml_total_score(problem, theta - e)) / (2 * h)
+    }
+    expect_equal(
+      unname(markov_ml_information(problem, theta)),
+      (reference + t(reference)) / 2,
+      tolerance = 1e-7
+    )
+  }
+})
+
+test_that("the observed information needs no forward-backward pass of its own", {
+  data <- ml_sim_missing(n_patients = 60, follow_up_time = 8, missing = 0.2)
   problem <- markov_ml_setup(y ~ rms::rcs(time, 3) + tx + yprev, data, "id",
     "time", "yprev", 6, "any", list())
-  expect_identical(problem$chain$n, 4L)
   theta <- stats::coef(problem$start_fit)
+  state <- markov_ml_estep(problem, theta)
+  original <- markov_ml_forward
+  passes <- 0L
+  local_mocked_bindings(markov_ml_forward = function(...) {
+    passes <<- passes + 1L
+    original(...)
+  })
 
-  # Central differences of the score summed over every row.
-  p <- length(theta)
-  reference <- matrix(0, p, p)
-  for (k in seq_len(p)) {
-    h <- 1e-4 * max(1, abs(theta[[k]]))
-    e <- replace(numeric(p), k, h)
-    reference[, k] <- -(markov_ml_total_score(problem, theta + e) -
-      markov_ml_total_score(problem, theta - e)) / (2 * h)
+  # The information comes from the posteriors of the E-step at the same
+  # coefficients, whatever the number of coefficients; without them it runs
+  # one E-step.
+  J <- markov_ml_information(problem, theta, state)
+  expect_identical(passes, 0L)
+  expect_equal(markov_ml_information(problem, theta), J, tolerance = 1e-14)
+  expect_identical(passes, 1L)
+})
+
+test_that("fits store the exact observed information", {
+  data <- ml_oracle_data(long_runs = TRUE)
+  for (rule in c("any", "non_absorbing")) {
+    fit <- orm_markov_ml(
+      rms::Ocens(y_lo, y_hi) ~ time + tx + yprev,
+      data = data,
+      id_var = "id",
+      absorbing_state = 4,
+      missing_states = rule
+    )
+    problem <- ml_oracle_problem(data, missing_states = rule)
+    oracle <- ml_oracle(data, problem$start_fit, coef(fit),
+      missing_states = rule, information = TRUE)
+    expect_equal(fit$ml$information, oracle$information, tolerance = 1e-12)
+    expect_equal(fit$ml$var_model, solve(oracle$information), tolerance = 1e-8,
+      ignore_attr = TRUE)
+
+    # The information lost to missing states, complete-data minus observed
+    # information, is the variance of the complete-data score given the
+    # observed data, so it is positive semi-definite.
+    lost <- eigen(fit$ml$complete_information - fit$ml$information,
+      symmetric = TRUE, only.values = TRUE)$values
+    expect_gte(min(lost), -1e-10 * max(lost))
+    expect_gt(fit$ml$missing_info_fraction, 0)
+    expect_lt(fit$ml$missing_info_fraction, 1)
   }
-  reference <- (reference + t(reference)) / 2
-
-  full_design <- nrow(problem$X)
-  n_complete <- length(problem$complete_part$agg_count)
-  original_probs <- markov_ml_transition_probs
-  original_scores <- po_row_scores
-  probs_all_designs <- 0L
-  scores_all_complete <- 0L
-  local_mocked_bindings(
-    markov_ml_transition_probs = function(problem, theta, strict = TRUE) {
-      if (nrow(problem$X) == full_design) {
-        probs_all_designs <<- probs_all_designs + 1L
-      }
-      original_probs(problem, theta, strict = strict)
-    },
-    po_row_scores = function(x, ...) {
-      if (NROW(x) == n_complete) {
-        scores_all_complete <<- scores_all_complete + 1L
-      }
-      original_scores(x, ...)
-    }
-  )
-  J <- markov_ml_information(problem, theta)
-
-  # Fully observed transitions add their exact proportional-odds information,
-  # so the cost of the numerical derivatives grows with the rows that need
-  # the recursion, not with all rows.
-  expect_equal(unname(J), unname(reference), tolerance = 1e-6)
-  expect_lte(probs_all_designs, 1L)
-  expect_lte(scores_all_complete, 1L)
 })
 
 # --- Fitting -----------------------------------------------------------------
