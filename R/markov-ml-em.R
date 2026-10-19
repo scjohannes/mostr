@@ -412,11 +412,14 @@ markov_ml_setup <- function(
   }
   unseen_origins <- setdiff(origins, prev_state[complete])
   if (length(unseen_origins)) {
+    # Typically a state that is never left, such as death, that was not given
+    # in `absorbing_state` (which may be omitted when no state is absorbing).
     stop(
       "Non-absorbing state(s) ",
       paste(labels[unseen_origins], collapse = ", "),
       " never occur as the previous state among transitions with both ",
-      "states observed exactly.",
+      "states observed exactly. If such a state is never left, such as ",
+      "death, give it in `absorbing_state`.",
       call. = FALSE
     )
   }

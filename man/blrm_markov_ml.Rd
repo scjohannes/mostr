@@ -11,7 +11,7 @@ blrm_markov_ml(
   data,
   ...,
   id_var,
-  absorbing_state,
+  absorbing_state = NULL,
   p_var = "yprev",
   missing_states = c("any", "non_absorbing"),
   conc = NULL,
@@ -57,14 +57,17 @@ whose response is missing.}
 patient's rows form one chain.}
 
 \item{absorbing_state}{State value(s) that are never left, such as death.
-Required.}
+\code{NULL} (the default) means that no state is absorbing, so every state can
+be left. Give every state that is never left; see the Missing states
+section.}
 
 \item{p_var}{Name of the previous-state column used in \code{formula}, as in
 \code{\link[=sops]{sops()}}.}
 
 \item{missing_states}{What a missing response means: \code{"any"} (any state,
 including absorbing ones) or \code{"non_absorbing"} (a non-absorbing state).
-See the Missing states section.}
+Without absorbing states, both mean any state. See the Missing states
+section.}
 
 \item{conc}{Concentration of the Dirichlet prior for the intercepts; see the
 Priors section. \code{NULL} uses the \code{\link[rmsb:blrm]{rmsb::blrm()}} default
@@ -115,9 +118,10 @@ parameters \code{alpha}, \code{beta}, and \code{tau} are on the internal scale
 scale of the linear predictor.
 \item \code{ml}: a list with \code{n_missing}, \code{n_range}, \code{n_gaps}, \code{n_trailing},
 \code{n_patients}, and \code{n_rows} (as for \code{\link[=orm_markov_ml]{orm_markov_ml()}}), \code{missing_states},
-the states, and \code{start_coefficients}, the maximum likelihood estimates
-of the proportional-odds model from transitions with both states
-observed.
+the states (\code{states}) and those that are never left (\code{absorbing_state},
+empty when no state is absorbing), and \code{start_coefficients}, the
+maximum likelihood estimates of the proportional-odds model from
+transitions with both states observed.
 }
 }
 \description{
@@ -241,6 +245,14 @@ non-absorbing state. Choose this when vital status is known at every
 visit, so a missing state never hides a death. A missing visit then still
 carries the information that the patient survived to it.
 }
+
+Without \code{absorbing_state} (the default \code{NULL}), no state is absorbing:
+every state can be left, as on a quality-of-life scale that does not
+include death. A missing state may then be any state under either rule, so
+both rules give the same fit. If the data contain a state that is never
+left, such as death, give it in \code{absorbing_state}. Otherwise the model
+allows leaving that state, and a missing visit could imply, for example,
+that a patient died and later recovered.
 
 The chain follows the rows of each patient in \code{time_var} order. A visit
 without a row is treated as not scheduled, not as a missing state, so keep

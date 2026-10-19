@@ -231,8 +231,10 @@ proportional-odds transition model as `orm_markov()` but maximises the
 observed-data likelihood when some states are `NA` or an `rms::Ocens()` range.
 The model is treated as a hidden Markov model whose rows carry a 0/1 mask of
 allowed states (`markov_ml_masks()`); `missing_states` decides whether `NA`
-allows absorbing states. With nothing missing it reproduces `orm_markov()` at
-about the same cost.
+allows absorbing states. `absorbing_state` is optional: without it no state is
+absorbing, every state is an origin, and both `missing_states` rules let `NA`
+be any state. With nothing missing it reproduces `orm_markov()` at about the
+same cost.
 
 ```mermaid
 flowchart TD
@@ -277,6 +279,17 @@ flowchart TD
   `informative` (rows whose observation excludes a state) comes from the state
   ranges. `markov_ml_state_scale()` maps endpoints to states with
   `findInterval()`.
+- **No absorbing state**: `absorbing_state` defaults to `NULL` in both
+  wrappers. `markov_ml_check_inputs()` rejects only given values that are not
+  an atomic vector or contain `NA`; `markov_ml_setup()` rejects values that
+  are not states of the data. `NULL` or an empty vector gives
+  `absorbing = integer(0)` and `origins` = every state.
+  `markov_ml_missing_fill()` then makes `"non_absorbing"` equal to `"any"`,
+  and `markov_ml_forward()` and `markov_ml_backward()` skip the absorbing step
+  (`if (length(absorbing))`). A state that never occurs as the previous state
+  of a fully observed transition stops the set-up with a hint to give it in
+  `absorbing_state`, which catches an omitted death state when rows after
+  death were removed. `$ml$absorbing_state` is then `character(0)`.
 - **Fitting without segment rows**: when `chain$n` is 0, `orm_markov_ml()`
   takes the starting fit's coefficients as the estimate and skips EM, Newton
   steps, and every forward-backward pass; `iterations` and `newton_steps` are
@@ -389,14 +402,18 @@ Contracts with the rest of the package:
   refit's rows give complete-data scores. A custom `cluster` is rejected.
 - Bootstrap: `update_bootstrap_model()` refits through the stored
   `mostr::orm_markov_ml` call with `id_var = "new_id"` so resampled copies are
-  separate chains, and with `variance = FALSE`. Fractional weighted bootstrap
-  errors (`stop_orm_markov_ml_fwb()`). `orm_model_matrix()` adds placeholder
-  response columns so prediction data need not contain `.mostr_state`.
+  separate chains, and with `variance = FALSE`. Arguments are inlined from
+  `markov_capture_refit_args()` only when the call named them, so an omitted
+  `absorbing_state` stays omitted and the refit has no absorbing state either.
+  Fractional weighted bootstrap errors (`stop_orm_markov_ml_fwb()`).
+  `orm_model_matrix()` adds placeholder response columns so prediction data
+  need not contain `.mostr_state`.
 
 The R recursion is the production implementation. If it moves next to
 `cpp_markov_update_po()`, the R version becomes a test-only reference.
 `tests/testthat/helper-markov-ml-oracle.R` enumerates every completion of the
-allowed states as an independent oracle for the likelihood and posteriors.
+allowed states as an independent oracle for the likelihood and posteriors,
+also for data without absorbing states (`ml_oracle_data_no_absorbing()`).
 Benchmark and simulation scripts are in ignored `benchmarks/local/`.
 
 ### Bayesian fits with missing states
@@ -481,7 +498,12 @@ flowchart TD
     `markov_ml_stop_impossible()` stops before sampling and names the
     patients, as `orm_markov_ml()`'s forward pass does. Fully observed
     transitions start in a non-absorbing state and have positive probability
-    for every coefficient value, so they need no such check.
+    for every coefficient value, so they need no such check. Without
+    absorbing states every allowed state is an origin, so no run is
+    impossible.
+  - Absorbing states: `n_absorbing` and the `absorbing` array may be empty
+    (no `absorbing_state`); the Stan loop that carries absorbing states then
+    does not run.
   - `check_rows`: the crossing check still covers every possible origin of
     every recursion row, as before the index lists, reduced to one row per
     distinct `ppo` design row (one row without `ppo`), because whether
@@ -564,11 +586,12 @@ Stan. With `MOSTR_TEST_STAN=true` they also:
   `avg_sops()` and `avg_comparisons()` draws, with and without
   `include_re`;
 - compare the density with a plain R loop over patients' runs when states
-  are missing or range-coded, under both `missing_states` rules and with
-  masks that have gaps, with and without random intercepts (up to a
-  constant with random intercepts, whose `~` priors drop constants);
-- run small end-to-end fits, including `avg_sops()` and `avg_comparisons()`
-  with `include_re = TRUE`.
+  are missing or range-coded, under both `missing_states` rules, with masks
+  that have gaps, without absorbing states, and with and without random
+  intercepts (up to a constant with random intercepts, whose `~` priors drop
+  constants);
+- run small end-to-end fits, including one without `absorbing_state` and
+  `avg_sops()` and `avg_comparisons()` with `include_re = TRUE`.
 
 ## Dependencies and execution
 

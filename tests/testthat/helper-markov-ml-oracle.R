@@ -53,6 +53,15 @@ ml_oracle_data <- function(n_complete = 40L, seed = 11L) {
   out
 }
 
+# ml_oracle_data() without the patients who reach state 4: states 1 to 3, none
+# of them absorbing, with the same missing-state and range patterns.
+ml_oracle_data_no_absorbing <- function() {
+  data <- ml_oracle_data()
+  reaches_4 <- (!is.na(data$y_lo) & data$y_lo >= 4) |
+    (!is.na(data$y_hi) & is.finite(data$y_hi) & data$y_hi >= 4)
+  data[!data$id %in% data$id[reaches_4], , drop = FALSE]
+}
+
 ml_oracle_allowed <- function(lo, hi, K, absorbing, missing_states) {
   states <- seq_len(K)
   if (is.na(lo) && is.na(hi)) {

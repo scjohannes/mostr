@@ -31,6 +31,14 @@
 * `orm_markov_ml()` now rejects random effects (`cluster()`) in the formula
   with an informative error.
 
+* `orm_markov_ml()` and `blrm_markov_ml()` no longer require
+  `absorbing_state`. Without it (the new default `NULL`), no state is
+  absorbing: every state can be left, as on a quality-of-life scale without
+  death, and a missing state may be any state under either `missing_states`
+  rule. Data with a state that is never left, such as death, should still
+  give it in `absorbing_state`; if that state is never a previous state in
+  the data, the fit stops with a message saying so.
+
 * `orm_markov_ml()` without missing or range-coded states is now about as fast
   as `orm_markov()`, also with many states: it uses the `rms::orm()` fit and
   its exact information directly instead of running EM, Newton steps, and

@@ -336,6 +336,22 @@ test_that("cluster() terms are checked and removed for set-up", {
   )
 })
 
+test_that("without an absorbing state the Stan data have none", {
+  data <- ml_oracle_data_no_absorbing()
+  expect_no_error(markov_ml_check_inputs(
+    y ~ time + tx + yprev,
+    data,
+    id_var = "id",
+    absorbing_state = NULL,
+    time_var = "time",
+    p_var = "yprev"
+  ))
+  setup <- bayes_setup(data, rms::Ocens(y_lo, y_hi) ~ time + tx + yprev,
+    absorbing_state = NULL)
+  expect_identical(setup$input$data$n_absorbing, 0L)
+  expect_length(setup$input$data$absorbing, 0L)
+})
+
 test_that("normcppo centres and scales the scores over observed transitions", {
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 8)
   formula <- y ~ time + tx + yprev
@@ -359,10 +375,6 @@ test_that("invalid input gives informative errors before sampling", {
   expect_error(
     blrm_markov_ml(y ~ time + tx + yprev, data = data, absorbing_state = 4),
     "`id_var` is required"
-  )
-  expect_error(
-    blrm_markov_ml(y ~ time + tx + yprev, data = data, id_var = "id"),
-    "`absorbing_state` is required"
   )
   expect_error(
     blrm_markov_ml(y ~ time + tx, data = data, id_var = "id",
@@ -599,6 +611,40 @@ test_that("the likelihood equals the R recursion with missing and range states",
       }
     }
   }
+})
+
+test_that("without an absorbing state the density matches the R recursion", {
+  skip_without_stan()
+  model <- markov_bayes_stan_model()
+  data <- ml_oracle_data_no_absorbing()
+  formula <- rms::Ocens(y_lo, y_hi) ~ time + tx + yprev
+  conc <- 0.7
+  setup <- bayes_setup(data, formula, absorbing_state = NULL, conc = conc)
+  stan <- setup$input$data
+  stanfit <- suppressMessages(rstan::sampling(model, data = stan, chains = 0))
+  K <- stan$k
+  set.seed(3)
+  for (i in 1:3) {
+    u <- stats::rnorm(stan$p + stan$q + K - 1L, sd = 0.3)
+    log_density <- rstan::log_prob(stanfit, u, adjust_transform = FALSE)
+    pars <- rstan::constrain_pars(stanfit, u)
+    coefficients <- markov_bayes_draws_from_array(
+      bayes_stan_array(pars$alpha, pars$beta, pars$tau),
+      setup$input
+    )[1L, ]
+    log_prior <- lgamma(K * conc) - K * lgamma(conc) +
+      (conc - 1) * sum(log(pars$pi))
+    expect_equal(
+      log_density - log_prior,
+      bayes_r_loglik(setup, coefficients),
+      tolerance = 1e-10
+    )
+  }
+
+  fit <- suppressWarnings(blrm_markov_ml(y ~ time + tx + yprev, data = data,
+    id_var = "id", iter = 300, chains = 2, seed = 1))
+  expect_s3_class(fit, "blrm_markov_ml")
+  expect_length(fit$ml$absorbing_state, 0L)
 })
 
 test_that("with random intercepts the density matches the R recursion", {

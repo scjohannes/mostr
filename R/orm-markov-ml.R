@@ -47,6 +47,14 @@
 #'   visit, so a missing state never hides a death. A missing visit then still
 #'   carries the information that the patient survived to it.
 #'
+#' Without `absorbing_state` (the default `NULL`), no state is absorbing:
+#' every state can be left, as on a quality-of-life scale that does not
+#' include death. A missing state may then be any state under either rule, so
+#' both rules give the same fit. If the data contain a state that is never
+#' left, such as death, give it in `absorbing_state`. Otherwise the model
+#' allows leaving that state, and a missing visit could imply, for example,
+#' that a patient died and later recovered.
+#'
 #' The chain follows the rows of each patient in `time_var` order. A visit
 #' without a row is treated as not scheduled, not as a missing state, so keep
 #' one row for every scheduled visit until an observed absorbing state or the
@@ -177,12 +185,15 @@
 #' @param id_var Character scalar naming the patient ID column. Required: each
 #'   patient's rows form one chain.
 #' @param absorbing_state State value(s) that are never left, such as death.
-#'   Required.
+#'   `NULL` (the default) means that no state is absorbing, so every state can
+#'   be left. Give every state that is never left; see the Missing states
+#'   section.
 #' @param p_var Name of the previous-state column used in `formula`, as in
 #'   [sops()].
 #' @param missing_states What a missing response means: `"any"` (any state,
 #'   including absorbing ones) or `"non_absorbing"` (a non-absorbing state).
-#'   See the Missing states section.
+#'   Without absorbing states, both mean any state. See the Missing states
+#'   section.
 #' @param type,cadjust Corrections for the robust covariance, as in
 #'   [orm_markov()].
 #' @param time_var Character scalar naming the time column. Rows are ordered by
@@ -208,7 +219,8 @@
 #'   * `var_model`, `var_robust`: model-based and robust covariances.
 #'   * `patient_scores`: one row per patient, the derivative of that patient's
 #'     \eqn{\log L_i}; zeros for patients whose later states are all missing
-#'     under `missing_states = "any"`.
+#'     and may be any state (under `missing_states = "any"`, or when no state
+#'     is absorbing).
 #'   * `missing_info_fraction`: largest share of information lost because
 #'     states are missing or known only up to a range, from 0 (none lost) to 1.
 #'     It is exactly 0 when every state is observed. Otherwise part of
@@ -216,6 +228,8 @@
 #'     accurate only to about `info_step^2` (`1e-8` by default).
 #'   * `start_coefficients`: estimates from transitions with both states
 #'     observed (the [orm_markov()] fit on those rows).
+#'   * `states`, `absorbing_state`: the states of the model and those that are
+#'     never left (empty when no state is absorbing).
 #'   * `n_missing`, `n_range`, `n_gaps`, `n_trailing`: counts of rows with a
 #'     missing state, rows with a range of states, runs of such rows that end
 #'     in an observed state, and runs at the end of a patient's rows.
@@ -242,7 +256,7 @@ orm_markov_ml <- function(
   data,
   ...,
   id_var,
-  absorbing_state,
+  absorbing_state = NULL,
   p_var = "yprev",
   missing_states = c("any", "non_absorbing"),
   type = c("HC0", "HC1"),
@@ -265,7 +279,7 @@ orm_markov_ml <- function(
     formula = formula,
     data = if (!missing(data)) data,
     id_var = if (!missing(id_var)) id_var,
-    absorbing_state = if (!missing(absorbing_state)) absorbing_state,
+    absorbing_state = absorbing_state,
     time_var = time_var,
     p_var = p_var
   )
@@ -558,7 +572,9 @@ orm_markov_ml_control <- function(
 }
 
 # Checks shared by orm_markov_ml() and blrm_markov_ml(). Missing arguments are
-# passed as NULL. With `random_effects = TRUE`, `formula` may contain one
+# passed as NULL. `absorbing_state` may be NULL or empty (no absorbing state);
+# markov_ml_setup() checks that given values are states of the data. With
+# `random_effects = TRUE`, `formula` may contain one
 # `cluster(<id_var>)` term (patient random intercepts). Returns `formula`
 # without that term and whether it was present.
 markov_ml_check_inputs <- function(
@@ -581,13 +597,12 @@ markov_ml_check_inputs <- function(
   }
   validate_markov_id_var(id_var, data, "data")
   if (
-    is.null(absorbing_state) ||
-      !length(absorbing_state) ||
-      anyNA(absorbing_state)
+    !is.null(absorbing_state) &&
+      (!is.atomic(absorbing_state) || anyNA(absorbing_state))
   ) {
     stop(
-      "`absorbing_state` is required: give the state(s) that are never left, ",
-      "such as death.",
+      "`absorbing_state` must give the state(s) that are never left, such as ",
+      "death, without missing values, or be NULL when every state can be left.",
       call. = FALSE
     )
   }

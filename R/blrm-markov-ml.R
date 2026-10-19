@@ -165,9 +165,10 @@
 #'     scale of the linear predictor.
 #'   * `ml`: a list with `n_missing`, `n_range`, `n_gaps`, `n_trailing`,
 #'     `n_patients`, and `n_rows` (as for [orm_markov_ml()]), `missing_states`,
-#'     the states, and `start_coefficients`, the maximum likelihood estimates
-#'     of the proportional-odds model from transitions with both states
-#'     observed.
+#'     the states (`states`) and those that are never left (`absorbing_state`,
+#'     empty when no state is absorbing), and `start_coefficients`, the
+#'     maximum likelihood estimates of the proportional-odds model from
+#'     transitions with both states observed.
 #'
 #' @examples
 #' \dontrun{
@@ -211,7 +212,7 @@ blrm_markov_ml <- function(
   data,
   ...,
   id_var,
-  absorbing_state,
+  absorbing_state = NULL,
   p_var = "yprev",
   missing_states = c("any", "non_absorbing"),
   conc = NULL,
@@ -242,7 +243,7 @@ blrm_markov_ml <- function(
     formula = formula,
     data = if (!missing(data)) data,
     id_var = if (!missing(id_var)) id_var,
-    absorbing_state = if (!missing(absorbing_state)) absorbing_state,
+    absorbing_state = absorbing_state,
     time_var = time_var,
     p_var = p_var,
     random_effects = TRUE

@@ -41,6 +41,24 @@ test_that("the likelihood and posteriors equal enumeration over completions", {
   }
 })
 
+test_that("without an absorbing state the likelihood equals enumeration", {
+  data <- ml_oracle_data_no_absorbing()
+  formula <- rms::Ocens(y_lo, y_hi) ~ time + tx + yprev
+  # Without absorbing states, both rules let a missing state be any state.
+  for (rule in c("any", "non_absorbing")) {
+    fit <- orm_markov_ml(formula, data = data, id_var = "id",
+      missing_states = rule)
+    expect_length(fit$ml$absorbing_state, 0L)
+    expect_gt(fit$ml$n_missing, 0)
+    expect_true(fit$ml$converged)
+    problem <- markov_ml_setup(formula, data, "id", "time", "yprev", NULL,
+      rule, list())
+    oracle <- ml_oracle(data, problem$start_fit, coef(fit), K = 3L,
+      absorbing = integer(), missing_states = rule)
+    expect_equal(fit$ml$loglik, oracle$loglik, tolerance = 1e-10)
+  }
+})
+
 test_that("posteriors sum to one and match the forward-backward identity", {
   data <- ml_oracle_data()
   problem <- ml_oracle_problem(data)
@@ -120,6 +138,24 @@ test_that("with nothing missing the fit costs no forward-backward passes", {
     ignore_attr = TRUE
   )
   expect_identical(fit$ml$missing_info_fraction, 0)
+})
+
+test_that("without an absorbing state the fit reproduces orm_markov()", {
+  data <- make_test_data(n_patients = 120, follow_up_time = 10)
+  # Patients who never die: states 1 to 5, none of them absorbing.
+  data <- droplevels(data[!data$id %in% data$id[data$y == 6], , drop = FALSE])
+  formula <- ordered(y) ~ rms::rcs(time, 3) + tx + yprev
+  reference <- orm_markov(formula, data = data, id_var = "id")
+  fit <- orm_markov_ml(formula, data = data, id_var = "id")
+
+  expect_length(fit$ml$absorbing_state, 0L)
+  expect_equal(coef(fit), coef(reference), tolerance = 1e-10)
+  expect_equal(fit$var, reference$var, tolerance = 1e-9, ignore_attr = TRUE)
+  expect_equal(
+    avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:5)$estimate,
+    avg_sops(reference, variables = list(tx = c(0, 1)), times = 1:5)$estimate,
+    tolerance = 1e-10
+  )
 })
 
 # --- Ocens() responses ------------------------------------------------------
@@ -507,11 +543,6 @@ test_that("invalid input gives informative errors", {
     orm_markov_ml(y ~ time + tx + yprev, data = data, absorbing_state = 4),
     "`id_var` is required"
   )
-  expect_error(
-    orm_markov_ml(y ~ time + tx + yprev, data = data, id_var = "id"),
-    "`absorbing_state` is required"
-  )
-
   no_baseline <- data
   no_baseline$yprev[no_baseline$id == 101 & no_baseline$time == 1] <- NA
   expect_error(
@@ -570,6 +601,21 @@ test_that("invalid input gives informative errors", {
   expect_error(compute_scores_orm(fit), "complete-data scores")
 })
 
+test_that("given absorbing states are still checked", {
+  data <- ml_oracle_data()
+  fit_ml <- function(absorbing_state) {
+    orm_markov_ml(y ~ time + tx + yprev, data = data, id_var = "id",
+      absorbing_state = absorbing_state)
+  }
+  expect_error(fit_ml(NA), "without missing values")
+  expect_error(fit_ml(c(4, NA)), "without missing values")
+  expect_error(fit_ml(list(4)), "without missing values")
+  expect_error(fit_ml(7), "7 are not among the observed states")
+  # State 4 is never left in these data; omitting it is caught.
+  expect_error(fit_ml(NULL), "give it in `absorbing_state`")
+  expect_error(fit_ml(integer()), "give it in `absorbing_state`")
+})
+
 # --- Downstream inference ----------------------------------------------------
 
 test_that("prediction and inference run on an ML fit without robcov_orm()", {
@@ -603,6 +649,31 @@ test_that("prediction and inference run on an ML fit without robcov_orm()", {
   expect_true(all(is.finite(inferences(s, method = "delta")$std.error)))
 
   expect_error(inferences(a, method = "fwb", n_draws = 5), "not available")
+})
+
+test_that("without an absorbing state inference and refits keep none", {
+  data <- ml_oracle_data_no_absorbing()
+  fit <- orm_markov_ml(rms::Ocens(y_lo, y_hi) ~ time + tx + yprev,
+    data = data, id_var = "id")
+  expect_null(fit$call$absorbing_state)
+
+  a <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:4)
+  for (target in c("conditional", "unconditional")) {
+    out <- inferences(a, method = "delta", vcov = target)
+    expect_true(all(is.finite(out$std.error)))
+  }
+
+  boot <- rbind(
+    transform(data, new_id = paste0(id, "_1")),
+    transform(data[data$id %in% unique(data$id)[1:3], ],
+      new_id = paste0(id, "_2"))
+  )
+  refit <- update_bootstrap_model(fit, boot)
+  expect_length(refit$ml$absorbing_state, 0L)
+  expect_equal(refit$ml$n_patients, length(unique(boot$new_id)))
+  set.seed(3)
+  out <- suppressWarnings(inferences(a, method = "bootstrap", n_draws = 4))
+  expect_true(all(is.finite(out$std.error)))
 })
 
 # --- Printing ----------------------------------------------------------------

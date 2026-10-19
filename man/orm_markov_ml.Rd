@@ -9,7 +9,7 @@ orm_markov_ml(
   data,
   ...,
   id_var,
-  absorbing_state,
+  absorbing_state = NULL,
   p_var = "yprev",
   missing_states = c("any", "non_absorbing"),
   type = c("HC0", "HC1"),
@@ -42,14 +42,17 @@ step is repeated with Levenberg-Marquardt (\code{opt_method = "LM"}).
 patient's rows form one chain.}
 
 \item{absorbing_state}{State value(s) that are never left, such as death.
-Required.}
+\code{NULL} (the default) means that no state is absorbing, so every state can
+be left. Give every state that is never left; see the Missing states
+section.}
 
 \item{p_var}{Name of the previous-state column used in \code{formula}, as in
 \code{\link[=sops]{sops()}}.}
 
 \item{missing_states}{What a missing response means: \code{"any"} (any state,
 including absorbing ones) or \code{"non_absorbing"} (a non-absorbing state).
-See the Missing states section.}
+Without absorbing states, both mean any state. See the Missing states
+section.}
 
 \item{type, cadjust}{Corrections for the robust covariance, as in
 \code{\link[=orm_markov]{orm_markov()}}.}
@@ -82,7 +85,8 @@ warning is given when it exceeds \code{1e-6}.
 \item \code{var_model}, \code{var_robust}: model-based and robust covariances.
 \item \code{patient_scores}: one row per patient, the derivative of that patient's
 \eqn{\log L_i}; zeros for patients whose later states are all missing
-under \code{missing_states = "any"}.
+and may be any state (under \code{missing_states = "any"}, or when no state
+is absorbing).
 \item \code{missing_info_fraction}: largest share of information lost because
 states are missing or known only up to a range, from 0 (none lost) to 1.
 It is exactly 0 when every state is observed. Otherwise part of
@@ -90,6 +94,8 @@ It is exactly 0 when every state is observed. Otherwise part of
 accurate only to about \code{info_step^2} (\code{1e-8} by default).
 \item \code{start_coefficients}: estimates from transitions with both states
 observed (the \code{\link[=orm_markov]{orm_markov()}} fit on those rows).
+\item \code{states}, \code{absorbing_state}: the states of the model and those that are
+never left (empty when no state is absorbing).
 \item \code{n_missing}, \code{n_range}, \code{n_gaps}, \code{n_trailing}: counts of rows with a
 missing state, rows with a range of states, runs of such rows that end
 in an observed state, and runs at the end of a patient's rows.
@@ -144,6 +150,14 @@ non-absorbing state. Choose this when vital status is known at every
 visit, so a missing state never hides a death. A missing visit then still
 carries the information that the patient survived to it.
 }
+
+Without \code{absorbing_state} (the default \code{NULL}), no state is absorbing:
+every state can be left, as on a quality-of-life scale that does not
+include death. A missing state may then be any state under either rule, so
+both rules give the same fit. If the data contain a state that is never
+left, such as death, give it in \code{absorbing_state}. Otherwise the model
+allows leaving that state, and a missing visit could imply, for example,
+that a patient died and later recovered.
 
 The chain follows the rows of each patient in \code{time_var} order. A visit
 without a row is treated as not scheduled, not as a missing state, so keep
