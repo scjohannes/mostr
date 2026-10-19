@@ -1,6 +1,43 @@
 # mostr (development version)
 
-* New `sim_violet_markov()` simulates 4-state daily trajectories (home, in
+## Breaking changes
+
+* `sim_markov()` replaces `sim_trajectories_markov()`, `sim_actt1_markov()`,
+  and `sim_actt2_markov()`. Choose a model with `preset`: `"actt1"`,
+  `"actt2"`, `"violet"`, or `NULL` to supply your own `baseline_data`,
+  `intercepts`, and `lp_function`. `preset` has no default. Any model argument
+  you supply, such as `intercepts` or `baseline_data`, replaces that part of
+  the preset and keeps the rest. Each preset's model is described in its own
+  help topic: `?actt1_preset`, `?actt2_preset`, and `?violet_preset`.
+  `sim_markov("actt2", ...)` gives the same trajectories as
+  `sim_actt2_markov(...)` did with the same arguments and seed.
+
+* `sim_markov()` simulates exactly the patients in a supplied `baseline_data`
+  and stops if you also supply `n_patients` or `treatment_prob`, which only
+  sample patients from a preset. Previously the trial wrappers recycled the
+  columns of a supplied `baseline_data` over `n_patients` generated patients,
+  so a 2-patient `baseline_data` with the default `n_patients = 1000` gave
+  1,000 patients.
+
+* `preset = "actt1"` uses the ACTT-2 transition model with the starting states
+  reported for ACTT-1 (13.1%, 41.4%, 18.4%, and 27.1% in states 4 to 7) and a
+  threshold for death raised from -22.0693 to -21.4071, so that 18% of control
+  patients have died by day 28. The ACTT-1 model based on Rohde et al. (2024)
+  that `sim_actt1_markov()` used has been removed, and
+  `vignette("partial-po-vglm-sops")` now simulates VIOLET data.
+
+* An `lp_function` now receives `treatment_effect`, the treatment effect on
+  the current day after `treatment_effect_decay`, instead of `parameter`, so
+  `treatment_effect_decay` also works for your own models. With
+  `preset = NULL`, `treatment_effect` defaults to 0, `extra_params` to `NULL`,
+  `absorbing_states` to the worst state (`length(intercepts) + 1`),
+  `covariate_names` to every column of `baseline_data` except `id` and
+  `yprev`, and `follow_up_time` to 28 days (previously 60). `lp_violet()` has
+  been removed.
+
+## New features
+
+* New `preset = "violet"` simulates 4-state daily trajectories (home, in
   hospital, on a ventilator or with ARDS, dead) from the Markov model that
   Frank Harrell fitted to the VIOLET trial of vitamin D3 to create his
   simulated trial `simlongord`. Patients are sampled from the 1,351 VIOLET
@@ -11,19 +48,7 @@
 * `violet_baseline` now holds the 1,351 VIOLET patients as 858 distinct
   combinations of starting state, age, and SOFA score with their counts `n`
   (previously 250,000 resampled patients in a modified 6-state coding). Its
-  states follow `sim_violet_markov()`.
-
-* `lp_violet()` has been removed, and `sim_trajectories_markov()` no longer
-  has a default model: supply `baseline_data`, `intercepts`, and
-  `lp_function`. `extra_params` now defaults to `NULL`, `absorbing_states` to
-  the worst state (`length(intercepts) + 1`), and `covariate_names` to every
-  column of `baseline_data` except `id` and `yprev`.
-
-* `sim_actt1_markov()` and `sim_actt2_markov()` now simulate exactly the
-  patients in a supplied `baseline_data`. Previously its columns were recycled
-  over the generated patients, so a 2-patient `baseline_data` with the default
-  `n_patients = 1000` gave 1,000 patients. Arguments passed through `...` must
-  now be named.
+  states follow `sim_markov("violet")`.
 
 # mostr 0.1.1
 

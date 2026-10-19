@@ -1,5 +1,5 @@
-test_that("sim_violet_markov returns reproducible VIOLET trajectories", {
-  traj <- sim_violet_markov(n_patients = 30, seed = 1904)
+test_that("VIOLET preset returns reproducible trajectories", {
+  traj <- sim_markov("violet", n_patients = 30, seed = 1904)
 
   expect_trajectory_contract(
     traj,
@@ -8,6 +8,15 @@ test_that("sim_violet_markov returns reproducible VIOLET trajectories", {
     follow_up_time = 28,
     states = 1:4
   )
-  expect_identical(traj, sim_violet_markov(n_patients = 30, seed = 1904))
+  expect_identical(traj, sim_markov("violet", n_patients = 30, seed = 1904))
+  expect_identical(
+    traj,
+    sim_markov(
+      "violet",
+      n_patients = 30,
+      treatment_effect = log(0.75),
+      seed = 1904
+    )
+  )
   expect_equal(sum(violet_baseline$n), 1351)
 })

@@ -168,7 +168,8 @@ describe("SOP regression baselines", {
   }
 
   build_markov_case <- function() {
-    raw_data <- mostr::sim_violet_markov(
+    raw_data <- mostr::sim_markov(
+      "violet",
       n_patients = 80,
       follow_up_time = 10,
       treatment_effect = log(0.85),

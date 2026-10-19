@@ -16,19 +16,20 @@ make_markov_trajectories <- function(
     yprev = sample(allowed_start_state, n_patients, replace = TRUE),
     tx = rbinom(n_patients, 1, treatment_prob)
   )
-  sim_trajectories_markov(
+  sim_markov(
+    NULL,
     baseline_data = baseline,
     follow_up_time = follow_up_time,
     intercepts = thresholds,
     absorbing_states = absorbing_state,
     covariate_names = "tx",
-    parameter = treatment_effect,
+    treatment_effect = treatment_effect,
     extra_params = c(center = (n_states + 1) / 2),
-    lp_function = function(yprev, t, tx, parameter, extra_params) {
+    lp_function = function(yprev, t, tx, treatment_effect, extra_params) {
       0.4 *
         (as.numeric(as.character(yprev)) - extra_params["center"]) -
         0.03 * t +
-        parameter * tx
+        treatment_effect * tx
     }
   )
 }

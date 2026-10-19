@@ -85,7 +85,8 @@ make_interpolation_case <- function() {
 
 make_absorbing_factor_visit_data <- function(n_patients = 80, seed = 20260531) {
   visit_days <- stats::setNames(c(3, 7, 14, 21), as.character(1:4))
-  raw_data <- sim_actt2_markov(
+  raw_data <- sim_markov(
+    "actt2",
     n_patients = n_patients,
     treatment_effect = -0.03,
     seed = seed

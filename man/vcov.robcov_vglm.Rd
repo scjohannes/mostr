@@ -19,7 +19,7 @@ Returns the robust (sandwich) variance-covariance matrix.
 }
 \examples{
 \dontshow{if (rlang::is_installed("VGAM")) withAutoprint(\{ # examplesIf}
-trial <- sim_actt2_markov(n_patients = 40, follow_up_time = 6, seed = 1)
+trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 fit <- vglm_markov(
   ordered(y) ~ time + tx + yprev,

@@ -10,7 +10,7 @@ A data frame with 858 rows and 4 variables:
 \item{yprev}{State before the first day of follow-up: 2 = in hospital or
 another health care facility, 3 = on a ventilator or with acute
 respiratory distress syndrome (ARDS). The states used by
-\code{\link[=sim_violet_markov]{sim_violet_markov()}} are 1 = at home, 2 = in hospital or facility,
+\code{sim_markov("violet")} are 1 = at home, 2 = in hospital or facility,
 3 = on a ventilator or with ARDS, and 4 = dead.}
 \item{age}{Age in years.}
 \item{sofa}{Sequential Organ Failure Assessment (SOFA) score at
@@ -33,11 +33,11 @@ The joint distribution of the starting state, age, and SOFA score of the
 \href{https://doi.org/10.1056/NEJMoa1911124}{VIOLET trial} of early high-dose
 vitamin D3 versus placebo in critically ill adults. Each row is one
 combination of the three characteristics, and \code{n} is the number of VIOLET
-patients who had it. \code{\link[=sim_violet_markov]{sim_violet_markov()}} samples simulated patients from
-these rows.
+patients who had it. \code{sim_markov("violet")} samples simulated patients from
+these rows (see \link{violet_preset}).
 }
 \details{
-To draw \code{size} patients as \code{\link[=sim_violet_markov]{sim_violet_markov()}} does, sample rows with
+To draw \code{size} patients as \code{sim_markov("violet")} does, sample rows with
 replacement and with probabilities proportional to \code{n}:
 \code{violet_baseline[sample(nrow(violet_baseline), size, replace = TRUE, prob = violet_baseline$n), ]}. Use \code{rep(seq_len(nrow(violet_baseline)), violet_baseline$n)} as row indices to get one row per VIOLET patient.
 

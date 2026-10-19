@@ -5,15 +5,15 @@
 #' [VIOLET trial](https://doi.org/10.1056/NEJMoa1911124) of early high-dose
 #' vitamin D3 versus placebo in critically ill adults. Each row is one
 #' combination of the three characteristics, and `n` is the number of VIOLET
-#' patients who had it. [sim_violet_markov()] samples simulated patients from
-#' these rows.
+#' patients who had it. `sim_markov("violet")` samples simulated patients from
+#' these rows (see [violet_preset]).
 #'
 #' @format A data frame with 858 rows and 4 variables:
 #' \describe{
 #'   \item{yprev}{State before the first day of follow-up: 2 = in hospital or
 #'     another health care facility, 3 = on a ventilator or with acute
 #'     respiratory distress syndrome (ARDS). The states used by
-#'     [sim_violet_markov()] are 1 = at home, 2 = in hospital or facility,
+#'     `sim_markov("violet")` are 1 = at home, 2 = in hospital or facility,
 #'     3 = on a ventilator or with ARDS, and 4 = dead.}
 #'   \item{age}{Age in years.}
 #'   \item{sofa}{Sequential Organ Failure Assessment (SOFA) score at
@@ -24,7 +24,7 @@
 #' }
 #'
 #' @details
-#' To draw `size` patients as [sim_violet_markov()] does, sample rows with
+#' To draw `size` patients as `sim_markov("violet")` does, sample rows with
 #' replacement and with probabilities proportional to `n`:
 #' `violet_baseline[sample(nrow(violet_baseline), size, replace = TRUE,
 #' prob = violet_baseline$n), ]`. Use `rep(seq_len(nrow(violet_baseline)),
