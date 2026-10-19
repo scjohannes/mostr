@@ -85,6 +85,9 @@ warning is given when it exceeds \code{1e-6}.
 under \code{missing_states = "any"}.
 \item \code{missing_info_fraction}: largest share of information lost because
 states are missing or known only up to a range, from 0 (none lost) to 1.
+It is exactly 0 when every state is observed. Otherwise part of
+\eqn{J} comes from numerical derivatives, so values very close to 0 are
+accurate only to about \code{info_step^2} (\code{1e-8} by default).
 \item \code{start_coefficients}: estimates from transitions with both states
 observed (the \code{\link[=orm_markov]{orm_markov()}} fit on those rows).
 \item \code{n_missing}, \code{n_range}, \code{n_gaps}, \code{n_trailing}: counts of rows with a
@@ -187,11 +190,13 @@ allowed. The starting state and all covariates must be observed.
 \section{Algorithm}{
 
 The fit starts from the \code{\link[rms:orm]{rms::orm()}} fit on transitions with both states
-observed. It then alternates between computing, for every row, the
-probability of each possible transition given everything observed for the
-patient (a forward-backward pass), and refitting the proportional-odds
-model with these probabilities as weights (EM). A few Newton steps then
-finish the maximisation. The returned object is an \code{\link[rms:orm]{rms::orm()}} fit
+observed. When no state is missing or known only up to a range, this fit
+already maximises the likelihood and is used as it is. Otherwise the fit
+alternates between computing, for every row, the probability of each
+possible transition given everything observed for the patient (a
+forward-backward pass), and refitting the proportional-odds model with
+these probabilities as weights (EM). A few Newton steps then finish the
+maximisation. The returned object is an \code{\link[rms:orm]{rms::orm()}} fit
 evaluated at the maximum likelihood estimates, on one row per distinct
 combination of covariates, previous state, and state, weighted by the
 expected number of such transitions. Its \code{x} and \code{y} components therefore
@@ -214,6 +219,34 @@ rho), because rows with a missing state have none. To test terms, use
 \code{\link[=logLik]{logLik()}} between nested fits. Printing the fit shows the log-likelihood,
 the numbers of patients and rows, and the coefficients with robust
 standard errors, Wald Z statistics, and p-values.
+}
+
+\section{Computing time}{
+
+When every state is observed, \code{orm_markov_ml()} uses the \code{\link[rms:orm]{rms::orm()}} fit
+directly and takes about as long as \code{\link[=orm_markov]{orm_markov()}}, even for large data
+with many states.
+
+Missing states and ranges make the fit much slower, and the time rises
+steeply with the number of states \eqn{K}. A row whose state is missing or
+a range, and the row after it, need the probability of every possible
+transition: about \eqn{K^2} numbers per row. The fit computes these
+\itemize{
+\item once per EM iteration. The more information the missing states hold
+(\code{missing_info_fraction}, below), the more iterations EM needs.
+\item twice per coefficient for the observed information \eqn{J}, which the
+Newton steps and the standard errors use. With many states there is about
+one coefficient per state, so this part grows roughly with \eqn{K^3}.
+With \code{orm_markov_ml_control(variance = FALSE)}, \eqn{J} is computed once
+instead of twice.
+}
+
+Transitions with both states observed add little time. As a guide, with 20
+states, 1,000 patients followed for 15 days, and 10\% of states missing, a
+fit takes seconds. With 500 states, a handful of missing states already
+takes minutes, and many missing states can take hours. Before fitting
+large data with many states and many missing states, time a fit on a
+random subset of patients.
 }
 
 \section{Standard errors}{

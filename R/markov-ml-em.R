@@ -148,31 +148,28 @@ markov_ml_state_scale <- function(parsed, row_ids) {
   lo <- rep(NA_integer_, length(lower))
   hi <- rep(NA_integer_, length(lower))
   present <- which(!missing)
-  for (r in present) {
-    a <- lower[[r]]
-    b <- upper[[r]]
-    allowed <- if (is.infinite(a)) {
-      values < b
-    } else if (is.infinite(b)) {
-      values > a
-    } else {
-      values >= a & values <= b
-    }
-    if (
-      (is.finite(a) && (a < values[[1L]] || a > values[[K]])) ||
-        (is.finite(b) && (b < values[[1L]] || b > values[[K]]))
-    ) {
-      allowed <- FALSE
-    }
-    if (!any(allowed) || b < a) {
-      lo[[r]] <- NA_integer_
-      hi[[r]] <- -1L
-      next
-    }
-    idx <- which(allowed)
-    lo[[r]] <- min(idx)
-    hi[[r]] <- max(idx)
-  }
+  a <- lower[present]
+  b <- upper[present]
+  # First and last state of the scale inside the interval. findInterval()
+  # counts the states below (`left.open = TRUE`) or at most at a value.
+  first <- ifelse(
+    is.infinite(a),
+    1L,
+    ifelse(
+      is.infinite(b),
+      findInterval(a, values) + 1L,
+      findInterval(a, values, left.open = TRUE) + 1L
+    )
+  )
+  last <- ifelse(
+    is.infinite(a),
+    findInterval(b, values, left.open = TRUE),
+    ifelse(is.infinite(b), K, findInterval(b, values))
+  )
+  outside <- function(v) is.finite(v) & (v < values[[1L]] | v > values[[K]])
+  empty <- outside(a) | outside(b) | first > last | b < a
+  lo[present] <- ifelse(empty, NA_integer_, as.integer(first))
+  hi[present] <- ifelse(empty, -1L, as.integer(last))
   invalid <- which(!is.na(hi) & hi < 0L)
   if (length(invalid)) {
     stop(
@@ -196,22 +193,29 @@ markov_ml_state_scale <- function(parsed, row_ids) {
   )
 }
 
+# States a missing response allows: all, or the non-absorbing ones.
+markov_ml_missing_fill <- function(K, absorbing, missing_states) {
+  fill <- rep(1, K)
+  if (identical(missing_states, "non_absorbing")) {
+    fill[absorbing] <- 0
+  }
+  fill
+}
+
 # Compatibility masks: one 0/1 row of length K per data row.
 markov_ml_masks <- function(lo, hi, K, absorbing, missing_states) {
   n <- length(lo)
-  C <- matrix(0, nrow = n, ncol = K)
-  present <- !is.na(lo)
-  states <- matrix(seq_len(K), nrow = n, ncol = K, byrow = TRUE)
-  C[present, ] <- (states[present, , drop = FALSE] >= lo[present]) &
-    (states[present, , drop = FALSE] <= hi[present])
-  if (any(!present)) {
-    fill <- rep(1, K)
-    if (identical(missing_states, "non_absorbing")) {
-      fill[absorbing] <- 0
-    }
-    C[!present, ] <- matrix(fill, nrow = sum(!present), ncol = K, byrow = TRUE)
+  fill <- markov_ml_missing_fill(K, absorbing, missing_states)
+  C <- matrix(rep(fill, each = n), nrow = n, ncol = K)
+  present <- which(!is.na(lo))
+  if (length(present)) {
+    C[present, ] <- 0
+    width <- hi[present] - lo[present] + 1L
+    C[cbind(
+      rep(present, width),
+      sequence(width, from = lo[present])
+    )] <- 1
   }
-  storage.mode(C) <- "double"
   C
 }
 
@@ -318,7 +322,13 @@ markov_ml_setup <- function(
     stop("At least one state must be non-absorbing.", call. = FALSE)
   }
 
-  C <- markov_ml_masks(scale$lo, scale$hi, K, absorbing, missing_states)
+  # Rows whose observation rules out at least one state. Masks are built only
+  # for the rows that need the recursion (below).
+  n_allowed <- scale$hi - scale$lo + 1L
+  n_allowed[scale$missing] <- sum(
+    markov_ml_missing_fill(K, absorbing, missing_states)
+  )
+  informative <- n_allowed < K
 
   # Previous-state column: baseline and consistency checks.
   prototype <- sd[[p_var]]
@@ -451,9 +461,13 @@ markov_ml_setup <- function(
   if (any(!is.finite(X))) {
     stop("The design matrix for possible previous states is not finite.")
   }
-  DI <- (cov_id - 1L) * n_origin +
-    matrix(seq_len(n_origin), nrow = n, ncol = n_origin, byrow = TRUE)
-  storage.mode(DI) <- "integer"
+  # Design row of data rows `rows` with previous state origins[ai] is
+  # (cov_id - 1) * n_origin + ai.
+  design_index <- function(rows) {
+    DI <- outer((cov_id[rows] - 1L) * n_origin, seq_len(n_origin), "+")
+    storage.mode(DI) <- "integer"
+    DI
+  }
 
   # The chain splits at every exactly observed state (Markov property). A row
   # whose own and previous states are both observed is an ordinary
@@ -462,7 +476,7 @@ markov_ml_setup <- function(
   origin_index <- match(prev_state, origins)
   comp_rows <- which(complete)
   comp_origin <- origin_index[comp_rows]
-  comp_design <- DI[cbind(comp_rows, comp_origin)]
+  comp_design <- (cov_id[comp_rows] - 1L) * n_origin + comp_origin
   comp_state <- exact_state[comp_rows]
   W_complete <- matrix(0, nrow = nrow(X), ncol = K)
   counts <- rowsum(
@@ -498,13 +512,18 @@ markov_ml_setup <- function(
     segment = segment,
     patient = row_patient[chain_rows],
     ids = ids[chain_rows],
-    C = C[chain_rows, , drop = FALSE],
-    DI = DI[chain_rows, , drop = FALSE],
+    C = markov_ml_masks(
+      scale$lo[chain_rows],
+      scale$hi[chain_rows],
+      K,
+      absorbing,
+      missing_states
+    ),
+    DI = design_index(chain_rows),
     rows_by_pos = rows_by_pos,
     pats_by_pos = lapply(rows_by_pos, function(r) segment[r])
   )
 
-  informative <- rowSums(C) < K
   coefficients <- stats::coef(start_fit)
 
   list(
@@ -527,7 +546,6 @@ markov_ml_setup <- function(
     origins = origins,
     n_origin = n_origin,
     baseline = baseline,
-    C = C,
     complete = complete,
     informative = informative,
     p_var = p_var,
@@ -535,7 +553,6 @@ markov_ml_setup <- function(
     cov_id = cov_id,
     design_data = nd,
     X = X,
-    DI = DI,
     n_int = K - 1L,
     coef_names = names(coefficients),
     opt_method = dots_fit$opt_method,

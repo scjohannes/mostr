@@ -95,6 +95,33 @@ test_that("with nothing missing the fit reproduces orm_markov()", {
   expect_equal(s_ml$estimate, s_ref$estimate, tolerance = 1e-8)
 })
 
+test_that("with nothing missing the fit costs no forward-backward passes", {
+  data <- make_test_data(n_patients = 80, follow_up_time = 10)
+  formula <- ordered(y) ~ rms::rcs(time, 3) + tx + yprev
+  reference <- orm_markov(formula, data = data, id_var = "id")
+  original <- markov_ml_estep
+  passes <- 0L
+  local_mocked_bindings(markov_ml_estep = function(...) {
+    passes <<- passes + 1L
+    original(...)
+  })
+  fit <- ml_fit(data, formula)
+
+  # Nothing needs imputing: the orm fit on the observed transitions is the
+  # maximum likelihood fit, and its exact information is the observed
+  # information. Forward-backward passes and numerical derivatives would only
+  # add time, one pass per coefficient and direction.
+  expect_identical(passes, 0L)
+  expect_equal(coef(fit), coef(reference), tolerance = 1e-10)
+  expect_equal(
+    fit$ml$var_model,
+    reference$orig.var,
+    tolerance = 1e-9,
+    ignore_attr = TRUE
+  )
+  expect_identical(fit$ml$missing_info_fraction, 0)
+})
+
 # --- Ocens() responses ------------------------------------------------------
 
 test_that("ranges only on last rows reproduce rms::orm() with Ocens()", {
@@ -271,6 +298,38 @@ test_that("po_row_scores() matches compute_scores_orm()", {
   expect_equal(unname(actual), unname(expected), tolerance = 1e-10)
 })
 
+test_that("exact proportional-odds information and grouped scores are exact", {
+  data <- make_test_data(n_patients = 40, follow_up_time = 8)
+  fit <- rms::orm(ordered(y) ~ rms::rcs(time, 3) + tx + yprev, data = data,
+    x = TRUE, y = TRUE)
+  y <- as.integer(fit$y)
+  k <- fit$non.slopes
+  J <- po_information(fit$x, y, coef(fit), k)
+  expect_equal(solve(J), vcov(fit, intercepts = "all"), tolerance = 1e-10,
+    ignore_attr = TRUE)
+
+  # Weighted sums within groups equal sums of the row scores.
+  w <- seq_along(y) %% 3 + 1
+  group <- rep(1:5, length.out = length(y))
+  expect_equal(
+    po_group_scores(fit$x, y, coef(fit), k, group, 5L, weights = w),
+    rowsum(po_row_scores(fit$x, y, coef(fit), k) * w, group),
+    tolerance = 1e-12,
+    ignore_attr = TRUE
+  )
+
+  # Away from the estimate, the weighted information is the negative
+  # derivative of the weighted score.
+  theta <- coef(fit) + 0.1
+  score <- function(t) drop(po_group_scores(fit$x, y, t, k, weights = w))
+  H <- vapply(seq_along(theta), function(j) {
+    e <- replace(numeric(length(theta)), j, 1e-5)
+    -(score(theta + e) - score(theta - e)) / 2e-5
+  }, numeric(length(theta)))
+  expect_equal(po_information(fit$x, y, theta, k, weights = w), H,
+    tolerance = 1e-7, ignore_attr = TRUE)
+})
+
 test_that("the observed information matches a numerical Hessian", {
   data <- ml_oracle_data()
   fit <- orm_markov_ml(
@@ -296,6 +355,61 @@ test_that("the observed information matches a numerical Hessian", {
     }
   }
   expect_equal(unname(fit$ml$information), -H, tolerance = 1e-4)
+})
+
+test_that("the observed information differentiates only rows that need the recursion", {
+  data <- make_test_data(n_patients = 60, follow_up_time = 8)
+  data <- data[order(data$id, data$time), ]
+  # Two untreated patients miss their day-4 state, so only their day-4 and
+  # day-5 rows need the forward-backward recursion.
+  day4 <- data$time == 4 & data$tx == 0 & data$y != 6
+  ids <- utils::head(intersect(data$id[day4], data$id[data$time == 5]), 2L)
+  data$y[data$id %in% ids & data$time == 4] <- NA
+  data$yprev[data$id %in% ids & data$time == 5] <- NA
+  problem <- markov_ml_setup(y ~ rms::rcs(time, 3) + tx + yprev, data, "id",
+    "time", "yprev", 6, "any", list())
+  expect_identical(problem$chain$n, 4L)
+  theta <- stats::coef(problem$start_fit)
+
+  # Central differences of the score summed over every row.
+  p <- length(theta)
+  reference <- matrix(0, p, p)
+  for (k in seq_len(p)) {
+    h <- 1e-4 * max(1, abs(theta[[k]]))
+    e <- replace(numeric(p), k, h)
+    reference[, k] <- -(markov_ml_total_score(problem, theta + e) -
+      markov_ml_total_score(problem, theta - e)) / (2 * h)
+  }
+  reference <- (reference + t(reference)) / 2
+
+  full_design <- nrow(problem$X)
+  n_complete <- length(problem$complete_part$agg_count)
+  original_probs <- markov_ml_transition_probs
+  original_scores <- po_row_scores
+  probs_all_designs <- 0L
+  scores_all_complete <- 0L
+  local_mocked_bindings(
+    markov_ml_transition_probs = function(problem, theta, strict = TRUE) {
+      if (nrow(problem$X) == full_design) {
+        probs_all_designs <<- probs_all_designs + 1L
+      }
+      original_probs(problem, theta, strict = strict)
+    },
+    po_row_scores = function(x, ...) {
+      if (NROW(x) == n_complete) {
+        scores_all_complete <<- scores_all_complete + 1L
+      }
+      original_scores(x, ...)
+    }
+  )
+  J <- markov_ml_information(problem, theta)
+
+  # Fully observed transitions add their exact proportional-odds information,
+  # so the cost of the numerical derivatives grows with the rows that need
+  # the recursion, not with all rows.
+  expect_equal(unname(J), unname(reference), tolerance = 1e-6)
+  expect_lte(probs_all_designs, 1L)
+  expect_lte(scores_all_complete, 1L)
 })
 
 # --- Fitting -----------------------------------------------------------------

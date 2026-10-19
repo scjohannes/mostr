@@ -87,11 +87,13 @@
 #'
 #' @section Algorithm:
 #' The fit starts from the [rms::orm()] fit on transitions with both states
-#' observed. It then alternates between computing, for every row, the
-#' probability of each possible transition given everything observed for the
-#' patient (a forward-backward pass), and refitting the proportional-odds
-#' model with these probabilities as weights (EM). A few Newton steps then
-#' finish the maximisation. The returned object is an [rms::orm()] fit
+#' observed. When no state is missing or known only up to a range, this fit
+#' already maximises the likelihood and is used as it is. Otherwise the fit
+#' alternates between computing, for every row, the probability of each
+#' possible transition given everything observed for the patient (a
+#' forward-backward pass), and refitting the proportional-odds model with
+#' these probabilities as weights (EM). A few Newton steps then finish the
+#' maximisation. The returned object is an [rms::orm()] fit
 #' evaluated at the maximum likelihood estimates, on one row per distinct
 #' combination of covariates, previous state, and state, weighted by the
 #' expected number of such transitions. Its `x` and `y` components therefore
@@ -114,6 +116,31 @@
 #' [logLik()] between nested fits. Printing the fit shows the log-likelihood,
 #' the numbers of patients and rows, and the coefficients with robust
 #' standard errors, Wald Z statistics, and p-values.
+#'
+#' @section Computing time:
+#' When every state is observed, `orm_markov_ml()` uses the [rms::orm()] fit
+#' directly and takes about as long as [orm_markov()], even for large data
+#' with many states.
+#'
+#' Missing states and ranges make the fit much slower, and the time rises
+#' steeply with the number of states \eqn{K}. A row whose state is missing or
+#' a range, and the row after it, need the probability of every possible
+#' transition: about \eqn{K^2} numbers per row. The fit computes these
+#'
+#' * once per EM iteration. The more information the missing states hold
+#'   (`missing_info_fraction`, below), the more iterations EM needs.
+#' * twice per coefficient for the observed information \eqn{J}, which the
+#'   Newton steps and the standard errors use. With many states there is about
+#'   one coefficient per state, so this part grows roughly with \eqn{K^3}.
+#'   With `orm_markov_ml_control(variance = FALSE)`, \eqn{J} is computed once
+#'   instead of twice.
+#'
+#' Transitions with both states observed add little time. As a guide, with 20
+#' states, 1,000 patients followed for 15 days, and 10% of states missing, a
+#' fit takes seconds. With 500 states, a handful of missing states already
+#' takes minutes, and many missing states can take hours. Before fitting
+#' large data with many states and many missing states, time a fit on a
+#' random subset of patients.
 #'
 #' @section Standard errors:
 #' Standard errors use the observed information \eqn{J}, the negative second
@@ -184,6 +211,9 @@
 #'     under `missing_states = "any"`.
 #'   * `missing_info_fraction`: largest share of information lost because
 #'     states are missing or known only up to a range, from 0 (none lost) to 1.
+#'     It is exactly 0 when every state is observed. Otherwise part of
+#'     \eqn{J} comes from numerical derivatives, so values very close to 0 are
+#'     accurate only to about `info_step^2` (`1e-8` by default).
 #'   * `start_coefficients`: estimates from transitions with both states
 #'     observed (the [orm_markov()] fit on those rows).
 #'   * `n_missing`, `n_range`, `n_gaps`, `n_trailing`: counts of rows with a
@@ -272,25 +302,40 @@ orm_markov_ml <- function(
   )
   theta_start <- stats::coef(problem$start_fit)
 
-  em <- markov_ml_em(problem, theta_start, control)
-  if (!em$converged) {
-    warning(
-      "EM did not converge within `maxit = ",
-      control$maxit,
-      "` iterations; the fit is marked as not converged.",
-      call. = FALSE
+  if (problem$chain$n) {
+    em <- markov_ml_em(problem, theta_start, control)
+    if (!em$converged) {
+      warning(
+        "EM did not converge within `maxit = ",
+        control$maxit,
+        "` iterations; the fit is marked as not converged.",
+        call. = FALSE
+      )
+    }
+    information <- markov_ml_information(problem, em$theta, control$info_step)
+    newton <- markov_ml_newton(
+      problem,
+      em$theta,
+      em$state$loglik,
+      information,
+      control
     )
+    theta_hat <- newton$theta
+    state <- markov_ml_estep(problem, theta_hat)
+    loglik <- state$loglik
+  } else {
+    # Every transition has both states observed, so the likelihood is the
+    # proportional-odds likelihood of these transitions and the starting
+    # rms::orm() fit maximises it. Its exact information is the observed
+    # information; EM, Newton steps, and the forward-backward recursion have
+    # nothing to add.
+    theta_hat <- theta_start
+    state <- NULL
+    loglik <- markov_ml_complete_loglik(problem, theta_hat)
+    em <- list(trace = loglik, iterations = 0L, converged = TRUE)
+    newton <- list(theta = theta_hat, loglik = loglik, steps = 0L)
+    information <- markov_ml_complete_information(problem, theta_hat)
   }
-  information <- markov_ml_information(problem, em$theta, control$info_step)
-  newton <- markov_ml_newton(
-    problem,
-    em$theta,
-    em$state$loglik,
-    information,
-    control
-  )
-  theta_hat <- newton$theta
-  state <- markov_ml_estep(problem, theta_hat)
   patient_scores <- markov_ml_patient_scores(problem, theta_hat, state)
   score <- colSums(patient_scores)
   max_abs_score <- max(abs(score))
@@ -305,7 +350,13 @@ orm_markov_ml <- function(
       "The fit may not be at the maximum of the likelihood (Newton ",
       "decrement ",
       signif(newton_decrement, 3),
-      "). Increase `maxit` or `newton_steps` in `orm_markov_ml_control()`.",
+      "). ",
+      if (problem$chain$n) {
+        "Increase `maxit` or `newton_steps` in `orm_markov_ml_control()`."
+      } else {
+        # Without missing states the estimates are the rms::orm() fit.
+        "Pass a smaller `gradtol` to rms::orm() through `...`."
+      },
       call. = FALSE
     )
   }
@@ -343,7 +394,13 @@ orm_markov_ml <- function(
     x = x,
     y = y
   )
-  complete_information <- fit$ml_complete_information
+  complete_information <- if (problem$chain$n) {
+    fit$ml_complete_information
+  } else {
+    # Nothing is missing: the complete-data information is the observed
+    # information, so no information is lost.
+    information
+  }
   fit$ml_complete_information <- NULL
 
   stored <- markov_prepare_stored_data(
@@ -384,7 +441,7 @@ orm_markov_ml <- function(
   counts <- markov_ml_missing_counts(problem)
   fit$ml <- c(
     list(
-      loglik = state$loglik,
+      loglik = loglik,
       trace = em$trace,
       iterations = em$iterations,
       converged = em$converged,
@@ -470,10 +527,13 @@ orm_markov_ml <- function(
 #'   early once the Newton decrement (roughly how much the log-likelihood could
 #'   still rise) is below `1e-20`.
 #' @param info_step Relative step size for the numerical derivative of the
-#'   score that gives the observed information.
+#'   score that gives the observed information. Only rows whose state is
+#'   missing or a range, and the rows after them, use it; transitions with
+#'   both states observed add their exact information.
 #' @param trace Print the log-likelihood after each EM iteration?
-#' @param variance Compute the observed information and covariances? Bootstrap
-#'   refits set this to `FALSE` because they need only the coefficients.
+#' @param variance Compute covariances? Bootstrap refits set this to `FALSE`
+#'   because they need only the coefficients. When states are missing, the
+#'   observed information is still computed once for the Newton steps.
 #'
 #' @return A list of settings.
 #' @export
@@ -724,7 +784,8 @@ markov_ml_lock_knots <- function(formula, design) {
 # iterate (`maxit = 1` returns the fit at `initial`). By Fisher's identity its
 # gradient, the posterior-weighted complete-data score, equals the
 # observed-data score at `theta`; comparing the two checks that the refit
-# describes the same model.
+# describes the same model. `state` is the forward-backward pass at `theta`,
+# NULL when no row needs the recursion.
 markov_ml_final_fit <- function(problem, state, theta, score, dots_fit, x, y) {
   # One row per (unique design row, destination state) with the expected
   # number of such transitions as its weight. The gradient and information of
@@ -786,16 +847,15 @@ markov_ml_final_fit <- function(problem, state, theta, score, dots_fit, x, y) {
       call. = FALSE
     )
   }
-  complete_information <- tryCatch(
-    solve(stats::vcov(fit, intercepts = "all")),
-    error = function(e) NULL
+  # Information of the weighted refit: the complete-data information at the
+  # estimates, with the expected transition counts as weights.
+  complete_information <- po_information(
+    problem$X[counts$design, , drop = FALSE],
+    counts$state,
+    theta,
+    problem$n_int,
+    weights = counts$weight
   )
-  if (!is.null(complete_information)) {
-    complete_information <- (complete_information +
-      t(complete_information)) /
-      2
-    dimnames(complete_information) <- list(problem$coef_names, problem$coef_names)
-  }
   fit$coefficients <- theta
   fit$info.matrix <- NULL
   fit$var <- NULL

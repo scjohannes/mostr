@@ -31,12 +31,15 @@ early once the Newton decrement (roughly how much the log-likelihood could
 still rise) is below \code{1e-20}.}
 
 \item{info_step}{Relative step size for the numerical derivative of the
-score that gives the observed information.}
+score that gives the observed information. Only rows whose state is
+missing or a range, and the rows after them, use it; transitions with
+both states observed add their exact information.}
 
 \item{trace}{Print the log-likelihood after each EM iteration?}
 
-\item{variance}{Compute the observed information and covariances? Bootstrap
-refits set this to \code{FALSE} because they need only the coefficients.}
+\item{variance}{Compute covariances? Bootstrap refits set this to \code{FALSE}
+because they need only the coefficients. When states are missing, the
+observed information is still computed once for the Newton steps.}
 }
 \value{
 A list of settings.

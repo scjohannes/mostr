@@ -1,15 +1,16 @@
 # Scores, observed information, and covariance for `orm_markov_ml()`.
 
-# Proportional-odds log-likelihood scores for individual rows.
+# Proportional-odds terms of the observed state of each row.
 #
 # For a design row x with linear predictor eta, F_j = plogis(alpha_j + eta)
-# and f_j = F_j (1 - F_j) for j = 2..K, with f_1 = f_{K+1} = 0. The score of
-# log p_b is (1[j = b] f_b - 1[j = b + 1] f_{b+1}) / p_b for alpha_j and
-# x (f_b - f_{b+1}) / p_b for the slopes. Returns an n x p matrix in
-# coefficient order (thresholds, then slopes).
-po_row_scores <- function(x, y, coefficients, n_intercepts) {
+# is P(Y >= j) for j = 2..K, with F_1 = 1 and F_{K+1} = 0, and
+# f_j = F_j (1 - F_j). The probability of state b, p_b = F_b - F_{b+1},
+# depends only on the two thresholds around b: alpha_b (coefficient b - 1,
+# present when b >= 2, `upper`) and alpha_{b+1} (coefficient b, present when
+# b <= K - 1, `lower`). Only these two are computed, so the cost does not grow
+# with the number of states.
+po_outcome_terms <- function(x, y, coefficients, n_intercepts) {
   x <- as.matrix(x)
-  n <- nrow(x)
   K <- n_intercepts + 1L
   alpha <- coefficients[seq_len(n_intercepts)]
   beta <- coefficients[-seq_len(n_intercepts)]
@@ -21,25 +22,155 @@ po_row_scores <- function(x, y, coefficients, n_intercepts) {
     stop("`y` must contain state indices between 1 and ", K, ".")
   }
   eta <- drop(x %*% beta)
-  cum <- matrix(stats::plogis(outer(eta, alpha, "+")), nrow = n)
-  P <- cbind(1, cum) - cbind(cum, 0)
-  dens <- cum * (1 - cum)
-  fpad <- cbind(0, dens, 0)
-  rows <- seq_len(n)
-  pb <- P[cbind(rows, y)]
-  fb <- fpad[cbind(rows, y)]
-  fb1 <- fpad[cbind(rows, y + 1L)]
-
-  intercept <- matrix(0, nrow = n, ncol = n_intercepts)
   upper <- y >= 2L
-  intercept[cbind(rows[upper], y[upper] - 1L)] <- fb[upper] / pb[upper]
   lower <- y <= K - 1L
+  F_upper <- rep(1, length(y))
+  F_upper[upper] <- stats::plogis(eta[upper] + alpha[y[upper] - 1L])
+  F_lower <- rep(0, length(y))
+  F_lower[lower] <- stats::plogis(eta[lower] + alpha[y[lower]])
+  list(
+    x = x,
+    y = y,
+    upper = upper,
+    lower = lower,
+    F_upper = F_upper,
+    F_lower = F_lower,
+    f_upper = F_upper * (1 - F_upper),
+    f_lower = F_lower * (1 - F_lower),
+    prob = F_upper - F_lower
+  )
+}
+
+# Sums of `values` (a vector or a matrix with one row per element of `index`)
+# by `index` in 1..size, as a size-row matrix.
+po_sum_by <- function(values, index, size) {
+  values <- as.matrix(values)
+  out <- matrix(0, nrow = size, ncol = ncol(values))
+  if (length(index)) {
+    out[sort(unique(index)), ] <- rowsum(values, index, reorder = TRUE)
+  }
+  out
+}
+
+# Proportional-odds log-likelihood scores for individual rows.
+#
+# The score of log p_b is (1[j = b] f_b - 1[j = b + 1] f_{b+1}) / p_b for
+# alpha_j and x (f_b - f_{b+1}) / p_b for the slopes. Returns an n x p matrix
+# in coefficient order (thresholds, then slopes).
+po_row_scores <- function(x, y, coefficients, n_intercepts) {
+  terms <- po_outcome_terms(x, y, coefficients, n_intercepts)
+  y <- terms$y
+  n <- length(y)
+  rows <- seq_len(n)
+  upper <- terms$upper
+  lower <- terms$lower
+  intercept <- matrix(0, nrow = n, ncol = n_intercepts)
+  intercept[cbind(rows[upper], y[upper] - 1L)] <-
+    terms$f_upper[upper] / terms$prob[upper]
   intercept[cbind(rows[lower], y[lower])] <-
-    intercept[cbind(rows[lower], y[lower])] - fb1[lower] / pb[lower]
-  slope <- x * ((fb - fb1) / pb)
+    intercept[cbind(rows[lower], y[lower])] -
+    terms$f_lower[lower] / terms$prob[lower]
+  slope <- terms$x * ((terms$f_upper - terms$f_lower) / terms$prob)
   out <- cbind(intercept, slope)
   colnames(out) <- names(coefficients)
   out
+}
+
+# Weighted sums of the row scores within groups (for example patients), one
+# row per group 1..n_groups. Each row's threshold scores have at most two
+# nonzero entries, so no row-by-coefficient matrix is built.
+po_group_scores <- function(
+  x,
+  y,
+  coefficients,
+  n_intercepts,
+  group = rep(1L, NROW(x)),
+  n_groups = 1L,
+  weights = 1
+) {
+  terms <- po_outcome_terms(x, y, coefficients, n_intercepts)
+  y <- terms$y
+  upper <- terms$upper
+  lower <- terms$lower
+  w <- rep_len(weights, length(y)) / terms$prob
+  # Threshold j of group g sits at position (j - 1) * n_groups + g of the
+  # n_groups x n_intercepts block.
+  position <- c(
+    (y[upper] - 2) * n_groups + group[upper],
+    (y[lower] - 1) * n_groups + group[lower]
+  )
+  intercept <- po_sum_by(
+    c(w[upper] * terms$f_upper[upper], -w[lower] * terms$f_lower[lower]),
+    position,
+    n_groups * n_intercepts
+  )
+  slope <- po_sum_by(
+    terms$x * (w * (terms$f_upper - terms$f_lower)),
+    group,
+    n_groups
+  )
+  out <- cbind(matrix(intercept, nrow = n_groups), slope)
+  colnames(out) <- names(coefficients)
+  out
+}
+
+# Exact observed information (negative Hessian) of the weighted
+# proportional-odds log-likelihood sum(weights * log p_b).
+#
+# Write u and v for the linear predictors of F_b and F_{b+1}, and
+# f'(u) = f(u) (1 - 2 F(u)). The second derivatives of log p_b are
+# f'(u) / p_b - f(u)^2 / p_b^2 in u, -f'(v) / p_b - f(v)^2 / p_b^2 in v, and
+# f(u) f(v) / p_b^2 in u and v. A row touches only the thresholds of u and v,
+# so the threshold block is tridiagonal; the slope entries multiply these by
+# x (once for a threshold and slope, x x' for two slopes). Returns a dense
+# p x p matrix in coefficient order.
+po_information <- function(x, y, coefficients, n_intercepts, weights = 1) {
+  terms <- po_outcome_terms(x, y, coefficients, n_intercepts)
+  y <- terms$y
+  upper <- terms$upper
+  lower <- terms$lower
+  w <- rep_len(weights, length(y))
+  prob <- terms$prob
+  fu <- terms$f_upper
+  fl <- terms$f_lower
+  i_uu <- w * (fu^2 / prob^2 - fu * (1 - 2 * terms$F_upper) / prob)
+  i_vv <- w * (fl^2 / prob^2 + fl * (1 - 2 * terms$F_lower) / prob)
+  i_uv <- -w * fu * fl / prob^2
+
+  x <- terms$x
+  p <- length(coefficients)
+  slopes <- n_intercepts + seq_len(ncol(x))
+  thresholds <- seq_len(n_intercepts)
+  J <- matrix(0, nrow = p, ncol = p)
+  J[cbind(thresholds, thresholds)] <- drop(
+    po_sum_by(i_uu[upper], y[upper] - 1L, n_intercepts) +
+      po_sum_by(i_vv[lower], y[lower], n_intercepts)
+  )
+  if (n_intercepts > 1L) {
+    # Rows with both thresholds link coefficients b - 1 and b.
+    both <- upper & lower
+    off <- drop(po_sum_by(i_uv[both], y[both] - 1L, n_intercepts - 1L))
+    j <- seq_len(n_intercepts - 1L)
+    J[cbind(j, j + 1L)] <- off
+    J[cbind(j + 1L, j)] <- off
+  }
+  if (ncol(x)) {
+    cross <- po_sum_by(
+      x[upper, , drop = FALSE] * (i_uu + i_uv)[upper],
+      y[upper] - 1L,
+      n_intercepts
+    ) +
+      po_sum_by(
+        x[lower, , drop = FALSE] * (i_vv + i_uv)[lower],
+        y[lower],
+        n_intercepts
+      )
+    J[thresholds, slopes] <- cross
+    J[slopes, thresholds] <- t(cross)
+    J[slopes, slopes] <- crossprod(x, x * (i_uu + 2 * i_uv + i_vv))
+  }
+  dimnames(J) <- list(names(coefficients), names(coefficients))
+  J
 }
 
 # Exact per-patient observed-data scores by Fisher's identity: the
@@ -69,28 +200,27 @@ markov_ml_chain_scores <- function(problem, state) {
   cbind(intercept, slope)
 }
 
+# `state` is the forward-backward pass at `theta`; it is needed only when some
+# rows need the recursion.
 markov_ml_patient_scores <- function(problem, theta, state = NULL) {
-  if (is.null(state)) {
-    state <- markov_ml_estep(problem, theta)
-  }
   p <- length(problem$coef_names)
   U <- matrix(0, nrow = problem$N, ncol = p)
   comp <- problem$complete_part
   if (length(comp$rows)) {
-    complete <- rowsum(
-      po_row_scores(
+    U <- U +
+      po_group_scores(
         problem$X[comp$design, , drop = FALSE],
         comp$state,
         theta,
-        problem$n_int
-      ),
-      comp$patient,
-      reorder = TRUE
-    )
-    rows <- as.integer(rownames(complete))
-    U[rows, ] <- U[rows, ] + complete
+        problem$n_int,
+        group = comp$patient,
+        n_groups = problem$N
+      )
   }
   if (problem$chain$n) {
+    if (is.null(state)) {
+      state <- markov_ml_estep(problem, theta)
+    }
     chain <- rowsum(
       markov_ml_chain_scores(problem, state),
       problem$chain$patient,
@@ -103,38 +233,110 @@ markov_ml_patient_scores <- function(problem, theta, state = NULL) {
   U
 }
 
-markov_ml_total_score <- function(problem, theta) {
-  state <- markov_ml_estep(problem, theta)
+# Score and observed information of the fully observed transitions, exact
+# from the proportional-odds formulas on their aggregated rows.
+markov_ml_complete_score <- function(problem, theta) {
   comp <- problem$complete_part
-  complete <- colSums(
-    po_row_scores(
-      problem$X[comp$agg_design, , drop = FALSE],
-      comp$agg_state,
+  drop(po_group_scores(
+    problem$X[comp$agg_design, , drop = FALSE],
+    comp$agg_state,
+    theta,
+    problem$n_int,
+    weights = comp$agg_count
+  ))
+}
+
+markov_ml_complete_information <- function(problem, theta) {
+  comp <- problem$complete_part
+  po_information(
+    problem$X[comp$agg_design, , drop = FALSE],
+    comp$agg_state,
+    theta,
+    problem$n_int,
+    weights = comp$agg_count
+  )
+}
+
+# Log-likelihood of the fully observed transitions.
+markov_ml_complete_loglik <- function(problem, theta) {
+  comp <- problem$complete_part
+  prob <- po_outcome_terms(
+    problem$X[comp$agg_design, , drop = FALSE],
+    comp$agg_state,
+    theta,
+    problem$n_int
+  )$prob
+  if (any(!(prob > 0))) {
+    p_rows <- po_outcome_terms(
+      problem$X[comp$design, , drop = FALSE],
+      comp$state,
       theta,
       problem$n_int
-    ) *
-      comp$agg_count
+    )$prob
+    markov_ml_stop_impossible(problem$ids[comp$rows[!(p_rows > 0)]])
+  }
+  sum(comp$agg_count * log(prob))
+}
+
+# The rows that need the forward-backward recursion as a problem of their own:
+# only the design rows they reference, with `chain$DI` pointing into these, and
+# no fully observed transitions. Its score is the recursion rows' part of the
+# total score, at a cost that does not grow with the other rows.
+markov_ml_chain_problem <- function(problem) {
+  chain <- problem$chain
+  used <- sort(unique(as.vector(chain$DI)))
+  chain$DI[] <- match(chain$DI, used)
+  problem$X <- problem$X[used, , drop = FALSE]
+  problem$chain <- chain
+  problem$complete_part <- list(
+    rows = integer(),
+    origin = integer(),
+    design = integer(),
+    state = integer(),
+    patient = integer(),
+    W = NULL,
+    agg_design = integer(),
+    agg_state = integer(),
+    agg_count = numeric()
   )
-  out <- complete + colSums(markov_ml_chain_scores(problem, state))
+  problem$design_data <- NULL
+  problem
+}
+
+markov_ml_chain_score <- function(chain_problem, theta) {
+  state <- markov_ml_estep(chain_problem, theta)
+  colSums(markov_ml_chain_scores(chain_problem, state))
+}
+
+markov_ml_total_score <- function(problem, theta) {
+  out <- markov_ml_complete_score(problem, theta)
+  if (problem$chain$n) {
+    out <- out +
+      markov_ml_chain_score(markov_ml_chain_problem(problem), theta)
+  }
   names(out) <- problem$coef_names
   out
 }
 
-# Observed information by central differences of the exact total score.
+# Observed information: exact for the fully observed transitions, plus
+# central differences of the score of the rows that need the recursion.
 markov_ml_information <- function(problem, theta, step = 1e-4) {
-  p <- length(theta)
-  J <- matrix(0, nrow = p, ncol = p)
-  for (k in seq_len(p)) {
-    h <- step * max(1, abs(theta[[k]]))
-    up <- theta
-    down <- theta
-    up[[k]] <- up[[k]] + h
-    down[[k]] <- down[[k]] - h
-    J[, k] <- -(markov_ml_total_score(problem, up) -
-      markov_ml_total_score(problem, down)) /
-      (2 * h)
+  J <- markov_ml_complete_information(problem, theta)
+  if (problem$chain$n) {
+    chain_problem <- markov_ml_chain_problem(problem)
+    for (k in seq_along(theta)) {
+      h <- step * max(1, abs(theta[[k]]))
+      up <- theta
+      down <- theta
+      up[[k]] <- up[[k]] + h
+      down[[k]] <- down[[k]] - h
+      J[, k] <- J[, k] -
+        (markov_ml_chain_score(chain_problem, up) -
+          markov_ml_chain_score(chain_problem, down)) /
+          (2 * h)
+    }
+    J <- (J + t(J)) / 2
   }
-  J <- (J + t(J)) / 2
   dimnames(J) <- list(problem$coef_names, problem$coef_names)
   J
 }
@@ -178,8 +380,12 @@ markov_ml_sandwich <- function(
 }
 
 # Largest eigenvalue of I_c^{-1} (I_c - J): the fraction of information lost
-# to missing states in the worst direction.
+# to missing states in the worst direction. When nothing is missing, both
+# matrices are the same object and nothing is lost.
 markov_ml_missing_info_fraction <- function(complete_information, J) {
+  if (identical(complete_information, J)) {
+    return(0)
+  }
   R <- tryCatch(chol(complete_information), error = function(e) NULL)
   if (is.null(R)) {
     return(NA_real_)

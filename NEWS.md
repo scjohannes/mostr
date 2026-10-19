@@ -31,6 +31,16 @@
 * `orm_markov_ml()` now rejects random effects (`cluster()`) in the formula
   with an informative error.
 
+* `orm_markov_ml()` without missing or range-coded states is now about as fast
+  as `orm_markov()`, also with many states: it uses the `rms::orm()` fit and
+  its exact information directly instead of running EM, Newton steps, and
+  numerical derivatives over every row (with 500 states this took about an
+  hour). The missing-information fraction is then exactly 0. With missing
+  states, transitions with both states observed now add their exact
+  information, so numerical derivatives cover only the rows next to a missing
+  or range-coded state. A new "Computing time" section in `?orm_markov_ml`
+  explains how the time grows with missing states and the number of states.
+
 * Printing an `orm_markov_ml()` fit now shows the maximised log-likelihood,
   the numbers of patients and rows, and a table of coefficients with
   patient-cluster robust standard errors, Wald Z statistics, and p-values. It

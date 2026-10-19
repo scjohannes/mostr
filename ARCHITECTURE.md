@@ -231,7 +231,8 @@ proportional-odds transition model as `orm_markov()` but maximises the
 observed-data likelihood when some states are `NA` or an `rms::Ocens()` range.
 The model is treated as a hidden Markov model whose rows carry a 0/1 mask of
 allowed states (`markov_ml_masks()`); `missing_states` decides whether `NA`
-allows absorbing states. With nothing missing it reproduces `orm_markov()`.
+allows absorbing states. With nothing missing it reproduces `orm_markov()` at
+about the same cost.
 
 ```mermaid
 flowchart TD
@@ -239,12 +240,16 @@ flowchart TD
     B --> C[Starting orm fit on fully observed transitions]
     B --> D[Design rows per unique covariate row x origin]
     B --> E[Split chains at observed states]
-    E --> F[Fully observed rows: closed-form PO terms]
+    E --> F[Fully observed rows: exact PO score and information]
     E --> G[Segments with missing/range rows: forward-backward]
-    F --> H[EM: weighted orm.fit M-step on aggregated weights]
+    C --> L{Any segment rows?}
+    L -- no --> M[Starting fit is the estimate; J = exact PO information]
+    L -- yes --> H[EM: weighted orm.fit M-step on aggregated weights]
+    F --> H
     G --> H
-    H --> I[Newton finish with exact score and FD information]
-    I --> J[Weighted orm at the estimates on expected counts, knots locked]
+    H --> I[Newton finish: exact score; J = exact part + FD of segment score]
+    M --> J[Weighted orm at the estimates on expected counts, knots locked]
+    I --> J
     J --> K[orm_markov_ml object: $ml, $var, stored data]
 ```
 
@@ -263,10 +268,25 @@ flowchart TD
   and builds design rows for every unique covariate row and non-absorbing
   origin through `orm_model_matrix()` so knots and levels come from the
   starting fit. The chain is split at every exactly observed state: fully
-  observed transitions (`complete_part`) contribute ordinary PO terms, and
-  only segments containing missing or range rows (`chain`) run the scaled
-  forward-backward recursion (`markov_ml_forward()`, `markov_ml_backward()`).
-- **Fitting** alternates `markov_ml_estep()` with `markov_ml_mstep()`
+  observed transitions (`complete_part`, aggregated by design row and state)
+  contribute ordinary PO terms, and only segments containing missing or range
+  rows (`chain`) run the scaled forward-backward recursion
+  (`markov_ml_forward()`, `markov_ml_backward()`). State masks (`chain$C`)
+  and the origin-by-row design index (`chain$DI`) exist only for segment rows;
+  the problem keeps no per-row mask or index for the other rows, and
+  `informative` (rows whose observation excludes a state) comes from the state
+  ranges. `markov_ml_state_scale()` maps endpoints to states with
+  `findInterval()`.
+- **Fitting without segment rows**: when `chain$n` is 0, `orm_markov_ml()`
+  takes the starting fit's coefficients as the estimate and skips EM, Newton
+  steps, and every forward-backward pass; `iterations` and `newton_steps` are
+  0. The log-likelihood is `markov_ml_complete_loglik()` and the observed
+  information is `markov_ml_complete_information()`, which is also stored as
+  the complete-data information, so the missing-information fraction is
+  exactly 0. The Newton-decrement warning then points to `rms::orm()`'s
+  `gradtol`.
+- **Fitting with segment rows** alternates `markov_ml_estep()` with
+  `markov_ml_mstep()`
   (`rms::orm.fit()` on weights aggregated by integer design-row and
   destination keys), then `markov_ml_newton()` uses the exact score and the
   information. An `opt_method` passed through `...` is used as given by the
@@ -285,13 +305,40 @@ flowchart TD
   response column `.mostr_state`, and rcs() knots locked to the starting fit
   (`markov_ml_lock_knots()`). By Fisher's identity the refit's gradient
   equals the observed-data score, which is checked, as is the design; it then
-  removes `info.matrix`. Its `x` and `y` hold these aggregated rows.
-- **Inference** (`R/markov-ml-inference.R`): patient scores come from Fisher's
-  identity (`markov_ml_patient_scores()`, with `po_row_scores()` for fully
-  observed rows); the observed information is a central difference of the
-  exact total score (`markov_ml_information()`); `markov_ml_sandwich()` reuses
-  `markov_assemble_sandwich()`. HC1 counts rows whose mask excludes a state;
-  `cadjust` counts patients with such a row.
+  removes `info.matrix`. The complete-data information on these expected
+  counts comes from `po_information()`, not from inverting the refit's
+  covariance. Its `x` and `y` hold these aggregated rows.
+- **Exact PO terms** (`R/markov-ml-inference.R`): `po_outcome_terms()`
+  evaluates only the two thresholds around each row's observed state, so its
+  cost does not grow with the number of states. `po_group_scores()` sums
+  weighted row scores by group (patient, or one group for the total) and
+  `po_information()` gives the exact negative Hessian (tridiagonal threshold
+  block, threshold-by-slope sums, `crossprod()` for slopes), both without a
+  row-by-state or row-by-coefficient matrix. `po_row_scores()` keeps its
+  row-level interface on top of `po_outcome_terms()`.
+- **Inference**: patient scores come from Fisher's identity
+  (`markov_ml_patient_scores()`: `po_group_scores()` for fully observed rows,
+  `markov_ml_chain_scores()` for segment rows, with a forward-backward pass
+  only when segment rows exist). `markov_ml_total_score()` adds the exact
+  complete-row score (`markov_ml_complete_score()`) to the segment score of
+  `markov_ml_chain_problem()`, a reduced problem holding only the design rows
+  that `chain$DI` references (remapped) and no complete part.
+  `markov_ml_information()` is the exact complete-row information plus central
+  differences (`info_step`) of that reduced problem's score, so each
+  perturbation costs one forward-backward pass over the segment rows only.
+  `markov_ml_missing_info_fraction()` returns 0 when both matrices are the
+  same object. `markov_ml_sandwich()` reuses `markov_assemble_sandwich()`.
+  HC1 counts rows whose mask excludes a state; `cadjust` counts patients with
+  such a row.
+- **Cost**: without segment rows a fit costs the starting `rms::orm()` fit
+  plus linear-in-rows score and information sums, about the same as
+  `orm_markov()`. With segment rows, each forward-backward pass costs about
+  segment rows x origins x states, once per EM iteration and twice per
+  coefficient for each information evaluation (once for the Newton steps, and
+  again for the covariance after a Newton step), so with K states it grows
+  roughly with K^3. The design matrix `X` and `complete_part$W` still have one
+  row per unique covariate row x origin; continuous covariates make these
+  approach rows x origins.
 
 Contracts with the rest of the package:
 
