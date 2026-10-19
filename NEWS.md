@@ -50,6 +50,15 @@
   (previously 250,000 resampled patients in a modified 6-state coding). Its
   states follow `sim_markov("violet")`.
 
+## Minor improvements
+
+* `sim_markov("actt1")` and `sim_markov("actt2")` are much faster for large
+  samples, because they now calculate each day's linear predictor for all
+  patients in one step instead of one patient at a time, as
+  `sim_markov("violet")` already did. The trajectories for a given seed are
+  unchanged. A model that you supply through `lp_function` is still called
+  once per patient.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,

@@ -887,6 +887,7 @@ actt2_markov_lp <- function(yprev, t, tx, treatment_effect, extra_params) {
 
   as.numeric(time_effect + previous_state_effect + treatment_effect * tx)
 }
+attr(actt2_markov_lp, "mostr_vectorized_lp") <- TRUE
 
 
 violet_markov_parameters <- function() {

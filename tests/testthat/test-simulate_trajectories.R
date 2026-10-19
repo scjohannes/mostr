@@ -323,6 +323,32 @@ test_that("ACTT-2 transitions from states 1 and 2 are identical", {
   }
 })
 
+test_that("ACTT presets match a per-patient call of their linear predictor", {
+  # Without the attribute, the engine calls the function once per patient.
+  per_patient_lp <- function(yprev, t, tx, treatment_effect, extra_params) {
+    mostr:::actt2_markov_lp(yprev, t, tx, treatment_effect, extra_params)
+  }
+  expect_true(attr(mostr:::actt2_markov_lp, "mostr_vectorized_lp"))
+  expect_null(attr(per_patient_lp, "mostr_vectorized_lp"))
+
+  baseline <- data.frame(id = 1:16, yprev = rep(1:8, 2), tx = rep(0:1, 8))
+  for (preset in c("actt1", "actt2")) {
+    simulate <- function(lp_function = NULL) {
+      sim_markov(
+        preset,
+        baseline_data = baseline,
+        follow_up_time = 30,
+        treatment_effect = log(0.8),
+        treatment_effect_decay = 0.1,
+        lp_function = lp_function,
+        seed = 2026
+      )
+    }
+
+    expect_identical(simulate(), simulate(per_patient_lp))
+  }
+})
+
 test_that("presets simulate exactly the patients in baseline_data", {
   baseline <- data.frame(id = c(10L, 20L), yprev = c(5L, 8L), tx = c(0L, 1L))
 

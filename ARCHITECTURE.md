@@ -253,6 +253,17 @@ so decay works for user models as well as presets and the preset linear
 predictors only multiply that value by `tx`. The worst state is absorbing by
 default.
 
+The package linear predictors, `actt2_markov_lp()` (used by `"actt1"` and
+`"actt2"`) and `violet_markov_lp()`, carry the internal attribute
+`mostr_vectorized_lp`. The engine then calls them once per day with all active
+patients' values, and `normalize_vectorized_markov_lp()` accepts one value per
+patient or a matrix with one row per patient and one column per threshold. Any
+other function, including every user-supplied `lp_function`, is called once
+per active patient through `mapply()`, and `normalize_markov_lp()` validates
+each result. Both paths give the same linear predictors, so the attribute
+changes only speed, not the trajectories or the random-number stream; a test
+compares the ACTT presets with a per-patient wrapper of `actt2_markov_lp()`.
+
 The `"actt2"` preset uses coefficients from a fit with states 1 and 2 merged;
 an added lowest threshold splits them again, with `yprev = 1` and `yprev = 2`
 sharing the reference coefficient. `follow_up_time = 60` extrapolates its
@@ -276,10 +287,7 @@ drawn from `violet_baseline`, an
 858-row table of distinct starting state, age, and SOFA combinations with
 counts `n` summing to the 1,351 VIOLET patients; `data-raw/violet_baseline.R`
 recovers these counts from `simlongord` and checks them against Harrell's
-published summaries. `violet_markov_lp()` carries the internal attribute
-`mostr_vectorized_lp`, which makes the engine evaluate all active patients in
-one call (validated by `normalize_vectorized_markov_lp()`) instead of calling
-the function once per patient.
+published summaries.
 
 ### Data-frame processing
 
