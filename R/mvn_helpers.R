@@ -28,7 +28,7 @@
 #' to replace the coefficients - not any stored linear predictors.
 #'
 #' @examplesIf rlang::is_installed("rms")
-#' trial <- sim_actt2_markov(n_patients = 40, follow_up_time = 6, seed = 1)
+#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 #' fit <- rms::orm(
 #'   y ~ time + tx + yprev,

@@ -44,10 +44,10 @@ reference:
       - compare_se_orm_vglm
   - title: Simulate trajectories
     contents:
-      - sim_trajectories_markov
-      - sim_actt1_markov
-      - sim_actt2_markov
-      - lp_violet
+      - sim_markov
+      - actt1_preset
+      - actt2_preset
+      - violet_preset
       - violet_baseline
   - title: Bootstrap and coefficient utilities
     contents:

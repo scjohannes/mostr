@@ -51,7 +51,6 @@ utils::globalVariables(c(
   "t",
   "x",
   "covers_truth",
-  "violet_baseline",
   "splits",
   "models",
   "boot_id",

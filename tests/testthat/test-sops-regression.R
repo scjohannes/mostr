@@ -168,15 +168,11 @@ describe("SOP regression baselines", {
   }
 
   build_markov_case <- function() {
-    baseline <- mostr::violet_baseline[
-      1:80,
-      c("id", "yprev", "tx", "age", "sofa")
-    ]
-
-    raw_data <- mostr::sim_trajectories_markov(
-      baseline_data = baseline,
+    raw_data <- mostr::sim_markov(
+      "violet",
+      n_patients = 80,
       follow_up_time = 10,
-      parameter = log(0.85),
+      treatment_effect = log(0.85),
       seed = 1004
     )
 
@@ -188,8 +184,8 @@ describe("SOP regression baselines", {
       data = data,
       baseline = subset(data, time == 1),
       time_covariates = get_time_covariates(data),
-      y_levels = 1:6,
-      absorb = "6"
+      y_levels = 1:4,
+      absorb = "4"
     )
   }
 

@@ -24,7 +24,8 @@ library(ggplot2)
 
 set.seed(20260526)
 
-trial <- sim_actt2_markov(
+trial <- sim_markov(
+  "actt2",
   n_patients = 300,
   follow_up_time = 28,
   treatment_prob = 0.5,
@@ -115,8 +116,9 @@ columns. If you use `mostr`, please also consider citing `marginaleffects`:
 
 ## Data Provenance
 
-The included `violet_baseline` dataset is derived from `Hmisc::simlongord`,
-created by Frank Harrell and based on the VIOLET trial.
+The included `violet_baseline` dataset and the model in `sim_markov("violet")`
+come from `simlongord`, a simulated trial that Frank Harrell based on the
+VIOLET trial ([Harrell, 2022](https://hbiostat.org/data/repo/simlongord)).
 
 ## Funding
 

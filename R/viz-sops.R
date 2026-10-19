@@ -5,7 +5,7 @@
 #' (typically treatment). Can display as lines (default) or stacked bars.
 #'
 #' @param x A data frame containing trajectory data, typically from
-#'   `sim_trajectories_markov()`, or a
+#'   [sim_markov()], or a
 #'   model-derived SOP summary such as a `markov_avg_sops` object from
 #'   `avg_sops()` and `inferences()`.
 #' @param time_var Character string. Name of the time variable column (default: "time").
@@ -62,7 +62,7 @@
 #' @examples
 #' \dontrun{
 #' # After simulating trajectories
-#' trajectories <- sim_trajectories_markov(baseline_data, lp_function = my_lp)
+#' trajectories <- sim_markov("violet", n_patients = 200, seed = 1)
 #'
 #' # Basic line plot
 #' plot_sops(trajectories)

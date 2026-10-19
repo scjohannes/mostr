@@ -978,7 +978,7 @@ align_cluster_vglm <- function(fit, cluster, n) {
 #'   summary statistics.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_actt2_markov(n_patients = 40, follow_up_time = 6, seed = 1)
+#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 #' fit <- vglm_markov(
 #'   ordered(y) ~ time + tx + yprev,
@@ -1076,7 +1076,7 @@ summary.robcov_vglm <- function(object, ...) {
 #' @return Invisibly returns the input object.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_actt2_markov(n_patients = 40, follow_up_time = 6, seed = 1)
+#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 #' fit <- vglm_markov(
 #'   ordered(y) ~ time + tx + yprev,
@@ -1131,7 +1131,7 @@ print.robcov_vglm <- function(x, ...) {
 #' @return Named numeric vector of coefficients.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_actt2_markov(n_patients = 40, follow_up_time = 6, seed = 1)
+#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 #' fit <- vglm_markov(
 #'   ordered(y) ~ time + tx + yprev,
@@ -1158,7 +1158,7 @@ coef.robcov_vglm <- function(object, ...) {
 #' @return The robust variance-covariance matrix.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_actt2_markov(n_patients = 40, follow_up_time = 6, seed = 1)
+#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 #' fit <- vglm_markov(
 #'   ordered(y) ~ time + tx + yprev,
