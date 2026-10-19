@@ -1,19 +1,39 @@
 # mostr (development version)
 
-* `inferences(method = "bootstrap")` on averages within `by` groups now
-  stops before refitting when a resample leaves out every patient of a group,
-  naming the group and how many resamples lack it. Previously that group's
-  interval silently rested on fewer resamples. Use `method = "fwb"`, which
-  keeps every patient, or combine small groups.
+## Breaking changes
 
-* `avg_time()` is renamed `avg_state_time()`, and its result class
-  `markov_avg_time` is now `markov_avg_state_time`. `avg_time()` still works
-  but gives a deprecation warning.
+* `sim_markov()` replaces `sim_trajectories_markov()`, `sim_actt1_markov()`,
+  and `sim_actt2_markov()`. Choose a model with `preset`: `"actt1"`,
+  `"actt2"`, `"violet"`, or `NULL` to supply your own `baseline_data`,
+  `intercepts`, and `lp_function`. `preset` has no default. Any model argument
+  you supply, such as `intercepts` or `baseline_data`, replaces that part of
+  the preset and keeps the rest. Each preset's model is described in its own
+  help topic: `?actt1_preset`, `?actt2_preset`, and `?violet_preset`.
+  `sim_markov("actt2", ...)` gives the same trajectories as
+  `sim_actt2_markov(...)` did with the same arguments and seed.
 
-* New `state_time()` returns each prediction profile's expected time in each
-  state set, under each value of `variables` if given; its mean over the
-  profiles is `avg_state_time()`. `inferences()` adds intervals with the
-  same methods as for `comparisons()`.
+* `sim_markov()` simulates exactly the patients in a supplied `baseline_data`
+  and stops if you also supply `n_patients` or `treatment_prob`, which only
+  sample patients from a preset. Previously the trial wrappers recycled the
+  columns of a supplied `baseline_data` over `n_patients` generated patients,
+  so a 2-patient `baseline_data` with the default `n_patients = 1000` gave
+  1,000 patients.
+
+* `preset = "actt1"` uses the ACTT-2 transition model with the starting states
+  reported for ACTT-1 (13.1%, 41.4%, 18.4%, and 27.1% in states 4 to 7) and a
+  threshold for death raised from -22.0693 to -21.4071, so that 18% of control
+  patients have died by day 28. The ACTT-1 model based on Rohde et al. (2024)
+  that `sim_actt1_markov()` used has been removed, and
+  `vignette("partial-po-vglm-sops")` now simulates VIOLET data.
+
+* An `lp_function` now receives `treatment_effect`, the treatment effect on
+  the current day after `treatment_effect_decay`, instead of `parameter`, so
+  `treatment_effect_decay` also works for your own models. With
+  `preset = NULL`, `treatment_effect` defaults to 0, `extra_params` to `NULL`,
+  `absorbing_states` to the worst state (`length(intercepts) + 1`),
+  `covariate_names` to every column of `baseline_data` except `id` and
+  `yprev`, and `follow_up_time` to 28 days (previously 60). `lp_violet()` has
+  been removed.
 
 * `by` now works as in the marginaleffects package in every function that
   has it. Per-profile functions (`sops()`, `state_time()`, `comparisons()`)
@@ -30,11 +50,6 @@
     same.
   * `sops(by = TRUE)` now returns the overall average instead of an error.
 
-* `sops()` gains `variables`, as marginaleffects' `predictions()`: each
-  profile is predicted once for every value, `rowid` numbers the predictions,
-  and the new `rowidcf` column gives the profile. Score-bootstrap and FWB
-  draws give every copy of a patient's profile that patient's weight.
-
 * Bare variable names, such as `variables = "tx"`, choose values as
   marginaleffects does: factor levels in level order, character values in
   sorted order, `FALSE` then `TRUE`, or `0` then `1` for a 0/1 numeric
@@ -44,6 +59,31 @@
   also accept bare names. Values come from the data stored with the model.
   Previously `avg_sops()` used every unique value of the prediction profiles
   in order of appearance.
+
+* `inferences(method = "bootstrap")` on averages within `by` groups now
+  stops before refitting when a resample leaves out every patient of a group,
+  naming the group and how many resamples lack it. Previously that group's
+  interval silently rested on fewer resamples. Use `method = "fwb"`, which
+  keeps every patient, or combine small groups.
+
+* `avg_time()` is renamed `avg_state_time()`, and its result class
+  `markov_avg_time` is now `markov_avg_state_time`. `avg_time()` still works
+  but gives a deprecation warning.
+
+## New features
+
+* New `preset = "violet"` simulates 4-state daily trajectories (home, in
+  hospital, on a ventilator or with ARDS, dead) from the Markov model that
+  Frank Harrell fitted to the VIOLET trial of vitamin D3 to create his
+  simulated trial `simlongord`. Patients are sampled from the 1,351 VIOLET
+  patients' starting states, ages, and SOFA scores. The default treatment odds
+  ratio is 0.75, as in `simlongord`, and the daily state proportions agree
+  with `simlongord` within simulation error.
+
+* `violet_baseline` now holds the 1,351 VIOLET patients as 858 distinct
+  combinations of starting state, age, and SOFA score with their counts `n`
+  (previously 250,000 resampled patients in a modified 6-state coding). Its
+  states follow `sim_markov("violet")`.
 
 * New `comparisons()` returns a separate comparison for each prediction
   profile (by default, each fitted patient): SOP differences or ratios,
@@ -62,6 +102,25 @@
   profile and explains how to plot or average several.
   `vignette("analytical-confidence-intervals")` has a new section on
   comparisons for each patient.
+
+* New `state_time()` returns each prediction profile's expected time in each
+  state set, under each value of `variables` if given; its mean over the
+  profiles is `avg_state_time()`. `inferences()` adds intervals with the
+  same methods as for `comparisons()`.
+
+* `sops()` gains `variables`, as marginaleffects' `predictions()`: each
+  profile is predicted once for every value, `rowid` numbers the predictions,
+  and the new `rowidcf` column gives the profile. Score-bootstrap and FWB
+  draws give every copy of a patient's profile that patient's weight.
+
+## Minor improvements
+
+* `sim_markov("actt1")` and `sim_markov("actt2")` are much faster for large
+  samples, because they now calculate each day's linear predictor for all
+  patients in one step instead of one patient at a time, as
+  `sim_markov("violet")` already did. The trajectories for a given seed are
+  unchanged. A model that you supply through `lp_function` is still called
+  once per patient.
 
 # mostr 0.1.1
 

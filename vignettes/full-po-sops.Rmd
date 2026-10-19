@@ -88,7 +88,8 @@ SEED <- 20260527
 STATE_LEVELS <- as.character(1:8)
 ABSORB <- "8"
 
-raw_data <- sim_actt2_markov(
+raw_data <- sim_markov(
+  "actt2",
   n_patients = N_PATIENTS,
   follow_up_time = FOLLOW_UP,
   treatment_effect = log(0.8),

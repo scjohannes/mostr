@@ -20,7 +20,7 @@ plot_sops(
 }
 \arguments{
 \item{x}{A data frame containing trajectory data, typically from
-\code{sim_trajectories_markov()}, or a
+\code{\link[=sim_markov]{sim_markov()}}, or a
 model-derived SOP summary such as a \code{markov_avg_sops} object from
 \code{avg_sops()} and \code{inferences()}.}
 
@@ -93,7 +93,7 @@ linetype combination.
 \examples{
 \dontrun{
 # After simulating trajectories
-trajectories <- sim_trajectories_markov(baseline_data, lp_function = my_lp)
+trajectories <- sim_markov("violet", n_patients = 200, seed = 1)
 
 # Basic line plot
 plot_sops(trajectories)

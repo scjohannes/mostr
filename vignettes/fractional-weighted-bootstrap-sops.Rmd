@@ -36,7 +36,7 @@ these subgroups.
 
 ## Fit the model
 
-We simulate 160 patients over 10 days with `sim_actt2_markov()`, which uses
+We simulate 160 patients over 10 days with `sim_markov("actt2")`, which uses
 the eight-state NIAID scale described in `vignette("full-po-sops")`. We record
 each patient's state at baseline, the value of `yprev` on day 1, in a new
 column `baseline_state`. Unlike `yprev`, which changes from day to day,
@@ -60,7 +60,8 @@ SEED <- 20260606
 STATE_LEVELS <- as.character(1:8)
 ABSORB <- "8"
 
-raw_data <- sim_actt2_markov(
+raw_data <- sim_markov(
+  "actt2",
   n_patients = N_PATIENTS,
   follow_up_time = FOLLOW_UP,
   treatment_effect = -0.03,

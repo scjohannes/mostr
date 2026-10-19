@@ -1310,7 +1310,8 @@ describe("robcov_vglm() stress tests", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
-    trial <- sim_actt2_markov(
+    trial <- sim_markov(
+      "actt2",
       n_patients = 40,
       follow_up_time = 6,
       seed = 1

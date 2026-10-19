@@ -25,11 +25,11 @@ time in each state, and time benefit.
 ## Simulate an outcome with 30 levels
 
 We simulate 220 patients over 14 days on a 30-level scale where higher is
-worse and no state is absorbing. `sim_trajectories_markov()` generates each
-day's state from an ordinal model whose linear predictor is supplied in
-`lp_function`: it increases linearly with the previous state, decreases
-slightly over time, and is shifted by `parameter = -0.25` for treated
-patients. The 29 cut-points are spread so that, with a linear predictor of
+worse and no state is absorbing. `sim_markov()` with `preset = NULL`
+generates each day's state from an ordinal model whose linear predictor is
+supplied in `lp_function`: it increases linearly with the previous state,
+decreases slightly over time, and is shifted by `treatment_effect = -0.25` for
+treated patients. The 29 cut-points are spread so that, with a linear predictor of
 zero, the 30 states are equally likely.
 
 ```{r setup}
@@ -50,16 +50,17 @@ baseline <- data.frame(
   yprev = sample(12:28, N_PATIENTS, replace = TRUE),
   tx = rbinom(N_PATIENTS, 1, 0.5)
 )
-raw_data <- sim_trajectories_markov(
+raw_data <- sim_markov(
+  NULL,
   baseline_data = baseline,
   follow_up_time = FOLLOW_UP,
   intercepts = qlogis(seq_len(N_QOL - 1L) / N_QOL),
   absorbing_states = integer(),
   covariate_names = "tx",
-  parameter = -0.25,
-  lp_function = function(yprev, t, tx, parameter, extra_params) {
+  treatment_effect = -0.25,
+  lp_function = function(yprev, t, tx, treatment_effect, extra_params) {
     0.08 * (as.numeric(as.character(yprev)) - 15) - 0.03 * t +
-      parameter * tx
+      treatment_effect * tx
   },
   seed = SEED
 )

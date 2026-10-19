@@ -4,7 +4,9 @@ This directory contains R scripts used to prepare package datasets.
 
 ## Files
 
-- `violet_baseline.R`: Creates the `violet_baseline` dataset from Hmisc::simlongord data
+- `violet_baseline.R`: Creates the `violet_baseline` dataset, the starting
+  states, ages, and SOFA scores of the 1,351 VIOLET patients, from
+  Frank Harrell's `simlongord` data.
 
 ## Usage
 
@@ -19,8 +21,12 @@ install.packages("usethis")
 source("data-raw/violet_baseline.R")
 ```
 
-This will create/update the `data/violet_baseline.rda` file that is included in the package.
+The script downloads `simlongord` with `Hmisc::getHdata()`, stops if the
+recovered patients disagree with Harrell's published summaries, and writes
+`data/violet_baseline.rda`.
 
 ## Attribution
 
-The `violet_baseline` dataset is derived from the `simlongord` dataset created by Frank Harrell, available in the Hmisc package. The original data is based on the VIOLET trial.
+The `violet_baseline` dataset is derived from the `simlongord` dataset created
+by Frank Harrell (<https://hbiostat.org/data/repo/simlongord>), available
+through the Hmisc package. `simlongord` is based on the VIOLET trial.
