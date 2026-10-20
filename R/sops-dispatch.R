@@ -10,7 +10,10 @@
 #'   wrapper provenance are not.
 #' @param newdata A data frame containing one baseline prediction row per
 #'   patient or profile.
-#' @param times Required visit-scale time points.
+#' @param times Required consecutive visits, in increasing order. The
+#'   recursion takes one transition per value, so leaving out visits does not
+#'   skip time; see [sops()]. Unlike [sops()], this function does not warn
+#'   when `times` leaves out fitted visits.
 #' @param y_levels Ordered outcome-state levels. The number of levels must equal
 #'   the fitted threshold count plus one.
 #' @param absorb Optional absorbing state levels.

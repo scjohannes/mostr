@@ -17,9 +17,13 @@
 #'   A vector pools its states into one total; a named list returns one total
 #'   per named state set, for example
 #'   `list(home = "1", hospital = c("2", "3"))`. Names must be unique.
-#' @param times Required visits to include, each listed once. Numeric time
-#'   variables use numeric values; factor-valued visit indices use fitted visit
-#'   levels.
+#' @param times Required. The consecutive visits to include, in increasing
+#'   order and each listed once, for example `times = 1:30`. Each value is one
+#'   transition, so leaving out visits does not skip time; see the section
+#'   "Choosing visits". To total time over only part of follow-up, request
+#'   every visit and select the period with `time_map` and `target_times`.
+#'   Numeric time variables use numeric values; factor-valued visit indices use
+#'   fitted visit levels.
 #' @param time_map Optional named numeric vector or data frame giving the
 #'   elapsed time of each visit label, for example
 #'   `c("1" = 3, "2" = 7, "3" = 14)` for visits on days 3, 7, and 14. Supplying
@@ -99,6 +103,8 @@
 #' summarizes the totals, rather than adding up separately summarized
 #' probabilities. Use [get_draws()] to inspect the draws when they have been
 #' retained with `return_draws = TRUE`.
+#'
+#' @inheritSection sops Choosing visits
 #'
 #' @seealso [avg_sops()], [avg_comparisons()], [time_in_state()], [inferences()]
 #' @examples
@@ -290,7 +296,8 @@ replay_avg_time_sops <- function(object, conf_level, return_draws = FALSE) {
     posterior_summary = args$posterior_summary,
     conf_level = conf_level,
     return_draws = return_draws,
-    extra_args = args$extra_args
+    extra_args = args$extra_args,
+    warn_skipped_visits = FALSE
   )
 }
 

@@ -75,7 +75,7 @@ flowchart TD
 | Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`, `violet_baseline`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
-| Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R` | `sops`, `avg_sops`, `avg_time`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts |
+| Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-comparisons.R`, `R/sops-times.R` | `sops`, `avg_sops`, `avg_time`, `avg_comparisons`; individual or averaged probabilities, total time in states, and treatment contrasts; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
@@ -161,6 +161,41 @@ profiles held given. Unconditional variance also accounts for sampled patients
 and their contribution to coefficient estimation. It is available for supported
 averaged results using stored patient profiles; supplied `newdata` requires
 conditional variance. Individual results support conditional variance only.
+
+### Requested visit times
+
+The recursion takes one transition per value of `times`, in the order given:
+each value sets the time variable for that step, and, when `gap_var` is
+supplied without a column in `time_covariates`, the elapsed gap is the
+difference from the previous value (`assign_sop_visit()` in
+`R/sops-backends.R`). A request that leaves out visits therefore relabels later
+transitions rather than skipping time.
+
+`warn_skipped_sop_visits()` in `R/sops-times.R` compares the requested times
+with the fitted visit schedule: the fitted levels for factor time
+(`get_time_info()`), or the distinct values of the time variable in the stored
+refit data (`markov_model_refit_data()`) for numeric time. It signals a warning
+of class `mostr_warning_skipped_visits` when the times are not increasing,
+start before the first follow-up visit of the stored starting profiles, or
+leave out fitted visits between the starting visit and the last requested
+time. The starting visit is the stored `first_followup_time` when `newdata` is
+omitted and the first requested visit when `newdata` is supplied, because
+supplied rows may hold the state before a later visit. There is no check when
+`gap_var` is supplied, when the schedule is unknown, or when requested times
+inside the schedule's range are not fitted visits; times after the last fitted
+visit are allowed.
+
+The check runs once per user call. `sops()` and `avg_sops()` call it, and
+`avg_time()` and the `"sop"` and `"time_in_state"` estimands of
+`avg_comparisons()` reach it through `avg_sops()`. The `"time_benefit"`
+estimand calls it directly, because its internal `sops()` call receives the
+counterfactual rows as `newdata`. Internal `sops()` calls and inference replays
+(`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, used by
+`replay_avg_time_sops()` and the comparison replays) run inside
+`muffle_skipped_sop_visits()`, so `inferences()` never repeats the warning.
+`soprob_markov()` does not check. The model-based diagnostic plots expand
+sparse plot times to the full recursion grid (`complete_plot_recursion_times()`
+in `R/markov-plot-helpers.R`) and never call `sops()`.
 
 ### Average time in states
 
