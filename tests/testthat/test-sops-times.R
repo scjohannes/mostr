@@ -221,7 +221,12 @@ test_that("summaries built on avg_sops() warn once and not again during inferenc
   variables <- list(tx = c(0, 1))
 
   time_total <- count_skipped_visit_warnings(
-    avg_time(case$model, variables = variables, times = c(1, 4, 8), absorb = "6")
+    avg_state_time(
+      case$model,
+      variables = variables,
+      times = c(1, 4, 8),
+      absorb = "6"
+    )
   )
   comparison <- count_skipped_visit_warnings(avg_comparisons(
     case$model,
@@ -245,6 +250,6 @@ test_that("summaries built on avg_sops() warn once and not again during inferenc
     inferences(benefit$value, method = "mvn", n_draws = 5)
   )
   expect_no_warning(
-    avg_time(case$model, variables = variables, times = 1:8, absorb = "6")
+    avg_state_time(case$model, variables = variables, times = 1:8, absorb = "6")
   )
 })

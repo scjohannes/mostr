@@ -200,7 +200,7 @@ inside the schedule's range are not fitted visits; times after the last fitted
 visit are allowed.
 
 The check runs once per user call. `sops()` and `avg_sops()` call it, and
-`avg_time()` and the `"sop"` and `"time_in_state"` estimands of
+`avg_state_time()` and the `"sop"` and `"time_in_state"` estimands of
 `avg_comparisons()` reach it through `avg_sops()`. The `"time_benefit"`
 estimand calls it directly, because its internal `sops()` call receives the
 counterfactual rows as `newdata`. Internal `sops()` calls and inference replays
