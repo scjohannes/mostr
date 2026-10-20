@@ -52,6 +52,19 @@
 
 ## Minor improvements
 
+* `sops()`, `avg_sops()`, `avg_time()`, and `avg_comparisons()` now warn when
+  `times` skips fitted visits. SOPs are calculated one transition per value of
+  `times`, so with daily visits `times = c(1, 7, 14)` gives the probabilities
+  after 1, 2, and 3 transitions, labelled 1, 7, and 14, not the probabilities
+  on days 7 and 14. To get SOPs at selected visits, request every visit, such
+  as `times = 1:14`, and keep the rows you need. The functions also warn when
+  `times` is not in increasing order, and, for the starting profiles stored on
+  a model fitted by `orm_markov()`, `blrm_markov()`, or `vglm_markov()`, when
+  `times` does not begin at the first follow-up visit. There is no warning when
+  `gap_var` is supplied, because each transition then uses its own elapsed
+  time, or for times after the last fitted visit. The help for `times`
+  now explains that it lists consecutive visits.
+
 * `sim_markov("actt1")` and `sim_markov("actt2")` are much faster for large
   samples, because they now calculate each day's linear predictor for all
   patients in one step instead of one patient at a time, as

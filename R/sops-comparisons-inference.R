@@ -107,7 +107,8 @@ inferences_avg_comparisons_linear <- function(
     posterior_summary = args$posterior_summary,
     conf_level = conf_level,
     return_draws = FALSE,
-    extra_args = args$extra_args
+    extra_args = args$extra_args,
+    warn_skipped_visits = FALSE
   )
   avg <- inferences(
     avg,
