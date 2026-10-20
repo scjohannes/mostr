@@ -328,7 +328,8 @@ avg_comparison_replay_avg_sops <- function(
   posterior_summary,
   conf_level,
   return_draws,
-  extra_args
+  extra_args,
+  warn_skipped_visits = TRUE
 ) {
   args <- c(
     list(
@@ -356,6 +357,10 @@ avg_comparison_replay_avg_sops <- function(
     ),
     extra_args
   )
+  # Inference replays the user's request, which already warned about `times`.
+  if (!isTRUE(warn_skipped_visits)) {
+    return(muffle_skipped_sop_visits(do.call(avg_sops, args)))
+  }
   do.call(avg_sops, args)
 }
 

@@ -23,9 +23,11 @@
 #'   internal `rowid` column is regenerated. If `NULL`, uses the data stored by
 #'   [orm_markov()], [blrm_markov()], or [vglm_markov()] and requires exactly
 #'   one complete designated starting profile per fitted patient.
-#' @param times Required visit-scale time points to estimate. For numeric time
-#'   variables this is usually a numeric vector. For factor-valued visit
-#'   indices, values are matched to fitted visit levels.
+#' @param times Required. The consecutive visits at which to calculate SOPs,
+#'   in increasing order, for example `times = 1:30` for daily visits up to day
+#'   30. Each value is one transition, so leaving out visits does not skip
+#'   time; see the section "Choosing visits". Numeric time variables use
+#'   numeric values; factor-valued visit indices use fitted visit levels.
 #' @param y_levels A vector of state levels in fitted outcome order. Its length
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
 #'   infer the levels from `model`.
@@ -51,7 +53,11 @@
 #' @param p2_var Optional second previous-state variable. `NULL` uses a
 #'   first-order Markov recursion; a non-`NULL` column name uses a second-order
 #'   recursion.
-#' @param gap_var Name of the time gap_var variable (if used).
+#' @param gap_var Optional name of the variable holding the time elapsed since
+#'   the previous visit, if the model includes one. Each transition then uses
+#'   the difference between consecutive values of `times` (the first value for
+#'   the first transition), unless `time_covariates` contains this column, so
+#'   `times` may skip visits. See the section "Choosing visits".
 #' @param time_covariates Optional time-varying covariate lookup table for
 #'   explicit basis columns. Registered inline terms such as
 #'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without
@@ -117,6 +123,30 @@
 #' groups such as ECOG levels (`by = "ecog"`), is the [avg_sops()] result, so
 #' `sops()` returns it directly. With `variables`, the average is the
 #' standardized (G-computation) probability under each value.
+#'
+#' @section Choosing visits:
+#' SOPs are calculated one visit at a time. The first value of `times` is the
+#' first transition from the starting state, and each later value is one more
+#' transition. The values set the time variable, and any time-varying
+#' covariates, for each transition; they do not say how much time passes
+#' between transitions. Leaving out visits therefore does not skip time. With
+#' daily visits, `times = c(1, 7, 14)` gives the probabilities after 1, 2, and 3
+#' transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
+#' and 14. To get SOPs at selected visits, request every visit, such as
+#' `times = 1:14`, and keep the rows you need.
+#'
+#' When `newdata` is omitted, each patient starts from their state before the
+#' first follow-up visit (`first_followup_time` of the fitting wrapper), so
+#' `times` must begin at that visit. Each row of a supplied `newdata` starts
+#' from its previous state at the first requested visit, which may be a later
+#' visit.
+#'
+#' A warning is given when `times` leaves out visits that occur in the data the
+#' model was fitted to, is not in increasing order, or, when `newdata` is
+#' omitted, does not begin at the first follow-up visit. Times after the last
+#' fitted visit are allowed. There is no warning when `gap_var` is supplied,
+#' because each transition then uses its own elapsed time, so the visits may be
+#' spaced unevenly.
 #'
 #' @seealso [avg_sops()] for averaged SOPs, [soprob_markov()] for the
 #'   underlying computation.
@@ -245,6 +275,14 @@ sops <- function(
   )
   times <- time_res$times
   validate_factor_gap(gap_var, time_covariates, time_res$time_info)
+  warn_skipped_sop_visits(
+    model,
+    newdata_orig,
+    times,
+    time_var,
+    gap_var,
+    newdata_supplied
+  )
 
   newdata <- if (newdata_supplied) {
     newdata_orig
@@ -709,8 +747,7 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   rows missing any grouping value are omitted, and an error is raised if
 #'   none remain. `FALSE` or `NULL` does not average and returns the [sops()]
 #'   result, one row per profile, value of `variables`, time, and state.
-#' @param times Required visit-scale time points. Numeric time variables use
-#'   numeric values; factor-valued visit indices use fitted visit levels.
+#' @inheritParams sops
 #' @param y_levels A vector of state levels in fitted outcome order. Its length
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
 #'   infer the levels from `model`.
@@ -729,7 +766,6 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' @param p2_var Optional second previous-state variable. `NULL` uses a
 #'   first-order Markov recursion; a non-`NULL` column name uses a second-order
 #'   recursion.
-#' @param gap_var Name of the time gap_var variable, if used.
 #' @param time_covariates Optional time-varying covariate lookup table for
 #'   explicit precomputed time-basis columns. Registered inline terms such as
 #'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without it.
@@ -794,6 +830,8 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' and covariates as given and account only for coefficient estimation.
 #' User-supplied `newdata` requires the conditional choice. See [inferences()]
 #' for model restrictions.
+#'
+#' @inheritSection sops Choosing visits
 #'
 #' @seealso [sops()] for individual-level SOPs, [inferences()] for analytical,
 #'   simulation, or bootstrap
@@ -947,10 +985,19 @@ avg_sops <- function(
   grid <- create_counterfactual_grid(var_list)
 
   newdata_expanded <- create_counterfactual_data(baseline_data, grid, var_list)
+  warn_skipped_sop_visits(
+    model,
+    newdata_orig,
+    times,
+    time_var,
+    gap_var,
+    newdata_supplied
+  )
 
   direct_backend <- inherits(model, c("vglm", "robcov_vglm", "orm", "blrm"))
   if (!direct_backend) {
-    sops_ind <- sops(
+    # `times` was checked above against the stored or supplied profiles.
+    sops_ind <- muffle_skipped_sop_visits(sops(
       model,
       newdata = newdata_expanded,
       times = times,
@@ -963,7 +1010,7 @@ avg_sops <- function(
       gap_var = gap_var,
       time_covariates = time_covariates,
       ...
-    )
+    ))
     resolved_times <- attr(sops_ind, "call_args")$times
     group_cols <- unique(c("time", "state", names(var_list), by))
     missing_groups <- setdiff(group_cols, names(sops_ind))

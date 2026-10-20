@@ -61,9 +61,13 @@ names averages within the groups those columns define. \code{FALSE} or \code{NUL
 does not average and returns the \code{\link[=state_time]{state_time()}} result, one total per
 profile, value of \code{variables}, and state set.}
 
-\item{times}{Required visits to include, each listed once. Numeric time
-variables use numeric values; factor-valued visit indices use fitted visit
-levels.}
+\item{times}{Required. The consecutive visits to include, in increasing
+order and each listed once, for example \code{times = 1:30}. Each value is one
+transition, so leaving out visits does not skip time; see the section
+"Choosing visits". To total time over only part of follow-up, request
+every visit and select the period with \code{time_map} and \code{target_times}.
+Numeric time variables use numeric values; factor-valued visit indices use
+fitted visit levels.}
 
 \item{y_levels}{A vector of state levels in fitted outcome order. Its length
 must agree with the fitted model's threshold count. If \code{NULL}, attempts to
@@ -111,7 +115,11 @@ wrapper metadata is absent.}
 first-order Markov recursion; a non-\code{NULL} column name uses a second-order
 recursion.}
 
-\item{gap_var}{Name of the time gap_var variable, if used.}
+\item{gap_var}{Optional name of the variable holding the time elapsed since
+the previous visit, if the model includes one. Each transition then uses
+the difference between consecutive values of \code{times} (the first value for
+the first transition), unless \code{time_covariates} contains this column, so
+\code{times} may skip visits. See the section "Choosing visits".}
 
 \item{time_covariates}{Optional time-varying covariate lookup table for
 explicit precomputed time-basis columns. Registered inline terms such as
@@ -207,6 +215,32 @@ summarizes the totals, rather than adding up separately summarized
 probabilities. Use \code{\link[=get_draws]{get_draws()}} to inspect the draws when they have been
 retained with \code{return_draws = TRUE}.
 }
+\section{Choosing visits}{
+
+SOPs are calculated one visit at a time. The first value of \code{times} is the
+first transition from the starting state, and each later value is one more
+transition. The values set the time variable, and any time-varying
+covariates, for each transition; they do not say how much time passes
+between transitions. Leaving out visits therefore does not skip time. With
+daily visits, \code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
+transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
+and 14. To get SOPs at selected visits, request every visit, such as
+\code{times = 1:14}, and keep the rows you need.
+
+When \code{newdata} is omitted, each patient starts from their state before the
+first follow-up visit (\code{first_followup_time} of the fitting wrapper), so
+\code{times} must begin at that visit. Each row of a supplied \code{newdata} starts
+from its previous state at the first requested visit, which may be a later
+visit.
+
+A warning is given when \code{times} leaves out visits that occur in the data the
+model was fitted to, is not in increasing order, or, when \code{newdata} is
+omitted, does not begin at the first follow-up visit. Times after the last
+fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
+because each transition then uses its own elapsed time, so the visits may be
+spaced unevenly.
+}
+
 \examples{
 \dontrun{
 # Average over the fitted patients' observed starting states and covariates.

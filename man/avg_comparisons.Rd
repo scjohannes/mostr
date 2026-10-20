@@ -68,7 +68,10 @@ those columns define. \code{FALSE} or \code{NULL} does not average and returns t
 for it use conditional variance only, and the ordinary bootstrap is not
 available.}
 
-\item{times}{Required visit-scale time points. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{times}{Required. The consecutive visits to include, in increasing
+order, for example \code{times = 1:30}. Each value is one transition, so
+leaving out visits does not skip time; see the section "Choosing visits"
+and \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{y_levels}{A vector of state levels. See \code{\link[=avg_sops]{avg_sops()}}.}
 
@@ -102,7 +105,8 @@ only.}
 
 \item{p2_var}{Optional second previous-state variable. See \code{\link[=avg_sops]{avg_sops()}}.}
 
-\item{gap_var}{Name of the time gap_var variable, if used. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{gap_var}{Optional name of the variable holding the time elapsed since
+the previous visit, if the model includes one. See \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{time_covariates}{Optional time-varying covariate lookup table for explicit
 precomputed time-basis columns. See \code{\link[=avg_sops]{avg_sops()}}.}
@@ -153,6 +157,32 @@ those patients' starting states and covariates as given and account only
 for coefficient estimation. User-supplied \code{newdata} requires the conditional
 choice. See \code{\link[=inferences]{inferences()}} for model restrictions.
 }
+\section{Choosing visits}{
+
+SOPs are calculated one visit at a time. The first value of \code{times} is the
+first transition from the starting state, and each later value is one more
+transition. The values set the time variable, and any time-varying
+covariates, for each transition; they do not say how much time passes
+between transitions. Leaving out visits therefore does not skip time. With
+daily visits, \code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
+transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
+and 14. To get SOPs at selected visits, request every visit, such as
+\code{times = 1:14}, and keep the rows you need.
+
+When \code{newdata} is omitted, each patient starts from their state before the
+first follow-up visit (\code{first_followup_time} of the fitting wrapper), so
+\code{times} must begin at that visit. Each row of a supplied \code{newdata} starts
+from its previous state at the first requested visit, which may be a later
+visit.
+
+A warning is given when \code{times} leaves out visits that occur in the data the
+model was fitted to, is not in increasing order, or, when \code{newdata} is
+omitted, does not begin at the first follow-up visit. Times after the last
+fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
+because each transition then uses its own elapsed time, so the visits may be
+spaced unevenly.
+}
+
 \examples{
 \dontrun{
 avg_comparisons(

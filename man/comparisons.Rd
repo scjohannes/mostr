@@ -66,7 +66,10 @@ columns define. Both return the result of \code{\link[=avg_comparisons]{avg_comp
 same arguments. For \code{comparison = "ratio"}, that average is the ratio of
 the averaged summaries, not the average of the profiles' ratios.}
 
-\item{times}{Required visit-scale time points. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{times}{Required. The consecutive visits to include, in increasing
+order, for example \code{times = 1:30}. Each value is one transition, so
+leaving out visits does not skip time; see the section "Choosing visits"
+and \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{y_levels}{A vector of state levels. See \code{\link[=avg_sops]{avg_sops()}}.}
 
@@ -100,7 +103,8 @@ only.}
 
 \item{p2_var}{Optional second previous-state variable. See \code{\link[=avg_sops]{avg_sops()}}.}
 
-\item{gap_var}{Name of the time gap_var variable, if used. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{gap_var}{Optional name of the variable holding the time elapsed since
+the previous visit, if the model includes one. See \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{time_covariates}{Optional time-varying covariate lookup table for explicit
 precomputed time-basis columns. See \code{\link[=avg_sops]{avg_sops()}}.}

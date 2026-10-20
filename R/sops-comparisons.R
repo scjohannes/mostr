@@ -32,7 +32,10 @@
 #'   [comparisons()] result, one comparison per profile; analytical intervals
 #'   for it use conditional variance only, and the ordinary bootstrap is not
 #'   available.
-#' @param times Required visit-scale time points. See [avg_sops()].
+#' @param times Required. The consecutive visits to include, in increasing
+#'   order, for example `times = 1:30`. Each value is one transition, so
+#'   leaving out visits does not skip time; see the section "Choosing visits"
+#'   and [avg_sops()].
 #' @param y_levels A vector of state levels. See [avg_sops()].
 #' @param absorb The absorbing state. See [avg_sops()].
 #' @param time_map Optional named numeric vector or data frame mapping visit
@@ -55,7 +58,8 @@
 #' @param p_var Name of the previous state variable in the model. See
 #'   [avg_sops()].
 #' @param p2_var Optional second previous-state variable. See [avg_sops()].
-#' @param gap_var Name of the time gap_var variable, if used. See [avg_sops()].
+#' @param gap_var Optional name of the variable holding the time elapsed since
+#'   the previous visit, if the model includes one. See [avg_sops()].
 #' @param time_covariates Optional time-varying covariate lookup table for explicit
 #'   precomputed time-basis columns. See [avg_sops()].
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
@@ -91,6 +95,8 @@
 #' those patients' starting states and covariates as given and account only
 #' for coefficient estimation. User-supplied `newdata` requires the conditional
 #' choice. See [inferences()] for model restrictions.
+#'
+#' @inheritSection sops Choosing visits
 #'
 #' @seealso [comparisons()] for the comparison of each profile before
 #'   averaging, [avg_sops()], [sops()], [inferences()]
@@ -209,7 +215,17 @@ avg_comparisons <- function(
       include_re = include_re,
       ...
     )
-    tb <- avg_comparison_time_benefit_point(
+    # The point estimate calls `sops()` on the counterfactual rows as supplied
+    # `newdata`, so check `times` here against the original profiles.
+    warn_skipped_sop_visits(
+      model,
+      setup$newdata_orig,
+      times,
+      time_var,
+      gap_var,
+      setup$newdata_supplied
+    )
+    tb <- muffle_skipped_sop_visits(avg_comparison_time_benefit_point(
       model = model,
       setup = setup,
       y_levels = y_levels,
@@ -231,7 +247,7 @@ avg_comparisons <- function(
       target_times = target_times,
       time_unit = time_unit,
       ...
-    )
+    ))
     result <- tb$result
     setup <- tb$setup
   } else {

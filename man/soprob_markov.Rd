@@ -31,7 +31,10 @@ wrapper provenance are not.}
 \item{newdata}{A data frame containing one baseline prediction row per
 patient or profile.}
 
-\item{times}{Required visit-scale time points.}
+\item{times}{Required consecutive visits, in increasing order. The
+recursion takes one transition per value, so leaving out visits does not
+skip time; see \code{\link[=sops]{sops()}}. Unlike \code{\link[=sops]{sops()}}, this function does not warn
+when \code{times} leaves out fitted visits.}
 
 \item{y_levels}{Ordered outcome-state levels. The number of levels must equal
 the fitted threshold count plus one.}
