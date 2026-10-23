@@ -720,14 +720,23 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
   }
   weight_cols <- intersect(c("score_weight", "fwb_weight"), names(draws))
   group_cols <- setdiff(names(draws), c(value_col, "draw_id", weight_cols))
+  join_cols <- intersect(group_cols, names(result))
+  point_estimates <- result[, c(join_cols, "estimate"), drop = FALSE]
+  if (!all(group_cols %in% join_cols)) {
+    point_estimates <- left_join_preserve_order(
+      unique(draws[, group_cols, drop = FALSE]),
+      point_estimates,
+      by = join_cols
+    )
+  }
   ci <- compute_ci_from_draws(
     draws_df = draws_for_ci,
     group_cols = group_cols,
     conf_level = conf_level,
-    conf_type = conf_type
+    conf_type = conf_type,
+    point_estimates = point_estimates
   )
 
-  join_cols <- intersect(group_cols, names(result))
   ci <- ci[, c(join_cols, "conf.low", "conf.high", "std.error"), drop = FALSE]
 
   result$.sop_order <- seq_len(nrow(result))

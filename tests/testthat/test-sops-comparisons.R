@@ -580,3 +580,69 @@ test_that("comparison inference reduces paired draw-level SOPs", {
   expect_equal(reduced$estimate, c(0.4, 0.4, 0.2, 0.2))
   expect_equal(reduced$draw_id, c(1, 1, 2, 2))
 })
+
+test_that("comparison inference centers Wald intervals on point comparisons", {
+  avg <- make_mock_avg_sops(tx_levels = c(0, 1))
+  draws <- avg[rep(seq_len(nrow(avg)), times = 2), ]
+  draws$draw_id <- rep(1:2, each = nrow(avg))
+  # Unequal shifts put the mean of the comparison draws above the point
+  # comparison, so a draw-mean center would move the interval.
+  shift <- c(0.1, 0.3)[draws$draw_id] * (draws$tx == 1)
+  draws$estimate <- draws$estimate + ifelse(draws$state == "1", shift, -shift)
+
+  inferred_avg <- avg
+  attr(inferred_avg, "draws") <- draws
+  attr(inferred_avg, "conf_level") <- 0.95
+  attr(inferred_avg, "conf_type") <- "wald"
+  attr(inferred_avg, "method") <- "mvn"
+
+  for (estimand in c("sop", "time_in_state")) {
+    with_mocked_bindings(
+      avg_sops = function(...) avg,
+      {
+        cmp <- avg_comparisons(
+          structure(list(), class = "mock_model"),
+          variables = list(tx = c(0, 1)),
+          estimand = estimand,
+          times = 1:2,
+          state_sets = "1"
+        )
+      }
+    )
+
+    with_mocked_bindings(
+      avg_sops = function(...) avg,
+      inferences = function(...) inferred_avg,
+      {
+        out <- mostr:::inferences_avg_comparisons_linear(
+          object = cmp,
+          method = "simulation",
+          engine = "mvn",
+          score_weight_dist = "exponential",
+          n_draws = 2,
+          vcov = NULL,
+          cluster = NULL,
+          workers = NULL,
+          conf_level = 0.95,
+          conf_type = "wald",
+          return_draws = FALSE,
+          update_datadist = TRUE,
+          use_coefstart = FALSE
+        )
+      }
+    )
+
+    expect_equal(out$estimate, cmp$estimate, info = estimand)
+    expect_equal(
+      (out$conf.low + out$conf.high) / 2,
+      cmp$estimate,
+      info = estimand
+    )
+    expect_equal(
+      out$conf.high - out$estimate,
+      stats::qnorm(0.975) * out$std.error,
+      info = estimand
+    )
+    expect_gt(min(out$std.error), 0)
+  }
+})

@@ -74,7 +74,8 @@ avg_comparison_from_avg_sops <- function(
         draws_df = draw_reduced,
         group_cols = group_cols,
         conf_level = attr(x, "conf_level") %||% 0.95,
-        conf_type = attr(x, "conf_type") %||% "perc"
+        conf_type = attr(x, "conf_type") %||% "perc",
+        point_estimates = point
       )
       point <- merge_comparison_ci(point, ci, group_cols)
     }

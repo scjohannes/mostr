@@ -231,6 +231,10 @@ first-appearance order, and `avg_time()` additionally joins posterior summaries
 onto the point reduction so posterior rows follow `state_sets` order. Score and refit bootstrap retain their draw-specific
 baseline anchors until interpolation; posterior medians summarize reduced draws.
 Only reduced draws are retained on average-time results.
+Draw-based Wald intervals are centered on the point estimate from the same
+reduction, never on the draw mean: every caller of `compute_ci_from_draws()`,
+including `interpolate_sops()` and SOP and time-in-state comparisons reduced
+from average SOPs, passes its point estimates as `point_estimates`.
 
 `R/sops-delta-avg-time.R` propagates weighted sums of the original SOP coefficient
 derivatives or patient contributions using the shared analytical operators.
