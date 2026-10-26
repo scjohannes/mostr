@@ -547,6 +547,39 @@ test_that("interpolate_sops interpolates stored draws from fixed baseline anchor
   )
 })
 
+test_that("interpolate_sops centers Wald intervals on interpolated estimates", {
+  x <- make_interpolation_case()
+  draws <- x[rep(seq_len(nrow(x)), each = 3L), , drop = FALSE]
+  draws$draw_id <- rep(seq_len(3), times = nrow(x))
+  # Unequal offsets put the draw mean above each state-1 estimate, so a
+  # draw-mean center would move the interval.
+  offset <- c(0, 0.1, 0.2)[draws$draw_id]
+  draws$estimate <- draws$estimate + ifelse(draws$state == "1", offset, -offset)
+  rownames(draws) <- NULL
+  attr(x, "draws") <- draws
+  attr(x, "conf_level") <- 0.95
+  attr(x, "conf_type") <- "wald"
+
+  out <- interpolate_sops(
+    x,
+    time_map = c(v1 = 3, v2 = 7),
+    target_times = 0:7,
+    baseline_time = 0
+  )
+
+  expect_equal(
+    (out$conf.low + out$conf.high) / 2,
+    out$estimate,
+    tolerance = 1e-10
+  )
+  expect_equal(
+    out$conf.high - out$estimate,
+    stats::qnorm(0.975) * out$std.error,
+    tolerance = 1e-10
+  )
+  expect_gt(max(out$std.error), 0)
+})
+
 test_that("interpolate_sops warns when interval-bearing objects do not store draws", {
   x <- add_interpolation_intervals(make_interpolation_case())
   expect_warning(

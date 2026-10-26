@@ -136,6 +136,16 @@
   unchanged. A model that you supply through `lp_function` is still called
   once per patient.
 
+## Bug fixes
+
+* Wald intervals from simulation or bootstrap draws (`conf_type = "wald"` in
+  `inferences()`) are now centered on the point estimate for SOP and
+  time-in-state comparisons from `avg_comparisons()` and for SOPs from
+  `interpolate_sops()`. These intervals were previously centered on the mean
+  of the draws, which differs from the point estimate, so the reported
+  estimate was not at the middle of its interval. Standard errors and
+  percentile intervals are unchanged.
+
 # mostr 0.1.1
 
 * `sim_actt2_markov()` uses a model refitted with states 1 and 2 merged,
