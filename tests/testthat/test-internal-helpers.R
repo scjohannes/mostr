@@ -278,18 +278,12 @@ test_that("orm prediction helpers validate metadata and categorical levels", {
     ),
     class = "orm"
   )
-  expect_error(
-    mostr:::orm_model_matrix(
-      strat_fit,
-      data.frame(
-        y = ordered(c(1, 1), levels = 1:3),
-        x = 1:2,
-        z = factor(c("a", "b"))
-      )
-    ),
-    "Could not reconstruct",
-    fixed = TRUE
+  X_strat <- mostr:::orm_model_matrix(
+    strat_fit,
+    data.frame(x = 1:2, z = factor(c("a", "b")))
   )
+  expect_equal(colnames(X_strat), "x")
+  expect_equal(unname(X_strat[, "x"]), c(1, 2))
 })
 
 test_that("orm score-bootstrap helpers cover validation and alignment branches", {

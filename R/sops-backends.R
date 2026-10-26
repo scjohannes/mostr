@@ -584,8 +584,9 @@ orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
   )
 
   formulano <- add_rms_formula_helpers(model$sformula)
-  Terms <- stats::terms(formulano, specials = "strat")
-  attr(Terms, "response") <- 0L
+  Terms <- stats::delete.response(
+    stats::terms(formulano, specials = "strat")
+  )
   attr(Terms, "intercept") <- 1L
 
   strata_terms <- attr(Terms, "specials")$strat
