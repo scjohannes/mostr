@@ -24,8 +24,10 @@ reference:
     contents:
       - sops
       - avg_sops
-      - avg_time
+      - avg_state_time
+      - state_time
       - avg_comparisons
+      - comparisons
       - inferences
       - time_in_state
       - interpolate_sops

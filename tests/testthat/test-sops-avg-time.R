@@ -29,7 +29,7 @@ make_avg_time_case <- function(factor_time = FALSE) {
 
 test_that("analytical inference clears bootstrap and previous null metadata", {
   case <- make_avg_time_case()
-  boot <- avg_time(case$model, times = 1:3, absorb = 3) |>
+  boot <- avg_state_time(case$model, times = 1:3, absorb = 3) |>
     inferences(method = "fwb", n_draws = 3, seed = 7211, null = 0)
   result <- inferences(boot, method = "delta")
   expect_identical(attr(result, "method"), "delta")
@@ -46,11 +46,11 @@ test_that("analytical inference clears bootstrap and previous null metadata", {
   expect_equal(tested$statistic, (tested$estimate - 1) / tested$std.error)
 })
 
-test_that("avg_time returns observed-cohort totals and named state sets", {
+test_that("avg_state_time returns observed-cohort totals and named state sets", {
   case <- make_avg_time_case()
   avg <- avg_sops(case$model, absorb = 3, times = 1:4)
-  result <- avg_time(case$model, absorb = 3, times = 1:4)
-  expect_s3_class(result, "markov_avg_time")
+  result <- avg_state_time(case$model, absorb = 3, times = 1:4)
+  expect_s3_class(result, "markov_avg_state_time")
   expect_identical(inherits(result, "markov_avg_sops"), FALSE)
   expect_setequal(names(result), c("state_set", "estimate"))
   expect_setequal(result$state_set, as.character(1:3))
@@ -60,7 +60,7 @@ test_that("avg_time returns observed-cohort totals and named state sets", {
       time_in_state(avg, target_states = state)$total_time
     )
   }
-  sets <- avg_time(
+  sets <- avg_state_time(
     case$model,
     absorb = 3,
     times = 1:4,
@@ -71,11 +71,11 @@ test_that("avg_time returns observed-cohort totals and named state sets", {
     sets$estimate[sets$state_set == "alive"],
     time_in_state(avg, target_states = 1:2)$total_time
   )
-  pooled <- avg_time(case$model, absorb = 3, times = 1:4, state_sets = 1:2)
+  pooled <- avg_state_time(case$model, absorb = 3, times = 1:4, state_sets = 1:2)
   expect_equal(pooled$estimate, sets$estimate[sets$state_set == "alive"])
 })
 
-test_that("avg_time preserves multiple scenarios and subgroup averaging", {
+test_that("avg_state_time preserves multiple scenarios and subgroup averaging", {
   case <- make_avg_time_case()
   profiles <- case$data[!duplicated(case$data$id), , drop = FALSE][1:15, ]
   variables <- list(tx = c(0, 1), marker = c(0, 1))
@@ -87,7 +87,7 @@ test_that("avg_time preserves multiple scenarios and subgroup averaging", {
     by = "subgroup",
     times = 1:3
   )
-  result <- avg_time(
+  result <- avg_state_time(
     case$model,
     absorb = 3,
     newdata = profiles,
@@ -101,7 +101,7 @@ test_that("avg_time preserves multiple scenarios and subgroup averaging", {
   expect_equal(nrow(result), 8L)
   expect_equal(nrow(joined), nrow(result))
   expect_equal(joined$estimate, joined$total_time)
-  observed <- avg_time(
+  observed <- avg_state_time(
     case$model,
     absorb = 3,
     newdata = profiles,
@@ -122,13 +122,13 @@ test_that("avg_time preserves multiple scenarios and subgroup averaging", {
   expect_equal(joined$estimate, joined$total_time)
 })
 
-test_that("avg_time integrates irregular factor visits with optional baseline", {
+test_that("avg_state_time integrates irregular factor visits with optional baseline", {
   case <- make_avg_time_case(factor_time = TRUE)
   time_map <- c("1" = 2, "2" = 7, "3" = 9)
   avg <- avg_sops(case$model, absorb = 3, times = 1:3)
   # The omitted grid starts at `baseline_time = 0`, like `c(0, 2, 7, 9)`.
   for (target in list(NULL, c(0, 1, 2, 4, 7, 9), c(2, 7, 9))) {
-    result <- avg_time(
+    result <- avg_state_time(
       case$model,
       absorb = 3,
       times = 1:3,
@@ -153,7 +153,7 @@ test_that("avg_time integrates irregular factor visits with optional baseline", 
     )
     expect_equal(result$time_unit, rep("days", nrow(result)))
   }
-  no_baseline <- avg_time(
+  no_baseline <- avg_state_time(
     case$model,
     absorb = 3,
     times = 1:3,
@@ -170,7 +170,7 @@ test_that("avg_time integrates irregular factor visits with optional baseline", 
       baseline_time = NULL
     )$total_time
   )
-  single <- avg_time(
+  single <- avg_state_time(
     case$model,
     absorb = 3,
     times = 1,
@@ -178,7 +178,7 @@ test_that("avg_time integrates irregular factor visits with optional baseline", 
     baseline_time = NULL
   )
   expect_equal(single$estimate, rep(0, 3))
-  single_anchored <- avg_time(
+  single_anchored <- avg_state_time(
     case$model,
     absorb = 3,
     times = 1,
@@ -187,13 +187,13 @@ test_that("avg_time integrates irregular factor visits with optional baseline", 
   expect_equal(sum(single_anchored$estimate), 2)
 })
 
-test_that("avg_time rejects grouping names that would overwrite output columns", {
+test_that("avg_state_time rejects grouping names that would overwrite output columns", {
   case <- make_avg_time_case()
   profiles <- case$data[!duplicated(case$data$id), , drop = FALSE][1:8, ]
   profiles$state_set <- profiles$subgroup
   profiles$time_unit <- profiles$subgroup
   expect_snapshot(error = TRUE, {
-    avg_time(
+    avg_state_time(
       case$model,
       newdata = profiles,
       absorb = 3,
@@ -202,7 +202,7 @@ test_that("avg_time rejects grouping names that would overwrite output columns",
     )
   })
   expect_snapshot(error = TRUE, {
-    avg_time(
+    avg_state_time(
       case$model,
       newdata = profiles,
       absorb = 3,
@@ -211,7 +211,7 @@ test_that("avg_time rejects grouping names that would overwrite output columns",
     )
   })
   expect_snapshot(error = TRUE, {
-    avg_time(
+    avg_state_time(
       case$model,
       newdata = profiles,
       absorb = 3,
@@ -221,7 +221,7 @@ test_that("avg_time rejects grouping names that would overwrite output columns",
     )
   })
   expect_snapshot(error = TRUE, {
-    avg_time(
+    avg_state_time(
       case$model,
       newdata = profiles,
       absorb = 3,
@@ -230,7 +230,7 @@ test_that("avg_time rejects grouping names that would overwrite output columns",
       time_unit = "days"
     )
   })
-  unlabeled <- avg_time(
+  unlabeled <- avg_state_time(
     case$model,
     newdata = profiles,
     absorb = 3,
@@ -248,7 +248,7 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
     variables = list(tx = 0:1),
     times = 1:3
   )
-  total <- avg_time(
+  total <- avg_state_time(
     case$model,
     absorb = 3,
     variables = list(tx = 0:1),
@@ -287,7 +287,7 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
 test_that("mapped resampling uses the baseline anchor of each draw", {
   case <- make_avg_time_case()
   avg <- avg_sops(case$model, absorb = 3, times = 1:2)
-  total <- avg_time(
+  total <- avg_state_time(
     case$model,
     absorb = 3,
     times = 1:2,
@@ -318,9 +318,9 @@ test_that("mapped resampling uses the baseline anchor of each draw", {
   }
 })
 
-test_that("avg_time replaces inference metadata and preserves seeds and Wald centers", {
+test_that("avg_state_time replaces inference metadata and preserves seeds and Wald centers", {
   case <- make_avg_time_case()
-  total <- avg_time(case$model, absorb = 3, times = 1:3, state_sets = "1")
+  total <- avg_state_time(case$model, absorb = 3, times = 1:3, state_sets = "1")
   withr::local_seed(9324)
   seed_before <- .Random.seed
   result <- inferences(
@@ -394,7 +394,7 @@ test_that("posterior medians and intervals are calculated after time reduction",
     posterior_summary = "median",
     return_draws = TRUE
   )
-  result <- avg_time(
+  result <- avg_state_time(
     model,
     newdata = profiles,
     times = 1:3,
@@ -418,7 +418,7 @@ test_that("posterior medians and intervals are calculated after time reduction",
   expect_gt(max(abs(joined$estimate.x - joined$estimate.y)), 1e-5)
   expect_equal(nrow(get_draws(result)), 9L)
   expect_identical(inferences(result, method = "mvn", n_draws = 2), result)
-  compact <- avg_time(
+  compact <- avg_state_time(
     model,
     newdata = profiles,
     times = 1:3,
@@ -433,7 +433,7 @@ test_that("posterior medians and intervals are calculated after time reduction",
   expect_equal(joined$estimate.x, joined$estimate.y)
 })
 
-test_that("avg_time validates arguments before predicting", {
+test_that("avg_state_time validates arguments before predicting", {
   case <- make_avg_time_case()
   local_mocked_bindings(
     avg_comparison_replay_avg_sops = function(...) {
@@ -441,15 +441,15 @@ test_that("avg_time validates arguments before predicting", {
     }
   )
   expect_error(
-    avg_time(case$model, times = c(1, 1, 2), absorb = 3),
+    avg_state_time(case$model, times = c(1, 1, 2), absorb = 3),
     "`times` must not contain duplicate"
   )
   expect_error(
-    avg_time(case$model, times = 1:2, absorb = 3, state_sets = list()),
+    avg_state_time(case$model, times = 1:2, absorb = 3, state_sets = list()),
     "`state_sets`"
   )
   expect_error(
-    avg_time(
+    avg_state_time(
       case$model,
       times = 1:2,
       absorb = 3,
@@ -458,11 +458,11 @@ test_that("avg_time validates arguments before predicting", {
     "`state_sets`"
   )
   expect_error(
-    avg_time(case$model, times = 1:2, absorb = 3, by = "state_set"),
+    avg_state_time(case$model, times = 1:2, absorb = 3, by = "state_set"),
     "reserved output names"
   )
   expect_error(
-    avg_time(case$model, times = 1:2, absorb = 3, baseline_time = 1),
+    avg_state_time(case$model, times = 1:2, absorb = 3, baseline_time = 1),
     "`baseline_time` requires `time_map`"
   )
 })
@@ -512,7 +512,7 @@ test_that("posterior average times keep the requested state-set order", {
       cbind(tx = newdata$tx, time = newdata$time)
     }
   )
-  result <- avg_time(
+  result <- avg_state_time(
     model,
     newdata = profiles,
     variables = list(tx = c(1, 0)),
@@ -536,12 +536,12 @@ test_that("posterior average times keep the requested state-set order", {
   expect_identical(comparison$state_set, c("zeta", "alpha"))
 })
 
-test_that("time_in_state() default grid matches avg_time()", {
+test_that("time_in_state() default grid matches avg_state_time()", {
   case <- make_avg_time_case(factor_time = TRUE)
   time_map <- c("1" = 2, "2" = 7, "3" = 9)
   avg <- avg_sops(case$model, absorb = 3, times = 1:3)
   for (baseline_time in list(0, NULL)) {
-    expected <- avg_time(
+    expected <- avg_state_time(
       case$model,
       absorb = 3,
       times = 1:3,

@@ -31,15 +31,21 @@ Like the ordinary bootstrap, the FWB reflects both uncertainty in the model
 coefficients and which patients happened to be sampled.
 
 This article uses the FWB to estimate SOPs within subgroups defined by the
-patients' starting state, and to compare time benefit between arms in these
-subgroups.
+patients' state at baseline, and to compare time benefit between arms in
+these subgroups.
 
 ## Fit the model
 
 We simulate 160 patients over 10 days with `sim_markov("actt2")`, which uses
 the eight-state NIAID scale described in `vignette("full-po-sops")`. We record
-each patient's starting state, the value of `yprev` on day 1, in a new column
-`starting_state` for use as a subgroup.
+each patient's state at baseline, the value of `yprev` on day 1, in a new
+column `baseline_state`. Unlike `yprev`, which changes from day to day,
+`baseline_state` is fixed for each patient.
+
+The model includes `baseline_state` as a covariate next to `yprev`, so a
+patient's transitions on every day, not only on the first, can depend on how
+ill the patient was at baseline. We keep only the baseline states that occur,
+so that the model has no coefficient for an empty category.
 
 ```{r setup}
 library(mostr)
@@ -68,11 +74,12 @@ model_data <- prepare_markov_data(
   factor_previous = TRUE
 ) |>
   group_by(id) |>
-  mutate(starting_state = first(yprev)) |>
-  ungroup()
+  mutate(baseline_state = first(yprev)) |>
+  ungroup() |>
+  mutate(baseline_state = droplevels(baseline_state))
 
 fit <- orm_markov(
-  y ~ tx + rcs(time, 4) + yprev,
+  y ~ tx + rcs(time, 4) + yprev + baseline_state,
   data = model_data,
   id_var = "id",
   opt_method = "LM",
@@ -83,8 +90,8 @@ fit <- orm_markov(
 
 ## Define SOPs by subgroup
 
-`by = "starting_state"` asks `avg_sops()` to average the patient-level SOPs
-separately within each starting state, after setting every patient to each
+`by = "baseline_state"` asks `avg_sops()` to average the patient-level SOPs
+separately within each baseline state, after setting every patient to each
 treatment value. Because the model was fitted with `orm_markov()`, the full
 longitudinal data needed for refitting and each patient's starting row are
 stored with the fit, so neither needs to be passed again.
@@ -93,7 +100,7 @@ stored with the fit, so neither needs to be passed again.
 sop_by_start <- avg_sops(
   fit,
   variables = "tx",
-  by = "starting_state",
+  by = "baseline_state",
   times = seq_len(FOLLOW_UP),
   y_levels = fit$yunique,
   absorb = ABSORB
@@ -120,13 +127,13 @@ sop_fwb <- inferences(
 )
 ```
 
-Each panel shows one starting state. Subgroups with few patients have wider
+Each panel shows one baseline state. Subgroups with few patients have wider
 intervals.
 
 ```{r compare}
 plot_sops(
   sop_fwb,
-  facet_var = "starting_state",
+  facet_var = "baseline_state",
   linetype_var = "tx"
 )
 ```
@@ -137,7 +144,7 @@ Time benefit summarizes the whole ordinal scale in one number: on each day,
 the probability that a patient would be in a better state under treatment
 than under control, minus the probability of a worse state, summed over days.
 See `vignette("many-levels-previous-state-spline")` for a fuller explanation.
-With `by = "starting_state"`, it is reported separately for each starting
+With `by = "baseline_state"`, it is reported separately for each baseline
 state.
 
 ```{r compare-time-benefit}
@@ -147,7 +154,7 @@ tb_fwb <- avg_comparisons(
   variables = list(tx = c(0, 1)),
   estimand = "time_benefit",
   absorb = ABSORB,
-  by = "starting_state"
+  by = "baseline_state"
 ) |>
   inferences(
     method = "fwb",
@@ -156,5 +163,5 @@ tb_fwb <- avg_comparisons(
     return_draws = TRUE
   )
 
-plot_comparisons(tb_fwb, color_var = "starting_state")
+plot_comparisons(tb_fwb, color_var = "baseline_state")
 ```

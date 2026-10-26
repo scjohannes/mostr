@@ -611,30 +611,12 @@ time_benefit_from_counterfactual_array <- function(
 
   for (i in seq_along(comp_idx)) {
     level_idx <- comp_idx[i]
-    ref <- sops_array[ref_idx, , , , drop = FALSE]
-    hi <- sops_array[level_idx, , , , drop = FALSE]
-    ref <- array(ref, dim = dim(ref)[-1])
-    hi <- array(hi, dim = dim(hi)[-1])
-
-    benefit <- matrix(NA_real_, nrow = dim(ref)[1], ncol = dim(ref)[2])
-    for (time_i in seq_len(dim(ref)[2])) {
-      ref_t <- ref[, time_i, , drop = FALSE]
-      hi_t <- hi[, time_i, , drop = FALSE]
-      ref_t <- matrix(ref_t, nrow = dim(ref)[1])
-      hi_t <- matrix(hi_t, nrow = dim(hi)[1])
-      benefit[, time_i] <- ordinal_pairwise_benefit(ref_t, hi_t)
-    }
-
-    profile_value <- if (isTRUE(real_time)) {
-      widths <- diff(as.numeric(times))
-      rowSums(
-        (benefit[, -ncol(benefit), drop = FALSE] +
-          benefit[, -1L, drop = FALSE]) *
-          rep(widths / 2, each = nrow(benefit))
-      )
-    } else {
-      rowSums(benefit, na.rm = TRUE)
-    }
+    profile_value <- time_benefit_profile_values(
+      comparison_scenario(sops_array, ref_idx),
+      comparison_scenario(sops_array, level_idx),
+      times = times,
+      real_time = real_time
+    )
 
     summary <- average_profile_values(
       profile_value = profile_value,
@@ -668,6 +650,37 @@ time_benefit_from_counterfactual_array <- function(
       by,
       "estimate"
     )
+  )
+}
+
+# [scenario, profile, time, state] -> [profile, time, state] for one scenario.
+comparison_scenario <- function(sops_array, index) {
+  array(sops_array[index, , , , drop = FALSE], dim = dim(sops_array)[-1L])
+}
+
+# Time benefit of `comparison` over `reference` for each profile. Both are
+# [profile, time, state] arrays of state distributions.
+time_benefit_profile_values <- function(reference, comparison, times, real_time) {
+  benefit <- matrix(NA_real_, nrow = dim(reference)[1], ncol = dim(reference)[2])
+  for (time_i in seq_len(dim(reference)[2])) {
+    benefit[, time_i] <- ordinal_pairwise_benefit(
+      matrix(reference[, time_i, , drop = FALSE], nrow = dim(reference)[1]),
+      matrix(comparison[, time_i, , drop = FALSE], nrow = dim(comparison)[1])
+    )
+  }
+  if (isTRUE(real_time)) {
+    trapezoid_row_totals(benefit, times)
+  } else {
+    rowSums(benefit, na.rm = TRUE)
+  }
+}
+
+# Trapezoidal integral of each row of `values` over the sorted `times`.
+trapezoid_row_totals <- function(values, times) {
+  widths <- diff(as.numeric(times))
+  rowSums(
+    (values[, -ncol(values), drop = FALSE] + values[, -1L, drop = FALSE]) *
+      rep(widths / 2, each = nrow(values))
   )
 }
 

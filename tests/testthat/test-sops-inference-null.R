@@ -81,7 +81,7 @@ test_that("SOPs and average times are not tested by default", {
   model <- make_null_test_model()
   avg <- avg_sops(model, times = 1:3, absorb = 3) |>
     inferences(method = "delta")
-  total <- avg_time(model, times = 1:3, absorb = 3) |>
+  total <- avg_state_time(model, times = 1:3, absorb = 3) |>
     inferences(method = "delta")
 
   for (result in list(avg, total)) {

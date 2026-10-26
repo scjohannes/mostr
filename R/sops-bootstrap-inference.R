@@ -289,6 +289,21 @@ inferences_bootstrap <- function(
       id_var = id_var,
       n_boot = n_boot
     )
+    # Supplied profiles are fixed and always contain every group. Otherwise
+    # each resample's profiles come from its own rows, as in `analysis_fn`.
+    if (!newdata_supplied && !is.null(by)) {
+      check_bootstrap_by_groups(
+        boot_ids,
+        baseline_data = resolve_markov_prediction_data(
+          refit_data,
+          id_var = id_var,
+          time_var = time_var,
+          data_label = "refit data"
+        ),
+        id_var = id_var,
+        by = by
+      )
+    }
 
     boot_results <- apply_to_bootstrap(
       boot_samples = boot_ids,
@@ -457,7 +472,6 @@ inferences_bootstrap_sops_fwb <- function(
   absorb <- attr(object, "absorb")
   gap_var <- attr(object, "gap_var")
   time_covariates <- attr(object, "time_covariates")
-  by <- call_args$by %||% attr(object, "by")
   times <- call_args$times
   id_var <- attr(object, "id_var") %||% markov_model_id_var(model)
 
@@ -479,26 +493,20 @@ inferences_bootstrap_sops_fwb <- function(
 
   prediction_data <- ensure_markov_rowid(prediction_data)
   if (!newdata_supplied) {
-    validate_prediction_weight_ids(prediction_data, id_var)
-  } else if (!is.null(by)) {
-    warn_fixed_profile_bootstrap_weights("FWB")
+    # Copies of a profile from `variables` share their patient's weight.
+    validate_prediction_weight_ids(
+      prediction_weight_profiles(prediction_data),
+      id_var
+    )
   } else if (isTRUE(return_draws)) {
     warn_fixed_profile_draw_weights("FWB")
   }
 
-  draw_weight_col <- if (!newdata_supplied && is.null(by)) {
-    "fwb_weight"
-  } else {
-    NULL
-  }
+  draw_weight_col <- if (newdata_supplied) NULL else "fwb_weight"
   validate_draw_weight_column_available(prediction_data, draw_weight_col)
   draw_weights_attached <- !is.null(draw_weight_col) && isTRUE(return_draws)
-  draw_weight_omission_reason <- if (draw_weights_attached) {
-    NULL
-  } else if (newdata_supplied) {
+  draw_weight_omission_reason <- if (newdata_supplied) {
     "user_supplied_newdata"
-  } else if (!is.null(by)) {
-    "grouped_sops"
   } else {
     NULL
   }
@@ -571,24 +579,14 @@ inferences_bootstrap_sops_fwb <- function(
       )
     }
 
-    result <- array_to_df_individual(
+    array_to_df_individual(
       sops_array,
       times,
       factor(boot_ylevels),
       prediction_data,
-      by = by,
       weights = prediction_weights,
       weight_col = draw_weight_col
     )
-    if (!newdata_supplied && !is.null(by)) {
-      attr(result, "baseline_anchor") <- empirical_baseline_anchor_from_data(
-        x = object,
-        baseline = prediction_data,
-        baseline_time = 0,
-        weights = prediction_weights
-      )
-    }
-    result
   }
 
   fwb_samples <- generate_fwb_bootstrap_weights(
@@ -606,7 +604,6 @@ inferences_bootstrap_sops_fwb <- function(
     packages = c("rms", "VGAM", "Hmisc", "stats"),
     globals = c(
       "model",
-      "object",
       "prediction_data",
       "refit_data",
       "times",
@@ -621,7 +618,6 @@ inferences_bootstrap_sops_fwb <- function(
       "factor_cols",
       "use_coefstart",
       "id_var",
-      "by",
       "newdata_supplied",
       "draw_weight_col"
     )
@@ -631,21 +627,13 @@ inferences_bootstrap_sops_fwb <- function(
   if (length(boot_results) == 0) {
     stop("All bootstrap iterations failed.")
   }
-  baseline_anchor_draws <- combine_baseline_anchor_draws(
-    lapply(boot_results, attr, "baseline_anchor"),
-    seq_along(boot_results)
-  )
 
   for (i in seq_along(boot_results)) {
     boot_results[[i]]$draw_id <- i
   }
   boot_df <- bind_rows_fill(boot_results)
 
-  if (is.null(by)) {
-    group_cols <- c("rowid", "time", "state")
-  } else {
-    group_cols <- unique(c("time", "state", by))
-  }
+  group_cols <- c("rowid", "time", "state")
 
   summary_stats <- compute_ci_from_draws(
     draws_df = boot_df,
@@ -684,9 +672,6 @@ inferences_bootstrap_sops_fwb <- function(
 
   if (return_draws) {
     attr(final_result, "draws") <- boot_df
-    if (!is.null(baseline_anchor_draws)) {
-      attr(final_result, "baseline_anchor_draws") <- baseline_anchor_draws
-    }
   }
 
   final_result
@@ -712,6 +697,58 @@ stored_refit_bootstrap_data <- function(object, model) {
     )
   }
   refit_data
+}
+
+# The ordinary bootstrap resamples patients, so a small `by` group can be
+# absent from a resample. That resample then has no estimate for the group,
+# and the group's interval would rest on fewer resamples without notice. The
+# sampled IDs are checked against the stored starting profiles before any
+# refit. Profiles with a missing `by` value belong to no group.
+check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
+  if (is.null(by)) {
+    return(invisible(NULL))
+  }
+  complete <- stats::complete.cases(baseline_data[, by, drop = FALSE])
+  ids <- as.character(baseline_data[[id_var]])[complete]
+  labels <- do.call(
+    paste,
+    c(
+      lapply(by, function(col) {
+        paste(col, "=", as.character(baseline_data[[col]][complete]))
+      }),
+      sep = ", "
+    )
+  )
+  groups <- unique(labels)
+  missing_counts <- stats::setNames(integer(length(groups)), groups)
+  for (sample in boot_ids) {
+    present <- labels[match(as.character(sample$original_id), ids)]
+    absent <- setdiff(groups, present)
+    missing_counts[absent] <- missing_counts[absent] + 1L
+  }
+  missing_counts <- missing_counts[missing_counts > 0L]
+  if (length(missing_counts) == 0L) {
+    return(invisible(NULL))
+  }
+  shown <- utils::head(missing_counts, 5L)
+  stop(
+    "The ordinary bootstrap left out every patient of ",
+    paste0(
+      "`",
+      names(shown),
+      "` in ",
+      shown,
+      " of ",
+      length(boot_ids),
+      " resamples",
+      collapse = "; "
+    ),
+    if (length(missing_counts) > length(shown)) "; and other groups",
+    ", so those groups' intervals would rest on fewer resamples. Use ",
+    "`method = \"fwb\"`, which keeps every patient in every refit, or ",
+    "combine small groups.",
+    call. = FALSE
+  )
 }
 
 validate_refit_bootstrap_data <- function(refit_data, id_var, time_var) {

@@ -532,7 +532,7 @@ test_that("observed blrm averages reduce individual posterior draws", {
     n_draws = NULL,
     return_draws = TRUE
   )
-  for (by in list(NULL, "tx")) {
+  for (by in list(TRUE, "tx")) {
     result <- avg_sops(
       model,
       newdata = newdata,
@@ -542,7 +542,7 @@ test_that("observed blrm averages reduce individual posterior draws", {
       posterior_summary = "median",
       return_draws = TRUE
     )
-    keys <- c("draw_id", "time", "state", by)
+    keys <- c("draw_id", "time", "state", if (is.character(by)) by)
     draws <- attr(individual, "draws")
     manual <- stats::aggregate(draws$estimate, draws[keys], mean)
     names(manual)[names(manual) == "x"] <- "manual"

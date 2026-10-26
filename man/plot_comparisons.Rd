@@ -20,7 +20,8 @@ plot_comparisons(
 }
 \arguments{
 \item{x}{A \code{markov_avg_comparisons} object returned by
-\code{\link[=avg_comparisons]{avg_comparisons()}}, optionally after \code{\link[=inferences]{inferences()}}.}
+\code{\link[=avg_comparisons]{avg_comparisons()}}, or the rows of a \code{\link[=comparisons]{comparisons()}} result for one
+profile, optionally after \code{\link[=inferences]{inferences()}}.}
 
 \item{x_var}{Character string or \code{NULL}. X-axis variable. If \code{NULL}, uses
 \code{"time"} when available, then \code{"state_set"} when available, and otherwise
@@ -53,12 +54,21 @@ plots or intervals for point plots when \code{conf.low} and \code{conf.high} exi
 A ggplot object.
 }
 \description{
-Plots output from \code{\link[=avg_comparisons]{avg_comparisons()}} on the comparison scale.
+Plots output from \code{\link[=avg_comparisons]{avg_comparisons()}}, or the \code{\link[=comparisons]{comparisons()}} of a single
+profile, on the comparison scale.
 }
 \details{
 The y axis is the contrast scale: difference contrasts are centered on a
 dashed reference line at 0, and ratio contrasts are centered on a dashed
 reference line at 1. A single plot must contain only one comparison scale.
+
+The plot shows one estimate per time, state set, and contrast. A
+\code{\link[=comparisons]{comparisons()}} result has one comparison per profile, identified by
+\code{rowid}, so plot one profile at a time, for example with
+\code{subset(x, rowid == 1)}, or average the profiles with
+\code{comparisons(by = TRUE)} or \code{\link[=avg_comparisons]{avg_comparisons()}}. To show how the
+comparisons vary across profiles, plot the data frame directly with
+ggplot2, for example as a histogram of \code{estimate}.
 }
 \examples{
 \dontrun{

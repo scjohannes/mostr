@@ -430,7 +430,7 @@ plot_variogram(
 
 - `vignette("analytical-confidence-intervals")` explains the confidence
   intervals used here and how to compare arms directly with
-  `avg_comparisons()`.
+  `avg_comparisons()`, or patient by patient with `comparisons()`.
 - `vignette("partial-po-vglm-sops")`, `vignette("second-order-orm-sops")`,
   `vignette("factor-time-orm-sops")`, and
   `vignette("many-levels-previous-state-spline")` show other model

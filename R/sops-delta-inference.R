@@ -7,7 +7,7 @@ sets_starting_state <- function(object) {
   if (
     !inherits(
       object,
-      c("markov_avg_sops", "markov_avg_time", "markov_avg_comparisons")
+      c("markov_avg_sops", "markov_avg_state_time", "markov_avg_comparisons")
     )
   ) {
     return(FALSE)
@@ -25,8 +25,36 @@ stop_starting_state_conditional_only <- function() {
   )
 }
 
+# Results with one row per prediction profile support only conditional
+# variance: there is no average over sampled patients. Returns the subject
+# of the error that says so, naming the functions that make such results.
+delta_individual_subject <- function(object) {
+  if (inherits(object, "markov_comparisons")) {
+    return(
+      "Delta inference for `comparisons()` and `avg_comparisons(by = FALSE)`"
+    )
+  }
+  if (inherits(object, "markov_state_time")) {
+    return(
+      "Delta inference for `state_time()` and `avg_state_time(by = FALSE)`"
+    )
+  }
+  if (inherits(object, "markov_sops")) {
+    return("`sops()` delta inference")
+  }
+  NULL
+}
+
+stop_individual_conditional_only <- function(object) {
+  stop(
+    delta_individual_subject(object),
+    ' supports only `vcov = "conditional"` or a coefficient covariance matrix.',
+    call. = FALSE
+  )
+}
+
 delta_resolve_vcov <- function(object, vcov) {
-  individual <- inherits(object, "markov_sops")
+  individual <- !is.null(delta_individual_subject(object))
   choice <- if (is.null(vcov)) {
     if (individual) "conditional" else "unconditional"
   } else if (is.character(vcov)) {
@@ -45,10 +73,7 @@ delta_resolve_vcov <- function(object, vcov) {
     "conditional"
   }
   if (individual && identical(choice, "unconditional")) {
-    stop(
-      '`sops()` delta inference supports only `vcov = "conditional"` or a coefficient covariance matrix.',
-      call. = FALSE
-    )
+    stop_individual_conditional_only(object)
   }
   if (identical(choice, "unconditional") && sets_starting_state(object)) {
     stop_starting_state_conditional_only()
@@ -67,14 +92,10 @@ delta_resolve_vcov <- function(object, vcov) {
 }
 
 delta_validate_target <- function(object, target) {
-  if (inherits(object, "markov_sops")) {
+  if (!is.null(delta_individual_subject(object))) {
     target <- target %||% "fixed"
     if (!identical(target, "fixed")) {
-      stop(
-        "`sops()` delta inference supports only `vcov = \"conditional\"` ",
-        "or a coefficient covariance matrix.",
-        call. = FALSE
-      )
+      stop_individual_conditional_only(object)
     }
     return(target)
   }
@@ -478,8 +499,7 @@ delta_individual_cells <- function(
     sops_array = probabilities,
     times = times,
     y_levels = y_levels,
-    newdata = newdata,
-    by = NULL
+    newdata = newdata
   )
 }
 
@@ -592,7 +612,7 @@ inferences_delta_sops <- function(
   }
   avg_args <- attr(object, "avg_args")
   call_args <- attr(object, "call_args")
-  by <- if (is_average) avg_args$by else call_args$by %||% attr(object, "by")
+  by <- if (is_average) avg_args$by else NULL
   model_plan <- delta_validate_sop_scope(object, model, by)
   score_components <- if (identical(target, "unconditional")) {
     get_delta_score_components(

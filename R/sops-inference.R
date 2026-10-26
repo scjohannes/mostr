@@ -9,9 +9,11 @@
 #' calls return them unchanged. `method = "delta"` is frequentist-only and
 #' errors for `blrm` objects.
 #'
-#' @param x A `markov_avg_sops` object from `avg_sops()`, a
-#'   `markov_sops` object from `sops()`, a `markov_avg_comparisons` object
-#'   from [avg_comparisons()], or a `markov_avg_time` object from [avg_time()].
+#' @param x A result with one row per profile, from [sops()] (`markov_sops`),
+#'   [state_time()] (`markov_state_time`), or [comparisons()]
+#'   (`markov_comparisons`), or an average, from [avg_sops()]
+#'   (`markov_avg_sops`), [avg_state_time()] (`markov_avg_state_time`), or
+#'   [avg_comparisons()] (`markov_avg_comparisons`).
 #' @param method Character. Inference method:
 #'   \itemize{
 #'     \item `"mvn"`: Multivariate-normal coefficient draws.
@@ -29,9 +31,11 @@
 #' @param vcov For `method = "delta"`, `"conditional"` treats prediction or
 #'   standardization covariates as fixed; `"unconditional"` includes their
 #'   sampling variability and its cross-term with coefficient estimation.
-#'   `NULL` (the default) selects unconditional inference for `avg_sops()` and
-#'   `avg_comparisons()`, and conditional inference for `sops()`. Individual
-#'   `sops()` results support only conditional inference. A complete, named
+#'   `NULL` (the default) selects unconditional inference for averages and
+#'   conditional inference for results with one row per profile. Results for
+#'   each profile, from `sops()`, [state_time()], or [comparisons()], support
+#'   only conditional inference, because they do not average over sampled
+#'   patients. A complete, named
 #'   coefficient covariance matrix selects conditional inference and overrides
 #'   the model covariance. Character choices are available only for delta
 #'   inference; other methods retain their existing matrix/`NULL` behavior.
@@ -70,7 +74,8 @@
 #'   two-sided normal `p.value`; and the `s.value`, \eqn{-\log_2(p)}, which
 #'   expresses the evidence against the null in bits.
 #'   \itemize{
-#'     \item `"auto"` (the default): tests [avg_comparisons()] results against
+#'     \item `"auto"` (the default): tests [comparisons()] and
+#'       [avg_comparisons()] results against
 #'       "no effect", which is 0 for `comparison = "difference"` and 1 for
 #'       `comparison = "ratio"`. SOPs and average times have no natural null
 #'       value, so they are not tested.
@@ -96,16 +101,18 @@
 #'   \item{std.error}{Standard error from analytical delta propagation,
 #'     simulation, or bootstrap}
 #'
-#'   When a null value is tested (by default, for [avg_comparisons()] results),
+#'   When a null value is tested (by default, for [comparisons()] and
+#'   [avg_comparisons()] results),
 #'   the object also has `statistic`, `p.value`, and `s.value` columns; see
 #'   `null`.
 #'
 #'   For simulation and bootstrap methods, `return_draws = TRUE` also stores a
 #'   `"draws"` attribute containing all individual draws. Delta results instead
 #'   store a low-rank `"analytical"` attribute and never store draws. For
-#'   ungrouped `sops()` objects evaluated on the stored prediction
-#'   cohort, score-bootstrap and FWB draws include the draw-specific
-#'   `score_weight` or `fwb_weight` column.
+#'   per-profile results from `sops()`, [state_time()], and [comparisons()]
+#'   evaluated on the stored prediction cohort, score-bootstrap and FWB draws
+#'   include the
+#'   draw-specific `score_weight` or `fwb_weight` column.
 #'
 #' @details
 #' ## Analytical Delta Method
@@ -199,13 +206,22 @@
 #' predicted, not which data are refitted.
 #' Standard bootstrap is intentionally limited to marginal `avg_sops()` objects
 #' because ordinary resampling can drop outcome-state support needed by fixed
-#' individual prediction rows. Fractional weighted bootstrap keeps every row in
+#' individual prediction rows. For averages within `by` groups, a resample can
+#' also leave out every patient of a small group, and that resample would then
+#' have no estimate for the group. `inferences()` checks the resamples before
+#' refitting and stops if any resample lacks a group; the fractional weighted
+#' bootstrap keeps every patient in every refit and has no such gaps. Fractional weighted bootstrap keeps every row in
 #' the refit data with positive patient-level weights, so it is available for
-#' individual `sops()` objects. For FWB, the same patient weights used for
-#' refitting are used for marginal or subgroup averaging. Ungrouped stored-data
-#' `sops()` draws expose the patient weight as `fwb_weight`; grouped `sops()` and
-#' `avg_sops()` use the weights internally and return already averaged draws.
-#' Prediction data for such ungrouped draw output must not already contain a
+#' individual `sops()` objects. The same holds for [comparisons()] results,
+#' which also support `method = "mvn"` and `method = "score_bootstrap"`. For
+#' FWB, the same patient weights used for
+#' refitting are used for marginal or subgroup averaging. Stored-data
+#' `sops()` draws and stored-data [comparisons()] draws expose the patient
+#' weight as `fwb_weight` (or `score_weight` for the score bootstrap);
+#' averaging each draw's comparisons with these weights reproduces the
+#' [avg_comparisons()] draws. `avg_sops()` uses the weights internally and
+#' returns already averaged draws.
+#' Prediction data for such per-profile draw output must not already contain a
 #' column named `fwb_weight` or `score_weight`, because those names are reserved
 #' for bootstrap draw weights.
 #'
@@ -233,7 +249,7 @@
 #'
 #' ## Setting the Starting State
 #'
-#' When `variables` in [avg_sops()], [avg_time()], or [avg_comparisons()] sets
+#' When `variables` in [avg_sops()], [avg_state_time()], or [avg_comparisons()] sets
 #' the previous-state variable, for example
 #' `variables = list(yprev = c("1", "2"))`, every patient starts in the set
 #' state in each scenario. Real-time summaries then start from that state
@@ -243,7 +259,10 @@
 #' `method = "mvn"`. Unconditional delta inference and the score-bootstrap,
 #' bootstrap, and FWB methods error, because they also account for which
 #' patients were sampled, and that calculation is not supported once the
-#' starting state is set.
+#' starting state is set. [state_time()] and [comparisons()] results are not
+#' averaged over
+#' patients, so with a set starting state they keep the conditional delta,
+#' MVN, score-bootstrap, and FWB methods.
 #'
 #' @seealso [avg_sops()], [sops()], [get_draws()],
 #'   [robcov_vglm()], [set_coef()]
@@ -400,14 +419,17 @@ inferences_impl <- function(
       c(
         "markov_avg_sops",
         "markov_sops",
-        "markov_avg_time",
-        "markov_avg_comparisons"
+        "markov_avg_state_time",
+        "markov_state_time",
+        "markov_avg_comparisons",
+        "markov_comparisons"
       )
     )
   ) {
     stop(
-      "inferences() requires a 'markov_avg_sops', 'markov_sops', 'markov_avg_time', or ",
-      "'markov_avg_comparisons' object. ",
+      "inferences() requires a 'markov_avg_sops', 'markov_sops', ",
+      "'markov_avg_state_time', 'markov_state_time', 'markov_avg_comparisons', ",
+      "or 'markov_comparisons' object. ",
       "Got: ",
       paste(class(x), collapse = ", ")
     )
@@ -428,7 +450,17 @@ inferences_impl <- function(
   if (identical(conf_type, "auto")) {
     conf_type <- if (!identical(method, "delta")) {
       "perc"
-    } else if (inherits(x, c("markov_avg_comparisons", "markov_avg_time"))) {
+    } else if (
+      inherits(
+        x,
+        c(
+          "markov_comparisons",
+          "markov_avg_comparisons",
+          "markov_state_time",
+          "markov_avg_state_time"
+        )
+      )
+    ) {
       "wald"
     } else {
       "logit"
@@ -453,14 +485,23 @@ inferences_impl <- function(
       stop(
         "Analytical delta inference is not available for `blrm` models; ",
         "use the posterior intervals returned by `sops()`, `avg_sops()`, ",
-        "`avg_comparisons()`, or `avg_time()`.",
+        "`avg_comparisons()`, or `avg_state_time()`.",
         call. = FALSE
       )
     }
     covariance <- delta_resolve_vcov(x, vcov)
     target <- covariance$target
     vcov <- covariance$vcov
-    result <- if (inherits(x, "markov_avg_time")) {
+    result <- if (inherits(x, c("markov_comparisons", "markov_state_time"))) {
+      inferences_delta_profile_results(
+        object = x,
+        target = target,
+        vcov = vcov,
+        cluster = cluster,
+        conf_level = conf_level,
+        conf_type = conf_type
+      )
+    } else if (inherits(x, "markov_avg_state_time")) {
       inferences_delta_avg_time(
         object = x,
         target = target,
@@ -521,8 +562,22 @@ inferences_impl <- function(
     fwb = "fwb"
   )
 
-  if (inherits(x, "markov_avg_time")) {
+  if (inherits(x, "markov_avg_state_time")) {
     result <- inferences_avg_time(
+      object = x,
+      method = method,
+      n_draws = n_draws,
+      vcov = vcov,
+      cluster = cluster,
+      workers = workers,
+      conf_level = conf_level,
+      conf_type = conf_type,
+      return_draws = return_draws,
+      update_datadist = update_datadist,
+      use_coefstart = use_coefstart
+    )
+  } else if (inherits(x, c("markov_comparisons", "markov_state_time"))) {
+    result <- inferences_profile_results(
       object = x,
       method = method,
       n_draws = n_draws,
@@ -595,7 +650,9 @@ resolve_inference_null <- function(null, x) {
   if (is.character(null) && !identical(null, "auto")) {
     stop("`null` must be \"auto\", NULL, or a single finite numeric value.")
   }
-  comparison <- if (inherits(x, "markov_avg_comparisons")) {
+  comparison <- if (
+    inherits(x, c("markov_avg_comparisons", "markov_comparisons"))
+  ) {
     attr(x, "comparison_args")$comparison %||%
       unique(as.character(x$comparison))
   }
@@ -698,10 +755,10 @@ inferences_simulation <- function(
     times <- avg_args$times
     id_var <- avg_args$id_var
   } else {
-    # For individual sops objects
+    # For individual sops objects: one row per profile, never averaged
     times <- call_args$times
     variables <- NULL
-    by <- call_args$by %||% attr(object, "by")
+    by <- NULL
     id_var <- attr(object, "id_var") %||% markov_model_id_var(model)
   }
 
@@ -736,7 +793,13 @@ inferences_simulation <- function(
     grid <- NULL
     n_cf <- 1
     n_each <- nrow(newdata_pred)
-    baseline_data <- if (newdata_supplied) NULL else newdata_pred
+    # Patient weights are drawn once per patient, even when `variables`
+    # repeats each patient's profile.
+    baseline_data <- if (newdata_supplied) {
+      NULL
+    } else {
+      prediction_weight_profiles(newdata_pred)
+    }
   }
 
   # --- 3. Generate Coefficient Draws ---
@@ -751,12 +814,22 @@ inferences_simulation <- function(
     id_var = id_var,
     newdata_supplied = newdata_supplied,
     is_avg = is_avg,
-    by = by,
     return_draws = return_draws,
     prediction_data = newdata_pred
   )
   beta_draws <- simulation_draws$beta_draws
   baseline_weights_draws <- simulation_draws$baseline_weights_draws
+  if (
+    !is_avg &&
+      !is.null(baseline_weights_draws) &&
+      "rowidcf" %in% names(newdata_pred)
+  ) {
+    # Every copy of a patient's profile carries that patient's weight.
+    baseline_weights_draws <- baseline_weights_draws[,
+      match(newdata_pred$rowidcf, baseline_data$rowidcf),
+      drop = FALSE
+    ]
+  }
   draw_weight_col <- simulation_draws$draw_weight_col
   draw_weights_attached <- simulation_draws$draw_weights_attached
   draw_weight_omission_reason <-
@@ -770,10 +843,8 @@ inferences_simulation <- function(
     if (!is.null(by)) {
       group_cols <- unique(c(group_cols, by))
     }
-  } else if (is.null(by)) {
-    group_cols <- c("rowid", "time", "state")
   } else {
-    group_cols <- unique(c("time", "state", by))
+    group_cols <- c("rowid", "time", "state")
   }
   object_keys <- sop_draw_cell_key(object, group_cols)
 
@@ -852,15 +923,12 @@ inferences_simulation <- function(
             times,
             y_levels,
             newdata_pred,
-            by = by,
             weights = baseline_weights,
             weight_col = draw_weight_col
           )
         }
 
-        baseline_anchor <- if (
-          !is.null(baseline_weights) && (is_avg || !is.null(by))
-        ) {
+        baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
           empirical_baseline_anchor_from_data(
             x = object,
             baseline = baseline_data,
@@ -941,15 +1009,12 @@ inferences_simulation <- function(
           times,
           y_levels,
           newdata_pred,
-          by = by,
           weights = baseline_weights,
           weight_col = draw_weight_col
         )
       }
 
-      baseline_anchor <- if (
-        !is.null(baseline_weights) && (is_avg || !is.null(by))
-      ) {
+      baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
         empirical_baseline_anchor_from_data(
           x = object,
           baseline = baseline_data,

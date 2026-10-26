@@ -493,6 +493,21 @@ test_that("interpolate_sops gives individual profiles one-hot baselines", {
     baseline$estimate[baseline$id == 2 & baseline$state == "2"],
     1
   )
+
+  # Without its starting state, a profile has no baseline anchor.
+  no_start <- x
+  no_start$yprev <- NULL
+  expect_error(
+    interpolate_sops(no_start, time_map = c(v1 = 3, v2 = 7)),
+    "Previous-state variable `yprev` not found in SOP output.",
+    fixed = TRUE
+  )
+  unanchored <- interpolate_sops(
+    no_start,
+    time_map = c(v1 = 3, v2 = 7),
+    baseline_time = NULL
+  )
+  expect_equal(sort(unique(unanchored$time)), c(3, 7))
 })
 
 test_that("interpolate_sops interpolates stored draws from fixed baseline anchor", {

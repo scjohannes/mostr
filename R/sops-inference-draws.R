@@ -11,7 +11,6 @@ generate_sop_coefficient_draws <- function(
   id_var,
   newdata_supplied,
   is_avg,
-  by,
   return_draws,
   prediction_data = baseline_data,
   attach_individual_weights = TRUE
@@ -71,7 +70,7 @@ generate_sop_coefficient_draws <- function(
   out$baseline_weights_draws <- if (return_baseline_weights) {
     score_draws$baseline_weights
   } else {
-    if (is_avg || !is.null(by)) {
+    if (is_avg) {
       warn_fixed_profile_bootstrap_weights("score-bootstrap")
     } else if (isTRUE(return_draws)) {
       warn_fixed_profile_draw_weights("score-bootstrap")
@@ -83,14 +82,11 @@ generate_sop_coefficient_draws <- function(
   if (
     attach_individual_weights &&
       !is_avg &&
-      is.null(by) &&
       !is.null(out$baseline_weights_draws)
   ) {
     out$draw_weight_col <- "score_weight"
     validate_draw_weight_column_available(prediction_data, out$draw_weight_col)
     out$draw_weights_attached <- isTRUE(return_draws)
-  } else if (!is_avg && !is.null(by)) {
-    out$draw_weight_omission_reason <- "grouped_sops"
   }
   if (is_avg && is.null(out$draw_weight_omission_reason)) {
     out$draw_weight_omission_reason <- "averaged_sops"

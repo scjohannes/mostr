@@ -28,27 +28,23 @@ make_avg_sops_object <- function(model, newdata, by = NULL) {
   out
 }
 
-make_individual_sops_object <- function(model, newdata, by = NULL) {
+make_individual_sops_object <- function(model, newdata) {
   out <- expand.grid(
     rowid = seq_len(nrow(newdata)),
     time = 1:2,
     state = 1:2,
     KEEP.OUT.ATTRS = FALSE
   )
-  if (!is.null(by)) {
-    out[[by]] <- newdata[[by]][out$rowid]
-  }
   out$estimate <- 0.5
   class(out) <- c("markov_sops", class(out))
   attr(out, "model") <- model
   attr(out, "newdata_orig") <- newdata
-  attr(out, "call_args") <- list(times = 1:2, by = by)
+  attr(out, "call_args") <- list(times = 1:2)
   attr(out, "time_var") <- "time"
   attr(out, "p_var") <- "yprev"
   attr(out, "y_levels") <- 1:2
   attr(out, "absorb") <- NULL
   attr(out, "time_covariates") <- NULL
-  attr(out, "by") <- by
   out
 }
 
@@ -263,51 +259,6 @@ test_that("inferences_simulation() errors when all fast-path draws fail", {
       )
     }
   )
-})
-
-test_that("inferences_simulation() preserves individual slow-path grouping", {
-  model <- structure(list(coefficients = c(a = 0, b = 0)), class = "mock_model")
-  newdata <- data.frame(
-    id = 1:2,
-    tx = c(0, 1),
-    yprev = c(1, 2),
-    time = 1,
-    group = c("a", "b")
-  )
-  object <- make_individual_sops_object(model, newdata, by = "group")
-
-  with_mocked_bindings(
-    get_coef = function(model) c(a = 0, b = 0),
-    get_vcov_robust = function(model) diag(2),
-    validate_coef_vcov = function(beta, Sigma, arg = "vcov") Sigma,
-    set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) {
-      array(
-        c(0.8, 0.2, 0.6, 0.4, 0.7, 0.3, 0.5, 0.5),
-        dim = c(2, 2, 2)
-      )
-    },
-    {
-      withr::local_seed(3)
-      out <- mostr:::inferences_simulation(
-        object,
-        engine = "mvn",
-        score_weight_dist = "exponential",
-        n_draws = 2,
-        vcov = diag(2),
-        cluster = NULL,
-        conf_level = 0.95,
-        conf_type = "perc",
-        workers = NULL,
-        return_draws = TRUE
-      )
-    }
-  )
-
-  expect_s3_class(out, "markov_sops")
-  expect_equal(attr(out, "n_successful"), 2L)
-  expect_true("group" %in% names(out))
-  expect_s3_class(attr(out, "draws"), "data.frame")
 })
 
 test_that("inferences_simulation() rejects invalid custom vcov objects", {

@@ -308,7 +308,7 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(out$subgroup, c("a", "b"))
   })
 
-  test_that("array_to_df_individual() preserves row identity and optional strata", {
+  test_that("array_to_df_individual() preserves row identity", {
     sops_array <- array(seq_len(3 * 2 * 2) / 20, dim = c(3, 2, 2))
     newdata <- data.frame(
       id = c(101, 102, 103),
@@ -326,37 +326,11 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(nrow(out), length(sops_array))
     expect_equal(out$rowid[1:3], newdata$rowid)
     expect_equal(out$estimate, as.vector(sops_array))
-
-    stratified <- mostr:::array_to_df_individual(
-      sops_array = sops_array,
-      times = c(1, 2),
-      y_levels = 1:2,
-      newdata = newdata,
-      by = "tx"
-    )
-
-    manual <- aggregate(
-      estimate ~ time + state + tx,
-      data = out,
-      FUN = mean
-    )
-    stratified <- stratified[
-      order(stratified$time, stratified$state, stratified$tx),
-    ]
-    manual <- manual[order(manual$time, manual$state, manual$tx), ]
-    rownames(stratified) <- NULL
-    rownames(manual) <- NULL
-
-    expect_equal(stratified, manual)
   })
 
   test_that("array_to_df_individual() supports draw weights", {
     sops_array <- array(c(0.1, 0.5, 0.9), dim = c(3, 1, 1))
-    newdata <- data.frame(
-      id = 1:3,
-      rowid = 1:3,
-      subgroup = c("a", "a", "b")
-    )
+    newdata <- data.frame(id = 1:3, rowid = 1:3)
     weights <- c(1, 3, 100)
 
     individual <- mostr:::array_to_df_individual(
@@ -368,19 +342,6 @@ describe("avg_sops() and inferences() pipeline", {
       weight_col = "fwb_weight"
     )
     expect_equal(individual$fwb_weight, weights)
-
-    stratified <- mostr:::array_to_df_individual(
-      sops_array = sops_array,
-      times = 1,
-      y_levels = 1,
-      newdata = newdata,
-      by = "subgroup",
-      weights = weights
-    )
-    stratified <- stratified[order(stratified$subgroup), , drop = FALSE]
-
-    expect_equal(stratified$estimate, c(0.4, 0.9))
-    expect_false("fwb_weight" %in% names(stratified))
   })
 
   test_that("array_to_df_individual() rejects draw weight column collisions", {

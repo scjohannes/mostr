@@ -72,7 +72,7 @@ test_that("sops() validates inputs and supports stratified aggregation", {
       )
       expect_error(
         sops(model, newdata = newdata, times = 1:2, y_levels = 1:2, by = 1),
-        "'by' must be a character vector",
+        "`by` must be `FALSE`, `TRUE`, or a character vector of column names.",
         fixed = TRUE
       )
       expect_error(
@@ -83,10 +83,11 @@ test_that("sops() validates inputs and supports stratified aggregation", {
           y_levels = 1:2,
           by = "missing"
         ),
-        "not found in newdata",
+        "Grouping variables missing: missing",
         fixed = TRUE
       )
 
+      # Averages within groups are `avg_sops()` results.
       result <- sops(
         model,
         newdata = newdata,
@@ -127,7 +128,8 @@ test_that("sops() validates inputs and supports stratified aggregation", {
     as.data.frame(result[, c("time", "state", "tx", "estimate")]),
     expected[, c("time", "state", "tx", "estimate")]
   )
-  expect_equal(attr(result, "by"), "tx")
+  expect_s3_class(result, "markov_avg_sops")
+  expect_equal(attr(result, "avg_args")$by, "tx")
 })
 
 test_that("sops() infers y_levels from supported model containers", {
@@ -660,16 +662,11 @@ test_that("low-level SOP helpers validate model families and state metadata", {
     fixed = TRUE
   )
 
-  expect_warning(
-    no_rowid <- mostr:::array_to_df_individual(
-      array(1, dim = c(1, 1, 1)),
-      times = 1,
-      y_levels = 1,
-      newdata = data.frame(id = 10),
-      by = "missing"
-    ),
-    "Variables in 'by' not found",
-    fixed = TRUE
+  no_rowid <- mostr:::array_to_df_individual(
+    array(1, dim = c(1, 1, 1)),
+    times = 1,
+    y_levels = 1,
+    newdata = data.frame(id = 10)
   )
   expect_equal(no_rowid$rowid, 1)
 })

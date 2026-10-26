@@ -23,7 +23,7 @@ make_plot_time_model <- function() {
 
 test_that("plot_time stacks every state into bars spanning follow-up", {
   model <- make_plot_time_model()
-  total <- avg_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3)
+  total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3)
 
   plot <- plot_time(total)
   built <- ggplot2::ggplot_build(plot)
@@ -46,7 +46,7 @@ test_that("plot_time stacks every state into bars spanning follow-up", {
 
 test_that("plot_time proportions divide each bar by its follow-up", {
   model <- make_plot_time_model()
-  total <- avg_time(
+  total <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
@@ -68,7 +68,7 @@ test_that("plot_time proportions divide each bar by its follow-up", {
 
 test_that("plot_time pointrange draws confidence intervals per state", {
   model <- make_plot_time_model()
-  total <- avg_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3) |>
+  total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3) |>
     inferences(method = "delta")
 
   plot <- plot_time(total, type = "pointrange")
@@ -95,7 +95,7 @@ test_that("plot_time pointrange draws scenarios from black to lighter grays", {
       arm = factor(paste("arm", 1:8), levels = paste("arm", 1:8)),
       estimate = 1:8
     ),
-    class = c("markov_avg_time", "data.frame"),
+    class = c("markov_avg_state_time", "data.frame"),
     y_levels = "1",
     time_args = list(state_sets = list("1" = "1"))
   )
@@ -118,7 +118,7 @@ test_that("plot_time skips labels on narrow segments", {
       tx = c(0, 0, 1, 1),
       estimate = c(0.1, 9.9, 5, 5)
     ),
-    class = c("markov_avg_time", "data.frame"),
+    class = c("markov_avg_state_time", "data.frame"),
     y_levels = c("1", "2"),
     time_args = list(state_sets = list("1" = "1", "2" = "2"))
   )
@@ -137,7 +137,7 @@ test_that("plot_time draws one bar per scenario within each facet", {
       sex = rep(c("f", "m"), each = 4),
       estimate = c(1, 3, 2, 2, 3, 5, 4, 4)
     ),
-    class = c("markov_avg_time", "data.frame"),
+    class = c("markov_avg_state_time", "data.frame"),
     y_levels = c("1", "2"),
     time_args = list(state_sets = list("1" = "1", "2" = "2"))
   )
@@ -152,7 +152,7 @@ test_that("plot_time draws one bar per scenario within each facet", {
 
 test_that("plot_time labels a single observed-cohort bar", {
   model <- make_plot_time_model()
-  total <- avg_time(model, times = 1:3, absorb = 3)
+  total <- avg_state_time(model, times = 1:3, absorb = 3)
 
   plot <- plot_time(total)
 
@@ -162,14 +162,14 @@ test_that("plot_time labels a single observed-cohort bar", {
 
 test_that("plot_time rejects bars that would count a state twice", {
   model <- make_plot_time_model()
-  overlapping <- avg_time(
+  overlapping <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
     absorb = 3,
     state_sets = list(alive = c("1", "2"), well = "1")
   )
-  partial <- avg_time(
+  partial <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
@@ -190,11 +190,11 @@ test_that("plot_time rejects bars that would count a state twice", {
 test_that("plot_time validates its inputs", {
   expect_error(
     plot_time(data.frame(state_set = "1", estimate = 1)),
-    "`x` must be a `markov_avg_time` object",
+    "`x` must be a `markov_avg_state_time` object",
     fixed = TRUE
   )
   model <- make_plot_time_model()
-  total <- avg_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3)
+  total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3)
   expect_error(
     plot_time(total, group_var = "arm"),
     "`group_var` column not found in `data`: arm",

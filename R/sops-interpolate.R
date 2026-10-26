@@ -131,10 +131,6 @@ baseline_rows_for_anchor <- function(x, id_var) {
   }
 
   if (isTRUE(attr(x, "newdata_supplied"))) {
-    newdata_pred <- attr(x, "newdata_pred")
-    if (inherits(x, "markov_sops") && !is.null(newdata_pred)) {
-      return(newdata_pred)
-    }
     return(newdata_orig)
   }
 
@@ -236,6 +232,8 @@ state_distribution_anchor <- function(
   anchor
 }
 
+# The starting-state distribution of averaged SOPs (`markov_avg_sops`): one
+# per scenario of `variables`, taken from the baseline rows of each `by` group.
 empirical_baseline_anchor_from_data <- function(
   x,
   baseline,
@@ -248,32 +246,21 @@ empirical_baseline_anchor_from_data <- function(
   }
 
   states <- as_state_labels(attr(x, "y_levels") %||% unique(x$state))
-  if (inherits(x, "markov_avg_sops")) {
-    avg_args <- attr(x, "avg_args")
-    variables <- names(avg_args$variables %||% list())
-    by <- avg_args$by %||% character()
-    group_cols <- unique(c(variables, by))
-    combos <- if (length(group_cols) > 0) {
-      unique(x[, group_cols, drop = FALSE])
-    } else {
-      data.frame(.dummy = 1L)
-    }
-    filter_cols <- by
+  avg_args <- attr(x, "avg_args")
+  variables <- names(avg_args$variables %||% list())
+  by <- avg_args$by %||% character()
+  group_cols <- unique(c(variables, by))
+  combos <- if (length(group_cols) > 0) {
+    unique(x[, group_cols, drop = FALSE])
   } else {
-    group_cols <- attr(x, "by") %||% character()
-    combos <- if (length(group_cols) > 0) {
-      unique(x[, group_cols, drop = FALSE])
-    } else {
-      data.frame(.dummy = 1L)
-    }
-    filter_cols <- group_cols
+    data.frame(.dummy = 1L)
   }
 
   state_distribution_anchor(
     x = x,
     combos = combos,
     group_cols = group_cols,
-    filter_cols = filter_cols,
+    filter_cols = by,
     states = states,
     baseline_time = baseline_time,
     baseline = baseline,
@@ -291,8 +278,6 @@ empirical_baseline_anchor <- function(x, baseline_time) {
     stop("SOP output must contain an `estimate` column.")
   }
 
-  states <- as_state_labels(attr(x, "y_levels") %||% unique(x$state))
-
   if (inherits(x, "markov_avg_sops")) {
     if (!p_var %in% names(attr(x, "newdata_orig"))) {
       stop(
@@ -309,58 +294,35 @@ empirical_baseline_anchor <- function(x, baseline_time) {
     ))
   }
 
-  if (p_var %in% names(x)) {
-    value_cols <- sop_measure_cols(x)
-    meta_cols <- setdiff(names(x), c("time", value_cols, ".sop_real_time"))
-    anchor_meta <- unique(x[, meta_cols, drop = FALSE])
-    anchor <- x[rep(NA_integer_, nrow(anchor_meta)), , drop = FALSE]
-    for (nm in meta_cols) {
-      anchor[[nm]] <- anchor_meta[[nm]]
-    }
-    anchor$estimate <- as.numeric(
-      as.character(anchor$state) == as.character(anchor[[p_var]])
-    )
-    if ("conf.low" %in% names(anchor)) {
-      anchor$conf.low <- anchor$estimate
-    }
-    if ("conf.high" %in% names(anchor)) {
-      anchor$conf.high <- anchor$estimate
-    }
-    if ("std.error" %in% names(anchor)) {
-      anchor$std.error <- 0
-    }
-    if ("draw" %in% names(anchor)) {
-      anchor$draw <- anchor$estimate
-    }
-    anchor$.sop_real_time <- baseline_time
-    return(anchor)
+  # Per-profile SOPs keep each profile's starting state, which anchors that
+  # profile's own SOPs.
+  if (!p_var %in% names(x)) {
+    stop("Previous-state variable `", p_var, "` not found in SOP output.")
   }
-
-  by <- attr(x, "by") %||% character()
-  group_cols <- by
-  combos <- if (length(group_cols) > 0) {
-    unique(x[, group_cols, drop = FALSE])
-  } else {
-    data.frame(.dummy = 1L)
+  value_cols <- sop_measure_cols(x)
+  meta_cols <- setdiff(names(x), c("time", value_cols, ".sop_real_time"))
+  anchor_meta <- unique(x[, meta_cols, drop = FALSE])
+  anchor <- x[rep(NA_integer_, nrow(anchor_meta)), , drop = FALSE]
+  for (nm in meta_cols) {
+    anchor[[nm]] <- anchor_meta[[nm]]
   }
-  baseline <- baseline_rows_for_anchor(x, NULL)
-  if (!p_var %in% names(baseline)) {
-    stop(
-      "Previous-state variable `",
-      p_var,
-      "` not found in `newdata_orig`."
-    )
-  }
-  state_distribution_anchor(
-    x = x,
-    combos = combos,
-    group_cols = group_cols,
-    filter_cols = by,
-    states = states,
-    baseline_time = baseline_time,
-    baseline = baseline,
-    p_var = p_var
+  anchor$estimate <- as.numeric(
+    as.character(anchor$state) == as.character(anchor[[p_var]])
   )
+  if ("conf.low" %in% names(anchor)) {
+    anchor$conf.low <- anchor$estimate
+  }
+  if ("conf.high" %in% names(anchor)) {
+    anchor$conf.high <- anchor$estimate
+  }
+  if ("std.error" %in% names(anchor)) {
+    anchor$std.error <- 0
+  }
+  if ("draw" %in% names(anchor)) {
+    anchor$draw <- anchor$estimate
+  }
+  anchor$.sop_real_time <- baseline_time
+  anchor
 }
 
 interpolate_numeric_column <- function(time, value, target_times) {
