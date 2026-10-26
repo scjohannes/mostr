@@ -14,9 +14,9 @@ bootstrap_model_coefs(
 )
 }
 \arguments{
-\item{model}{A model fitted with \code{\link[=orm_markov]{orm_markov()}} or \code{\link[=vglm_markov]{vglm_markov()}}. These
-wrappers store the data used for fitting, and the bootstrap resamples
-patients from those stored data.}
+\item{model}{A model fitted with \code{\link[=mostm]{mostm()}} and the \code{"orm"} or \code{"vglm"}
+engine. \code{\link[=mostm]{mostm()}} stores the data used for fitting, and the bootstrap
+resamples patients from those stored data.}
 
 \item{n_boot}{Number of bootstrap samples.}
 
@@ -32,7 +32,7 @@ when the model was fitted without \code{id_var}.}
 
 \item{use_coefstart}{Logical. If \code{TRUE}, \code{vglm} refits start from the
 original model coefficients, which can speed up convergence. Starting
-values, including a \code{coefstart} passed to \code{\link[=vglm_markov]{vglm_markov()}}, are used only
+values, including a \code{coefstart} passed to \code{\link[=mostm]{mostm()}}, are used only
 when a resample contains every outcome state; a refit with starting values
 that fails is retried once without them. Default is \code{FALSE}.}
 }
@@ -63,7 +63,8 @@ For each bootstrap iteration:
 when a state is absent from the resample
 \item Updates the \code{rms} datadist for \code{orm} models (safe with
 future.callr workers)
-\item Refits the model and extracts its coefficients
+\item Refits the model by calling \code{\link[=mostm]{mostm()}} again with the original
+engine and arguments, and extracts its coefficients
 }
 
 When a state is missing from a resample, the refit has fewer intercepts than
@@ -80,11 +81,11 @@ releveling preserves the column type used to fit the original model.
 }
 \examples{
 \dontrun{
-fit <- vglm_markov(
+fit <- mostm(
   ordered(y) ~ tx + yprev + time,
-  family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
   data = my_data,
-  id_var = "id"
+  id_var = "id",
+  engine = "vglm"
 )
 
 # Resample the patients stored on the fit.

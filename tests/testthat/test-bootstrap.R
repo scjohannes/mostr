@@ -1,4 +1,4 @@
-# Mimic a wrapper fit, which stores its refit data and patient ID column.
+# Mimic a mostm() fit, which stores its refit data and patient ID column.
 with_stored_refit_data <- function(model, data, id_var = "id") {
   attr(model, "markov_refit_data") <- data
   attr(model, "markov_id_var") <- id_var

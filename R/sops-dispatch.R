@@ -4,10 +4,9 @@
 #' Markov transition model. Frequentist first-order models use the optimized
 #' native engine; other supported workflows use the reference engine.
 #'
-#' @param model A Markov transition model fitted by [vglm_markov()],
-#'   [orm_markov()], or [blrm_markov()]. The robust `robcov_vglm` result
-#'   returned by `vglm_markov()` is supported; raw backend fits without fitting-
-#'   wrapper provenance are not.
+#' @param model A Markov transition model fitted by [mostm()], including the
+#'   `robcov_vglm` object that the vglm engine returns with `id_var`. Models
+#'   fitted directly with rms, VGAM, or rmsb are not supported.
 #' @param newdata A data frame containing one baseline prediction row per
 #'   patient or profile.
 #' @param times Required consecutive visits, in increasing order. The

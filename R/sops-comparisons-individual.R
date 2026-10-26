@@ -11,9 +11,8 @@
 #' @inheritParams avg_comparisons
 #' @param newdata Optional data frame of prediction profiles. Each row is one
 #'   profile with its own starting state and covariates, and receives its own
-#'   comparisons. If `NULL`, uses the starting profiles stored by
-#'   [orm_markov()], [blrm_markov()], or [vglm_markov()], one per fitted
-#'   patient.
+#'   comparisons. If `NULL`, uses the starting profiles stored by [mostm()],
+#'   one per fitted patient.
 #' @param variables The variable to compare: a bare name such as `"tx"`, or a
 #'   named list giving its values, such as `list(tx = c(0, 1))`. Each profile
 #'   is predicted with the variable set to each value, and the first value is

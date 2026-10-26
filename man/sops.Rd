@@ -35,8 +35,8 @@ For \code{orm} models, the family must be logistic.}
 \item{newdata}{Optional. A data frame of prediction profiles. When supplied,
 every row supplies a separate starting state and set of covariates. The
 internal \code{rowid} column is regenerated. If \code{NULL}, uses the data stored by
-\code{\link[=orm_markov]{orm_markov()}}, \code{\link[=blrm_markov]{blrm_markov()}}, or \code{\link[=vglm_markov]{vglm_markov()}} and requires exactly
-one complete designated starting profile per fitted patient.}
+\code{\link[=mostm]{mostm()}} and requires exactly one complete designated starting profile
+per fitted patient.}
 
 \item{times}{Required. The consecutive visits at which to calculate SOPs,
 in increasing order, for example \code{times = 1:30} for daily visits up to day
@@ -64,7 +64,8 @@ vector of column names averages within the groups those columns define;
 both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same arguments.}
 
 \item{id_var}{Character ID column used when \code{include_re = TRUE}. For \code{blrm},
-\code{NULL} is inferred from wrapper metadata, then \code{model$clusterInfo$name}
+\code{NULL} is inferred from the \code{id_var} given to \code{\link[=mostm]{mostm()}}, then
+\code{model$clusterInfo$name}
 when available, otherwise \code{"id"}. For frequentist models, \code{id_var} is used
 for stored starting-profile validation and refit bootstrap metadata, not
 for ordinary user-supplied prediction rows.}
@@ -141,7 +142,7 @@ This function wraps \code{soprob_markov()} and converts its array output to a ti
 data frame. The output contains one row per profile (and value of
 \code{variables}), time, and state.
 
-Automatic prediction from a wrapper-fitted model uses the cohort-wide
+Automatic prediction from a model fitted with \code{\link[=mostm]{mostm()}} uses the cohort-wide
 designated \code{first_followup_time} retained before response-driven model-frame
 omission. The transition response is not required on that row, but ID,
 modeled predictors, time information, and previous state must be complete.
@@ -184,7 +185,7 @@ and 14. To get SOPs at selected visits, request every visit, such as
 \code{times = 1:14}, and keep the rows you need.
 
 When \code{newdata} is omitted, each patient starts from their state before the
-first follow-up visit (\code{first_followup_time} of the fitting wrapper), so
+first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}), so
 \code{times} must begin at that visit. Each row of a supplied \code{newdata} starts
 from its previous state at the first requested visit, which may be a later
 visit.

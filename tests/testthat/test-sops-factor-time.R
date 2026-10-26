@@ -159,11 +159,12 @@ test_that("factor visit time works through SOP APIs and the fast path", {
 
   data <- make_factor_visit_case()
   fit <- suppressWarnings(
-    vglm_markov(
+    mostm(
       y ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      first_followup_time = "1"
+      first_followup_time = "1",
+      engine = "vglm"
     )
   )
   baseline <- data[!duplicated(data$id), , drop = FALSE]
@@ -220,11 +221,12 @@ test_that("factor visit gap requires explicit numeric time_covariates", {
 
   data <- make_factor_visit_case(n_patients = 40)
   fit <- suppressWarnings(
-    vglm_markov(
+    mostm(
       y ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      first_followup_time = "1"
+      first_followup_time = "1",
+      engine = "vglm"
     )
   )
   baseline <- data[!duplicated(data$id), , drop = FALSE]
@@ -258,12 +260,13 @@ test_that("factor visit simulation and bootstrap inference smoke-test", {
   skip_if_not_installed("mvtnorm")
 
   data <- make_factor_visit_case(n_patients = 60, seed = 2027)
-  fit <- vglm_markov(
+  fit <- mostm(
     y ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
-    first_followup_time = "1"
+    first_followup_time = "1",
+    engine = "vglm"
   )
   baseline <- data[!duplicated(data$id), , drop = FALSE]
 
@@ -319,7 +322,7 @@ test_that("factor visit orm avg_sops requires absorbing state", {
     add = TRUE
   )
 
-  fit <- orm_markov(
+  fit <- mostm(
     y ~ tx + time + yprev,
     data = data,
     id_var = "id",
@@ -364,7 +367,7 @@ test_that("factor visit orm SOP interpolation uses absorbing state", {
     add = TRUE
   )
 
-  fit <- orm_markov(
+  fit <- mostm(
     y ~ tx + time + yprev,
     data = data,
     id_var = "id",

@@ -1,8 +1,8 @@
 ---
-title: "Second-Order SOPs with orm_markov()"
+title: "Second-Order SOPs with the orm Engine"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Second-Order SOPs with orm_markov()}
+  %\VignetteIndexEntry{Second-Order SOPs with the orm Engine}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -17,7 +17,7 @@ who has just improved may be more likely to keep improving than one who has
 been stable. A *second-order* model captures this by including both previous
 states as predictors.
 
-This article fits a second-order model with `orm_markov()` and shows the one
+This article fits a second-order model with `mostm()` and shows the one
 extra argument needed downstream: `p2_var`, which names the column holding
 the state two days back. Every function that computes model-based
 probabilities (`avg_sops()`, `avg_comparisons()`, and the diagnostic plots)
@@ -79,7 +79,7 @@ interaction terms, rms's operator for restricted interactions.
 dd <- datadist(model_data)
 options(datadist = "dd")
 
-fit_second <- orm_markov(
+fit_second <- mostm(
   y ~ tx + rcs(time, 4) + yprev + ypprev + time %ia% yprev + time %ia% ypprev,
   data = model_data,
   id_var = "id",

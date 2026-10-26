@@ -23,11 +23,9 @@ test_that("orm fast path supports categorical previous state", {
   data <- add_test_age(data)
   local_orm_datadist(data)
 
-  fit <- suppressWarnings(orm_markov(
+  fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
-    data = data,
-    x = TRUE,
-    y = TRUE
+    data = data
   ))
   baseline <- data[!duplicated(data$id), ][1:12, , drop = FALSE]
 
@@ -67,11 +65,9 @@ test_that("orm fast path validates state support and initial probabilities", {
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6111)
   data <- add_test_age(data)
   local_orm_datadist(data)
-  fit <- suppressWarnings(orm_markov(
+  fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
-    data = data,
-    x = TRUE,
-    y = TRUE
+    data = data
   ))
   baseline <- data[!duplicated(data$id), ][1:3, , drop = FALSE]
 
@@ -103,11 +99,9 @@ test_that("execution-plan budgets bound all retained first-order designs", {
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6112)
   data <- add_test_age(data)
   local_orm_datadist(data)
-  fit <- suppressWarnings(orm_markov(
+  fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
-    data = data,
-    x = TRUE,
-    y = TRUE
+    data = data
   ))
   baseline <- data[!duplicated(data$id), ][1:4, , drop = FALSE]
   args <- list(
@@ -190,19 +184,15 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   data <- add_test_age(data)
   local_orm_datadist(data)
 
-  fit_default <- orm_markov(
+  fit_default <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
     data = data,
-    id_var = "id",
-    x = TRUE,
-    y = TRUE
+    id_var = "id"
   )
-  fit_scaled <- orm_markov(
+  fit_scaled <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
     data = data,
     id_var = "id",
-    x = TRUE,
-    y = TRUE,
     scale = TRUE
   )
   baseline <- data[!duplicated(data$id), ]
@@ -328,12 +318,10 @@ test_that("orm supports MVN and score-bootstrap inference", {
   data <- add_test_age(data)
   local_orm_datadist(data)
 
-  fit <- orm_markov(
+  fit <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
     data = data,
-    id_var = "id",
-    x = TRUE,
-    y = TRUE
+    id_var = "id"
   )
   robust_fit <- fit
   baseline <- data[!duplicated(data$id), ]
@@ -397,11 +385,9 @@ test_that("orm supports refit bootstrap inference", {
   data <- add_test_age(data)
   local_orm_datadist(data)
 
-  fit <- suppressWarnings(orm_markov(
+  fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
-    data = data,
-    x = TRUE,
-    y = TRUE
+    data = data
   ))
 
   avg <- mostr::avg_sops(

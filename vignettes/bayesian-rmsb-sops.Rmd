@@ -1,8 +1,8 @@
 ---
-title: "Bayesian SOPs with blrm_markov()"
+title: "Bayesian SOPs with the blrm Engine"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Bayesian SOPs with blrm_markov()}
+  %\VignetteIndexEntry{Bayesian SOPs with the blrm Engine}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -15,7 +15,7 @@ RUN_BAYESIAN <- identical(
 ) && requireNamespace("rmsb", quietly = TRUE)
 ```
 
-`blrm_markov()` fits a Bayesian transition model with `rmsb::blrm()`, which
+`mostm(engine = "blrm")` fits a Bayesian transition model with `rmsb::blrm()`, which
 samples from the posterior distribution of the coefficients using Stan. The
 state occupancy probabilities (SOPs) and comparisons calculated from it carry
 posterior uncertainty directly: mostr computes the SOPs for each posterior
@@ -84,12 +84,13 @@ patient-level differences not explained by the covariates.
 dd <- rms::datadist(model_data)
 options(datadist = "dd")
 
-fit_blrm <- blrm_markov(
+fit_blrm <- mostm(
   y ~ yprev + rms::rcs(time, 4) * tx + cluster(id),
   ppo = ~ time,
   cppo = function(y) as.numeric(y),
   data = model_data,
   id_var = "id",
+  engine = "blrm",
   iter = 300,
   warmup = 150,
   chains = 2,

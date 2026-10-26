@@ -32,7 +32,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     data = data
   )
 
-  fit.a <- suppressWarnings(vglm_markov(
+  fit.a <- suppressWarnings(mostm(
     y ~
       (time_lin +
         time_nlin_1) *
@@ -40,7 +40,8 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
       yprev +
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data
+    data = data,
+    engine = "vglm"
   ))
 
   # Test single patient (first patient)
@@ -101,7 +102,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     data = data
   )
 
-  fit.a <- suppressWarnings(vglm_markov(
+  fit.a <- suppressWarnings(mostm(
     y ~
       time_lin +
       time_nlin_1 +
@@ -109,7 +110,8 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
       yprev +
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
-    data = data
+    data = data,
+    engine = "vglm"
   ))
 
   # Test single patient (first patient)
@@ -169,7 +171,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
     data = data
   )
 
-  fit.a <- suppressWarnings(vglm_markov(
+  fit.a <- suppressWarnings(mostm(
     y ~
       time_lin +
       time_nlin_1 +
@@ -177,7 +179,8 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
       yprev +
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
-    data = data
+    data = data,
+    engine = "vglm"
   ))
 
   # Test ALL patients
@@ -261,7 +264,7 @@ test_that("compiled plan matches markov_msm_build() and the R reference for cons
     "tx:age" = cbind(PO_effect = 1)
   )
 
-  fit2 <- suppressWarnings(vglm_markov(
+  fit2 <- suppressWarnings(mostm(
     y ~ time_lin +
       time_nlin_1 +
       tx +
@@ -273,7 +276,8 @@ test_that("compiled plan matches markov_msm_build() and the R reference for cons
       tx:age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx + time_lin),
     data = data,
-    constraints = cons
+    constraints = cons,
+    engine = "vglm"
   ))
 
   # Setup comparison
@@ -360,7 +364,7 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO"
     dplyr::distinct() |>
     as.data.frame()
 
-  fit <- suppressWarnings(vglm_markov(
+  fit <- suppressWarnings(mostm(
     y ~ time_lin +
       time_nlin_1 +
       tx +
@@ -374,7 +378,8 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO"
       reverse = TRUE,
       parallel = FALSE ~ tx + time_lin
     ),
-    data = data
+    data = data,
+    engine = "vglm"
   ))
 
   # Setup comparison

@@ -47,7 +47,7 @@ delta_comparison_factor_case <- local({
       visits <- levels(data$time)
       old_options <- options(datadist = NULL)
       on.exit(options(old_options), add = TRUE)
-      fit <- suppressWarnings(orm_markov(
+      fit <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
         data = data,
         id_var = "id",
@@ -497,10 +497,11 @@ test_that("analytical comparisons reject partial proportional odds", {
   skip_if_not_installed("VGAM")
   case <- delta_comparison_factor_case()
   local_reproducible_output(width = 80)
-  partial_model <- suppressWarnings(vglm_markov(
+  partial_model <- suppressWarnings(mostm(
     y ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
-    data = case$data
+    data = case$data,
+    engine = "vglm"
   ))
   baseline <- case$data[!duplicated(case$data$id), , drop = FALSE]
   partial <- avg_comparisons(

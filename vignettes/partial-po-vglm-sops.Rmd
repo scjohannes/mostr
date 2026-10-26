@@ -1,8 +1,8 @@
 ---
-title: "Partial Proportional-Odds SOPs with vglm_markov()"
+title: "Partial Proportional-Odds SOPs with the vglm Engine"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Partial Proportional-Odds SOPs with vglm_markov()}
+  %\VignetteIndexEntry{Partial Proportional-Odds SOPs with the vglm Engine}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -19,7 +19,8 @@ assumption is doubtful for some covariates, a *partial* proportional-odds
 model lets their effects differ between cut-points while keeping proportional
 odds for the others.
 
-This article fits both kinds of model to the same data with `vglm_markov()`:
+This article fits both kinds of model to the same data with
+`mostm(engine = "vglm")`, which uses `VGAM::vglm()`:
 a full proportional-odds model, and a partial proportional-odds model in which
 the effect of time differs between the cut-points. We compare how well the
 two models fit, and how closely each reproduces the observed state occupancy
@@ -90,11 +91,12 @@ states, and `parallel = TRUE` requests proportional odds for every term.
 ```{r fit-po}
 form <- ordered(y) ~ tx + time + pmax(time - 2, 0) + yprev + age + sofa
 
-fit_po <- vglm_markov(
+fit_po <- mostm(
   form,
-  family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
   data = model_data,
-  id_var = "id"
+  id_var = "id",
+  engine = "vglm",
+  family = VGAM::cumulative(reverse = TRUE, parallel = TRUE)
 )
 ```
 
@@ -143,20 +145,18 @@ constraints[["time"]]
 We refit the model with these constraints. `parallel = FALSE` tells VGAM not
 to impose proportional odds on every term, so that our constraint matrices
 decide instead. Starting from the proportional-odds fit's linear predictors
-(`etastart`) helps the fit converge. The final line stores the constraint
-list itself, rather than the name `constraints`, in the model call, so that
-code that later re-evaluates the call does not depend on this variable.
+(`etastart`) helps the fit converge.
 
 ```{r fit-ppo}
-fit_ppo <- vglm_markov(
+fit_ppo <- mostm(
   form,
-  family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
   data = model_data,
   id_var = "id",
+  engine = "vglm",
+  family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
   constraints = constraints,
   etastart = fit_po$vglm_fit@predictors
 )
-fit_ppo$vglm_fit@call$constraints <- constraints
 ```
 
 VGAM numbers the coefficients of a term by the columns of its constraint

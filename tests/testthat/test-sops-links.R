@@ -5,14 +5,15 @@ test_that("Markov workflows reject non-logit vglm links", {
     make_test_data(n_patients = 80, seed = 841, follow_up_time = 5)
   )
   fit <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(
         reverse = TRUE,
         parallel = TRUE,
         link = "probitlink"
       ),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -48,7 +49,7 @@ test_that("Markov workflows reject non-logistic orm families", {
     add = TRUE
   )
   fit <- suppressWarnings(
-    orm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       family = "probit",
       data = data
@@ -71,10 +72,11 @@ test_that("Markov workflows accept logit vglm and orm models", {
     make_test_data(n_patients = 80, seed = 843, follow_up_time = 5)
   )
   vglm_fit <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
   dd_name <- ".mostr_link_accept_dd"
@@ -88,7 +90,7 @@ test_that("Markov workflows accept logit vglm and orm models", {
     add = TRUE
   )
   orm_fit <- suppressWarnings(
-    orm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       data = data
     )
@@ -120,17 +122,17 @@ test_that("Markov workflows reject raw and manually robust backend fits", {
 
   expect_error(
     mostr:::validate_markov_model(raw_fit),
-    "require fits created by `vglm_markov()`",
+    "Refit this model with `mostm(engine = \"vglm\")`",
     fixed = TRUE
   )
   expect_error(
     mostr:::validate_markov_model(robust_fit),
-    "require fits created by `vglm_markov()`",
+    "Refit this model with `mostm(engine = \"vglm\")`",
     fixed = TRUE
   )
   expect_error(
     mostr:::validate_markov_model(raw_orm_fit),
-    "require fits created by `orm_markov()`",
+    "Refit this model with `mostm(engine = \"orm\")`",
     fixed = TRUE
   )
 })

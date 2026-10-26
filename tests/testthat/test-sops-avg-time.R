@@ -17,12 +17,13 @@ make_avg_time_case <- function(factor_time = FALSE) {
   if (factor_time) {
     data$time <- factor(data$time, levels = 1:5)
   }
-  model <- vglm_markov(
+  model <- mostm(
     ordered(y) ~ time + tx + marker + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     first_followup_time = 1,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   list(model = model, data = data)
 }
@@ -372,7 +373,7 @@ test_that("posterior medians and intervals are calculated after time reduction",
       clusterInfo = list(name = "id", cluster = c("a", "b"))
     ),
     class = c("blrm", "orm"),
-    markov_fit_wrapper = "blrm_markov"
+    markov_engine = "blrm"
   )
   profiles <- data.frame(
     id = c("a", "b"),
@@ -499,7 +500,7 @@ test_that("posterior average times keep the requested state-set order", {
       clusterInfo = list(name = "id", cluster = c("a", "b"))
     ),
     class = c("blrm", "orm"),
-    markov_fit_wrapper = "blrm_markov"
+    markov_engine = "blrm"
   )
   profiles <- data.frame(
     id = c("a", "b"),

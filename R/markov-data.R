@@ -60,10 +60,11 @@
 #'   absorbing_state = 6,
 #'   factor_previous = FALSE
 #' )
-#' fit <- vglm_markov(
+#' fit <- mostm(
 #'   ordered(y) ~ tx + rcs(time, 4) + rcs(yprev, 6),
-#'   family = cumulative(parallel = TRUE, reverse = TRUE),
-#'   data = model_data
+#'   data = model_data,
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
 #'
 #' # Fit with rms (supports robust SEs via robcov)

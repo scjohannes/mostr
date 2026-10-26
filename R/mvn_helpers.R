@@ -155,8 +155,7 @@ set_coef.vglm <- function(model, new_coefs) {
 #'
 #' @param model A fitted `vglm`, `orm`, or `lrm` object, or a `robcov_vglm`
 #'   object that already contains robust covariance. Model-based SOP workflows
-#'   separately require provenance from the corresponding `*_markov()` fitting
-#'   wrapper.
+#'   separately require that the model was fitted with [mostm()].
 #' @param cluster Optional. Specifies how to compute cluster-robust standard
 #'   errors:
 #'   \itemize{
@@ -213,7 +212,7 @@ set_coef.vglm <- function(model, new_coefs) {
 #' \eqn{n / (n - 1)}, where \eqn{n} is the number of clusters (or fitting rows
 #' when no cluster is supplied). An explicit cluster or correction
 #' request recomputes the ORM covariance; otherwise a valid covariance stored by
-#' [orm_markov()] is returned unchanged.
+#' [mostm()] is returned unchanged.
 #'
 #' @examples
 #' \dontrun{
@@ -235,7 +234,7 @@ set_coef.vglm <- function(model, new_coefs) {
 #' V3 <- get_vcov_robust(fit_robust)  # Same as fit_robust$var
 #' }
 #'
-#' @seealso [orm_markov()], [robcov_vglm()], [set_coef()]
+#' @seealso [mostm()], [robcov_vglm()], [set_coef()]
 #'
 #' @importFrom stats vcov
 #' @export
@@ -439,7 +438,7 @@ validate_coef_vcov <- function(beta, Sigma, arg = "vcov") {
       " x ",
       ncol(Sigma),
       "). For orm models, supply a complete raw-coefficient covariance, ",
-      "preferably the package-owned covariance stored by `orm_markov()` or ",
+      "preferably the package-owned covariance stored by `mostm()` or ",
       "an explicitly named full matrix."
     )
   }

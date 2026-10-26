@@ -322,7 +322,7 @@ test_that("posterior comparisons summarize paired draws for each profile", {
       clusterInfo = list(name = "id", cluster = c("a", "b"))
     ),
     class = c("blrm", "orm"),
-    markov_fit_wrapper = "blrm_markov"
+    markov_engine = "blrm"
   )
   profiles <- data.frame(
     id = c("a", "b"),

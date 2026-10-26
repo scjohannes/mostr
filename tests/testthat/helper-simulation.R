@@ -88,14 +88,15 @@ make_time_covariates <- function(data, time_col = "time", ...) {
 #' @return A fitted vglm or robcov_vglm object
 make_test_model <- function(data, robust = FALSE, cluster = NULL) {
   if (robust && !is.null(cluster) && !identical(cluster, data$id)) {
-    stop("`cluster` must match `data$id` for wrapper-based test models.")
+    stop("`cluster` must match `data$id` for mostm() test models.")
   }
 
-  suppressWarnings(vglm_markov(
+  suppressWarnings(mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = if (robust) "id" else NULL
+    id_var = if (robust) "id" else NULL,
+    engine = "vglm"
   ))
 }
 
@@ -113,11 +114,12 @@ make_score_bootstrap_case <- function(
   list(
     data = data,
     baseline = data[data$time == 1, , drop = FALSE],
-    model = vglm_markov(
+    model = mostm(
       ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
     times = seq_len(follow_up_time),
     y_levels = 1:6,
@@ -136,11 +138,12 @@ make_observed_average_case <- function() {
   )
   list(
     data = data,
-    model = vglm_markov(
+    model = mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
     times = 1:3,
     absorb = 6

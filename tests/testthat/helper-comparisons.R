@@ -17,12 +17,13 @@ make_comparisons_case <- function() {
   data$marker <- data$id %% 2
   # A group of two patients, often absent from an ordinary bootstrap resample.
   data$rare <- data$id <= 2
-  model <- vglm_markov(
+  model <- mostm(
     ordered(y) ~ time + tx + marker + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     first_followup_time = 1,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   list(
     model = model,
@@ -46,12 +47,13 @@ make_factor_comparisons_case <- function() {
   case <- make_comparisons_case()
   data <- case$data
   data$time <- factor(data$time, levels = sort(unique(data$time)))
-  model <- vglm_markov(
+  model <- mostm(
     ordered(y) ~ time + tx + marker + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     first_followup_time = "1",
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   list(
     model = model,
@@ -73,12 +75,13 @@ make_second_order_comparisons_case <- function() {
     FUN = function(x) c(x[1L], utils::head(x, -1L))
   )
   data$ypprev <- factor(data$ypprev, levels = levels(data$yprev))
-  model <- vglm_markov(
+  model <- mostm(
     ordered(y) ~ time + tx + yprev + ypprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     first_followup_time = 1,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   list(
     model = model,

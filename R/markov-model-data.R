@@ -1,426 +1,5 @@
 # Markov model data metadata helpers.
 
-#' Fit an rms Markov Model
-#'
-#' `orm_markov()` fits a model using [rms::orm()] and stores the data needed
-#' by subsequent SOP and inference functions. It uses `x = TRUE` and
-#' `y = TRUE` by default,
-#' rejects offsets, stores separate likelihood, refit, and designated-start
-#' profile data on the returned model, and computes cluster-robust standard
-#' errors automatically when `id_var` is supplied.
-#'
-#' @inheritParams rms::orm
-#' @param formula A model formula specifying the ordinal response and predictor
-#'   terms. Offsets are not supported.
-#' @param id_var Optional character scalar naming the patient or cluster ID
-#'   column in `data`. When supplied, the returned object receives the
-#'   package-owned patient-cluster sandwich covariance using this column.
-#'   When omitted, the fit is returned without cluster-robust covariance and a
-#'   warning is issued.
-#' @param type Character scalar selecting the empirical sandwich correction.
-#'   `"HC0"` applies no observation degrees-of-freedom correction. `"HC1"`
-#'   multiplies the sandwich meat by \eqn{(m - 1) / (m - p)}, where \eqn{m} is the
-#'   number of positive-weight fitted likelihood rows and \eqn{p} is the complete
-#'   raw coefficient count.
-#' @param cadjust Logical. Apply the finite-cluster correction \eqn{n / (n - 1)},
-#'   where \eqn{n} is the number of represented patient clusters? `NULL` (the
-#'   default) resolves to `TRUE` when `id_var` is supplied. This correction is
-#'   independent of `type`, so selecting HC1 with `cadjust = TRUE` applies both
-#'   factors.
-#' @param time_var Character scalar naming the modeled time column used to
-#'   identify the designated starting-profile row.
-#' @param first_followup_time First scheduled post-baseline outcome time used to
-#'   select the starting-profile row. For numeric time, `NULL` uses 1. Numeric
-#'   schedules may not contain values below 1, and an explicit value must be the
-#'   earliest observed time. Factor and character time require an explicit
-#'   matching value.
-#'
-#' @details Starting profiles are retained before response-driven model-frame
-#'   omission. Every fitted patient must have exactly one complete profile at
-#'   the cohort-wide `first_followup_time`, including ID, model predictors,
-#'   time, and the previous state; the transition response on that row may be
-#'   missing. A patient is included only when at least one usable likelihood
-#'   transition is fitted somewhere. Patients with no fitted transition are
-#'   excluded, and a fitted patient without a complete designated profile is an
-#'   error. Later likelihood rows are not substituted for that profile.
-#'
-#'   The ORM sandwich is computed inside `mostr` from analytic
-#'   likelihood-row scores on the complete threshold-and-slope coefficient
-#'   scale. Fitted case weights multiply those row scores before they are
-#'   aggregated by patient. Zero-weight rows and clusters represented only by
-#'   zero-weight rows are excluded from correction counts. The fitted model-
-#'   based covariance is used as the bread; a penalized fit requesting
-#'   `var.penalty = "sandwich"` uses its retained `var.from.info.matrix`
-#'   inverse sensitivity. The selected `type` and `cadjust` settings affect
-#'   conditional analytical variance estimates and MVN inference.
-#'   Unconditional analytical variance estimates instead combine variation
-#'   between patients' predictions with uncertainty in coefficient estimation;
-#'   see [inferences()] for the calculation and supported models.
-#'
-#'   Row `weights` and `subset` supplied through `...` are evaluated once when
-#'   the model is fitted, looking first in `data` and then where
-#'   `orm_markov()` was called, so they can be vectors defined outside `data`.
-#'   Weights must be finite and non-negative. Each row keeps its weight in the
-#'   data stored on the fit, and the stored data contain only the rows selected
-#'   by `subset`, so bootstrap refits resample rows together with their weights.
-#'
-#'   Model-based SOP and diagnostic workflows require models created by
-#'   `orm_markov()`, [vglm_markov()], or [blrm_markov()]. The wrappers record
-#'   the fitted-data and model-provenance contracts needed by those workflows;
-#'   a raw backend fit is not accepted as a substitute.
-#'
-#' @return A fitted `orm` object. If `id_var` is supplied, `$var` contains the
-#'   package-owned robust covariance and the object records its cluster,
-#'   correction, bread, weighting, and covariance-integrity metadata.
-#'
-#' @examples
-#' \dontrun{
-#' dd <- rms::datadist(data)
-#' options(datadist = "dd")
-#'
-#' fit <- orm_markov(
-#'   ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
-#'   data = data,
-#'   id_var = "id"
-#' )
-#'
-#' sops(fit, times = 1:60, y_levels = factor(1:6), absorb = "6")
-#' }
-#'
-#' @seealso [blrm_markov()], [vglm_markov()], [sops()], [avg_sops()]
-#' @export
-orm_markov <- function(
-  formula,
-  data,
-  ...,
-  id_var = NULL,
-  type = c("HC0", "HC1"),
-  cadjust = NULL,
-  time_var = "time",
-  first_followup_time = NULL,
-  x = TRUE,
-  y = TRUE
-) {
-  refit_args <- markov_capture_refit_args(
-    match.call(),
-    environment(),
-    names(formals(sys.function())),
-    ...
-  )
-  type <- match.arg(type)
-  if (missing(data) || !is.data.frame(data)) {
-    stop("`data` must be supplied as a data frame.")
-  }
-
-  mt <- stats::terms(formula, specials = "offset", data = data)
-  if (terms_has_offset(mt)) {
-    stop_unsupported_offset()
-  }
-
-  orm_call <- match.call(expand.dots = FALSE)
-  dots <- orm_call$...
-  markov_reject_legacy_wrapper_args(dots, "orm_markov()")
-  if (length(dots) > 0 && "offset" %in% names(dots)) {
-    stop_unsupported_offset()
-  }
-
-  id_var <- validate_markov_id_var(id_var, data, "data")
-  if (is.null(id_var)) {
-    warn_missing_markov_id_var("orm_markov()")
-  } else {
-    warn_duplicate_markov_id_time(
-      data,
-      id_var,
-      time_var = time_var,
-      wrapper = "orm_markov()"
-    )
-  }
-
-  # Row weights and `subset` are evaluated once here, in the caller's frame,
-  # so they may refer to variables that exist only there. The weights are
-  # stored as a column of `data`, which keeps them aligned with resampled
-  # rows during bootstrap refits.
-  prior_weight_column <- NULL
-  if (!is.null(dots$weights)) {
-    prior_weights <- markov_eval_prior_weights(
-      dots$weights,
-      data,
-      parent.frame()
-    )
-    if (!is.null(prior_weights)) {
-      prior_weight_column <- markov_prior_weight_column()
-      data[[prior_weight_column]] <- prior_weights
-    }
-  }
-  .mostr_subset <- if (!is.null(dots$subset)) {
-    eval(dots$subset, data, parent.frame())
-  }
-
-  fit_call <- quote(rms::orm(formula = formula, data = data, ..., x = x, y = y))
-  if (!is.null(prior_weight_column)) {
-    fit_call$weights <- as.name(prior_weight_column)
-  }
-  if (!is.null(.mostr_subset)) {
-    fit_call$subset <- quote(.mostr_subset)
-  }
-  # `weights` and `subset` are absorbed here and replaced by the values
-  # evaluated above; all other arguments are passed through unchanged.
-  fit_orm <- function(..., weights, subset) eval(fit_call)
-  fit <- fit_orm(...)
-  fit <- markov_normalize_rms_call(
-    fit,
-    fun = quote(rms::orm),
-    formula = formula,
-    data = orm_call$data,
-    dots = dots,
-    x = x,
-    y = y
-  )
-  fit_frame <- markov_rms_model_frame(
-    formula,
-    data,
-    dots,
-    subset = .mostr_subset,
-    weight_column = prior_weight_column,
-    eval_env = parent.frame()
-  )
-  fit_data <- markov_align_model_data(data, fit_frame)
-  stored <- markov_prepare_stored_data(
-    data = data,
-    formula = formula,
-    subset = dots$subset,
-    eval_env = parent.frame(),
-    fit_data = fit_data,
-    id_var = id_var,
-    time_var = time_var,
-    first_followup_time = first_followup_time
-  )
-  fit <- markov_attach_model_data(
-    fit,
-    data = fit_data,
-    id_var = id_var,
-    refit_data = stored$refit_data,
-    starting_profile_data = stored$starting_profile_data,
-    starting_profile_metadata = stored$starting_profile_metadata,
-    refit_args = refit_args,
-    prior_weight_column = prior_weight_column
-  )
-  fit <- markov_set_fit_wrapper(fit, "orm_markov")
-
-  if (!is.null(id_var)) {
-    robust <- robcov_orm(
-      fit,
-      cluster = fit_data[[id_var]],
-      type = type,
-      cadjust = cadjust
-    )
-    robust <- markov_normalize_rms_call(
-      robust,
-      fun = quote(rms::orm),
-      formula = formula,
-      data = orm_call$data,
-      dots = dots,
-      x = x,
-      y = y
-    )
-    robust <- markov_attach_model_data(
-      robust,
-      data = fit_data,
-      id_var = id_var,
-      refit_data = stored$refit_data,
-      starting_profile_data = stored$starting_profile_data,
-      starting_profile_metadata = stored$starting_profile_metadata,
-      refit_args = refit_args,
-      prior_weight_column = prior_weight_column
-    )
-    return(robust)
-  }
-
-  fit
-}
-
-#' Fit an rmsb Markov Model
-#'
-#' `blrm_markov()` fits a model using [rmsb::blrm()] and stores the data needed
-#' by subsequent SOP and inference functions. It uses `x = TRUE` and
-#' `y = TRUE` by default,
-#' rejects offsets, and stores separate likelihood, refit, and designated-start
-#' profile data plus the optional patient ID on the returned model. Bayesian
-#' fits do not receive
-#' cluster-robust covariance; posterior uncertainty comes from the fitted
-#' `blrm` draws.
-#'
-#' @inheritParams rmsb::blrm
-#' @param id_var Optional character scalar naming the patient or cluster ID
-#'   column in `data`. When supplied, SOP calls can reuse the stored full data
-#'   and infer the ID column for baseline extraction and random-effect
-#'   prediction.
-#' @param time_var Character scalar naming the modeled time column used to
-#'   identify the designated starting-profile row.
-#' @param first_followup_time First scheduled post-baseline outcome time used to
-#'   select the starting-profile row. See [orm_markov()] for the numeric and
-#'   categorical time contracts.
-#'
-#' @details The designated-start profile and fitted-patient eligibility contract
-#'   is the same as for [orm_markov()]. In particular, the transition response
-#'   at the starting row may be missing when that patient contributes another
-#'   usable likelihood transition.
-#'
-#'   A `subset` supplied through `...` is evaluated once when the model is
-#'   fitted, looking first in `data` and then where `blrm_markov()` was called.
-#'
-#' @return A fitted `blrm` object retaining the data needed by subsequent
-#'   SOP and inference functions.
-#'
-#' @examples
-#' \dontrun{
-#' dd <- rms::datadist(data)
-#' options(datadist = "dd")
-#'
-#' fit <- blrm_markov(
-#'   y ~ yprev + rms::rcs(time, 4) * tx,
-#'   ppo = ~ time,
-#'   cppo = function(y) y,
-#'   data = data,
-#'   id_var = "id"
-#' )
-#'
-#' avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:60)
-#' }
-#'
-#' @seealso [orm_markov()], [vglm_markov()], [sops()], [avg_sops()]
-#' @export
-blrm_markov <- function(
-  formula,
-  ppo = NULL,
-  cppo = NULL,
-  data,
-  ...,
-  id_var = NULL,
-  time_var = "time",
-  first_followup_time = NULL,
-  x = TRUE,
-  y = TRUE
-) {
-  refit_args <- markov_capture_refit_args(
-    match.call(),
-    environment(),
-    names(formals(sys.function())),
-    ...
-  )
-  if (!requireNamespace("rmsb", quietly = TRUE)) {
-    stop("Package 'rmsb' is required for `blrm_markov()`.")
-  }
-  if (missing(data) || !is.data.frame(data)) {
-    stop("`data` must be supplied as a data frame.")
-  }
-
-  mt <- stats::terms(formula, specials = "offset", data = data)
-  if (terms_has_offset(mt)) {
-    stop_unsupported_offset()
-  }
-
-  blrm_call <- match.call(expand.dots = FALSE)
-  dots <- blrm_call$...
-  markov_reject_legacy_wrapper_args(dots, "blrm_markov()")
-  if (length(dots) > 0 && "offset" %in% names(dots)) {
-    stop_unsupported_offset()
-  }
-
-  id_var <- validate_markov_id_var(id_var, data, "data")
-  if (is.null(id_var)) {
-    warn_missing_markov_id_var("blrm_markov()")
-  } else {
-    warn_duplicate_markov_id_time(
-      data,
-      id_var,
-      time_var = time_var,
-      wrapper = "blrm_markov()"
-    )
-  }
-
-  # `subset` is evaluated once here, in the caller's frame, so it may refer
-  # to variables that exist only there.
-  .mostr_subset <- if (!is.null(dots$subset)) {
-    eval(dots$subset, data, parent.frame())
-  }
-  fit_call <- quote(rmsb::blrm(
-    formula = formula,
-    ppo = ppo,
-    cppo = cppo,
-    data = data,
-    ...,
-    x = x,
-    y = y
-  ))
-  if (!is.null(.mostr_subset)) {
-    fit_call$subset <- quote(.mostr_subset)
-  }
-  fit_blrm <- function(..., subset) eval(fit_call)
-  fit <- fit_blrm(...)
-  fit <- markov_normalize_rms_call(
-    fit,
-    fun = quote(rmsb::blrm),
-    formula = formula,
-    data = blrm_call$data,
-    dots = dots,
-    ppo = ppo,
-    cppo = cppo,
-    x = x,
-    y = y
-  )
-  fit_frame <- markov_rms_model_frame(
-    formula,
-    data,
-    dots,
-    subset = .mostr_subset,
-    eval_env = parent.frame()
-  )
-  fit_data <- markov_align_model_data(data, fit_frame)
-  stored <- markov_prepare_stored_data(
-    data = data,
-    formula = formula,
-    subset = dots$subset,
-    eval_env = parent.frame(),
-    fit_data = fit_data,
-    id_var = id_var,
-    time_var = time_var,
-    first_followup_time = first_followup_time
-  )
-  fit <- markov_attach_model_data(
-    fit,
-    data = fit_data,
-    id_var = id_var,
-    refit_data = stored$refit_data,
-    starting_profile_data = stored$starting_profile_data,
-    starting_profile_metadata = stored$starting_profile_metadata,
-    refit_args = refit_args
-  )
-  markov_set_fit_wrapper(fit, "blrm_markov")
-}
-
-markov_normalize_rms_call <- function(
-  fit,
-  fun,
-  formula,
-  data,
-  dots,
-  ...,
-  ppo = NULL,
-  cppo = NULL
-) {
-  call_args <- c(
-    list(formula = formula),
-    if (!is.null(ppo)) list(ppo = ppo) else NULL,
-    if (!is.null(cppo)) list(cppo = cppo) else NULL,
-    list(data = data),
-    as.list(dots),
-    list(...)
-  )
-  fit$call <- as.call(c(list(fun), call_args))
-  fit
-}
-
 # Rebuild the rows used by an rms fit. `subset` is the already evaluated row
 # selection and `weight_column` names the stored row-weight column of `data`.
 markov_rms_model_frame <- function(
@@ -461,13 +40,11 @@ validate_markov_id_var <- function(id_var, data, data_arg = "data") {
   id_var
 }
 
-warn_missing_markov_id_var <- function(wrapper) {
+warn_missing_markov_id_var <- function() {
   warning(
-    "`id_var` was not supplied to ",
-    wrapper,
-    "; stored patient-ID metadata, cluster-robust standard errors for ",
-    "frequentist wrappers, and automatic FWB refits will not be available ",
-    "from the fitted object.",
+    "`id_var` was not supplied to mostm(); stored patient-ID metadata, ",
+    "cluster-robust standard errors for the \"orm\" and \"vglm\" engines, ",
+    "and automatic FWB refits will not be available from the fitted object.",
     call. = FALSE
   )
 }
@@ -476,7 +53,7 @@ warn_duplicate_markov_id_time <- function(
   data,
   id_var,
   time_var = "time",
-  wrapper = "the Markov wrapper"
+  wrapper = "mostm()"
 ) {
   if (
     is.null(id_var) ||
@@ -508,7 +85,7 @@ warn_duplicate_markov_id_time <- function(
   invisible(NULL)
 }
 
-# Capture the values of the arguments a user passed to a fitting wrapper.
+# Capture the values of the arguments a user passed to `mostm()`.
 # Bootstrap and FWB refits reuse these values instead of re-evaluating the
 # stored call's argument expressions, which may refer to variables that exist
 # only in the user's fitting frame or that changed after fitting. Arguments
@@ -534,14 +111,14 @@ markov_capture_refit_args <- function(call, env, formal_names, ...) {
   out
 }
 
-# Name of the column in which the wrappers store row weights. Stored refit
+# Name of the column in which `mostm()` stores row weights. Stored refit
 # data carry this column, so bootstrap resampling keeps each row's weight.
 markov_prior_weight_column <- function() {
   ".mostr_prior_weight"
 }
 
 # Evaluate a row-weight expression once, with the data and enclosing
-# environment the backend would use, and validate the result.
+# environment the engine would use, and validate the result.
 markov_eval_prior_weights <- function(expr, data, eval_env) {
   weights <- eval(expr, data, eval_env)
   if (is.null(weights)) {
@@ -604,49 +181,51 @@ markov_attach_model_data <- function(
   model
 }
 
-markov_fit_wrappers <- function() {
-  c("orm_markov", "vglm_markov", "blrm_markov")
+# Provenance: `mostm()` records the engine that fitted a model. The SOP and
+# inference workflows accept only models with this record.
+markov_engines <- function() {
+  c("orm", "vglm", "blrm")
 }
 
-markov_set_fit_wrapper <- function(model, wrapper) {
+markov_set_engine <- function(model, engine) {
   if (
-    !is.character(wrapper) ||
-      length(wrapper) != 1L ||
-      is.na(wrapper) ||
-      !wrapper %in% markov_fit_wrappers()
+    !is.character(engine) ||
+      length(engine) != 1L ||
+      is.na(engine) ||
+      !engine %in% markov_engines()
   ) {
-    stop("Internal Markov fitting-wrapper provenance is invalid.")
+    stop("Internal Markov model engine provenance is invalid.")
   }
-  attr(model, "markov_fit_wrapper") <- wrapper
+  attr(model, "markov_engine") <- engine
   model
 }
 
-markov_model_fit_wrapper <- function(model) {
-  wrapper <- attr(model, "markov_fit_wrapper", exact = TRUE)
+markov_model_engine <- function(model) {
+  engine <- attr(model, "markov_engine", exact = TRUE)
   if (inherits(model, "robcov_vglm") && !is.null(model$vglm_fit)) {
-    inner <- attr(model$vglm_fit, "markov_fit_wrapper", exact = TRUE)
-    if (!is.null(wrapper) && !is.null(inner) && !identical(wrapper, inner)) {
+    inner <- attr(model$vglm_fit, "markov_engine", exact = TRUE)
+    if (!is.null(engine) && !is.null(inner) && !identical(engine, inner)) {
       return(NULL)
     }
-    wrapper <- wrapper %||% inner
+    engine <- engine %||% inner
   }
   if (
-    !is.character(wrapper) ||
-      length(wrapper) != 1L ||
-      is.na(wrapper) ||
-      !wrapper %in% markov_fit_wrappers()
+    !is.character(engine) ||
+      length(engine) != 1L ||
+      is.na(engine) ||
+      !engine %in% markov_engines()
   ) {
     return(NULL)
   }
-  wrapper
+  engine
 }
 
-markov_inherit_fit_wrapper <- function(model, source) {
-  wrapper <- markov_model_fit_wrapper(source)
-  if (is.null(wrapper)) {
+markov_inherit_engine <- function(model, source) {
+  engine <- markov_model_engine(source)
+  if (is.null(engine)) {
     return(model)
   }
-  markov_set_fit_wrapper(model, wrapper)
+  markov_set_engine(model, engine)
 }
 
 markov_model_data <- function(model) {
@@ -731,8 +310,7 @@ markov_validate_starting_profiles <- function(
   metadata <- markov_model_starting_profile_metadata(model)
   if (is.null(profiles) || is.null(metadata)) {
     stop(
-      "Provide newdata, or fit with `orm_markov()`, `blrm_markov()`, or ",
-      "`vglm_markov()` so ",
+      "Provide newdata, or fit with `mostm(..., id_var = ...)` so ",
       "automatic SOP prediction has stored starting-profile metadata.",
       call. = FALSE
     )
@@ -851,15 +429,15 @@ markov_subset_source_data <- function(data, subset, eval_env) {
   list(data = data[rows, , drop = FALSE], rows = rows)
 }
 
-markov_reject_legacy_wrapper_args <- function(dots, wrapper) {
+# Earlier fitting functions accepted these starting-profile arguments.
+markov_reject_legacy_args <- function(dots) {
   legacy <- intersect(c("start_time", "origin_time", "time_map"), names(dots))
   if (!length(legacy)) {
     return(invisible(NULL))
   }
 
   stop(
-    wrapper,
-    " no longer accepts legacy wrapper argument(s): ",
+    "mostm() does not accept the former starting-profile argument(s) ",
     paste0("`", legacy, "`", collapse = ", "),
     ". Use `first_followup_time` to select the stored starting profiles; ",
     "supply baseline and time-mapping arguments to downstream SOP summary ",
@@ -1088,7 +666,7 @@ resolve_markov_source_data <- function(
       stop(
         "Automatic SOP prediction requested `time_var = \"",
         time_var,
-        "\"`, but the fitted wrapper stored starting profiles using `",
+        "\"`, but `mostm()` stored the starting profiles using `",
         metadata$time_var,
         "`. Refit with the intended `time_var` or supply explicit `newdata`.",
         call. = FALSE
@@ -1102,8 +680,7 @@ resolve_markov_source_data <- function(
 
   if (is.null(source_data)) {
     stop(
-      "Provide `newdata`, or fit with `orm_markov()`, `blrm_markov()`, or ",
-      "`vglm_markov()` so ",
+      "Provide `newdata`, or fit with `mostm(..., id_var = ...)` so ",
       "the model stores its designated starting profiles."
     )
   }

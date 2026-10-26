@@ -39,8 +39,7 @@ For \code{orm} models, the family must be logistic.}
 
 \item{newdata}{Optional data frame of prediction profiles. Each row is one
 profile with its own starting state and covariates. If \code{NULL}, uses the
-starting profiles stored by \code{\link[=orm_markov]{orm_markov()}}, \code{\link[=blrm_markov]{blrm_markov()}}, or
-\code{\link[=vglm_markov]{vglm_markov()}}, one per fitted patient.}
+starting profiles stored by \code{\link[=mostm]{mostm()}}, one per fitted patient.}
 
 \item{variables}{Optional covariates to set: a named list of values, such
 as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}, whose values are
@@ -96,13 +95,14 @@ example, \code{target_times = 7:28} to total only days 7 to 28.}
 
 \item{id_var}{Name of the patient ID variable. Required for bootstrap
 inference and for \code{blrm} random-effect prediction. If \code{NULL}, defaults to
-\code{"id"}; for wrapper-fitted models, it is inferred from stored metadata.
+\code{"id"}; for models fitted with \code{\link[=mostm]{mostm()}}, it is inferred from stored
+metadata.
 For user-supplied \code{newdata}, \code{id_var} is required only for \code{blrm} random
 effects. Refit bootstrap inference resamples patients by this column in
-the data stored on the wrapper-fitted model. For \code{blrm} models with
+the data stored on the fitted model. For \code{blrm} models with
 \code{include_re = TRUE},
 \code{model$clusterInfo$name} is used before the final \code{"id"} fallback when
-wrapper metadata is absent.}
+no \code{id_var} was given to \code{\link[=mostm]{mostm()}}.}
 
 \item{time_var}{Name of the time variable in the model.}
 
@@ -212,7 +212,7 @@ and 14. To get SOPs at selected visits, request every visit, such as
 \code{times = 1:14}, and keep the rows you need.
 
 When \code{newdata} is omitted, each patient starts from their state before the
-first follow-up visit (\code{first_followup_time} of the fitting wrapper), so
+first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}), so
 \code{times} must begin at that visit. Each row of a supplied \code{newdata} starts
 from its previous state at the first requested visit, which may be a later
 visit.

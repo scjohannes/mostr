@@ -12,8 +12,7 @@
 #' @inheritParams avg_state_time
 #' @param newdata Optional data frame of prediction profiles. Each row is one
 #'   profile with its own starting state and covariates. If `NULL`, uses the
-#'   starting profiles stored by [orm_markov()], [blrm_markov()], or
-#'   [vglm_markov()], one per fitted patient.
+#'   starting profiles stored by [mostm()], one per fitted patient.
 #' @param variables Optional covariates to set: a named list of values, such
 #'   as `list(tx = c(0, 1))`, or bare names, such as `"tx"`, whose values are
 #'   chosen as in [avg_sops()]. Each profile is predicted once for every

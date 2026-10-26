@@ -45,7 +45,7 @@ local_spline_delta_orm_case <- local({
       data$y <- ordered(data$y, levels = state_levels)
 
       local_spline_delta_datadist(data)
-      model <- orm_markov(
+      model <- mostm(
         y ~ rms::rcs(time, 3) + tx + rms::rcs(yprev, 4),
         data = data,
         id_var = "id",
@@ -253,7 +253,7 @@ test_that("unconditional delta rejects weighted orm score construction", {
   case <- local_spline_delta_orm_case()
   data <- case$data
   local_spline_delta_datadist(data)
-  weighted <- suppressWarnings(orm_markov(
+  weighted <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) + tx + rms::rcs(yprev, 4),
     data = data,
     weights = rep(c(1, 2), length.out = nrow(data)),

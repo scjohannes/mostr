@@ -10,7 +10,7 @@ make_daily_visit_case <- function(time_as_factor = FALSE) {
   }
   list(
     data = data,
-    model = orm_markov(
+    model = mostm(
       y ~ time + tx + yprev,
       data = data,
       id_var = "id",
@@ -148,11 +148,12 @@ test_that("times beyond the fitted visits are not treated as skipped visits", {
 
 test_that("explicit time covariates do not change the skipped-visit check", {
   case <- make_daily_visit_case()
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = case$data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   time_covariates <- make_time_covariates(
     case$data,
@@ -180,7 +181,7 @@ test_that("explicit time covariates do not change the skipped-visit check", {
 
 test_that("irregular visit schedules are checked against the fitted visits", {
   data <- make_irregular_visit_case()
-  fit <- orm_markov(y ~ time + tx + yprev, data = data, id_var = "id")
+  fit <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
 
   expect_no_warning(avg_sops(fit, times = c(1, 2, 4, 8), absorb = "6"))
   expect_warning(
@@ -196,7 +197,7 @@ test_that("irregular visit schedules are checked against the fitted visits", {
 
 test_that("`gap_var` allows times that skip fitted visits", {
   data <- make_irregular_visit_case()
-  fit <- orm_markov(y ~ time + gap + tx + yprev, data = data, id_var = "id")
+  fit <- mostm(y ~ time + gap + tx + yprev, data = data, id_var = "id")
 
   expect_no_warning(
     avg_sops(fit, times = c(1, 4, 8), absorb = "6", gap_var = "gap")

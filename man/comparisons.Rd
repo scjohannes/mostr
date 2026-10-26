@@ -39,9 +39,8 @@ comparisons(
 
 \item{newdata}{Optional data frame of prediction profiles. Each row is one
 profile with its own starting state and covariates, and receives its own
-comparisons. If \code{NULL}, uses the starting profiles stored by
-\code{\link[=orm_markov]{orm_markov()}}, \code{\link[=blrm_markov]{blrm_markov()}}, or \code{\link[=vglm_markov]{vglm_markov()}}, one per fitted
-patient.}
+comparisons. If \code{NULL}, uses the starting profiles stored by \code{\link[=mostm]{mostm()}},
+one per fitted patient.}
 
 \item{variables}{The variable to compare: a bare name such as \code{"tx"}, or a
 named list giving its values, such as \code{list(tx = c(0, 1))}. Each profile
@@ -218,7 +217,7 @@ and 14. To get SOPs at selected visits, request every visit, such as
 \code{times = 1:14}, and keep the rows you need.
 
 When \code{newdata} is omitted, each patient starts from their state before the
-first follow-up visit (\code{first_followup_time} of the fitting wrapper), so
+first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}), so
 \code{times} must begin at that visit. Each row of a supplied \code{newdata} starts
 from its previous state at the first requested visit, which may be a later
 visit.

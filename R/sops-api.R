@@ -21,8 +21,8 @@
 #' @param newdata Optional. A data frame of prediction profiles. When supplied,
 #'   every row supplies a separate starting state and set of covariates. The
 #'   internal `rowid` column is regenerated. If `NULL`, uses the data stored by
-#'   [orm_markov()], [blrm_markov()], or [vglm_markov()] and requires exactly
-#'   one complete designated starting profile per fitted patient.
+#'   [mostm()] and requires exactly one complete designated starting profile
+#'   per fitted patient.
 #' @param times Required. The consecutive visits at which to calculate SOPs,
 #'   in increasing order, for example `times = 1:30` for daily visits up to day
 #'   30. Each value is one transition, so leaving out visits does not skip
@@ -44,7 +44,8 @@
 #'   vector of column names averages within the groups those columns define;
 #'   both return the result of [avg_sops()] with the same arguments.
 #' @param id_var Character ID column used when `include_re = TRUE`. For `blrm`,
-#'   `NULL` is inferred from wrapper metadata, then `model$clusterInfo$name`
+#'   `NULL` is inferred from the `id_var` given to [mostm()], then
+#'   `model$clusterInfo$name`
 #'   when available, otherwise `"id"`. For frequentist models, `id_var` is used
 #'   for stored starting-profile validation and refit bootstrap metadata, not
 #'   for ordinary user-supplied prediction rows.
@@ -94,7 +95,7 @@
 #' data frame. The output contains one row per profile (and value of
 #' `variables`), time, and state.
 #'
-#' Automatic prediction from a wrapper-fitted model uses the cohort-wide
+#' Automatic prediction from a model fitted with [mostm()] uses the cohort-wide
 #' designated `first_followup_time` retained before response-driven model-frame
 #' omission. The transition response is not required on that row, but ID,
 #' modeled predictors, time information, and previous state must be complete.
@@ -136,7 +137,7 @@
 #' `times = 1:14`, and keep the rows you need.
 #'
 #' When `newdata` is omitted, each patient starts from their state before the
-#' first follow-up visit (`first_followup_time` of the fitting wrapper), so
+#' first follow-up visit (`first_followup_time` of [mostm()]), so
 #' `times` must begin at that visit. Each row of a supplied `newdata` starts
 #' from its previous state at the first requested visit, which may be a later
 #' visit.
@@ -257,8 +258,7 @@ sops <- function(
     if (is.null(id_var)) {
       stop(
         "Automatic SOP prediction from stored model data requires `id_var`. ",
-        "Fit with `orm_markov(id_var = ...)`, `blrm_markov(id_var = ...)`, ",
-        "`vglm_markov(id_var = ...)`, or supply explicit `newdata`."
+        "Fit with `mostm(..., id_var = ...)`, or supply explicit `newdata`."
       )
     }
     validate_markov_id_var(id_var, newdata_orig, "stored model data")
@@ -727,9 +727,9 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   For `orm` models, the family must be logistic.
 #' @param newdata Optional data frame of standardization profiles. When
 #'   supplied, every row supplies a separate starting state and set of
-#'   covariates. The internal `rowid` column is regenerated. If `NULL`, uses data stored by
-#'   [orm_markov()], [blrm_markov()], or [vglm_markov()] and requires exactly
-#'   one complete designated starting profile per fitted patient.
+#'   covariates. The internal `rowid` column is regenerated. If `NULL`, uses
+#'   data stored by [mostm()] and requires exactly one complete designated
+#'   starting profile per fitted patient.
 #' @param variables Optional covariates to set before averaging: a named list
 #'   of values, such as `list(tx = c(0, 1))` for probabilities if every patient
 #'   received control or treatment, or bare names, such as `"tx"`. As in
@@ -754,13 +754,14 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' @param absorb The absorbing state.
 #' @param id_var Name of the patient ID variable. Required for bootstrap
 #'   inference and for `blrm` random-effect prediction. If `NULL`, defaults to
-#'   `"id"`; for wrapper-fitted models, it is inferred from stored metadata.
+#'   `"id"`; for models fitted with [mostm()], it is inferred from stored
+#'   metadata.
 #'   For user-supplied `newdata`, `id_var` is required only for `blrm` random
 #'   effects. Refit bootstrap inference resamples patients by this column in
-#'   the data stored on the wrapper-fitted model. For `blrm` models with
+#'   the data stored on the fitted model. For `blrm` models with
 #'   `include_re = TRUE`,
 #'   `model$clusterInfo$name` is used before the final `"id"` fallback when
-#'   wrapper metadata is absent.
+#'   no `id_var` was given to [mostm()].
 #' @param time_var Name of the time variable in the model.
 #' @param p_var Name of the previous state variable in the model.
 #' @param p2_var Optional second previous-state variable. `NULL` uses a
@@ -839,14 +840,14 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'
 #' @examples
 #' \dontrun{
-#' fit <- vglm_markov(
+#' fit <- mostm(
 #'   ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
-#'   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
 #'   data = data,
-#'   id_var = "id"
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
 #'
-#' # Wrapper-fitted models can use their stored designated starting profiles.
+#' # Models fitted with mostm() can use their stored starting profiles.
 #' observed <- avg_sops(fit, times = 1:60, y_levels = 1:6, absorb = 6)
 #'
 #' # Set treatment to each requested value before averaging.

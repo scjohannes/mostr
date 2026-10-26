@@ -1,3 +1,52 @@
+# mostr (development version)
+
+## Breaking changes
+
+* `mostm()` replaces `orm_markov()`, `vglm_markov()`, and `blrm_markov()`
+  (#11). Choose the package that fits the model with `engine`: `"orm"` (the
+  default) uses `rms::orm()`, `"vglm"` uses `VGAM::vglm()`, and `"blrm"` uses
+  `rmsb::blrm()`. The shared arguments `id_var`, `time_var`,
+  `first_followup_time`, `weights`, `subset`, `type`, and `cadjust` work as
+  before. Translate existing calls as follows:
+
+  * `orm_markov(formula, data, ...)` becomes `mostm(formula, data, ...)`.
+  * `vglm_markov(formula, family, data, ...)` becomes
+    `mostm(formula, data, ..., engine = "vglm", family = family)`.
+  * `blrm_markov(formula, ppo, cppo, data, ...)` becomes
+    `mostm(formula, data, ..., engine = "blrm", ppo = ppo, cppo = cppo)`.
+
+  `sops()` and the other model-based functions do not accept fits made by the
+  removed functions; refit them with `mostm()`.
+
+* Arguments for the engine go through `...` and must be named. An argument
+  that belongs to a different engine is an error that names that engine, and
+  so is an argument that the `"orm"` or `"vglm"` engine does not have. With
+  `engine = "blrm"`, other arguments are passed on to `rmsb::blrm()`, including
+  its own `backend`, which chooses between rstan and cmdstan.
+
+* `x`, `y`, `x.arg`, and `y.arg` are no longer accepted: `mostm()` always keeps
+  the design matrix and response, which the state occupancy and inference
+  functions need.
+
+* `engine = "vglm"` uses `family = VGAM::cumulative(reverse = TRUE,
+  parallel = TRUE)` when `family` is not given. This is the proportional-odds
+  model that `engine = "orm"` fits; `vglm_markov()` required `family`.
+
+* `data` must be a data frame for every engine. `vglm_markov()` also looked up
+  variables in the formula's environment when `data` was missing.
+
+* Without `id_var`, every engine warns. `vglm_markov()` warned only when
+  `data` had an `id` column.
+
+* `weights`, `type`, and `cadjust` are errors with `engine = "blrm"`:
+  `rmsb::blrm()` has no row weights, and Bayesian fits take their uncertainty
+  from the posterior draws instead of patient-clustered standard errors.
+
+* Bootstrap refits (`inferences(method = "bootstrap")`, `method = "fwb"`, and
+  `bootstrap_model_coefs()`) call `mostm()` again with the original engine and
+  arguments. They no longer compute patient-clustered standard errors for each
+  refit, which only the original fit uses.
+
 # mostr 0.2.0
 
 ## Breaking changes

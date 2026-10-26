@@ -98,8 +98,8 @@ inferences_bootstrap <- function(
     baseline_anchor <- NULL
     if (engine == "standard") {
       # A patient sampled more than once represents distinct bootstrap
-      # patients. Refit wrappers must therefore cluster on the unique
-      # bootstrap identifier, not the repeated source identifier.
+      # patients, so the ID column takes the unique bootstrap identifier
+      # instead of the repeated source identifier.
       boot_data[[id_var]] <- boot_data$new_id
     }
 
@@ -485,8 +485,7 @@ inferences_bootstrap_sops_fwb <- function(
   if (is.null(id_var)) {
     stop(
       "`id_var` is required for fractional weighted bootstrap. Fit with ",
-      "`orm_markov(id_var = ...)`, `vglm_markov(id_var = ...)`, or pass ",
-      "`id_var` to `sops()`."
+      "`mostm(..., id_var = ...)`, or pass `id_var` to `sops()`."
     )
   }
   validate_refit_bootstrap_data(refit_data, id_var, time_var)
@@ -682,7 +681,7 @@ inferences_bootstrap_sops_fwb <- function(
 # HELPER FUNCTIONS FOR INFERENCE
 # =============================================================================
 
-# Refit bootstraps resample the refit data that a wrapper fit stores on the
+# Refit bootstraps resample the refit data that `mostm()` stores on the
 # model: they already exclude rows removed by `subset` and carry the row
 # weights. SOP results keep that data in their "refit_data" attribute.
 stored_refit_bootstrap_data <- function(object, model) {
@@ -691,8 +690,7 @@ stored_refit_bootstrap_data <- function(object, model) {
   if (is.null(refit_data)) {
     stop(
       "Refit bootstrap inference resamples the data stored on the fitted ",
-      "model, but this model has no stored data. Fit it with `orm_markov()` ",
-      "or `vglm_markov()`.",
+      "model, but this model has no stored data. Fit it with `mostm()`.",
       call. = FALSE
     )
   }

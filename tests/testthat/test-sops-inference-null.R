@@ -12,12 +12,13 @@ make_null_test_model <- function() {
     seed = 4417
   ) |>
     prepare_markov_data(absorbing_state = 3)
-  vglm_markov(
+  mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     first_followup_time = 1,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 }
 

@@ -9,12 +9,13 @@ delta_avg_time_case <- local({
       if (factor_time) {
         data$time <- factor(data$time)
       }
-      fit <- suppressWarnings(vglm_markov(
+      fit <- suppressWarnings(mostm(
         ordered(y) ~ time + tx + yprev,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
-        first_followup_time = if (factor_time) levels(data$time)[1L] else 1
+        first_followup_time = if (factor_time) levels(data$time)[1L] else 1,
+        engine = "vglm"
       ))
       cases[[key]] <<- list(
         fit = fit,

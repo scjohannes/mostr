@@ -17,9 +17,7 @@ reference:
   - title: Prepare data and fit models
     contents:
       - prepare_markov_data
-      - orm_markov
-      - vglm_markov
-      - blrm_markov
+      - mostm
   - title: Estimate probabilities, time in states, and treatment contrasts
     contents:
       - sops

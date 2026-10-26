@@ -16,20 +16,21 @@ local_orm_datadist <- function(data, env = parent.frame()) {
   )
 }
 
-# The wrapper arguments below are expressions over variables that exist only
+# The mostm() arguments below are expressions over variables that exist only
 # in the fitting function's frame, so a refit must not re-evaluate them.
 fit_vglm_in_closure <- function(data, parallel_flag, first_time) {
-  vglm_markov(
+  mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = parallel_flag),
     data = data,
     id_var = "id",
-    first_followup_time = if (first_time > 0) first_time else 1
+    first_followup_time = if (first_time > 0) first_time else 1,
+    engine = "vglm"
   )
 }
 
 fit_orm_in_closure <- function(data, use_logistic, first_time) {
-  orm_markov(
+  mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
@@ -58,7 +59,7 @@ expect_refits_succeed <- function(fit, method) {
   expect_equal(attr(inferred, "n_successful"), 2L)
 }
 
-test_that("vglm_markov bootstrap refits use the fit-time argument values", {
+test_that("vglm bootstrap refits use the fit-time argument values", {
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5101)
   fit <- fit_vglm_in_closure(data, parallel_flag = TRUE, first_time = 1)
 
@@ -68,7 +69,7 @@ test_that("vglm_markov bootstrap refits use the fit-time argument values", {
   expect_refits_succeed(fit, "fwb")
 })
 
-test_that("orm_markov bootstrap refits use the fit-time argument values", {
+test_that("orm bootstrap refits use the fit-time argument values", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5201)
@@ -84,11 +85,12 @@ test_that("orm_markov bootstrap refits use the fit-time argument values", {
 test_that("refits ignore later changes to variables used by the original call", {
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5301)
   parallel_flag <- TRUE
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = parallel_flag),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   # A non-parallel refit would produce a different number of coefficients.
   parallel_flag <- FALSE
@@ -112,14 +114,15 @@ fit_weighted_in_closure <- function(data, backend) {
   row_weights <- data$w_copy
   switch(
     backend,
-    vglm = vglm_markov(
+    vglm = mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       weights = row_weights,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
-    orm = orm_markov(
+    orm = mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       weights = row_weights,
@@ -192,11 +195,11 @@ expect_refit_weights_follow_rows <- function(backend) {
   expect_equal(fwb$data$.mostr_fit_weight, 2 * boot_data$w_copy)
 }
 
-test_that("vglm_markov refits resample weights given as an outside vector", {
+test_that("vglm refits resample weights given as an outside vector", {
   expect_refit_weights_follow_rows("vglm")
 })
 
-test_that("orm_markov refits resample weights given as an outside vector", {
+test_that("orm refits resample weights given as an outside vector", {
   expect_refit_weights_follow_rows("orm")
 })
 
@@ -210,7 +213,7 @@ test_that("bootstrap and FWB succeed with weights given as an outside vector", {
   expect_refits_succeed(fit, "fwb")
 })
 
-test_that("FWB never falls back to unweighted refits for wrapper fits", {
+test_that("FWB never falls back to unweighted refits for mostm() fits", {
   data <- make_weighted_refit_data(5701)
   fit <- suppressWarnings(fit_weighted_in_closure(data, "vglm"))
   out <- avg_sops(
@@ -256,14 +259,15 @@ fit_subset_in_closure <- function(data, backend) {
   keep_rows <- data$id != data$id[[1]]
   switch(
     backend,
-    vglm = vglm_markov(
+    vglm = mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       subset = keep_rows,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
-    orm = orm_markov(
+    orm = mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       subset = keep_rows,
@@ -272,7 +276,7 @@ fit_subset_in_closure <- function(data, backend) {
   )
 }
 
-test_that("refits of wrapper fits with an outside subset vector succeed", {
+test_that("refits of mostm() fits with an outside subset vector succeed", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5901)
@@ -293,19 +297,21 @@ test_that("refits of wrapper fits with an outside subset vector succeed", {
 test_that("refits reuse a fit-time coefstart given as a local variable", {
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5801)
   fit_with_local_coefstart <- function(data) {
-    pilot <- vglm_markov(
-      ordered(y) ~ time + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id"
-    )
-    start_values <- stats::coef(pilot)
-    vglm_markov(
+    pilot <- mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
-      coefstart = start_values
+      engine = "vglm"
+    )
+    start_values <- stats::coef(pilot)
+    mostm(
+      ordered(y) ~ time + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      id_var = "id",
+      coefstart = start_values,
+      engine = "vglm"
     )
   }
   fit <- fit_with_local_coefstart(data)
@@ -325,19 +331,21 @@ test_that("refits reuse a fit-time coefstart given as a local variable", {
 })
 
 fit_vglm_with_local_coefstart <- function(data) {
-  pilot <- vglm_markov(
-    ordered(y) ~ time + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    id_var = "id"
-  )
-  start_values <- stats::coef(pilot)
-  vglm_markov(
+  pilot <- mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
-    coefstart = start_values
+    engine = "vglm"
+  )
+  start_values <- stats::coef(pilot)
+  mostm(
+    ordered(y) ~ time + tx + yprev,
+    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+    data = data,
+    id_var = "id",
+    coefstart = start_values,
+    engine = "vglm"
   )
 }
 
@@ -358,7 +366,7 @@ test_that("refits on samples with every state reuse the fit-time coefstart", {
 
   expect_length(boot$missing_states, 0L)
   expect_equal(
-    methods::slot(boot$model$vglm_fit, "call")$coefstart,
+    methods::slot(boot$model, "call")$coefstart,
     mostr:::markov_model_refit_args(fit)$coefstart
   )
 })
@@ -390,6 +398,6 @@ test_that("refits on samples missing a state are fit without coefstart", {
 
     expect_true(6 %in% boot$missing_states)
     expect_false(is.null(boot$model))
-    expect_null(methods::slot(boot$model$vglm_fit, "call")$coefstart)
+    expect_null(methods::slot(boot$model, "call")$coefstart)
   }
 })

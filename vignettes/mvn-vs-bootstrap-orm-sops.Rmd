@@ -1,8 +1,8 @@
 ---
-title: "MVN Simulation Versus Bootstrap for orm_markov() SOPs"
+title: "MVN Simulation Versus Bootstrap with the orm Engine"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{MVN Simulation Versus Bootstrap for orm_markov() SOPs}
+  %\VignetteIndexEntry{MVN Simulation Versus Bootstrap with the orm Engine}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -13,7 +13,8 @@ source("_setup.R", local = TRUE)
 
 Analytical confidence intervals (`vignette("analytical-confidence-intervals")`)
 are not available for every model or summary. Two general alternatives work
-with frequentist models fitted by `orm_markov()` or `vglm_markov()`:
+with frequentist models fitted by `mostm()` with the `"orm"` or `"vglm"`
+engine:
 
 1. **Multivariate-normal (MVN) simulation**, `method = "mvn"`, draws many
    coefficient vectors from a multivariate normal distribution centered on
@@ -68,7 +69,7 @@ model_data <- prepare_markov_data(raw_data, absorbing_state = as.integer(ABSORB)
 dd <- rms::datadist(model_data)
 options(datadist = "dd")
 
-fit_orm <- orm_markov(
+fit_orm <- mostm(
   y ~ tx + rms::rcs(time, 4) + yprev,
   data = model_data,
   id_var = "id",
@@ -78,7 +79,7 @@ fit_orm <- orm_markov(
 )
 ```
 
-Both methods rely on what `orm_markov()` stores with the fit. With
+Both methods rely on what `mostm()` stores with the fit. With
 `id_var = "id"`, it computes a covariance matrix that allows for correlation
 between each patient's transitions, which MVN simulation draws from. It also
 keeps the full longitudinal data, which the bootstrap resamples and refits,

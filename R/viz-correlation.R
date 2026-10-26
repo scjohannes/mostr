@@ -33,7 +33,8 @@
 #' @param method Correlation method: `"spearman"` (default) or `"pearson"`.
 #' @param x A trajectory data frame or a fitted Markov model.
 #' @param newdata Optional data frame of prediction profiles for model-based
-#'   plots. If `NULL`, wrapper-fitted models use their stored data and extract
+#'   plots. If `NULL`, models fitted with [mostm()] use their stored data and
+#'   extract
 #'   one prediction row per ID.
 #' @param times Optional time values to include. Required for model-based plots.
 #' @param y_levels Optional state levels. If supplied for raw trajectory data,

@@ -22,7 +22,8 @@
 #'
 #' @param x A trajectory data frame or a fitted Markov model.
 #' @param newdata Optional data frame of prediction profiles for model-based
-#'   plots. If `NULL`, wrapper-fitted models use their stored data and extract
+#'   plots. If `NULL`, models fitted with [mostm()] use their stored data and
+#'   extract
 #'   one prediction row per ID.
 #' @param variables Optional named list with one counterfactual variable. For
 #'   `comparison = "difference"`, at least two values are required and the

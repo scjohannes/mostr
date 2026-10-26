@@ -1,4 +1,4 @@
-test_that("vglm_markov() supplies rms formula helpers for %ia%", {
+test_that("the vglm engine supplies rms formula helpers for %ia%", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -17,10 +17,11 @@ test_that("vglm_markov() supplies rms formula helpers for %ia%", {
   expect_equal(exists("rcs", envir = environment(form), inherits = TRUE), FALSE)
 
   fit <- suppressWarnings(
-    mostr::vglm_markov(
+    mostr::mostm(
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -44,7 +45,7 @@ test_that("vglm_markov() supplies rms formula helpers for %ia%", {
   expect_equal(unname(rowSums(out[, 4, ])), rep(1, 3), tolerance = 1e-10)
 })
 
-test_that("vglm_markov() keeps explicit rms::%ia% calls working", {
+test_that("the vglm engine keeps explicit rms::%ia% calls working", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -58,10 +59,11 @@ test_that("vglm_markov() keeps explicit rms::%ia% calls working", {
   )
 
   fit <- suppressWarnings(
-    mostr::vglm_markov(
+    mostr::mostm(
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -75,7 +77,7 @@ test_that("vglm_markov() keeps explicit rms::%ia% calls working", {
   expect_equal(grep("time'", ia_terms, fixed = TRUE), integer(0))
 })
 
-test_that("vglm_markov() preserves rms %ia% semantics for spline bases", {
+test_that("the vglm engine preserves rms %ia% semantics for spline bases", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -86,10 +88,11 @@ test_that("vglm_markov() preserves rms %ia% semantics for spline bases", {
   )
 
   fit <- suppressWarnings(
-    mostr::vglm_markov(
+    mostr::mostm(
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -98,7 +101,7 @@ test_that("vglm_markov() preserves rms %ia% semantics for spline bases", {
   expect_gt(length(grep("time'", ia_terms, fixed = TRUE)), 0)
 })
 
-test_that("vglm_markov() accepts family names and formula-environment data", {
+test_that("the vglm engine accepts family names and requires a data frame", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
@@ -109,27 +112,33 @@ test_that("vglm_markov() accepts family names and formula-environment data", {
   env <- list2env(data, parent = baseenv())
   form <- stats::as.formula("y ~ x", env = env)
 
-  fit_from_env <- suppressWarnings(
-    vglm_markov(form, family = "binomialff")
+  fit_from_name <- suppressWarnings(
+    mostm(form, family = "binomialff", data = data, engine = "vglm")
+  )
+  expect_error(
+    mostm(form, family = "binomialff", engine = "vglm"),
+    "`data` must be supplied as a data frame.",
+    fixed = TRUE
   )
   weighted <- suppressWarnings(
-    vglm_markov(
+    mostm(
       y ~ x,
       family = VGAM::binomialff,
       data = data,
       weights = w,
-      smart = FALSE
+      smart = FALSE,
+      engine = "vglm"
     )
   )
 
-  expect_s4_class(fit_from_env, "vglm")
+  expect_s4_class(fit_from_name, "vglm")
   expect_s4_class(weighted, "vglm")
   expect_false(isTRUE(weighted@smart.prediction$smart.arg))
   expect_equal(nrow(weighted@prior.weights), nrow(data))
   expect_equal(as.vector(weighted@prior.weights), data$w)
 })
 
-test_that("vglm_markov() rejects invalid families, weights, and form2 subsets", {
+test_that("the vglm engine rejects invalid families, weights, and form2 subsets", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
@@ -140,53 +149,59 @@ test_that("vglm_markov() rejects invalid families, weights, and form2 subsets", 
   )
 
   expect_error(
-    vglm_markov(
+    suppressWarnings(mostm(
       y ~ x,
       family = VGAM::binomialff,
       data = data,
-      weights = bad_w
-    ),
+      weights = bad_w,
+      engine = "vglm"
+    )),
     "negative weights",
     fixed = TRUE
   )
   expect_error(
-    vglm_markov(y ~ x, family = list(), data = data),
+    suppressWarnings(
+      mostm(y ~ x, family = list(), data = data, engine = "vglm")
+    ),
     "is not a VGAM family function",
     fixed = TRUE
   )
   expect_error(
-    vglm_markov(
+    suppressWarnings(mostm(
       y ~ x,
       family = VGAM::binomialff,
       data = data,
       form2 = ~x,
-      subset = data$x == 1
-    ),
+      subset = data$x == 1,
+      engine = "vglm"
+    )),
     "subset",
     fixed = TRUE
   )
   expect_error(
-    vglm_markov(
+    mostm(
       y ~ x + offset(off),
       family = VGAM::binomialff,
-      data = data
+      data = data,
+      engine = "vglm"
     ),
     "Model offsets are not supported",
     fixed = TRUE
   )
   expect_error(
-    vglm_markov(
+    mostm(
       y ~ x,
       family = VGAM::binomialff,
       data = data,
-      offset = off
+      offset = off,
+      engine = "vglm"
     ),
     "Model offsets are not supported",
     fixed = TRUE
   )
 })
 
-test_that("vglm_markov() records NA actions after dropping incomplete rows", {
+test_that("the vglm engine records NA actions after dropping incomplete rows", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
@@ -196,19 +211,19 @@ test_that("vglm_markov() records NA actions after dropping incomplete rows", {
 
   expect_error(
     suppressWarnings(
-      vglm_markov(y ~ 0, family = VGAM::binomialff, data = data)
+      mostm(y ~ 0, family = VGAM::binomialff, data = data, engine = "vglm")
     ),
     "model matrix"
   )
   with_na <- suppressWarnings(
-    vglm_markov(y ~ x, family = VGAM::binomialff, data = data)
+    mostm(y ~ x, family = VGAM::binomialff, data = data, engine = "vglm")
   )
 
   expect_s4_class(with_na, "vglm")
   expect_length(with_na@na.action, 1)
 })
 
-test_that("vglm_markov() stores form2 design slots", {
+test_that("the vglm engine stores form2 design slots", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
@@ -218,14 +233,13 @@ test_that("vglm_markov() stores form2 design slots", {
   )
 
   fit <- suppressWarnings(
-    vglm_markov(
+    mostm(
       y ~ x,
       family = VGAM::binomialff,
       data = data,
       form2 = y ~ z,
-      x.arg = TRUE,
-      y.arg = TRUE,
-      qr.arg = TRUE
+      qr.arg = TRUE,
+      engine = "vglm"
     )
   )
 
@@ -236,7 +250,7 @@ test_that("vglm_markov() stores form2 design slots", {
   expect_true(length(fit@callXm2) > 0)
 })
 
-test_that("vglm_markov() validates form2 row alignment", {
+test_that("the vglm engine validates form2 row alignment", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
@@ -249,22 +263,24 @@ test_that("vglm_markov() validates form2 row alignment", {
   )
 
   expect_error(
-    vglm_markov(
+    suppressWarnings(mostm(
       y ~ x,
       family = VGAM::binomialff,
       data = data,
-      form2 = stats::as.formula("z_y ~ z", env = env)
-    ),
+      form2 = stats::as.formula("z_y ~ z", env = env),
+      engine = "vglm"
+    )),
     "number of rows of 'y' and 'Ym2' are unequal",
     fixed = TRUE
   )
   expect_error(
-    vglm_markov(
+    suppressWarnings(mostm(
       y ~ x,
       family = VGAM::binomialff,
       data = data,
-      form2 = stats::as.formula("~ z", env = env)
-    ),
+      form2 = stats::as.formula("~ z", env = env),
+      engine = "vglm"
+    )),
     "number of rows of 'x' and 'Xm2' are unequal",
     fixed = TRUE
   )

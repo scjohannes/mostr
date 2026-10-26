@@ -10,10 +10,11 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
     follow_up_time = follow_up
   )
   model <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -59,17 +60,19 @@ test_that("soprob_markov gives the same predictions for inline and precomputed s
   )
 
   inline_model <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
   precomputed_model <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -118,10 +121,15 @@ test_that("soprob_markov supports inline splines of numeric previous state", {
   )
   baseline <- data[data$time == 1, , drop = FALSE][seq_len(8), , drop = FALSE]
   fit_data <- data[, setdiff(names(data), "id"), drop = FALSE]
-  model <- vglm_markov(
-    ordered(y) ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 6),
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = fit_data
+  expect_warning(
+    model <- mostm(
+      ordered(y) ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 6),
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = fit_data,
+      engine = "vglm"
+    ),
+    "`id_var` was not supplied",
+    fixed = TRUE
   )
 
   slow <- soprob_markov(
@@ -191,11 +199,12 @@ test_that("soprob_markov handles partial proportional-odds constraints", {
     "time_nlin_2" = cbind(PO_effect = 1)
   )
   model <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
       data = data,
-      constraints = constraints
+      constraints = constraints,
+      engine = "vglm"
     )
   )
   model@call$constraints <- constraints
@@ -252,14 +261,15 @@ test_that("soprob_markov incorporates treatment interactions into predictions", 
     "time_lin:yprev" = cbind(PO_effect = 1)
   )
   model <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) *
         tx +
         yprev +
         yprev:time_lin,
       family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
       data = data,
-      constraints = constraints
+      constraints = constraints,
+      engine = "vglm"
     )
   )
   model@call$constraints <- constraints
@@ -303,10 +313,11 @@ test_that("soprob_markov carries absorbing-state mass forward", {
     follow_up_time = follow_up
   )
   model <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -338,10 +349,11 @@ test_that("soprob_markov normalizes transitions when no state is absorbing", {
   data$yprev <- factor(data$yprev, levels = 1:6)
   baseline <- data[data$time == 1, , drop = FALSE][seq_len(5), , drop = FALSE]
   model <- suppressWarnings(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -372,11 +384,12 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
     "time_lin",
     "time_nlin_1"
   )
-  robust_model <- vglm_markov(
+  robust_model <- mostm(
     ordered(y) ~ (time_lin + time_nlin_1) * tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   baseline <- data[data$time == 1, , drop = FALSE]
 

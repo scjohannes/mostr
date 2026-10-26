@@ -38,20 +38,22 @@ describe("SOP regression baselines", {
 
   fit_explicit_spline_model <- function(data) {
     suppressWarnings(
-      vglm_markov(
+      mostm(
         ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
   }
 
   fit_inline_spline_model <- function(data) {
     suppressWarnings(
-      vglm_markov(
+      mostm(
         ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
   }

@@ -1,4 +1,4 @@
-# Refit bootstraps always resample the data stored on a wrapper fit. The public
+# Refit bootstraps always resample the data stored on a mostm() fit. The public
 # API therefore does not accept separate refit data, and the low-level
 # bootstrap helpers are internal.
 
