@@ -1,6 +1,6 @@
 Package: mostr
 Title: Markov Ordinal State Transition Models
-Version: 0.1.1
+Version: 0.2.0
 Authors@R: c(
     person("Johannes", "Schwenke", , "johannes.schwenke@gmail.com", role = c("aut", "cre", "cph")),
     person("Felix", "Herkner", , "felix.herkner@meduniwien.ac.at", role = c("aut", "cph")))
