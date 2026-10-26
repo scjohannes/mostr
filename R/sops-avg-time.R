@@ -9,9 +9,6 @@
 #' under specified counterfactual scenarios. [state_time()] gives each
 #' patient's time before averaging.
 #'
-#' `avg_time()` is the previous name of `avg_state_time()`. It still works but
-#' gives a deprecation warning.
-#'
 #' @inheritParams avg_sops
 #' @inheritParams avg_comparisons
 #' @param variables Optional covariates to set before averaging: a named list
@@ -271,14 +268,6 @@ avg_state_time <- function(
   )
   result <- avg_time_from_sops(avg, args, return_draws)
   set_avg_time_attrs(result, avg, args)
-}
-
-#' @rdname avg_state_time
-#' @usage NULL
-#' @export
-avg_time <- function(...) {
-  .Deprecated("avg_state_time", package = "mostr")
-  avg_state_time(...)
 }
 
 # Checks shared by `avg_state_time()` and `state_time()` that need no

@@ -221,10 +221,9 @@ in `R/markov-plot-helpers.R`) and never call `sops()`.
 
 ### Average time in states
 
-`avg_state_time()` (previously `avg_time()`, kept as a deprecated alias that
-calls it) builds average SOPs and reduces selected states over the requested
-visits. Its `state_sets` convention matches average comparisons: separate states
-by default, one pooled vector, or a named list. The result has `estimate` and
+`avg_state_time()` builds average SOPs and reduces selected states over the
+requested visits. Its `state_sets` convention matches average comparisons:
+separate states by default, one pooled vector, or a named list. The result has `estimate` and
 `state_set`, plus counterfactual/grouping columns, but no SOP-scale time column.
 It therefore has its own class rather than inheriting from `markov_avg_sops`.
 Stored `avg_args`, `time_args`, and model/data metadata allow inference to replay

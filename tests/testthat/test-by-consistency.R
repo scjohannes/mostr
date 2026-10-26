@@ -199,15 +199,3 @@ test_that("draw weights let users average sops() draws themselves", {
     )
   }
 })
-
-test_that("avg_time() is a deprecated alias of avg_state_time()", {
-  case <- make_comparisons_case()
-  expect_warning(
-    old <- avg_time(case$model, state_sets = "1", times = 1:3, absorb = 3),
-    "avg_state_time"
-  )
-  expect_equal(
-    old,
-    avg_state_time(case$model, state_sets = "1", times = 1:3, absorb = 3)
-  )
-})

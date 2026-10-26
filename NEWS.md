@@ -67,8 +67,8 @@
   keeps every patient, or combine small groups.
 
 * `avg_time()` is renamed `avg_state_time()`, and its result class
-  `markov_avg_time` is now `markov_avg_state_time`. `avg_time()` still works
-  but gives a deprecation warning.
+  `markov_avg_time` is now `markov_avg_state_time`. The old name has been
+  removed, so calls to `avg_time()` must use `avg_state_time()`.
 
 ## New features
 

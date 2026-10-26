@@ -2,7 +2,6 @@
 % Please edit documentation in R/sops-avg-time.R
 \name{avg_state_time}
 \alias{avg_state_time}
-\alias{avg_time}
 \title{Calculate Average Total Time in States}
 \usage{
 avg_state_time(
@@ -160,9 +159,6 @@ under specified counterfactual scenarios. \code{\link[=state_time]{state_time()}
 patient's time before averaging.
 }
 \details{
-\code{avg_time()} is the previous name of \code{avg_state_time()}. It still works but
-gives a deprecation warning.
-
 Without \code{time_map}, each requested visit counts as one unit of time: the
 total for a state is the sum of its occupancy probabilities over the
 requested visits. For example, with \code{times = 1:30} and daily visits, the
