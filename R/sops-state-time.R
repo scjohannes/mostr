@@ -76,6 +76,8 @@
 #' stops before drawing when `n_draws` times the number of rows exceeds the
 #' option `mostr.max_sops_draw_cells` (50 million by default, about 400 MB).
 #'
+#' @inheritSection sops Choosing visits
+#'
 #' @seealso [avg_state_time()] for averaged times, [sops()] for each profile's
 #'   state occupancy probabilities, [comparisons()] for each profile's
 #'   comparisons.
@@ -203,10 +205,20 @@ state_time <- function(
     ),
     fn = "state_time()"
   )
+  # `sops()` below receives the stacked prediction rows as supplied `newdata`,
+  # so check `times` here against the original profiles.
+  warn_skipped_sop_visits(
+    model,
+    setup$newdata_orig,
+    times,
+    time_var,
+    gap_var,
+    setup$newdata_supplied
+  )
 
   # Posterior totals are summarized from each draw's totals, so `blrm` SOP
   # draws are always needed here.
-  ind <- sops(
+  ind <- muffle_skipped_sop_visits(sops(
     model = model,
     newdata = setup$newdata_pred,
     times = setup$times,
@@ -225,7 +237,7 @@ state_time <- function(
     conf_level = conf_level,
     return_draws = inherits(model, "blrm"),
     ...
-  )
+  ))
   setup <- copy_sops_attrs_to_setup(setup, ind)
   state_sets <- normalize_comparison_state_sets(
     state_sets,

@@ -202,12 +202,20 @@ visit are allowed.
 The check runs once per user call. `sops()` and `avg_sops()` call it, and
 `avg_state_time()` and the `"sop"` and `"time_in_state"` estimands of
 `avg_comparisons()` reach it through `avg_sops()`. The `"time_benefit"`
-estimand calls it directly, because its internal `sops()` call receives the
-counterfactual rows as `newdata`. Internal `sops()` calls and inference replays
+estimand of `avg_comparisons()`, `comparisons()`, and `state_time()` call it
+directly, with the caller's data and `newdata_supplied` from
+`avg_comparison_setup()`, because their internal `sops()` call receives the
+counterfactual or stacked prediction rows as `newdata`. That inner check would
+treat the stored starting profiles as supplied rows and accept `times` that
+begin after the first follow-up visit. `comparisons()` and `state_time()` hand
+`by` averages to `avg_comparisons()` and `avg_state_time()` before the check,
+so it still runs once. Internal `sops()` calls and inference replays
 (`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, used by
 `replay_avg_time_sops()` and the comparison replays) run inside
-`muffle_skipped_sop_visits()`, so `inferences()` never repeats the warning.
-`soprob_markov()` does not check. The model-based diagnostic plots expand
+`muffle_skipped_sop_visits()`. The per-profile intervals
+(`inferences_profile_results()`, `inferences_delta_profile_results()`) call
+`soprob_markov()` or the native recursion without going through `sops()`, so
+`inferences()` never repeats the warning. `soprob_markov()` does not check. The model-based diagnostic plots expand
 sparse plot times to the full recursion grid (`complete_plot_recursion_times()`
 in `R/markov-plot-helpers.R`) and never call `sops()`.
 

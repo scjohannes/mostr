@@ -205,6 +205,32 @@ calculations keep every draw of every row, so \code{\link[=inferences]{inference
 drawing when \code{n_draws} times the number of rows exceeds the option
 \code{mostr.max_sops_draw_cells} (50 million by default, about 400 MB).
 }
+\section{Choosing visits}{
+
+SOPs are calculated one visit at a time. The first value of \code{times} is the
+first transition from the starting state, and each later value is one more
+transition. The values set the time variable, and any time-varying
+covariates, for each transition; they do not say how much time passes
+between transitions. Leaving out visits therefore does not skip time. With
+daily visits, \code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
+transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
+and 14. To get SOPs at selected visits, request every visit, such as
+\code{times = 1:14}, and keep the rows you need.
+
+When \code{newdata} is omitted, each patient starts from their state before the
+first follow-up visit (\code{first_followup_time} of the fitting wrapper), so
+\code{times} must begin at that visit. Each row of a supplied \code{newdata} starts
+from its previous state at the first requested visit, which may be a later
+visit.
+
+A warning is given when \code{times} leaves out visits that occur in the data the
+model was fitted to, is not in increasing order, or, when \code{newdata} is
+omitted, does not begin at the first follow-up visit. Times after the last
+fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
+because each transition then uses its own elapsed time, so the visits may be
+spaced unevenly.
+}
+
 \examples{
 \dontrun{
 # One SOP difference per patient, visit, and state, with intervals from
