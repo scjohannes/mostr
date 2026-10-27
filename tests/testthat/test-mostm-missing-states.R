@@ -350,3 +350,105 @@ test_that("logLik(), nobs(), and print() describe the observed data", {
   expect_output(print(fit), "Robust S.E.")
   expect_output(print(fit), "A missing state may be: 1, 2, 3, 4, 5")
 })
+
+# --- Review findings ------------------------------------------------------------
+
+test_that("character visit times are rejected rather than sorted as text", {
+  data <- ml_sim_missing()
+  data$visit <- sprintf("day %d", data$time)
+  # Sorted as text, "day 10" would come before "day 2".
+  expect_error(
+    mostm(
+      ordered(y) ~ yprev + time + tx,
+      data = data,
+      id_var = "id",
+      time_var = "visit",
+      first_followup_time = "day 1",
+      missing_states = 1:5
+    ),
+    "`time_var`.*numeric.*factor"
+  )
+
+  # A factor with its levels in time order keeps the visits in time order.
+  data$visit <- factor(data$visit, levels = sprintf("day %d", 1:12))
+  by_factor <- mostm(
+    ordered(y) ~ yprev + time + tx,
+    data = data,
+    id_var = "id",
+    time_var = "visit",
+    first_followup_time = "day 1",
+    missing_states = 1:5
+  )
+  by_number <- mostm(
+    ordered(y) ~ yprev + time + tx,
+    data = data,
+    id_var = "id",
+    missing_states = 1:5
+  )
+  expect_equal(stats::coef(by_factor), stats::coef(by_number))
+})
+
+test_that("missing_states without missing data keeps the ordinary refits and FWB", {
+  data <- make_test_data(n_patients = 60, follow_up_time = 10)
+  formula <- ordered(y) ~ yprev + time + tx
+  fit <- mostm(formula, data = data, id_var = "id", missing_states = 1:5)
+  ordinary <- mostm(formula, data = data, id_var = "id")
+
+  boot_data <- markov_model_refit_data(fit)
+  boot_data$new_id <- paste0(boot_data$id, "_1")
+  refit <- update_bootstrap_model(fit, boot_data)
+  ordinary_refit <- update_bootstrap_model(ordinary, boot_data)
+  # Ordinary refits skip the starting profiles and the clustered covariance.
+  expect_null(attr(ordinary_refit, "markov_starting_profile_metadata"))
+  expect_null(attr(refit, "markov_starting_profile_metadata"))
+
+  sops <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:4, absorb = "6")
+  expect_no_error(inferences(sops, method = "fwb", n_draws = 3, seed = 1))
+})
+
+test_that("Ocens() endpoints beyond the observed states are clipped to them", {
+  data <- ml_oracle_data(long_runs = TRUE)
+  formula <- Ocens(y_lo, y_hi) ~ yprev + time + tx
+  reference <- mostm(formula, data = data, id_var = "id", missing_states = 1:3)
+
+  wide <- data
+  # Patient 112's range 1 to 2 at time 2, and patient 108's range 1 to 4 at
+  # its last visit; states run from 1 to 4.
+  row_112 <- wide$id == 112 & wide$time == 2
+  row_108 <- wide$id == 108 & wide$time == 3
+  expect_equal(c(wide$y_lo[row_112], wide$y_hi[row_112]), c(1, 2))
+  expect_equal(c(wide$y_lo[row_108], wide$y_hi[row_108]), c(1, 4))
+  wide$y_lo[row_112] <- 0
+  wide$y_hi[row_108] <- 10
+  clipped <- mostm(formula, data = wide, id_var = "id", missing_states = 1:3)
+  expect_equal(stats::coef(clipped), stats::coef(reference))
+  expect_equal(clipped$ml$loglik, reference$ml$loglik)
+})
+
+test_that("the Newton decrement uses the information at the estimates", {
+  data <- ml_sim_missing(missing = 0.4)
+  formula <- ordered(y) ~ yprev + time + tx
+  fit <- mostm(formula, data = data, id_var = "id", missing_states = 1:5)
+  expect_gt(fit$ml$newton_steps, 0L)
+  problem <- ml_test_problem(data, formula = formula, missing_states = 1:5)
+  theta <- stats::coef(fit)
+  score <- markov_ml_total_score(problem, theta)
+  information <- markov_ml_information(problem, theta)
+  expect_equal(
+    fit$ml$newton_decrement,
+    sum(score * solve(information, score)),
+    tolerance = 1e-6
+  )
+
+  # Bootstrap refits skip the covariances but still check convergence with
+  # the information at their estimates.
+  refit <- with_markov_ml_coefficients_only(
+    mostm(formula, data = data, id_var = "id", missing_states = 1:5)
+  )
+  expect_equal(
+    refit$ml$information,
+    information,
+    tolerance = 1e-8,
+    ignore_attr = TRUE
+  )
+})

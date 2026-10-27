@@ -785,10 +785,15 @@ update_bootstrap_model <- function(
   # Refits need only the coefficients. Without `id_var`, `mostm()` skips the
   # patient-clustered covariance and the starting profiles. Fits with missing
   # states need `id_var` for their chains: each resampled copy of a patient
-  # is a patient of its own, and the covariances are skipped.
-  uses_ml <- markov_refit_uses_ml(refit_args)
+  # is a patient of its own, and the covariances are skipped. A fit given
+  # `missing_states` with nothing missing is an ordinary fit; its refits also
+  # drop `missing_states`, which `mostm()` accepts only with `id_var`.
+  uses_ml <- markov_refit_uses_ml(model)
   refit_call$id_var <- if (uses_ml) {
     if ("new_id" %in% names(boot_data)) "new_id" else refit_args$id_var
+  }
+  if (!uses_ml) {
+    refit_call$missing_states <- NULL
   }
   # A resample without some state has its states renumbered consecutively
   # (`state_mapping`, from relevel_factors_consecutive()), so the states a

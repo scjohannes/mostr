@@ -203,12 +203,16 @@ Refits evaluate the fitted model's stored `mostm()` call
 original engine, the resampled data, bootstrap weights, and optional starting
 coefficients. Refits drop `id_var`: they need only the coefficients, so
 `mostm()` skips the patient-clustered covariance and the starting profiles,
-and a `"vglm"` refit is a plain `vglm` fit. Fits with missing states
-(`markov_refit_uses_ml()`: stored `missing_states` or an `Ocens()` response)
+and a `"vglm"` refit is a plain `vglm` fit. Fits that maximised the
+likelihood with missing or range-coded states (`markov_refit_uses_ml()`: the
+`markov_ml_fit` attribute that `mostm()` sets with `markov_ml_mark_fit()` on
+the fit and, for `"vglm"`, on its `vglm_fit`, which the refits start from)
 keep `id_var` instead, set to the resample's `new_id` so each copy of a
 patient is its own chain, and refit inside
 `with_markov_ml_coefficients_only()`, which makes `mostm()` skip their
-covariances. `suppress_expected_refit_warnings()`
+covariances. A fit given `missing_states` with nothing missing is an ordinary
+fit without the attribute; its refits drop `missing_states` along with
+`id_var`, so they are the ordinary refits. `suppress_expected_refit_warnings()`
 muffles the resulting missing-`id_var` warning and the rms warning that its own
 bootstrap ignores weights. `mostm()` stores the values of the arguments the
 user passed at fit time
@@ -283,12 +287,16 @@ flowchart TD
 ```
 
 - Data contract (`markov_ml_prepare()` in `R/markov-ml-setup.R`): rows are
-  ordered by `id_var` and `time_var`. `markov_ml_parse_response()` evaluates
-  the response itself (so `Ocens()` works for every engine) and
-  `markov_ml_state_scale()` maps it to lower and upper state indices on the
-  scale of exactly observed states. An `NA` response allows the states in
-  `missing_states`; with `missing_states = NULL` such rows are dropped, as are
-  rows with missing covariates. A chain is a maximal run of kept rows of one
+  ordered by `id_var` and `time_var`, which must be numeric or a factor
+  (ordered by its levels); character time is rejected because it would sort
+  as text. `markov_ml_parse_response()` evaluates the response itself (so
+  `Ocens()` works for every engine) and `markov_ml_state_scale()` maps it to
+  lower and upper state indices on the scale of exactly observed states.
+  Finite `Ocens()` endpoints beyond the scale are clipped to it; a range
+  without any state of the scale is an error. An `NA` response allows the
+  states in `missing_states`; with `missing_states = NULL` such rows are
+  dropped, as are rows with missing covariates. A chain is a maximal run of
+  kept rows of one
   patient; it starts at a row whose previous state (`p_var`) is observed, and
   rows that would start a chain without one are dropped. Inside a chain the
   previous state comes from the chain. Fully observed transitions are
@@ -308,9 +316,12 @@ flowchart TD
   forward-backward pass gives the log-likelihood and posterior transition
   weights; the M-step is a weighted Newton fit to the expected counts. EM
   stops at a relative log-likelihood change of 1e-6, then Newton steps use the
-  exact observed information. `rms::rcs()` knots are fixed from the fully
-  observed transitions (`markov_ml_lock_knots()`), so the start fit, the
-  design rows, and the final fit share one basis.
+  exact observed information at the EM estimates. After Newton steps, the
+  information is recomputed at the final estimates for the convergence check
+  (Newton decrement), the stored `ml$information`, and the covariances, also
+  in coefficients-only bootstrap refits. `rms::rcs()` knots are fixed from
+  the fully observed transitions (`markov_ml_lock_knots()`), so the start fit,
+  the design rows, and the final fit share one basis.
 - Inference (`R/markov-ml-inference.R`): patient scores by Fisher's identity
   and the observed information by Louis' identity (complete-data information
   averaged over the posterior minus the variance of the score, with a forward
@@ -320,9 +331,10 @@ flowchart TD
   `get_delta_cluster_vcov()`, `get_delta_score_components()`, and
   `score_bootstrap_components()` use it instead of row scores, which would
   describe the fit to expected counts. `robcov_orm()` and
-  `compute_scores_orm()` reject these fits. FWB is rejected
-  (`stop_markov_ml_fwb()`), and SOP functions reject `p2_var`
-  (`markov_reject_ml_second_order()`).
+  `compute_scores_orm()` reject these fits. FWB is rejected for fits marked
+  by `markov_ml_mark_fit()` (`stop_markov_ml_fwb()`), so a fit given
+  `missing_states` with nothing missing keeps it, and SOP functions reject
+  `p2_var` (`markov_reject_ml_second_order()`).
 - Returned objects (`markov_ml_finish()` in `R/markov-ml-mostm.R`): an orm
   fit gets `$ml`, `$var` (robust), data-based `stats`, and class `mostm_ml`
   in front; a vglm fit becomes a `robcov_vglm`-shaped list with class

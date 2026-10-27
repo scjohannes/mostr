@@ -422,18 +422,24 @@ markov_is_ml_fit <- function(model) {
   !is.null(markov_ml_components(model))
 }
 
-# TRUE when stored `mostm()` arguments ask for missing states: their refits
-# must keep the patients' chains.
-markov_refit_uses_ml <- function(refit_args) {
-  !is.null(refit_args$missing_states) ||
-    markov_formula_has_ocens(refit_args$formula)
+# mostm() marks the fits that maximise the likelihood with missing or
+# range-coded states, for every engine and, for vglm, on both the
+# `mostm_ml` object and its `vglm_fit`, which bootstrap refits start from.
+# A fit with `missing_states` but nothing missing is an ordinary engine fit
+# and is not marked.
+markov_ml_mark_fit <- function(model) {
+  attr(model, "markov_ml_fit") <- TRUE
+  model
+}
+
+# TRUE when `model` was fitted with missing or range-coded states: its refits
+# must keep the patients' chains, and it does not accept row weights.
+markov_refit_uses_ml <- function(model) {
+  isTRUE(markov_model_metadata_attr(model, "markov_ml_fit"))
 }
 
 stop_markov_ml_fwb <- function(model) {
-  if (
-    inherits(model, "mostm_ml") ||
-      markov_refit_uses_ml(markov_model_refit_args(model))
-  ) {
+  if (markov_refit_uses_ml(model)) {
     stop(
       "The fractional weighted bootstrap is not available for fits with ",
       "`missing_states` or an `Ocens()` response, which do not accept row ",

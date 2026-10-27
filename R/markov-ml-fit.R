@@ -384,6 +384,11 @@ mostm_fit_ml <- function(
     theta_hat <- newton$theta
     state <- markov_ml_estep(problem, theta_hat)
     loglik <- state$loglik
+    # Newton steps keep the information at the EM estimates; the convergence
+    # check and the covariances need it at the final estimates.
+    if (newton$steps > 0L) {
+      information <- markov_ml_information(problem, theta_hat, state)
+    }
   } else {
     # Only exact and range-free transitions: the start fit maximises the
     # likelihood of these transitions.
@@ -415,9 +420,6 @@ mostm_fit_ml <- function(
   var_model <- NULL
   information_pd <- NA
   if (isTRUE(control$variance)) {
-    if (newton$steps > 0L) {
-      information <- markov_ml_information(problem, theta_hat, state)
-    }
     var_model <- markov_ml_invert_information(information)
     information_pd <- !is.null(var_model)
     if (!information_pd) {

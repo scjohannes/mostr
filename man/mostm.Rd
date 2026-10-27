@@ -66,8 +66,10 @@ it, a warning is given, and these features, as well as the fractional
 weighted bootstrap, are not available from the fit.}
 
 \item{time_var}{Name of the time column in \code{data}. It is used to find each
-patient's starting row and, with missing states, to order each patient's
-visits.}
+patient's starting row and, with \code{missing_states} or an \code{\link[rms:Ocens]{rms::Ocens()}}
+response, to order each patient's visits. Time must then be numeric or a
+factor whose levels are in time order: character time is an error,
+because it would sort as text, putting \code{"day 10"} before \code{"day 2"}.}
 
 \item{p_var}{Name of the previous-state column in \code{data}, as in \code{\link[=sops]{sops()}}.
 It is used with \code{missing_states} or an \code{\link[rms:Ocens]{rms::Ocens()}} response, which
@@ -208,7 +210,9 @@ the estimates. For example, when deaths are always recorded but other
 states are often missing, the remaining transitions overrepresent deaths.
 
 Give \code{missing_states} to use these visits instead. Each patient's rows,
-ordered by \code{time_var}, then form one chain. For a visit with a missing
+ordered by \code{time_var}, then form one chain, so time must be numeric or a
+factor with its levels in time order; convert character time such as
+\code{"day 1"} to such a factor or to numbers. For a visit with a missing
 state, the likelihood adds up the probabilities of all paths through the
 states in \code{missing_states}. Each patient contributes the probability of
 everything observed for that patient, given the first previous state and
@@ -217,7 +221,10 @@ state is known only up to a range, such as "in hospital, level unknown",
 code the response as \code{Ocens(lower, upper)} with \code{\link[rms:Ocens]{rms::Ocens()}}, for example
 \code{Ocens(y_lo, y_hi) ~ yprev + rms::rcs(time, 4) + tx}. A row's range then
 replaces \code{missing_states}, \code{Ocens(b, b)} is an observed state \code{b}, and a
-row with both endpoints missing is a missing state. An \code{Ocens()} response
+row with both endpoints missing is a missing state. A range allows the
+states in it that are observed exactly somewhere in the data, so a finite
+endpoint may lie beyond the lowest or highest such state, but each range
+must contain at least one of them. An \code{Ocens()} response
 alone, without \code{missing_states}, uses the ranges and drops rows with a
 missing state. Ranges and missing states work with all three engines,
 because \code{mostm()} evaluates the response itself: the engine sees only

@@ -61,8 +61,10 @@
 #'   it, a warning is given, and these features, as well as the fractional
 #'   weighted bootstrap, are not available from the fit.
 #' @param time_var Name of the time column in `data`. It is used to find each
-#'   patient's starting row and, with missing states, to order each patient's
-#'   visits.
+#'   patient's starting row and, with `missing_states` or an [rms::Ocens()]
+#'   response, to order each patient's visits. Time must then be numeric or a
+#'   factor whose levels are in time order: character time is an error,
+#'   because it would sort as text, putting `"day 10"` before `"day 2"`.
 #' @param p_var Name of the previous-state column in `data`, as in [sops()].
 #'   It is used with `missing_states` or an [rms::Ocens()] response, which
 #'   need to know which predictor is the previous state, and to describe
@@ -138,7 +140,9 @@
 #' states are often missing, the remaining transitions overrepresent deaths.
 #'
 #' Give `missing_states` to use these visits instead. Each patient's rows,
-#' ordered by `time_var`, then form one chain. For a visit with a missing
+#' ordered by `time_var`, then form one chain, so time must be numeric or a
+#' factor with its levels in time order; convert character time such as
+#' `"day 1"` to such a factor or to numbers. For a visit with a missing
 #' state, the likelihood adds up the probabilities of all paths through the
 #' states in `missing_states`. Each patient contributes the probability of
 #' everything observed for that patient, given the first previous state and
@@ -147,7 +151,10 @@
 #' code the response as `Ocens(lower, upper)` with [rms::Ocens()], for example
 #' `Ocens(y_lo, y_hi) ~ yprev + rms::rcs(time, 4) + tx`. A row's range then
 #' replaces `missing_states`, `Ocens(b, b)` is an observed state `b`, and a
-#' row with both endpoints missing is a missing state. An `Ocens()` response
+#' row with both endpoints missing is a missing state. A range allows the
+#' states in it that are observed exactly somewhere in the data, so a finite
+#' endpoint may lie beyond the lowest or highest such state, but each range
+#' must contain at least one of them. An `Ocens()` response
 #' alone, without `missing_states`, uses the ranges and drops rows with a
 #' missing state. Ranges and missing states work with all three engines,
 #' because `mostm()` evaluates the response itself: the engine sees only
@@ -516,6 +523,9 @@ mostm <- function(
       refit_args = refit_args,
       prior_weight_column = prior_weight_column
     )
+    if (!is.null(ml_problem)) {
+      model <- markov_ml_mark_fit(model)
+    }
     markov_set_engine(model, engine)
   }
 
@@ -534,7 +544,9 @@ mostm <- function(
     )
     return(attach_data(fit))
   }
-  if (is.null(id_var) || engine == "blrm") {
+  # Bootstrap refits of fits with missing states keep `id_var` for their
+  # chains; a resample with nothing missing needs no covariance either.
+  if (is.null(id_var) || engine == "blrm" || markov_ml_coefficients_only()) {
     return(fit)
   }
 

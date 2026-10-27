@@ -66,7 +66,8 @@
   adds up the probabilities of all states the patient could have been in. The
   estimates are valid when states are missing at random. With nothing missing,
   the fit is the engine's usual fit. Each patient's rows must then form one
-  chain of scheduled visits (`id_var` is required, and `p_var` names the
+  chain of scheduled visits (`id_var` is required, `time_var` must be numeric
+  or a factor with its levels in time order, and `p_var` names the
   previous-state column), and the model must be first order. See "Missing and
   partially known states" in `?mostm`.
 

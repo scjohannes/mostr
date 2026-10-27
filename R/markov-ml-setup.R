@@ -131,7 +131,9 @@ markov_ml_parse_response <- function(formula, data) {
 # The scale consists of the exactly observed states. Endpoint rules follow
 # rms: two finite endpoints give a closed interval, a lower endpoint of -Inf
 # means states below the upper endpoint, and an upper endpoint of Inf means
-# states above the lower endpoint.
+# states above the lower endpoint. A range keeps the states of the scale it
+# contains, so finite endpoints beyond the lowest or highest state are
+# clipped to it; a range without any state of the scale is an error.
 markov_ml_state_scale <- function(parsed, row_ids) {
   lower <- parsed$lower
   upper <- parsed$upper
@@ -175,7 +177,9 @@ markov_ml_state_scale <- function(parsed, row_ids) {
   a <- lower[present]
   b <- upper[present]
   # First and last state of the scale inside the interval. findInterval()
-  # counts the states below (`left.open = TRUE`) or at most at a value.
+  # counts the states below (`left.open = TRUE`) or at most at a value, so an
+  # endpoint below the lowest state gives `first = 1` and one above the
+  # highest state gives `last = K`.
   first <- ifelse(
     is.infinite(a),
     1L,
@@ -190,16 +194,15 @@ markov_ml_state_scale <- function(parsed, row_ids) {
     findInterval(b, values, left.open = TRUE),
     ifelse(is.infinite(b), K, findInterval(b, values))
   )
-  outside <- function(v) is.finite(v) & (v < values[[1L]] | v > values[[K]])
-  empty <- outside(a) | outside(b) | first > last | b < a
+  empty <- first > last | b < a
   lo[present] <- ifelse(empty, NA_integer_, as.integer(first))
   hi[present] <- ifelse(empty, -1L, as.integer(last))
   invalid <- which(!is.na(hi) & hi < 0L)
   if (length(invalid)) {
     stop(
-      "`Ocens()` range(s) are empty or outside the observed states ",
+      "`Ocens()` range(s) contain none of the states observed exactly (",
       paste(labels, collapse = ", "),
-      " for patient(s) ",
+      ") for patient(s) ",
       markov_format_patient_ids(row_ids[invalid]),
       ". Each range must contain at least one state that is observed exactly ",
       "somewhere in the data.",
@@ -307,11 +310,26 @@ markov_ml_prepare <- function(
   if (!time_var %in% names(data)) {
     stop("Time column `", time_var, "` not found in `data`.", call. = FALSE)
   }
-  if (anyNA(data[[time_var]])) {
+  # Time orders each patient's rows into a chain. Character time would sort
+  # as text ("day 10" before "day 2"); a factor sorts by its levels.
+  time <- data[[time_var]]
+  if (!is.numeric(time) && !is.factor(time)) {
+    stop(
+      "With `missing_states` or an `Ocens()` response, `time_var` must name ",
+      "a numeric column or a factor whose levels are in time order, because ",
+      "it orders each patient's visits; `",
+      time_var,
+      "` is of class ",
+      class(time)[[1L]],
+      ".",
+      call. = FALSE
+    )
+  }
+  if (anyNA(time)) {
     stop("The time column `", time_var, "` must not be missing.", call. = FALSE)
   }
 
-  ord <- order(data[[id_var]], data[[time_var]])
+  ord <- order(data[[id_var]], time)
   sd <- data[ord, , drop = FALSE]
   n_all <- nrow(sd)
   ids_all <- as.character(sd[[id_var]])
