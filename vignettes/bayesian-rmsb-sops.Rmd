@@ -89,9 +89,6 @@ mode. Settings of the sampler that `rmsb::blrm()` has no argument for go in
 `mostm()` would reach only that preliminary search, not the sampler.
 
 ```{r fit-blrm, eval = RUN_BAYESIAN}
-dd <- rms::datadist(model_data)
-options(datadist = "dd")
-
 fit_blrm <- mostm(
   y ~ yprev + rms::rcs(time, 4) * tx + cluster(id),
   ppo = ~ time,

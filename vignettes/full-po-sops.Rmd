@@ -125,8 +125,10 @@ ordered-factor response, so the formula uses `ordered(y)`. Its default family,
 `cumulative(reverse = TRUE, parallel = TRUE)`, models the odds of worse
 (higher) states (`reverse = TRUE`) under proportional odds
 (`parallel = TRUE`). The default engine, `"orm"`, fits the model with
-`rms::orm()`, which needs a `datadist` object that rms uses to summarize
-predictors. Arguments of the engine's own fitting function can be added to the
+`rms::orm()`. mostr does not need an rms `datadist` object; set one with
+`options(datadist = ...)` only if you also want rms's own summaries of the
+fit, such as `summary(fit_orm)` or `rms::Predict()`. Arguments of the
+engine's own fitting function can be added to the
 `mostm()` call: here `opt_method`, `scale`, and `maxit` help `rms::orm()`
 converge reliably.
 
@@ -142,9 +144,6 @@ fit_vglm <- mostm(
   id_var = "id",
   engine = "vglm"
 )
-
-dd <- datadist(model_data)
-options(datadist = "dd")
 
 fit_orm <- mostm(
   y ~ tx + rcs(time, 4) + yprev,

@@ -117,9 +117,6 @@ this defaults to 1; for factor time, set it explicitly with
 days, to `times` in `avg_sops()`. The resulting SOPs refer to visits 1 to 4.
 
 ```{r fit-model}
-dd <- rms::datadist(model_data)
-options(datadist = "dd")
-
 fit_visit <- mostm(
   y ~ tx + time + yprev,
   data = model_data,

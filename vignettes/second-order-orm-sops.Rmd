@@ -76,9 +76,6 @@ of each previous state change linearly over time through the `%ia%`
 interaction terms, rms's operator for restricted interactions.
 
 ```{r fit-model}
-dd <- datadist(model_data)
-options(datadist = "dd")
-
 fit_second <- mostm(
   y ~ tx + rcs(time, 4) + yprev + ypprev + time %ia% yprev + time %ia% ypprev,
   data = model_data,

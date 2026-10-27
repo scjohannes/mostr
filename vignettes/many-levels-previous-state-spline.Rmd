@@ -81,9 +81,6 @@ model_data <- prepare_markov_data(
   factor_previous = FALSE
 )
 
-dd <- rms::datadist(model_data)
-options(datadist = "dd")
-
 fit_many <- mostm(
   y ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 5),
   data = model_data,

@@ -67,9 +67,6 @@ model_data <- prepare_markov_data(
   absorbing_state = as.integer(ABSORB)
 )
 
-dd <- rms::datadist(model_data)
-options(datadist = "dd")
-
 fit <- mostm(
   y ~ tx + time + yprev,
   data = model_data,

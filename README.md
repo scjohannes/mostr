@@ -35,9 +35,6 @@ trial <- sim_markov(
 
 markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 
-dd <- datadist(markov_data)
-options(datadist = "dd")
-
 fit <- mostm(
   y ~ rms::rcs(time, 4) + tx + yprev,
   data = markov_data,

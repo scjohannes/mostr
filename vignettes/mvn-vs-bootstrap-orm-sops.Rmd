@@ -66,9 +66,6 @@ raw_data <- sim_markov(
 
 model_data <- prepare_markov_data(raw_data, absorbing_state = as.integer(ABSORB))
 
-dd <- rms::datadist(model_data)
-options(datadist = "dd")
-
 fit_orm <- mostm(
   y ~ tx + rms::rcs(time, 4) + yprev,
   data = model_data,
