@@ -59,6 +59,15 @@
   try. Previously a fit with `id_var` stopped with an unrelated error about
   the robust covariance, and a fit without `id_var` returned the failed fit.
 
+* With `engine = "orm"` or `"blrm"`, `mostm()` stops before fitting when the
+  formula converts a predictor with `factor()`, `as.factor()`, `ordered()`, or
+  `as.ordered()`, for example `ordered(y) ~ factor(time) + tx + yprev`. rms
+  cannot fit such terms, and the fit previously stopped with "subscript out of
+  bounds". The new error asks for a factor column in `data` instead. For time,
+  store `time` as a factor column and set `first_followup_time`, as shown in
+  `vignette("factor-time-orm-sops")`. `engine = "vglm"` still fits these
+  formulas.
+
 # mostr 0.2.0
 
 ## Breaking changes

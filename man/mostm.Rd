@@ -21,7 +21,10 @@ mostm(
 \arguments{
 \item{formula}{A model formula with the current state as the response, for
 example \code{ordered(y) ~ yprev + rms::rcs(time, 4) + tx}. Offsets are not
-supported.}
+supported. For the \code{"orm"} and \code{"blrm"} engines, categorical predictors,
+including time, must be factor or character columns of \code{data} rather
+than converted with \code{factor()} inside the formula; for factor time, also
+set \code{first_followup_time}.}
 
 \item{data}{A data frame with one row per patient and visit.}
 
