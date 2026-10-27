@@ -303,3 +303,188 @@ test_that("fits without mostm() provenance must be refitted", {
     error = TRUE
   )
 })
+
+test_that("orm and vglm fits do not load the blrm engine's packages", {
+  skip_on_cran()
+  skip_if_not_installed("callr")
+  skip_if_not_installed("rmsb")
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+
+  # rmsb and rstan take seconds to load, so an orm or vglm fit, and every
+  # bootstrap worker that refits one, must not load them. A fresh R process
+  # shows which namespaces a fit loads.
+  dev_path <- if (
+    requireNamespace("pkgload", quietly = TRUE) &&
+      pkgload::is_dev_package("mostr")
+  ) {
+    pkgload::pkg_path(testthat::test_path())
+  }
+  loaded <- callr::r(
+    function(dev_path) {
+      if (is.null(dev_path)) {
+        library(mostr)
+      } else {
+        pkgload::load_all(dev_path, quiet = TRUE)
+      }
+      trajectories <- sim_markov(
+        "actt2",
+        n_patients = 40,
+        follow_up_time = 6,
+        seed = 1
+      )
+      data <- prepare_markov_data(trajectories, absorbing_state = 8)
+      mostm(ordered(y) ~ yprev + time + tx, data = data, id_var = "id")
+      mostm(
+        ordered(y) ~ yprev + time + tx,
+        data = data,
+        id_var = "id",
+        engine = "vglm"
+      )
+      c("rmsb", "rstan") %in% loadedNamespaces()
+    },
+    args = list(dev_path = dev_path)
+  )
+
+  expect_identical(loaded, c(FALSE, FALSE))
+})
+
+test_that("mostm() reports an orm fit that rms could not fit", {
+  skip_if_not_installed("rms")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6201)
+  # `maxit = 0` stops rms::orm() before it converges.
+  for (id_var in list("id", NULL)) {
+    expect_error(
+      suppressMessages(suppressWarnings(capture.output(
+        mostm(
+          ordered(y) ~ time + tx + yprev,
+          data = data,
+          id_var = id_var,
+          maxit = 0
+        )
+      ))),
+      "`rms::orm()` could not fit the model",
+      fixed = TRUE
+    )
+  }
+})
+
+test_that("mostm() accepts the engine arguments used in the articles", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+
+  expect_contains(
+    mostr:::mostm_engine_args("orm"),
+    c(
+      "opt_method",
+      "scale",
+      "maxit",
+      "penalty",
+      "var.penalty",
+      "na.action",
+      "family"
+    )
+  )
+  expect_contains(
+    mostr:::mostm_engine_args("vglm"),
+    c(
+      "family",
+      "constraints",
+      "etastart",
+      "mustart",
+      "coefstart",
+      "control",
+      "maxit",
+      "trace"
+    )
+  )
+  skip_if_not_installed("rmsb")
+  expect_contains(
+    mostr:::mostm_engine_args("blrm"),
+    c("ppo", "cppo", "iter", "warmup", "chains", "refresh", "method", "backend")
+  )
+})
+
+test_that("every engine warns without id_var, even without an id column", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+
+  data <- make_test_data(n_patients = 30, follow_up_time = 6, seed = 6112)
+  data$id <- NULL
+  expect_warning(
+    mostm(ordered(y) ~ time + tx + yprev, data = data),
+    "`id_var` was not supplied to mostm()",
+    fixed = TRUE
+  )
+  expect_warning(
+    mostm(ordered(y) ~ time + tx + yprev, data = data, engine = "vglm"),
+    "`id_var` was not supplied to mostm()",
+    fixed = TRUE
+  )
+  skip_if_not_installed("rmsb")
+  expect_warning(
+    mostm(
+      ordered(y) ~ time + tx + yprev,
+      data = data,
+      engine = "blrm",
+      standata = TRUE
+    ),
+    "`id_var` was not supplied to mostm()",
+    fixed = TRUE
+  )
+})
+
+test_that("orm refits keep the fit's na.action and penalty", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("Hmisc")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6111)
+  # Missing treatment on later visits only, so every patient keeps a complete
+  # starting row.
+  later <- which(data$time > 2)
+  data$tx[later[c(3, 17, 40)]] <- NA
+
+  # rms::orm() accepts Hmisc::na.delete() but fails with stats::na.omit()
+  # when rows have missing values.
+  fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    na.action = Hmisc::na.delete,
+    penalty = 2,
+    var.penalty = "sandwich"
+  )
+  unpenalized <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    na.action = Hmisc::na.delete
+  )
+  expect_gt(
+    max(abs(stats::coef(fit) - stats::coef(unpenalized))),
+    1e-4
+  )
+
+  # Refitting the stored data reproduces the penalized fit.
+  boot <- mostr:::bootstrap_analysis_wrapper(
+    boot_data = mostr:::markov_model_refit_data(fit),
+    model = fit,
+    factor_cols = character(0),
+    original_data = data,
+    update_datadist = FALSE
+  )
+  expect_identical(mostr:::bootstrap_model_call(boot$model)$penalty, 2)
+  expect_equal(stats::coef(boot$model), stats::coef(fit), tolerance = 1e-6)
+
+  out <- avg_sops(
+    fit,
+    variables = list(tx = c(0, 1)),
+    times = 1:3,
+    y_levels = 1:6,
+    absorb = 6
+  )
+  withr::local_seed(6113)
+  inferred <- inferences(out, method = "bootstrap", n_draws = 2)
+  expect_equal(attr(inferred, "n_successful"), 2L)
+})

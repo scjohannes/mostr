@@ -47,6 +47,18 @@
   arguments. They no longer compute patient-clustered standard errors for each
   refit, which only the original fit uses.
 
+## Bug fixes
+
+* With `engine = "vglm"`, starting values given through `etastart` or
+  `mustart`, with one row per row of `data`, now drop the rows that `subset`
+  or missing values remove. Previously such a fit stopped with a dimension
+  mismatch.
+
+* When `rms::orm()` cannot fit the model, for example because it does not
+  converge, `mostm()` stops with an error that says so and suggests settings to
+  try. Previously a fit with `id_var` stopped with an unrelated error about
+  the robust covariance, and a fit without `id_var` returned the failed fit.
+
 # mostr 0.2.0
 
 ## Breaking changes

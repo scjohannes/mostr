@@ -39,10 +39,11 @@ generate_score_bootstrap_draws <- function(
 ) {
   if (!inherits(model, "robcov_vglm") && !inherits(model, "orm")) {
     stop(
-      "`engine = \"score_bootstrap\"` requires a 'robcov_vglm' model ",
-      "or an 'orm' model with `cluster` supplied. Wrap vglm fits with ",
-      "robcov_vglm(fit, cluster = <id>), or call inferences(..., ",
-      "engine = \"score_bootstrap\", cluster = <id>) for orm fits."
+      "`method = \"score_bootstrap\"` requires a 'robcov_vglm' model or ",
+      "an 'orm' model with patient clusters. Fit the model with ",
+      "`mostm(..., id_var = ...)`, which returns a 'robcov_vglm' model for ",
+      "`engine = \"vglm\"`, or supply `cluster` to `inferences()` for an ",
+      "orm fit."
     )
   }
 

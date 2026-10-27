@@ -42,7 +42,7 @@ inferences_bootstrap <- function(
       stop(
         "Standard refit bootstrap is not supported for individual-level ",
         "SOPs because ordinary resampling can drop outcome-state support ",
-        "needed by fixed prediction rows. Use `engine = \"fwb\"`, or call ",
+        "needed by fixed prediction rows. Use `method = \"fwb\"`, or call ",
         "`avg_sops()` for marginal bootstrap inference."
       )
     }

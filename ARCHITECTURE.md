@@ -131,14 +131,21 @@ flowchart TD
   its own `...` to the Stan optimizer. `x`, `y`, `x.arg`, `y.arg`, and `offset`
   are rejected (the design matrix and response are always kept), as are the
   former starting-profile arguments (`markov_reject_legacy_args()`). `type`,
-  `cadjust`, and `weights` are rejected for `"blrm"`.
+  `cadjust`, and `weights` are rejected for `"blrm"`. The other engines'
+  argument lists are looked up only when a name is not accepted, because the
+  blrm list loads rmsb and rstan, which would slow every orm or vglm fit and
+  bootstrap refit.
 - `mostm_fit_orm()` and `mostm_fit_blrm()` call the engine with
   `x = TRUE, y = TRUE` and rebuild the fitting rows with
-  `markov_rms_model_frame()`. `mostm_fit_vglm()` in `R/vglm_helpers.R` builds
-  the model as `VGAM::vglm()` does, with rms formula helpers and one VGAM
-  assignment per inline rms basis column (`split_rms_basis_assign()`); its
-  `family` defaults to `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`, the
-  same proportional-odds model as `"orm"`.
+  `markov_rms_model_frame()`. `mostm_fit_orm()` stops when `rms::orm()`
+  returns a failed fit (`fail = TRUE`). `mostm_fit_vglm()` in
+  `R/vglm_helpers.R` builds the model as `VGAM::vglm()` does, with rms formula
+  helpers and one VGAM assignment per inline rms basis column
+  (`split_rms_basis_assign()`); its `family` defaults to
+  `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`, the same
+  proportional-odds model as `"orm"`. It takes `etastart` and `mustart` from
+  the model frame, so starting values lose the rows that `subset` or
+  `na.action` remove.
 - After the engine fit, `mostm()` stores the refit data and starting profiles
   (`markov_prepare_stored_data()`, `markov_attach_model_data()`), replaces the
   engine's call with the matched `mostm()` call including the resolved

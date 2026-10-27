@@ -360,6 +360,19 @@ mostm_fit_orm <- function(setup, ...) {
     fit_call$subset <- quote(subset_rows)
   }
   fit <- eval(fit_call)
+  # When its fitting algorithm fails, rms::orm() returns an object that holds
+  # only `fail = TRUE` instead of stopping.
+  if (isTRUE(fit$fail)) {
+    stop(
+      "`rms::orm()` could not fit the model: its fitting algorithm stopped ",
+      "without finding the coefficient estimates. You can try another ",
+      "algorithm with `opt_method = \"LM\"`, scale the covariates with ",
+      "`scale = TRUE`, allow more iterations with a larger `maxit`, or ",
+      "simplify the model, for example by removing covariates that are ",
+      "nearly collinear.",
+      call. = FALSE
+    )
+  }
 
   fit_frame <- markov_rms_model_frame(
     formula,
@@ -466,13 +479,17 @@ mostm_check_engine_args <- function(engine, dots, values) {
   }
 
   # rmsb::blrm() passes other arguments on to the Stan optimizer, so only
-  # arguments that belong to another engine are rejected there.
-  accepted <- mostm_engine_args(engine)
+  # arguments that belong to another engine are rejected there. The other
+  # engines' arguments are looked up only for names the engine does not
+  # accept: looking up those of "blrm" loads rmsb and rstan, which takes
+  # seconds in every orm or vglm fit and bootstrap refit.
   others <- setdiff(markov_engines(), engine)
-  other_args <- lapply(others, mostm_engine_args)
-  rejected <- setdiff(supplied, accepted)
-  if (engine == "blrm") {
-    rejected <- intersect(rejected, unlist(other_args))
+  rejected <- setdiff(supplied, mostm_engine_args(engine))
+  if (length(rejected)) {
+    other_args <- lapply(others, mostm_engine_args)
+    if (engine == "blrm") {
+      rejected <- intersect(rejected, unlist(other_args))
+    }
   }
   if (length(rejected)) {
     described <- vapply(

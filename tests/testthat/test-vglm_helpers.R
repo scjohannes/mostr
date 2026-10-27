@@ -223,6 +223,69 @@ test_that("the vglm engine records NA actions after dropping incomplete rows", {
   expect_length(with_na@na.action, 1)
 })
 
+test_that("the vglm engine aligns etastart with the rows it fits", {
+  skip_if_not_installed("VGAM")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6110)
+  full <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    engine = "vglm"
+  )
+  # Starting values have one row per row of `data`.
+  start <- full$vglm_fit@predictors
+  expect_equal(nrow(start), nrow(data))
+
+  # Rows removed by `subset` lose their starting values too, so the fit
+  # equals one on the kept rows with their starting values.
+  kept <- data$time <= 4
+  subset_fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    engine = "vglm",
+    subset = time <= 4,
+    etastart = start
+  )
+  kept_rows <- data[kept, , drop = FALSE]
+  kept_start <- start[kept, , drop = FALSE]
+  kept_fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = kept_rows,
+    id_var = "id",
+    engine = "vglm",
+    etastart = kept_start
+  )
+  expect_equal(stats::coef(subset_fit), stats::coef(kept_fit), tolerance = 1e-8)
+
+  # So do rows removed because of a missing predictor.
+  incomplete <- data
+  incomplete$tx[which(incomplete$time > 2)[c(2, 9)]] <- NA
+  complete <- !is.na(incomplete$tx)
+  incomplete_fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = incomplete,
+    id_var = "id",
+    engine = "vglm",
+    etastart = start
+  )
+  complete_rows <- incomplete[complete, , drop = FALSE]
+  complete_start <- start[complete, , drop = FALSE]
+  complete_fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = complete_rows,
+    id_var = "id",
+    engine = "vglm",
+    etastart = complete_start
+  )
+  expect_equal(
+    stats::coef(incomplete_fit),
+    stats::coef(complete_fit),
+    tolerance = 1e-8
+  )
+})
+
 test_that("the vglm engine stores form2 design slots", {
   skip_if_not_installed("VGAM")
 

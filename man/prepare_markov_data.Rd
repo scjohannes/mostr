@@ -35,7 +35,7 @@ states removed.
 \description{
 Prepares longitudinal Markov trajectory data for proportional odds regression
 by removing absorbing states and converting variables to appropriate types.
-Works with both VGAM::vglm and rms::orm models.
+The result can be fitted with \code{\link[=mostm]{mostm()}} and any of its engines.
 }
 \details{
 This is a convenience function that performs standard data preparation for
@@ -49,12 +49,9 @@ effects)
 effects
 }
 
-\strong{Package compatibility}: This function prepares data for:
-\itemize{
-\item \strong{VGAM::vglm}: Use \code{cumulative(parallel = TRUE, reverse = TRUE)} default
-datasets.
-\item \strong{rms::orm}: Automatically treats integers as ordered factors.
-}
+\strong{Engines}: The \code{"vglm"} engine of \code{\link[=mostm]{mostm()}} needs an ordered response,
+which \code{ordered_response = TRUE} provides (or write \code{ordered(y)} in the
+formula). The \code{"orm"} and \code{"blrm"} engines also accept an integer response.
 
 \strong{Multiple absorbing states}: When modeling scenarios with multiple absorbing
 states (e.g., discharge home and death), specify them as a vector. For example,
@@ -69,11 +66,12 @@ model_data <- prepare_markov_data(trajectories, absorbing_state = 6)
 # Prepare data with multiple absorbing states (home and death)
 model_data <- prepare_markov_data(trajectories, absorbing_state = c(1, 6))
 
-# Fit with VGAM (no robust SEs; use bootstrap for inference)
-library(VGAM)
-fit <- vglm(y ~ tx + rcs(time, 4) + yprev,
-            family = cumulative(parallel = TRUE, reverse = TRUE),
-            data = model_data)
+# Fit a proportional-odds transition model with the default orm engine
+fit <- mostm(
+  y ~ tx + rms::rcs(time, 4) + yprev,
+  data = model_data,
+  id_var = "id"
+)
 
 # Keep yprev numeric to use one linear or nonlinear previous-state effect
 model_data <- prepare_markov_data(
@@ -82,19 +80,11 @@ model_data <- prepare_markov_data(
   factor_previous = FALSE
 )
 fit <- mostm(
-  ordered(y) ~ tx + rcs(time, 4) + rcs(yprev, 6),
+  ordered(y) ~ tx + rms::rcs(time, 4) + rms::rcs(yprev, 6),
   data = model_data,
   id_var = "id",
   engine = "vglm"
 )
-
-# Fit with rms (supports robust SEs via robcov)
-library(rms)
-dd <- datadist(model_data)
-options(datadist = "dd")
-fit <- orm(y ~ tx + rcs(time, 4) + yprev, data = model_data, x = TRUE, y = TRUE)
-fit_robust <- robcov(fit, cluster = model_data$id)
-
 }
 
 }

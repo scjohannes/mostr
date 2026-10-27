@@ -46,7 +46,7 @@ generate_sop_coefficient_draws <- function(
   }
   if (!is.null(vcov)) {
     stop(
-      "`vcov` cannot be supplied when `engine = \"score_bootstrap\"` because ",
+      "`vcov` cannot be supplied when `method = \"score_bootstrap\"` because ",
       "draws are generated from score perturbations."
     )
   }

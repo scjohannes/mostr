@@ -151,8 +151,9 @@ each time-state-treatment combination, yielding population-average
 With \code{variables = list(tx = c(0, 1))}, the result represents the expected SOP
 if the entire population received treatment or control, averaged over the
 observed covariate distribution.
-For automatic wrapper-stored standardization, that distribution contains
-exactly the fitted patients with a complete designated starting profile and
+When \code{newdata} is omitted, the average uses the starting profiles stored by
+\code{\link[=mostm]{mostm()}}: exactly the fitted patients with a complete designated starting
+profile and
 at least one usable likelihood transition. A missing response at the
 designated row alone does not exclude a patient who contributes a later
 transition. Patients with no usable fitted transition are excluded, and a

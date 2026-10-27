@@ -59,7 +59,7 @@ mostm_fit_vglm <- function(
   }
 
   # The row selection and weights were evaluated by mostm(). `na.action`,
-  # `etastart`, and `mustart` are evaluated as VGAM::vglm() evaluates them.
+  # `etastart`, and `mustart` are added to the model frame as in VGAM::vglm().
   mf <- list(quote(stats::model.frame), formula = formula, data = data)
   if (!is.null(subset_rows)) {
     mf$subset <- subset_rows
@@ -75,6 +75,14 @@ mostm_fit_vglm <- function(
   mf$drop.unused.levels <- TRUE
   mf <- eval(as.call(mf), setup$eval_env)
   fit_data <- markov_align_model_data(data, mf)
+
+  # Take the starting values from the model frame, as stats::glm() does, so
+  # that they keep only the rows left after `subset` and `na.action`. Passing
+  # the supplied values on unchanged would give them more rows than the fit.
+  # Without `etastart` or `mustart` the frame has no such column and both stay
+  # `NULL`.
+  etastart <- stats::model.extract(mf, "etastart")
+  mustart <- stats::model.extract(mf, "mustart")
 
   mt <- attr(mf, "terms")
   if (terms_has_offset(mt) || !is.null(stats::model.offset(mf))) {
