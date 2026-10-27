@@ -99,6 +99,8 @@ soprob_markov <- function(
   }
 
   validate_markov_model(model_fast)
+
+  markov_reject_ml_second_order(model_fast, p2_var)
   validate_fast_previous_state_support(
     model_fast,
     p_var = p_var,

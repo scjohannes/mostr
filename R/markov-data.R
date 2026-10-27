@@ -262,6 +262,7 @@ relevel_factors_consecutive <- function(
     data = data,
     ylevels = new_ylevels,
     absorb = new_absorb,
-    missing_levels = as.character(missing_levels)
+    missing_levels = as.character(missing_levels),
+    state_mapping = state_mapping
   ))
 }

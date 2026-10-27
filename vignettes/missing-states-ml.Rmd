@@ -1,0 +1,514 @@
+---
+title: "Transition Models with Missing States"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Transition Models with Missing States}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r vignette-options, include = FALSE}
+source("_setup.R", local = TRUE)
+RUN_BAYESIAN <- identical(
+  Sys.getenv("MOSTR_RUN_BAYESIAN_VIGNETTE"),
+  "true"
+) &&
+  requireNamespace("rmsb", quietly = TRUE) &&
+  requireNamespace("rstan", quietly = TRUE)
+```
+
+In longitudinal ordinal data, some visits often have no recorded state: a
+questionnaire was not returned, or a patient was known to be alive but their
+level of care on that day was not documented. A transition model predicts each
+state from the previous one, so a single missing state affects two
+transitions: the move *into* the visit with the missing state and the move
+*out of* it.
+
+By default, `mostm()` fits the model to the rows in which both the state and
+the previous state are observed. Every transition that touches a missing
+visit is dropped, and `mostm()` warns about it. We call this *complete-row
+analysis*. With the argument `missing_states`, `mostm()` keeps these visits
+instead: for a run of visits with missing states, it adds up the
+probabilities of every path the patient could have taken through them. A
+response coded with `rms::Ocens()` can also use partial information, such as
+"alive, level unknown".
+
+This article shows
+
+1. how to prepare data with missing states;
+2. how to fit the model with `missing_states` and choose its value;
+3. how to code partially known states with `rms::Ocens()`;
+4. that the fit works with `avg_sops()`, `avg_comparisons()`,
+   `avg_state_time()`, and `inferences()`;
+5. how to fit the same model with the `"vglm"` and `"blrm"` engines;
+6. when complete-row analysis is biased and the fit with `missing_states` is
+   not.
+
+## Example data
+
+We simulate 400 patients for 28 days with `sim_markov("actt2")`, which mimics
+the eight-state NIAID scale of the ACTT-2 trial in patients hospitalized with
+COVID-19 (see `vignette("full-po-sops")`). States 1 and 2 are outside
+hospital, states 3 to 7 are increasingly intensive levels of hospital care,
+and state 8 is death. The full data serve as a reference: we know every state.
+
+```{r setup}
+library(mostr)
+library(rms)
+
+N_PATIENTS <- 400
+FOLLOW_UP <- 28
+ABSORB <- "8"
+
+full_raw <- sim_markov(
+  "actt2",
+  n_patients = N_PATIENTS,
+  follow_up_time = FOLLOW_UP,
+  treatment_effect = log(0.8),
+  seed = 2026
+)
+full <- prepare_markov_data(full_raw, absorbing_state = 8)
+full <- full[order(full$id, full$time), ]
+```
+
+`prepare_markov_data()` drops the rows after a patient's death, turns the
+state `y` into an ordered factor, and turns the previous state `yprev` into a
+factor.
+
+We then delete states in a way that is common in practice: **deaths are always
+recorded**, but for patients who are alive, 25% of daily states are missing
+completely at random, that is, independently of everything else. After a
+missing state, the next row's previous state `yprev` is unknown too, so we set
+it to `NA`.
+
+```{r make-missing}
+set.seed(1)
+observed <- full
+alive <- observed$y != ABSORB
+drop <- alive & runif(nrow(observed)) < 0.25
+observed$y[drop] <- NA
+same_patient <- c(FALSE, observed$id[-1] == observed$id[-nrow(observed)])
+observed$yprev[c(FALSE, drop[-nrow(observed)]) & same_patient] <- NA
+mean(is.na(observed$y))
+```
+
+Keep the rows with missing states: a fit with `missing_states` needs one row
+for every scheduled visit until death or the end of follow-up. A visit without
+a row is treated as a visit that was not scheduled, not as a missing state.
+`prepare_markov_data()` keeps rows with a missing state, because it drops only
+rows whose previous state is an observed death.
+
+## Complete-row analysis
+
+Without `missing_states`, `mostm()` drops every row with a missing `y` or
+`yprev` and says so in a warning:
+
+```{r fit-cra, warning = TRUE}
+formula <- y ~ rcs(time, 4) + tx + yprev
+
+fit_cra <- mostm(formula, data = observed, id_var = "id")
+```
+
+For comparison, we fit the same model to the full data:
+
+```{r fit-full}
+fit_full <- mostm(formula, data = full, id_var = "id")
+```
+
+Here, dropping rows is not just less efficient: it is **biased**. Deaths are
+never missing, but transitions between living states often are. Among the
+rows that remain, deaths are over-represented, so complete-row analysis
+overstates mortality. `vignette("missing-qol-recorded-deaths")` works through
+why.
+
+## Maximum likelihood with missing states
+
+`missing_states` lists the states a patient may be in at a visit whose state
+is `NA`. In our data deaths are always recorded, so a missing state is one of
+the living states 1 to 7: `missing_states = 1:7`. `id_var` is required,
+because each patient's rows, ordered by time, form one chain of transitions.
+
+```{r fit-ml, fold_output = FALSE}
+fit_ml <- mostm(
+  formula,
+  data = observed,
+  id_var = "id",
+  missing_states = 1:7
+)
+fit_ml
+```
+
+The printout starts with a summary of the fit:
+
+- The *log-likelihood* is the maximised log-likelihood of the observed data;
+  `logLik()`, `AIC()`, and `BIC()` use it. The *largest |score|* is the
+  largest absolute derivative of the log-likelihood with respect to a
+  coefficient. A value close to zero confirms that the log-likelihood is at
+  its maximum.
+- *Rows* counts the visits, `r fit_ml$ml$n_missing` of which have a missing
+  state.
+- The *share of information lost to missing states* compares the information
+  about the coefficients in these data with the information that the same
+  patients would have given if every state had been recorded. It refers to
+  the combination of coefficients that loses the most: 0 means that nothing is
+  lost, and 1 that the data say nothing about this combination. A share of
+  $f$ makes the standard error of that combination about $1/\sqrt{1 - f}$
+  times as large as with complete data, here
+  `r round(1 / sqrt(1 - fit_ml$ml$missing_info_fraction), 2)` times.
+
+The coefficients follow, with standard errors that allow for correlation
+between the transitions of one patient. The summary values are also stored in
+`fit_ml$ml`, for example `fit_ml$ml$loglik` and
+`fit_ml$ml$missing_info_fraction`.
+
+### Which states can be missing
+
+Death is not in `missing_states`, because deaths are always recorded here.
+More generally, when the date of death is known, a patient was alive at every
+visit before it, so a missing state before a recorded death is a living state.
+
+Death can be a missing state only on a patient's last row. Because nobody
+leaves death, the model has no transitions out of it, and `mostm()` stops
+with an error when a missing state that might be death is followed by further
+rows of the same patient:
+
+```{r missing-death, error = TRUE}
+mostm(formula, data = observed, id_var = "id", missing_states = 1:8)
+```
+
+If vital status was not recorded at some visits, a patient may have died at
+one of them without a record. Such a patient is *lost to follow-up* from the
+first of these visits on: end the patient's rows at the last visit with a
+known state. A missing state followed by a visit at which the patient was
+recorded alive is still a living state, because nobody comes back from death.
+`vignette("missing-qol-recorded-deaths")` works through an example with
+patients lost to follow-up.
+
+## Coding partially known states with `Ocens()`
+
+`missing_states` applies one rule to every missing state. A response coded as
+`rms::Ocens(lower, upper)` instead says, row by row, which states are
+possible: all states from `lower` to `upper`. `Ocens(b, b)` is an observed
+state `b`, and `Ocens(1, 7)` is "alive, level unknown" on this scale. Rows
+with observed and partially known states can be mixed. With `Ocens(1, 7)` for
+every missing state, no state is missing any more, so `missing_states` is not
+needed, and the fit equals the fit with `missing_states = 1:7`:
+
+```{r fit-ocens}
+y_value <- as.numeric(as.character(observed$y))
+observed$y_lo <- ifelse(is.na(y_value), 1, y_value)
+observed$y_hi <- ifelse(is.na(y_value), 7, y_value)
+
+fit_ocens <- mostm(
+  Ocens(y_lo, y_hi) ~ rcs(time, 4) + tx + yprev,
+  data = observed,
+  id_var = "id"
+)
+all.equal(coef(fit_ocens), coef(fit_ml), tolerance = 1e-8)
+```
+
+`Ocens()` is more flexible than `missing_states` because the range can differ
+by row. On this scale, "in hospital, level unknown" is `Ocens(3, 7)`, and "in
+hospital and receiving oxygen, level unknown" is `Ocens(5, 7)`. An infinite
+endpoint means "beyond the other endpoint": `Ocens(4, Inf)` is any state above
+4 (states 5 to 8, death included), and `Ocens(-Inf, 3)` is any state below 3.
+A row with both endpoints `NA` has a missing state: it allows the states in
+`missing_states` or, without `missing_states`, is dropped with a warning. A
+range that includes death follows the same rule as a missing state: it is
+allowed only on a patient's last row.
+
+## Comparing the fits
+
+The table shows two coefficients with their standard errors: the threshold for
+death (`y>=8`, which sets the daily risk of death) and the treatment
+coefficient (`tx`, the log odds ratio of a worse state for treated patients).
+The fit to the full data is the reference.
+
+```{r compare-coefficients}
+fits <- list(
+  full_data = fit_full,
+  complete_rows = fit_cra,
+  missing_states = fit_ml
+)
+terms <- c("y>=8", "tx")
+round(t(sapply(fits, function(f) {
+  c(coef(f)[terms], se = sqrt(diag(vcov(f, intercepts = "all")))[terms])
+})), 3)
+```
+
+Complete-row analysis moves the death threshold upwards (more deaths) and
+changes the treatment coefficient. The fit with `missing_states` agrees with
+the full-data fit, and its standard errors are only a little larger.
+
+## State occupancy probabilities
+
+The fit works with the same functions as any other `mostm()` fit.
+`avg_sops()` estimates the state occupancy probabilities (SOPs), the
+probabilities of each state on each day, if every patient had received
+control (`tx = 0`) and if every patient had received treatment (`tx = 1`). It
+starts from each patient's first previous state, so patients whose later
+states are mostly missing count as much as the others. `inferences()` adds
+95% confidence intervals. `vcov = "unconditional"` makes them account both
+for the uncertainty in the coefficients and for which patients happened to be
+in the trial (see `vignette("analytical-confidence-intervals")`).
+
+```{r avg-sops}
+avg_ml <- avg_sops(
+  fit_ml,
+  variables = list(tx = c(0, 1)),
+  times = 1:FOLLOW_UP,
+  absorb = ABSORB
+) |>
+  inferences(method = "delta", vcov = "unconditional")
+
+avg_cra <- avg_sops(
+  fit_cra,
+  variables = list(tx = c(0, 1)),
+  times = 1:FOLLOW_UP,
+  absorb = ABSORB
+)
+avg_full <- avg_sops(
+  fit_full,
+  variables = list(tx = c(0, 1)),
+  times = 1:FOLLOW_UP,
+  absorb = ABSORB
+)
+
+death_day28 <- function(x) {
+  x <- x[x$state == ABSORB & x$time == FOLLOW_UP, ]
+  setNames(x$estimate[order(x$tx)], c("control", "treatment"))
+}
+rbind(
+  full_data = death_day28(avg_full),
+  complete_rows = death_day28(avg_cra),
+  missing_states = death_day28(avg_ml)
+)
+```
+
+The table shows the probability of having died by day 28 in each arm.
+Complete-row analysis overstates it; the fit with `missing_states` is close to
+the full-data fit.
+
+```{r plot-sops}
+plot_sops(avg_ml) +
+  ggplot2::labs(x = "Day", title = "SOPs by treatment (tx)")
+```
+
+Treatment contrasts and their confidence intervals work the same way. As
+everywhere in mostr, `times` lists consecutive visits, so we predict every
+day and then show days 7, 14, and 28. `estimate` is the difference, treatment
+minus control, in the probability of having died:
+
+```{r comparisons}
+cmp <- avg_comparisons(
+  fit_ml,
+  variables = list(tx = c(0, 1)),
+  times = 1:FOLLOW_UP,
+  state_sets = list(death = ABSORB),
+  absorb = ABSORB
+) |>
+  inferences(method = "delta", vcov = "unconditional")
+cmp[cmp$time %in% c(7, 14, 28),
+  c("time", "state_set", "estimate", "std.error", "conf.low", "conf.high")]
+```
+
+`avg_state_time()` adds up the daily SOPs, which gives the expected number of
+days spent in a set of states. Here, the expected number of days outside
+hospital (states 1 and 2) during the 28 days, in each arm:
+
+```{r state-time}
+avg_state_time(
+  fit_ml,
+  variables = list(tx = c(0, 1)),
+  state_sets = list(home = c("1", "2")),
+  times = 1:FOLLOW_UP,
+  absorb = ABSORB
+) |>
+  inferences(method = "delta", vcov = "unconditional")
+```
+
+`inferences()` also supports `method = "mvn"`, `"score_bootstrap"`, and
+`"bootstrap"`. The bootstrap refits the model with `missing_states` to
+resampled patients, each with all of their rows, including those with missing
+states. The fractional weighted bootstrap (`"fwb"`) is not available, because
+a fit with missing states does not accept row weights.
+
+## Other engines
+
+`missing_states` and `Ocens()` work with all three engines of `mostm()`.
+`mostm()` computes the likelihood with missing states itself, so the engine
+only ever sees exactly observed states.
+
+### VGAM
+
+With `engine = "vglm"`, the same proportional odds model reaches the same
+maximum of the log-likelihood. VGAM needs an ordered-factor response, hence
+`ordered(y)`:
+
+```{r fit-vglm}
+fit_ml_vglm <- mostm(
+  ordered(y) ~ rcs(time, 4) + tx + yprev,
+  data = observed,
+  id_var = "id",
+  engine = "vglm",
+  missing_states = 1:7
+)
+c(orm = logLik(fit_ml), vglm = logLik(fit_ml_vglm))
+```
+
+The `"vglm"` engine also fits *partial proportional odds* models, in which a
+predictor has a separate effect at each threshold between states. Here,
+`parallel = FALSE ~ tx` gives treatment its own log odds ratio at each of the
+seven thresholds:
+
+```{r fit-ppo}
+fit_ml_ppo <- mostm(
+  ordered(y) ~ rcs(time, 4) + tx + yprev,
+  data = observed,
+  id_var = "id",
+  engine = "vglm",
+  family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
+  missing_states = 1:7
+)
+AIC(fit_ml_vglm, fit_ml_ppo)
+```
+
+The proportional odds model has the smaller AIC, as expected, because the
+data were simulated with the same treatment effect at every threshold. SOPs
+from a partial proportional odds fit are calculated in the same way; for their
+confidence intervals, use `inferences()` with `method = "mvn"`,
+`"score_bootstrap"`, or `"bootstrap"`, because `method = "delta"` needs a full
+proportional odds model (see `vignette("partial-po-vglm-sops")`).
+
+### Bayesian fits
+
+`engine = "blrm"` fits the Bayesian model of `rmsb::blrm()` with the same
+handling of missing states. It uses the priors of `rmsb::blrm()`: a weak
+Dirichlet prior for the intercepts and flat priors for the other
+coefficients, unless `pcontrast` sets a prior for a contrast such as the
+treatment effect. Constrained partial proportional odds (`ppo` with `cppo`)
+and a random intercept per patient (`cluster(id)` in the formula) are
+available. With random intercepts, `avg_sops()` and `avg_comparisons()` use
+each patient's own intercept when called with `include_re = TRUE`.
+
+With missing states, `mostm()` samples from the posterior with its own Stan
+program, which needs the rstan package and a C++ toolchain (Rtools on
+Windows). The program is compiled the first time it is used, which takes a
+few minutes, and is saved for later sessions.
+
+Sampling is much slower than the maximum likelihood fit: for every posterior
+draw, the sampler evaluates the likelihood, with its sums over the paths
+through each run of missing states, and its derivatives many times. Even with
+the few iterations used here, sampling for these 400 patients took about a
+quarter of an hour on a recent laptop. The code in this section therefore runs
+only when the environment variable `MOSTR_RUN_BAYESIAN_VIGNETTE` is `"true"`.
+A real analysis needs more iterations, and a check of the sampling
+diagnostics.
+`sampling.args` passes settings to the Stan sampler: its `seed` makes the
+draws reproducible, and `cores = 2` runs the two chains in parallel.
+
+```{r fit-bayes, eval = RUN_BAYESIAN}
+fit_bayes <- mostm(
+  formula,
+  data = observed,
+  id_var = "id",
+  engine = "blrm",
+  missing_states = 1:7,
+  iter = 1000,
+  chains = 2,
+  sampling.args = list(seed = 1, cores = 2)
+)
+fit_bayes$diagnostics[terms, ]
+```
+
+`Rhat` close to 1 (below 1.01) means that the chains agree; `ess_bulk` and
+`ess_tail` are the effective numbers of independent draws for the centre and
+the tails of the posterior distribution. With these weak priors, the
+posterior means and standard deviations are close to the maximum likelihood
+estimates and their model-based standard errors:
+
+```{r compare-bayes, eval = RUN_BAYESIAN}
+round(rbind(
+  ml_estimate = coef(fit_ml)[terms],
+  ml_se = sqrt(diag(fit_ml$ml$var_model))[terms],
+  posterior_mean = colMeans(fit_bayes$draws[, terms]),
+  posterior_sd = apply(fit_bayes$draws[, terms], 2, sd)
+), 3)
+```
+
+For Bayesian fits, `avg_sops()` computes the SOPs for each posterior draw and
+reports their posterior mean with a 95% credible interval; no `inferences()`
+step is needed. `n_draws = 200` uses a random subset of 200 draws, selected
+reproducibly with `seed`:
+
+```{r avg-sops-bayes, eval = RUN_BAYESIAN}
+avg_bayes <- avg_sops(
+  fit_bayes,
+  variables = list(tx = c(0, 1)),
+  times = 1:FOLLOW_UP,
+  absorb = ABSORB,
+  n_draws = 200,
+  seed = 1
+)
+avg_bayes[avg_bayes$state == ABSORB & avg_bayes$time == FOLLOW_UP,
+  c("tx", "estimate", "conf.low", "conf.high")]
+```
+
+## When is complete-row analysis biased?
+
+Both methods assume that the model is right. They differ in what they assume
+about why states are missing:
+
+* **Missing depends only on the past**, for example on earlier states or on
+  treatment: complete-row analysis is unbiased, because once the previous
+  state is known, which rows are kept says nothing about the next transition.
+  The fit with `missing_states` is unbiased too, and it also uses the rows that
+  complete-row analysis drops, so its standard errors are usually smaller.
+* **Missing depends on later observed states**, for example when a visit is
+  less often documented if the patient was discharged soon afterwards:
+  complete-row analysis is biased; the fit with `missing_states` is not.
+* **Missing never hides a death**, as in this article: complete-row analysis
+  is biased, because the transitions it drops are all between living states
+  (`vignette("missing-qol-recorded-deaths")` works through why).
+  `missing_states = 1:7` or `Ocens(1, 7)` uses the knowledge that the patient
+  was alive and is unbiased.
+* **Missing depends on the unobserved state itself**, for example when sicker
+  patients skip visits more often than others in the same previous state:
+  both methods are biased. In this case, the states are said to be *missing
+  not at random*, and sensitivity analyses are needed, which `mostm()` does
+  not provide.
+
+In the first three cases, the states are *missing at random*: whether a state
+is missing may depend on what was observed, but not on the unobserved state
+itself. This is what the fit with `missing_states` needs. The same holds for
+`Ocens()` ranges: whether a state is recorded exactly, as a range, or not at
+all must not depend on the unrecorded exact state.
+
+## Requirements and limits
+
+* The model must be *first order*: transitions depend on the past only
+  through the previous state (`yprev`, set by `p_var`). Every other covariate
+  must be fixed per patient, such as treatment, or a function of time only. A
+  covariate computed from the state history, such as the state two visits
+  earlier, would be wrong after a missing state, so `p2_var` cannot be used
+  with these fits.
+* Keep a row for every scheduled visit until death or the end of follow-up,
+  including the rows with a missing state. A patient who may have died
+  without a record is lost to follow-up: end the patient's rows at the last
+  visit with a known state.
+* The previous state on each patient's first row must be observed. After
+  that, `yprev` is taken from the chain of states: it may be missing after a
+  missing state, and where the previous visit's state is observed, it must
+  agree with it.
+* Covariates must be observed. Rows with a missing covariate are dropped with
+  a warning, and the patient's chain restarts at the next row whose previous
+  state is observed.
+* Every state must occur as the outcome of at least one transition with both
+  states observed. The fit starts from the model fitted to these transitions,
+  and the knots of `rcs()` terms are placed using them.
+* `id_var` is required, and `weights` cannot be used. Random effects are
+  available only with `engine = "blrm"`.
+* The computing time grows with the number of rows next to a missing or
+  partially known state, and with the square of the number of states. Before
+  fitting large data with many states, time a fit on a random subset of
+  patients.

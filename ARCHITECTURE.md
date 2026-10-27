@@ -102,7 +102,9 @@ blrm fit can pass rmsb's own `backend` (rstan or cmdstan) through `...`.
 flowchart TD
     A["mostm(formula, data, ..., engine)"] --> B[Check engine arguments in ...]
     B --> C[Validate data, offsets, id_var; evaluate weights and subset once]
-    C --> D{engine}
+    C --> N{missing_states or Ocens and rows needing the recursion?}
+    N -->|yes| O[Missing states path, see below]
+    N -->|no| D{engine}
     D -->|orm| E[mostm_fit_orm: rms::orm]
     D -->|vglm| F[mostm_fit_vglm: VGAM model build]
     D -->|blrm| G[mostm_fit_blrm: rmsb::blrm]
@@ -201,7 +203,12 @@ Refits evaluate the fitted model's stored `mostm()` call
 original engine, the resampled data, bootstrap weights, and optional starting
 coefficients. Refits drop `id_var`: they need only the coefficients, so
 `mostm()` skips the patient-clustered covariance and the starting profiles,
-and a `"vglm"` refit is a plain `vglm` fit. `suppress_expected_refit_warnings()`
+and a `"vglm"` refit is a plain `vglm` fit. Fits with missing states
+(`markov_refit_uses_ml()`: stored `missing_states` or an `Ocens()` response)
+keep `id_var` instead, set to the resample's `new_id` so each copy of a
+patient is its own chain, and refit inside
+`with_markov_ml_coefficients_only()`, which makes `mostm()` skip their
+covariances. `suppress_expected_refit_warnings()`
 muffles the resulting missing-`id_var` warning and the rms warning that its own
 bootstrap ignores weights. `mostm()` stores the values of the arguments the
 user passed at fit time
@@ -250,6 +257,85 @@ profiles held given. Unconditional variance also accounts for sampled patients
 and their contribution to coefficient estimation. It is available for supported
 averaged results using stored patient profiles; supplied `newdata` requires
 conditional variance. Individual results support conditional variance only.
+
+### Missing and range-coded states
+
+`mostm(missing_states = <states>)` and responses coded with `rms::Ocens()`
+maximise the observed-data likelihood instead of dropping transitions next to
+a visit whose state is missing or known only up to a range. The code is in
+`R/markov-ml-*.R`; there is no separate engine. With nothing to sum over, the
+ordinary engine fit is used, so results are identical to a fit without
+`missing_states`.
+
+```mermaid
+flowchart TD
+    A["mostm(..., missing_states) or Ocens() response"] --> B["mostm_ml_problem(): checks, markov_ml_prepare()"]
+    B --> C{rows needing the recursion or Ocens?}
+    C -->|no| D[Ordinary engine fit]
+    C -->|yes| E["markov_ml_start(): engine fit to fully observed transitions, design rows, markov_lp()"]
+    E --> F{engine}
+    F -->|orm or vglm| G["mostm_fit_ml(): EM, Newton, Louis information, patient scores"]
+    G --> H["markov_ml_final_fit(): engine fit to expected transition counts, coefficients set to the estimates"]
+    H --> I["markov_ml_finish(): ml components, sandwich, class mostm_ml"]
+    F -->|blrm| J["mostm_fit_ml_blrm(): Stan program inst/stan/markov_ml.stan"]
+    I --> K[Stored data and engine attribute as for other fits]
+    J --> K
+```
+
+- Data contract (`markov_ml_prepare()` in `R/markov-ml-setup.R`): rows are
+  ordered by `id_var` and `time_var`. `markov_ml_parse_response()` evaluates
+  the response itself (so `Ocens()` works for every engine) and
+  `markov_ml_state_scale()` maps it to lower and upper state indices on the
+  scale of exactly observed states. An `NA` response allows the states in
+  `missing_states`; with `missing_states = NULL` such rows are dropped, as are
+  rows with missing covariates. A chain is a maximal run of kept rows of one
+  patient; it starts at a row whose previous state (`p_var`) is observed, and
+  rows that would start a chain without one are dropped. Inside a chain the
+  previous state comes from the chain. Fully observed transitions are
+  aggregated by (design row, state); the other rows form segments that start
+  at the last observed state. Origins are the states that occur as previous
+  states of fully observed transitions; a hidden state before the last row of
+  a segment must be an origin, so no absorbing states enter the recursion.
+  Design rows are built only for (covariate row, origin) keys the likelihood
+  uses.
+- Linear predictors (`R/markov-ml-lp.R`): both frequentist engines are
+  described as eta = Gamma x with constraint matrices per design column, as in
+  `get_effective_coefs()`. orm uses I_M for the intercept and 1_M for slopes;
+  vglm uses `VGAM::constraints()`. Scores and information are computed for
+  eta and mapped to the coefficients, handling all parallel columns together,
+  so proportional-odds models keep the cost of formulas written for them.
+- Likelihood and fitting (`R/markov-ml-em.R`, `R/markov-ml-fit.R`): a scaled
+  forward-backward pass gives the log-likelihood and posterior transition
+  weights; the M-step is a weighted Newton fit to the expected counts. EM
+  stops at a relative log-likelihood change of 1e-6, then Newton steps use the
+  exact observed information. `rms::rcs()` knots are fixed from the fully
+  observed transitions (`markov_ml_lock_knots()`), so the start fit, the
+  design rows, and the final fit share one basis.
+- Inference (`R/markov-ml-inference.R`): patient scores by Fisher's identity
+  and the observed information by Louis' identity (complete-data information
+  averaged over the posterior minus the variance of the score, with a forward
+  recursion for the between-row terms). The patient-clustered sandwich uses
+  the patients with at least one informative row. `markov_ml_components()`
+  reads the stored `ml` list of `mostm_ml` fits; `get_vcov_robust()`,
+  `get_delta_cluster_vcov()`, `get_delta_score_components()`, and
+  `score_bootstrap_components()` use it instead of row scores, which would
+  describe the fit to expected counts. `robcov_orm()` and
+  `compute_scores_orm()` reject these fits. FWB is rejected
+  (`stop_markov_ml_fwb()`), and SOP functions reject `p2_var`
+  (`markov_reject_ml_second_order()`).
+- Returned objects (`markov_ml_finish()` in `R/markov-ml-mostm.R`): an orm
+  fit gets `$ml`, `$var` (robust), data-based `stats`, and class `mostm_ml`
+  in front; a vglm fit becomes a `robcov_vglm`-shaped list with class
+  `mostm_ml` and one score row per patient. `print()`, `logLik()`, and
+  `nobs()` methods for `mostm_ml` describe the observed data.
+- blrm (`R/markov-ml-bayes.R`): the rms start fit provides the design; the
+  Stan program keeps rmsb's parameterisation and priors (`lrmconppo.stan`)
+  and replaces the likelihood by the forward recursion. It is compiled on
+  first use and cached in `tools::R_user_dir("mostr", "cache")`.
+- Complete-row fits warn when rows with missing values are dropped
+  (`markov_warn_dropped_complete_rows()`, warning class
+  `mostr_dropped_rows_warning`), unless `na.action` is given; refits muffle
+  the warning.
 
 ### Requested visit times
 

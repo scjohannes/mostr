@@ -51,6 +51,8 @@ markov_transition_trace <- function(
 
   validate_markov_model(object)
 
+  markov_reject_ml_second_order(object, p2_var)
+
   if (!p_var %in% names(data)) {
     stop("Previous-state variable `", p_var, "` not found in `data`.")
   }

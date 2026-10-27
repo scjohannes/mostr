@@ -263,12 +263,15 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
   incomplete <- data
   incomplete$tx[which(incomplete$time > 2)[c(2, 9)]] <- NA
   complete <- !is.na(incomplete$tx)
-  incomplete_fit <- mostm(
-    ordered(y) ~ time + tx + yprev,
-    data = incomplete,
-    id_var = "id",
-    engine = "vglm",
-    etastart = start
+  expect_warning(
+    incomplete_fit <- mostm(
+      ordered(y) ~ time + tx + yprev,
+      data = incomplete,
+      id_var = "id",
+      engine = "vglm",
+      etastart = start
+    ),
+    class = "mostr_dropped_rows_warning"
   )
   complete_rows <- incomplete[complete, , drop = FALSE]
   complete_start <- start[complete, , drop = FALSE]

@@ -505,6 +505,32 @@ get_delta_cluster_vcov <- function(model, cluster = NULL, vcov = NULL) {
     ))
   }
 
+  if (markov_is_ml_fit(model)) {
+    ml <- markov_ml_stored(model)
+    covariance <- delta_validate_named_matrix(
+      markov_ml_vcov(model, cluster = cluster),
+      names(beta),
+      "patient-cluster robust covariance",
+      positive_semidefinite = TRUE
+    )
+    return(list(
+      vcov = covariance,
+      metadata = list(
+        source = "stored_missing_states_fit",
+        covariance = "patient_cluster_robust",
+        backend = markov_model_engine(model),
+        type = ml$type,
+        cadjust = ml$cadjust,
+        adjustment_factor = ml$adjustment_factor,
+        bread_type = "observed_data_information",
+        n_clusters = sum(ml$contributing),
+        cluster_source = "stored_id_var",
+        cluster_level = "patient"
+      ),
+      cluster_info = NULL
+    ))
+  }
+
   cluster_info <- resolve_delta_cluster(model, cluster = cluster)
   fit <- delta_unconditional_model(model)
 
@@ -643,6 +669,35 @@ get_delta_score_components <- function(model, cluster = NULL) {
   delta_validate_full_po_model(model)
   beta <- delta_unconditional_coefficients(model)
   fit <- delta_unconditional_model(model)
+  if (markov_is_ml_fit(model)) {
+    # Observed-data patient scores and inverse observed information, one row
+    # per fitted patient (zeros for patients whose rows rule out no state).
+    components <- markov_ml_influence_components(model, cluster = cluster)
+    scores <- components$scores[, names(beta), drop = FALSE]
+    bread <- delta_validate_named_matrix(
+      components$bread,
+      names(beta),
+      "model-based bread",
+      positive_definite = TRUE
+    )
+    n <- nrow(scores)
+    Ainv <- n * bread
+    dimnames(Ainv) <- list(names(beta), names(beta))
+    ml <- markov_ml_components(model)
+    return(list(
+      ids = rownames(scores),
+      scores = scores,
+      Ainv = Ainv,
+      n = n,
+      metadata = list(
+        bread_source = "observed_data_information",
+        backend_hc_type_ignored = ml$type,
+        backend_cadjust_ignored = ml$cadjust,
+        cluster_source = "stored_id_var",
+        n_patients = n
+      )
+    ))
+  }
   if (inherits(fit, "orm")) {
     delta_reject_weighted_orm_unconditional(fit)
     delta_reject_penalized_orm_unconditional(fit)

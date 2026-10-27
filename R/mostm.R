@@ -61,12 +61,24 @@
 #'   it, a warning is given, and these features, as well as the fractional
 #'   weighted bootstrap, are not available from the fit.
 #' @param time_var Name of the time column in `data`. It is used to find each
-#'   patient's starting row.
+#'   patient's starting row and, with missing states, to order each patient's
+#'   visits.
+#' @param p_var Name of the previous-state column in `data`, as in [sops()].
+#'   It is used with `missing_states` or an [rms::Ocens()] response, which
+#'   need to know which predictor is the previous state, and to describe
+#'   rows that are not used because of missing values.
 #' @param first_followup_time Time of the first visit after baseline. Each
 #'   patient's row at this time is their starting row for automatic
 #'   predictions. For numeric time, `NULL` (the default) uses 1, time may not
 #'   be below 1, and a value you supply must be the earliest time in the data.
 #'   Factor and character time need an explicit value, such as `"day 1"`.
+#' @param missing_states The states a patient may be in at a visit whose state
+#'   was not recorded (`NA` in the response), for example `1:7` when state 8 is
+#'   death and deaths are always recorded. With it, visits with a missing state
+#'   are used: the likelihood adds up the probabilities of these states
+#'   instead of dropping the transitions into and out of the visit. `NULL`
+#'   (the default) drops rows with a missing response, with a warning. See
+#'   "Missing and partially known states" below.
 #' @param weights Optional non-negative row weights: a column of `data` or a
 #'   vector with one value per row of `data`. Not available for
 #'   `engine = "blrm"`.
@@ -116,6 +128,97 @@
 #' [inferences()]. For the `"blrm"` engine, uncertainty comes from the
 #' posterior draws.
 #'
+#' ## Missing and partially known states
+#'
+#' By default, `mostm()` fits the rows without missing values. A visit whose
+#' state is missing (`NA`) then removes two transitions: the one into the
+#' visit (missing response) and the one out of it (missing previous state).
+#' `mostm()` warns when rows are dropped. Dropping these transitions can bias
+#' the estimates. For example, when deaths are always recorded but other
+#' states are often missing, the remaining transitions overrepresent deaths.
+#'
+#' Give `missing_states` to use these visits instead. Each patient's rows,
+#' ordered by `time_var`, then form one chain. For a visit with a missing
+#' state, the likelihood adds up the probabilities of all paths through the
+#' states in `missing_states`. Each patient contributes the probability of
+#' everything observed for that patient, given the first previous state and
+#' the covariates, and `mostm()` maximises the sum of their logarithms. When a
+#' state is known only up to a range, such as "in hospital, level unknown",
+#' code the response as `Ocens(lower, upper)` with [rms::Ocens()], for example
+#' `Ocens(y_lo, y_hi) ~ yprev + rms::rcs(time, 4) + tx`. A row's range then
+#' replaces `missing_states`, `Ocens(b, b)` is an observed state `b`, and a
+#' row with both endpoints missing is a missing state. An `Ocens()` response
+#' alone, without `missing_states`, uses the ranges and drops rows with a
+#' missing state. Ranges and missing states work with all three engines,
+#' because `mostm()` evaluates the response itself: the engine sees only
+#' exactly observed states.
+#'
+#' With nothing missing or range-coded, `missing_states` changes nothing: the
+#' fit is the usual fit of the engine. Otherwise:
+#'
+#' * Keep one row per scheduled visit until death or the end of follow-up,
+#'   including the rows whose state is missing. A visit without a row is
+#'   treated as not scheduled. Only the first row's previous state is used
+#'   (it must be observed); afterwards, the previous state comes from the
+#'   chain, so `p_var` may be missing or wrong after a missing state. Where
+#'   the previous visit's state is observed, `p_var` must agree with it.
+#' * A missing state cannot be a state that the data never show being left,
+#'   such as death (`absorb` in [sops()]), unless the visit is the patient's
+#'   last. If a patient may have died at a visit without a recorded state,
+#'   the patient is lost to follow-up from then on: end the patient's rows at
+#'   the last visit with a known state.
+#' * The model must be first order: apart from `p_var`, every covariate must
+#'   be fixed per patient (such as treatment) or a function of time only. A
+#'   covariate computed from the state history, such as the state two visits
+#'   earlier, would be wrong after a missing state. Rows with missing
+#'   covariates are dropped, with a warning, and the patient's chain restarts
+#'   at the next row whose previous state is observed.
+#' * The estimates are valid when states are missing at random: whether a
+#'   state is missing may depend on what was observed, such as earlier states
+#'   or treatment, but not on the unobserved state itself.
+#' * `id_var` is required, and `weights` cannot be used. Random effects
+#'   (`cluster()` in `formula`) are available only with `engine = "blrm"`.
+#'
+#' For the `"orm"` and `"vglm"` engines, `mostm()` starts from the fit to the
+#' transitions with both states observed and maximises the likelihood with
+#' the EM algorithm followed by Newton steps. Spline knots in `rms::rcs()`
+#' terms are set from these transitions. Standard errors use the exact
+#' observed information (by Louis' identity) and the patients' scores, in the
+#' same patient-clustered sandwich as above; `type = "HC1"` counts the rows
+#' whose observation rules out at least one state. The returned object is the
+#' engine's fit to the expected numbers of transitions at the estimates, which
+#' predicts like any other fit of that engine. [logLik()], [AIC()], and [BIC()]
+#' use the maximised log-likelihood of the observed data, and [nobs()]
+#' counts the rows that rule out at least one state. Printing the fit shows
+#' this log-likelihood, how many states were missing, and the coefficients
+#' with their robust standard errors. All [inferences()] methods except the
+#' fractional weighted bootstrap are available; bootstrap refits resample
+#' whole patients, including their missing rows.
+#'
+#' For `engine = "blrm"`, `mostm()` samples the posterior of the
+#' [rmsb::blrm()] model with the same priors (`conc`, `pcontrast`,
+#' `npcontrast`, `psigma`, `rsdmean`, and `rsdsd`), using its own Stan program
+#' with this likelihood. It needs the rstan package and a C++ toolchain; the
+#' program is compiled on first use (which takes a few minutes) and saved in
+#' `tools::R_user_dir("mostr", "cache")`. Set `options(mostr.stan_cache_dir =
+#' FALSE)` to keep it only for the current session. Constrained partial
+#' proportional odds (`ppo` with `cppo`) and a random intercept per patient
+#' (`cluster()` with the patient ID column) are available; `sampling.args`
+#' goes to [rstan::sampling()], for example `list(seed = 1, cores = 4)`.
+#' There is no Stan optimizer run, so arguments that [rmsb::blrm()] would
+#' pass to it, such as `seed`, are errors.
+#' Check the convergence diagnostics in `$diagnostics` (`Rhat` below 1.01 and
+#' effective sample sizes of at least 100 per chain).
+#'
+#' The time for a fit with missing states grows with the number of rows next
+#' to a missing or range-coded state and with the square of the number of
+#' states; fully observed transitions add little. As a guide, on a recent
+#' laptop with states missing completely at random, an `"orm"` fit with
+#' standard errors for 5,000 patients followed for 30 visits with 100 states
+#' took about 15 seconds with 0.5% of the states missing and about three
+#' minutes with 10%. Before fitting large data with many states and many
+#' missing states, time a fit on a random subset of patients.
+#'
 #' ## Refits
 #'
 #' Bootstrap inference (`inferences(method = "bootstrap")` and
@@ -137,6 +240,25 @@
 #'     patient-clustered variance and the fitted `vglm` object in `$vglm_fit`
 #'     (see [robcov_vglm()]); without `id_var`, the S4 `vglm` object.
 #'   * `"blrm"`: a `blrm` object with the posterior draws.
+#'
+#'   A fit that uses missing or range-coded states also has class `mostm_ml`
+#'   and a component `ml`, a list that includes:
+#'   * `loglik`: the maximised log-likelihood of the observed data.
+#'   * `missing_info_fraction`: the largest share of information lost because
+#'     states are missing or known only up to a range, from 0 to 1.
+#'   * `n_missing`, `n_range`: the numbers of rows with a missing state and
+#'     with a range of states.
+#'   * `patient_scores`, `information`, `var_model`: one row per patient of
+#'     the derivatives of that patient's log-likelihood, the observed
+#'     information, and its inverse, the model-based covariance. The robust
+#'     covariance is `var_robust`.
+#'   * `iterations`, `newton_steps`, `max_abs_score`: EM iterations, Newton
+#'     steps, and the largest absolute derivative of the log-likelihood at the
+#'     estimates (close to 0 at a maximum).
+#'
+#'   For `engine = "blrm"`, `ml` holds the counts of missing and range-coded
+#'   rows, `diagnostics` the convergence diagnostics, and `rstan` the
+#'   [rstan::stanfit-class] object.
 #'
 #' @examples
 #' # Daily states of 200 simulated patients over 14 days: 1 is the best state
@@ -175,6 +297,26 @@
 #' )
 #' sops_by_arm[sops_by_arm$time == 14, ]
 #'
+#' # Remove the recorded state of 10% of the visits of living patients. The
+#' # previous state after a missing visit is then unknown as well.
+#' set.seed(2)
+#' with_missing <- model_data
+#' with_missing$y <- as.numeric(as.character(with_missing$y))
+#' lost <- with_missing$y != 8 & stats::runif(nrow(with_missing)) < 0.1
+#' with_missing$y[lost] <- NA
+#' after <- c(FALSE, lost[-length(lost)]) &
+#'   c(FALSE, with_missing$id[-1] == with_missing$id[-nrow(with_missing)])
+#' with_missing$yprev[after] <- NA
+#'
+#' # A missing state is any state but death
+#' fit_missing <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = with_missing,
+#'   id_var = "id",
+#'   missing_states = 1:7
+#' )
+#' fit_missing
+#'
 #' \donttest{
 #' if (requireNamespace("rmsb", quietly = TRUE)) {
 #'   # A Bayesian model with a separate time effect at each state threshold,
@@ -204,7 +346,9 @@ mostm <- function(
   engine = c("orm", "vglm", "blrm"),
   id_var = NULL,
   time_var = "time",
+  p_var = "yprev",
   first_followup_time = NULL,
+  missing_states = NULL,
   weights = NULL,
   subset = NULL,
   type = c("HC0", "HC1"),
@@ -295,12 +439,60 @@ mostm <- function(
       character()
     }
   )
-  fitted <- switch(
-    engine,
-    orm = mostm_fit_orm(setup, ...),
-    vglm = mostm_fit_vglm(setup, ...),
-    blrm = mostm_fit_blrm(setup, ...)
+  # With `missing_states` or an Ocens() response, rows with missing or
+  # range-coded states are kept and the observed-data likelihood is
+  # maximised (markov-ml-*.R). Otherwise the engine fits the complete rows.
+  ml_problem <- mostm_ml_problem(
+    setup,
+    engine = engine,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    missing_states = missing_states,
+    engine_args = list(...)
   )
+  if (is.null(ml_problem)) {
+    fitted <- switch(
+      engine,
+      orm = mostm_fit_orm(setup, ...),
+      vglm = mostm_fit_vglm(setup, ...),
+      blrm = mostm_fit_blrm(setup, ...)
+    )
+    # An explicit `na.action` already says how to handle missing values.
+    if (is.null(dots$na.action)) {
+      markov_warn_dropped_complete_rows(
+        markov_subset_source_data(data, subset_rows, eval_env)$data,
+        fitted$fit_data,
+        formula = formula,
+        p_var = p_var,
+        missing_states_given = !is.null(missing_states)
+      )
+    }
+  } else {
+    dropped <- ml_problem$dropped
+    markov_warn_dropped_rows(
+      nrow(ml_problem$selected),
+      response = dropped$response,
+      previous = dropped$previous,
+      covariate = dropped$covariate,
+      p_var = p_var,
+      missing_states_given = !is.null(missing_states)
+    )
+    fitted <- if (engine == "blrm") {
+      mostm_fit_ml_blrm(setup, ml_problem, engine_args = list(...))
+    } else {
+      mostm_fit_ml(
+        setup,
+        engine = engine,
+        problem = ml_problem,
+        type = type,
+        cadjust = cadjust %||% TRUE,
+        control = markov_ml_control(variance = !markov_ml_coefficients_only()),
+        engine_args = list(...)
+      )
+    }
+    fitted$fit_data <- markov_ml_fit_data(ml_problem, ml_problem$selected)
+  }
 
   fit_data <- fitted$fit_data
   stored <- markov_prepare_stored_data(
@@ -328,6 +520,20 @@ mostm <- function(
   }
 
   fit <- attach_data(markov_set_model_call(fitted$fit, model_call))
+  if (!is.null(ml_problem)) {
+    if (engine == "blrm") {
+      return(fit)
+    }
+    fit <- markov_ml_finish(
+      fit,
+      fitted$ml,
+      ml_problem,
+      engine = engine,
+      id_var = id_var,
+      fitted_ids = stored$starting_profile_metadata$fitted_ids
+    )
+    return(attach_data(fit))
+  }
   if (is.null(id_var) || engine == "blrm") {
     return(fit)
   }

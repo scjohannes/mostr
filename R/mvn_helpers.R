@@ -251,6 +251,16 @@ get_vcov_robust <- function(
   cadjust_missing <- missing(cadjust)
   type <- match.arg(type)
 
+  # --- Fits with missing states: covariance from the stored patient scores ---
+  if (markov_is_ml_fit(model)) {
+    return(markov_ml_vcov(
+      model,
+      cluster = cluster,
+      type = if (type_missing) NULL else type,
+      cadjust = if (cadjust_missing) NULL else cadjust
+    ))
+  }
+
   # --- Case 1: Already a robcov_vglm object ---
   if (inherits(model, "robcov_vglm")) {
     return(model$var)

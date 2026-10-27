@@ -459,6 +459,9 @@ bootstrap_analysis_wrapper <- function(
   fit_weights = NULL
 ) {
   fit_model <- bootstrap_refit_model(model)
+  if (!is.null(fit_weights)) {
+    stop_markov_ml_fwb(fit_model)
+  }
 
   prior_weight_column <- markov_model_prior_weight_column(fit_model)
   if (!is.null(prior_weight_column)) {
@@ -535,7 +538,8 @@ bootstrap_analysis_wrapper <- function(
       boot_data,
       fit_weights = fit_weights,
       coefstart = if (with_coefstart) coefstart else NULL,
-      drop_coefstart = !with_coefstart
+      drop_coefstart = !with_coefstart,
+      state_mapping = if (length(missing_states)) releveled$state_mapping
     )
   }
 
@@ -718,7 +722,8 @@ update_bootstrap_model <- function(
   boot_data,
   fit_weights = NULL,
   coefstart = NULL,
-  drop_coefstart = FALSE
+  drop_coefstart = FALSE,
+  state_mapping = NULL
 ) {
   refit_args <- markov_model_refit_args(model)
   model_call <- if (!is.null(refit_args)) bootstrap_model_call(model) else NULL
@@ -778,12 +783,30 @@ update_bootstrap_model <- function(
   }
 
   # Refits need only the coefficients. Without `id_var`, `mostm()` skips the
-  # patient-clustered covariance and the starting profiles.
-  refit_call$id_var <- NULL
+  # patient-clustered covariance and the starting profiles. Fits with missing
+  # states need `id_var` for their chains: each resampled copy of a patient
+  # is a patient of its own, and the covariances are skipped.
+  uses_ml <- markov_refit_uses_ml(refit_args)
+  refit_call$id_var <- if (uses_ml) {
+    if ("new_id" %in% names(boot_data)) "new_id" else refit_args$id_var
+  }
+  # A resample without some state has its states renumbered consecutively
+  # (`state_mapping`, from relevel_factors_consecutive()), so the states a
+  # missing response may be are renumbered too.
+  if (uses_ml && !is.null(state_mapping)) {
+    refit_call$missing_states <- markov_ml_refit_missing_states(
+      refit_args,
+      state_mapping
+    )
+  }
 
   updated <- suppress_expected_refit_warnings(
     model,
-    eval(refit_call)
+    if (uses_ml) {
+      with_markov_ml_coefficients_only(eval(refit_call))
+    } else {
+      eval(refit_call)
+    }
   )
 
   markov_inherit_engine(updated, model)
@@ -826,11 +849,12 @@ suppress_expected_refit_warnings <- function(model, expr) {
     expr,
     warning = function(w) {
       if (
-        grepl(
-          "`id_var` was not supplied to mostm()",
-          conditionMessage(w),
-          fixed = TRUE
-        )
+        inherits(w, "mostr_dropped_rows_warning") ||
+          grepl(
+            "`id_var` was not supplied to mostm()",
+            conditionMessage(w),
+            fixed = TRUE
+          )
       ) {
         invokeRestart("muffleWarning")
       }

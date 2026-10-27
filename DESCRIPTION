@@ -37,6 +37,7 @@ Suggests:
     pkgload,
     posterior,
     rmsb,
+    rstan,
     rmarkdown,
     tibble,
     tidyr,

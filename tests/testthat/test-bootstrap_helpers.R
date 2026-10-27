@@ -561,7 +561,8 @@ test_that("bootstrap_analysis_wrapper decides when refits use starting values", 
         boot_data,
         fit_weights = NULL,
         coefstart = NULL,
-        drop_coefstart = FALSE
+        drop_coefstart = FALSE,
+        state_mapping = NULL
       ) {
         drop_requests <<- c(drop_requests, drop_coefstart)
         if (fail_with_coefstart && !drop_coefstart) {

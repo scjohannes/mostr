@@ -226,6 +226,14 @@ robcov_orm <- function(
   type = c("HC0", "HC1"),
   cadjust = NULL
 ) {
+  if (markov_is_ml_fit(fit)) {
+    stop(
+      "`robcov_orm()` gives the sandwich of fully observed transitions, which ",
+      "is wrong for a fit with missing states; its robust covariance is ",
+      "stored in `$var`.",
+      call. = FALSE
+    )
+  }
   coefficients <- validate_robcov_orm_fit(fit)
   type <- match.arg(type)
   n <- nrow(fit$x)

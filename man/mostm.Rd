@@ -11,7 +11,9 @@ mostm(
   engine = c("orm", "vglm", "blrm"),
   id_var = NULL,
   time_var = "time",
+  p_var = "yprev",
   first_followup_time = NULL,
+  missing_states = NULL,
   weights = NULL,
   subset = NULL,
   type = c("HC0", "HC1"),
@@ -64,13 +66,27 @@ it, a warning is given, and these features, as well as the fractional
 weighted bootstrap, are not available from the fit.}
 
 \item{time_var}{Name of the time column in \code{data}. It is used to find each
-patient's starting row.}
+patient's starting row and, with missing states, to order each patient's
+visits.}
+
+\item{p_var}{Name of the previous-state column in \code{data}, as in \code{\link[=sops]{sops()}}.
+It is used with \code{missing_states} or an \code{\link[rms:Ocens]{rms::Ocens()}} response, which
+need to know which predictor is the previous state, and to describe
+rows that are not used because of missing values.}
 
 \item{first_followup_time}{Time of the first visit after baseline. Each
 patient's row at this time is their starting row for automatic
 predictions. For numeric time, \code{NULL} (the default) uses 1, time may not
 be below 1, and a value you supply must be the earliest time in the data.
 Factor and character time need an explicit value, such as \code{"day 1"}.}
+
+\item{missing_states}{The states a patient may be in at a visit whose state
+was not recorded (\code{NA} in the response), for example \code{1:7} when state 8 is
+death and deaths are always recorded. With it, visits with a missing state
+are used: the likelihood adds up the probabilities of these states
+instead of dropping the transitions into and out of the visit. \code{NULL}
+(the default) drops rows with a missing response, with a warning. See
+"Missing and partially known states" below.}
 
 \item{weights}{Optional non-negative row weights: a column of \code{data} or a
 vector with one value per row of \code{data}. Not available for
@@ -103,6 +119,27 @@ patient-clustered variance and the fitted \code{vglm} object in \verb{$vglm_fit}
 (see \code{\link[=robcov_vglm]{robcov_vglm()}}); without \code{id_var}, the S4 \code{vglm} object.
 \item \code{"blrm"}: a \code{blrm} object with the posterior draws.
 }
+
+A fit that uses missing or range-coded states also has class \code{mostm_ml}
+and a component \code{ml}, a list that includes:
+\itemize{
+\item \code{loglik}: the maximised log-likelihood of the observed data.
+\item \code{missing_info_fraction}: the largest share of information lost because
+states are missing or known only up to a range, from 0 to 1.
+\item \code{n_missing}, \code{n_range}: the numbers of rows with a missing state and
+with a range of states.
+\item \code{patient_scores}, \code{information}, \code{var_model}: one row per patient of
+the derivatives of that patient's log-likelihood, the observed
+information, and its inverse, the model-based covariance. The robust
+covariance is \code{var_robust}.
+\item \code{iterations}, \code{newton_steps}, \code{max_abs_score}: EM iterations, Newton
+steps, and the largest absolute derivative of the log-likelihood at the
+estimates (close to 0 at a maximum).
+}
+
+For \code{engine = "blrm"}, \code{ml} holds the counts of missing and range-coded
+rows, \code{diagnostics} the convergence diagnostics, and \code{rstan} the
+\link[rstan:stanfit-class]{rstan::stanfit} object.
 }
 \description{
 \code{mostm()} fits a model for the transitions between ordinal states, such as
@@ -161,6 +198,98 @@ Unconditional variance also accounts for which patients were sampled; see
 posterior draws.
 }
 
+\subsection{Missing and partially known states}{
+
+By default, \code{mostm()} fits the rows without missing values. A visit whose
+state is missing (\code{NA}) then removes two transitions: the one into the
+visit (missing response) and the one out of it (missing previous state).
+\code{mostm()} warns when rows are dropped. Dropping these transitions can bias
+the estimates. For example, when deaths are always recorded but other
+states are often missing, the remaining transitions overrepresent deaths.
+
+Give \code{missing_states} to use these visits instead. Each patient's rows,
+ordered by \code{time_var}, then form one chain. For a visit with a missing
+state, the likelihood adds up the probabilities of all paths through the
+states in \code{missing_states}. Each patient contributes the probability of
+everything observed for that patient, given the first previous state and
+the covariates, and \code{mostm()} maximises the sum of their logarithms. When a
+state is known only up to a range, such as "in hospital, level unknown",
+code the response as \code{Ocens(lower, upper)} with \code{\link[rms:Ocens]{rms::Ocens()}}, for example
+\code{Ocens(y_lo, y_hi) ~ yprev + rms::rcs(time, 4) + tx}. A row's range then
+replaces \code{missing_states}, \code{Ocens(b, b)} is an observed state \code{b}, and a
+row with both endpoints missing is a missing state. An \code{Ocens()} response
+alone, without \code{missing_states}, uses the ranges and drops rows with a
+missing state. Ranges and missing states work with all three engines,
+because \code{mostm()} evaluates the response itself: the engine sees only
+exactly observed states.
+
+With nothing missing or range-coded, \code{missing_states} changes nothing: the
+fit is the usual fit of the engine. Otherwise:
+\itemize{
+\item Keep one row per scheduled visit until death or the end of follow-up,
+including the rows whose state is missing. A visit without a row is
+treated as not scheduled. Only the first row's previous state is used
+(it must be observed); afterwards, the previous state comes from the
+chain, so \code{p_var} may be missing or wrong after a missing state. Where
+the previous visit's state is observed, \code{p_var} must agree with it.
+\item A missing state cannot be a state that the data never show being left,
+such as death (\code{absorb} in \code{\link[=sops]{sops()}}), unless the visit is the patient's
+last. If a patient may have died at a visit without a recorded state,
+the patient is lost to follow-up from then on: end the patient's rows at
+the last visit with a known state.
+\item The model must be first order: apart from \code{p_var}, every covariate must
+be fixed per patient (such as treatment) or a function of time only. A
+covariate computed from the state history, such as the state two visits
+earlier, would be wrong after a missing state. Rows with missing
+covariates are dropped, with a warning, and the patient's chain restarts
+at the next row whose previous state is observed.
+\item The estimates are valid when states are missing at random: whether a
+state is missing may depend on what was observed, such as earlier states
+or treatment, but not on the unobserved state itself.
+\item \code{id_var} is required, and \code{weights} cannot be used. Random effects
+(\code{cluster()} in \code{formula}) are available only with \code{engine = "blrm"}.
+}
+
+For the \code{"orm"} and \code{"vglm"} engines, \code{mostm()} starts from the fit to the
+transitions with both states observed and maximises the likelihood with
+the EM algorithm followed by Newton steps. Spline knots in \code{rms::rcs()}
+terms are set from these transitions. Standard errors use the exact
+observed information (by Louis' identity) and the patients' scores, in the
+same patient-clustered sandwich as above; \code{type = "HC1"} counts the rows
+whose observation rules out at least one state. The returned object is the
+engine's fit to the expected numbers of transitions at the estimates, which
+predicts like any other fit of that engine. \code{\link[=logLik]{logLik()}}, \code{\link[=AIC]{AIC()}}, and \code{\link[=BIC]{BIC()}}
+use the maximised log-likelihood of the observed data, and \code{\link[=nobs]{nobs()}}
+counts the rows that rule out at least one state. Printing the fit shows
+this log-likelihood, how many states were missing, and the coefficients
+with their robust standard errors. All \code{\link[=inferences]{inferences()}} methods except the
+fractional weighted bootstrap are available; bootstrap refits resample
+whole patients, including their missing rows.
+
+For \code{engine = "blrm"}, \code{mostm()} samples the posterior of the
+\code{\link[rmsb:blrm]{rmsb::blrm()}} model with the same priors (\code{conc}, \code{pcontrast},
+\code{npcontrast}, \code{psigma}, \code{rsdmean}, and \code{rsdsd}), using its own Stan program
+with this likelihood. It needs the rstan package and a C++ toolchain; the
+program is compiled on first use (which takes a few minutes) and saved in
+\code{tools::R_user_dir("mostr", "cache")}. Set \code{options(mostr.stan_cache_dir = FALSE)} to keep it only for the current session. Constrained partial
+proportional odds (\code{ppo} with \code{cppo}) and a random intercept per patient
+(\code{cluster()} with the patient ID column) are available; \code{sampling.args}
+goes to \code{\link[rstan:sampling]{rstan::sampling()}}, for example \code{list(seed = 1, cores = 4)}.
+There is no Stan optimizer run, so arguments that \code{\link[rmsb:blrm]{rmsb::blrm()}} would
+pass to it, such as \code{seed}, are errors.
+Check the convergence diagnostics in \verb{$diagnostics} (\code{Rhat} below 1.01 and
+effective sample sizes of at least 100 per chain).
+
+The time for a fit with missing states grows with the number of rows next
+to a missing or range-coded state and with the square of the number of
+states; fully observed transitions add little. As a guide, on a recent
+laptop with states missing completely at random, an \code{"orm"} fit with
+standard errors for 5,000 patients followed for 30 visits with 100 states
+took about 15 seconds with 0.5\% of the states missing and about three
+minutes with 10\%. Before fitting large data with many states and many
+missing states, time a fit on a random subset of patients.
+}
+
 \subsection{Refits}{
 
 Bootstrap inference (\code{inferences(method = "bootstrap")} and
@@ -210,6 +339,26 @@ sops_by_arm <- avg_sops(
   absorb = "8"
 )
 sops_by_arm[sops_by_arm$time == 14, ]
+
+# Remove the recorded state of 10\% of the visits of living patients. The
+# previous state after a missing visit is then unknown as well.
+set.seed(2)
+with_missing <- model_data
+with_missing$y <- as.numeric(as.character(with_missing$y))
+lost <- with_missing$y != 8 & stats::runif(nrow(with_missing)) < 0.1
+with_missing$y[lost] <- NA
+after <- c(FALSE, lost[-length(lost)]) &
+  c(FALSE, with_missing$id[-1] == with_missing$id[-nrow(with_missing)])
+with_missing$yprev[after] <- NA
+
+# A missing state is any state but death
+fit_missing <- mostm(
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = with_missing,
+  id_var = "id",
+  missing_states = 1:7
+)
+fit_missing
 
 \donttest{
 if (requireNamespace("rmsb", quietly = TRUE)) {

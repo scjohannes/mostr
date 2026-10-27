@@ -141,13 +141,16 @@ test_that("the vglm engine aligns stored fitting data after subset and NA drops"
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1007)
   data$time_lin[2] <- NA_real_
 
-  fit <- mostm(
-    ordered(y) ~ time_lin + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    id_var = "id",
-    subset = time <= 5,
-    engine = "vglm"
+  expect_warning(
+    fit <- mostm(
+      ordered(y) ~ time_lin + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      id_var = "id",
+      subset = time <= 5,
+      engine = "vglm"
+    ),
+    class = "mostr_dropped_rows_warning"
   )
 
   stored_data <- attr(fit, "markov_data")
@@ -318,12 +321,15 @@ test_that("missing first outcome preserves a complete starting profile", {
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1010)
   first <- data$id == 1 & data$time == min(data$time)
   data$y[first] <- NA
-  fit <- mostm(
-    ordered(y) ~ time_lin + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    id_var = "id",
-    engine = "vglm"
+  expect_warning(
+    fit <- mostm(
+      ordered(y) ~ time_lin + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      id_var = "id",
+      engine = "vglm"
+    ),
+    class = "mostr_dropped_rows_warning"
   )
 
   fitted_data <- attr(fit, "markov_data")
@@ -362,7 +368,10 @@ test_that("missing later times do not create incomplete starting profiles", {
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 1001)
   data$time[which(data$time == 3)[1L]] <- NA_real_
-  fit <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
+  expect_warning(
+    fit <- mostm(y ~ time + tx + yprev, data = data, id_var = "id"),
+    class = "mostr_dropped_rows_warning"
+  )
   profiles <- markov_validate_starting_profiles(fit)
   starting_rows <- which(data$time == 1)
 
@@ -387,12 +396,15 @@ test_that("profile-only patients are excluded from the fitted cohort", {
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1011)
   data$y[data$id == 1] <- NA
-  fit <- mostm(
-    ordered(y) ~ time_lin + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    id_var = "id",
-    engine = "vglm"
+  expect_warning(
+    fit <- mostm(
+      ordered(y) ~ time_lin + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      id_var = "id",
+      engine = "vglm"
+    ),
+    class = "mostr_dropped_rows_warning"
   )
   profiles <- markov_validate_starting_profiles(fit)
   fitted_ids <- unique(attr(fit, "markov_data")$id)
@@ -413,12 +425,15 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
   )
   incomplete$tx[incomplete$id == 1 & incomplete$time == min(incomplete$time)] <-
     NA_real_
-  incomplete_fit <- mostm(
-    ordered(y) ~ time_lin + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = incomplete,
-    id_var = "id",
-    engine = "vglm"
+  expect_warning(
+    incomplete_fit <- mostm(
+      ordered(y) ~ time_lin + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = incomplete,
+      id_var = "id",
+      engine = "vglm"
+    ),
+    class = "mostr_dropped_rows_warning"
   )
   expect_snapshot(
     avg_sops(

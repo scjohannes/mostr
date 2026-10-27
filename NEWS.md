@@ -47,6 +47,49 @@
   arguments. They no longer compute patient-clustered standard errors for each
   refit, which only the original fit uses.
 
+* `mostm()` warns when it drops rows with missing values, with the numbers of
+  rows with a missing response, a missing previous state, and missing
+  covariates. A visit with a missing state removes the transitions into and
+  out of it, which can bias the estimates; the warning points to
+  `missing_states`. Give `na.action` to choose how missing values are handled
+  without the warning.
+
+## New features
+
+* `mostm()` can use visits whose state is missing or known only up to a range,
+  with every engine. `missing_states` gives the states a patient may be in at
+  a visit whose state is `NA`, for example `missing_states = 1:7` when state 8
+  is death and deaths are always recorded. A response coded as
+  `rms::Ocens(lower, upper)` gives a range of states per row, such as "in
+  hospital, level unknown", and overrides `missing_states` for that row.
+  Instead of dropping the transitions next to such a visit, the likelihood
+  adds up the probabilities of all states the patient could have been in. The
+  estimates are valid when states are missing at random. With nothing missing,
+  the fit is the engine's usual fit. Each patient's rows must then form one
+  chain of scheduled visits (`id_var` is required, and `p_var` names the
+  previous-state column), and the model must be first order. See "Missing and
+  partially known states" in `?mostm`.
+
+  * For `engine = "orm"` and `"vglm"` (including partial proportional odds),
+    the maximum likelihood estimates come from the EM algorithm and Newton
+    steps. Standard errors use the exact observed information and the
+    patients' scores in the usual patient-clustered sandwich. All
+    `inferences()` methods except the fractional weighted bootstrap work;
+    `logLik()`, `AIC()`, and `nobs()` describe the observed data, and
+    `print()` shows the log-likelihood, how many states were missing, the
+    share of information lost to them, and the coefficients with robust
+    standard errors.
+  * For `engine = "blrm"`, `mostm()` samples the posterior of the
+    `rmsb::blrm()` model with the same priors from its own Stan program,
+    which needs rstan and a C++ toolchain and is compiled once and cached.
+    Constrained partial proportional odds (`ppo`, `cppo`) and a random
+    intercept per patient (`cluster()`) are supported.
+
+* New vignettes `vignette("missing-states-ml")` and
+  `vignette("missing-qol-recorded-deaths")` explain the method and show why
+  dropping transitions next to missing quality-of-life questionnaires
+  overestimates mortality when deaths are always recorded.
+
 ## Bug fixes
 
 * With `engine = "vglm"`, starting values given through `etastart` or

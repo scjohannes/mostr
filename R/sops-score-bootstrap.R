@@ -160,6 +160,9 @@ generate_score_bootstrap_draws <- function(
 }
 
 score_bootstrap_components <- function(model, cluster = NULL) {
+  if (markov_is_ml_fit(model)) {
+    return(markov_ml_influence_components(model, cluster = cluster))
+  }
   if (inherits(model, "robcov_vglm")) {
     required <- c("coefficients", "bread", "scores", "cluster")
     missing_required <- required[vapply(
@@ -211,6 +214,13 @@ score_bootstrap_components <- function(model, cluster = NULL) {
 compute_scores_orm <- function(model) {
   if (!inherits(model, "orm")) {
     stop("'model' must be an orm object.")
+  }
+  if (markov_is_ml_fit(model)) {
+    stop(
+      "Row scores of a fit with missing states would describe its fit to ",
+      "expected transition counts; use its stored patient scores instead.",
+      call. = FALSE
+    )
   }
   if (is.null(model$x) || is.null(model$y)) {
     stop(

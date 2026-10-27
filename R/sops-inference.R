@@ -545,6 +545,10 @@ inferences_impl <- function(
     return(x)
   }
 
+  if (identical(method, "fwb")) {
+    stop_markov_ml_fwb(bootstrap_refit_model(attr(x, "model")))
+  }
+
   if (
     method %in% c("score_bootstrap", "bootstrap", "fwb") &&
       sets_starting_state(x)

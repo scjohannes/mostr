@@ -109,6 +109,20 @@ validate_markov_model <- function(object) {
   invisible(NULL)
 }
 
+# Fits with missing or range-coded states are first order: reject a second
+# previous state.
+markov_reject_ml_second_order <- function(model, p2_var) {
+  if (!is.null(p2_var) && inherits(model, "mostm_ml")) {
+    stop(
+      "`p2_var` cannot be used with a fit that has `missing_states` or an ",
+      "`Ocens()` response: it is a first-order model, in which transitions ",
+      "depend on the past only through the previous state.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
 # Return the `reverse` setting of a fitted VGAM family, or NULL when the
 # family does not report it as one non-missing logical value.
 vglm_family_reverse <- function(family) {
