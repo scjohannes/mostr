@@ -19,10 +19,11 @@ test_that("zero or tiny uncertainty does not certify a structural boundary", {
 
 test_that("absorption during prediction does not certify numerical saturation", {
   data <- make_test_data(n_patients = 60, follow_up_time = 8, seed = 8118)
-  model <- suppressWarnings(vglm_markov(
+  model <- suppressWarnings(mostm(
     ordered(y) ~ tx,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data
+    data = data,
+    engine = "vglm"
   ))
   states <- seq_len(nrow(get_effective_coefs(model)) + 1L)
   baseline <- data[!is.na(data$y) & data$yprev != max(states), , drop = FALSE]

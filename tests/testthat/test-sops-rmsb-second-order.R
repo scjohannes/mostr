@@ -26,7 +26,7 @@ make_fake_blrm <- function(draws = NULL, gamma_draws = NULL, pppo = 0L) {
       gamma_draws = gamma_draws
     ),
     class = c("blrm", "orm"),
-    markov_fit_wrapper = "blrm_markov"
+    markov_engine = "blrm"
   )
 }
 
@@ -44,11 +44,11 @@ fake_blrm_design <- function(model, newdata, second = FALSE) {
 
 test_that("Markov workflows reject raw blrm fits", {
   model <- make_fake_blrm()
-  attr(model, "markov_fit_wrapper") <- NULL
+  attr(model, "markov_engine") <- NULL
 
   expect_error(
     mostr:::validate_markov_model(model),
-    "require fits created by `blrm_markov()`",
+    "Refit this model with `mostm(engine = \"blrm\")`",
     fixed = TRUE
   )
 })
@@ -251,11 +251,9 @@ test_that("compiled second-order ORM plans match the reference recursion", {
   })
   data$yprev <- factor(data$yprev, levels = 1:3)
   data$ypprev <- factor(data$ypprev, levels = 1:3)
-  model <- suppressWarnings(orm_markov(
+  model <- suppressWarnings(mostm(
     y ~ tx + time + yprev + ypprev,
-    data = data[data$time > 2L, ],
-    x = TRUE,
-    y = TRUE
+    data = data[data$time > 2L, ]
   ))
   baseline <- data[data$time == 1L, ]
   withr::local_options(mostr.execution_plan_max_bytes = 1)

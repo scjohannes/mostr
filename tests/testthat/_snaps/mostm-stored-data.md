@@ -1,8 +1,8 @@
-# Markov wrappers validate numeric first follow-up schedules
+# mostm() validates numeric first follow-up schedules
 
     Code
-      vglm_markov(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(
-        reverse = TRUE, parallel = TRUE), data = no_one, id_var = "id")
+      mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
+        parallel = TRUE), data = no_one, id_var = "id", engine = "vglm")
     Condition
       Error:
       ! The default `first_followup_time = 1` is not observed in the numeric time variable.
@@ -10,8 +10,8 @@
 ---
 
     Code
-      vglm_markov(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(
-        reverse = TRUE, parallel = TRUE), data = below_one, id_var = "id")
+      mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
+        parallel = TRUE), data = below_one, id_var = "id", engine = "vglm")
     Condition
       Error:
       ! The numeric time variable contains a value below 1; follow-up time must begin at 1 or later.
@@ -19,22 +19,22 @@
 ---
 
     Code
-      vglm_markov(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(
-        reverse = TRUE, parallel = TRUE), data = data, id_var = "id",
-      first_followup_time = 2)
+      mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
+        parallel = TRUE), data = data, id_var = "id", first_followup_time = 2,
+      engine = "vglm")
     Condition
       Error:
       ! For numeric time, `first_followup_time` must equal the earliest observed scheduled time (`1`).
 
-# Markov wrappers reject legacy starting-profile arguments
+# mostm() rejects former starting-profile arguments
 
     Code
-      vglm_markov(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(
-        reverse = TRUE, parallel = TRUE), data = data, id_var = "id", start_time = 1,
-      origin_time = 0, time_map = 1:6)
+      mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
+        parallel = TRUE), data = data, id_var = "id", start_time = 1, origin_time = 0,
+      time_map = 1:6, engine = "vglm")
     Condition
       Error:
-      ! vglm_markov() no longer accepts legacy wrapper argument(s): `start_time`, `origin_time`, `time_map`. Use `first_followup_time` to select the stored starting profiles; supply baseline and time-mapping arguments to downstream SOP summary functions.
+      ! mostm() does not accept the former starting-profile argument(s) `start_time`, `origin_time`, `time_map`. Use `first_followup_time` to select the stored starting profiles; supply baseline and time-mapping arguments to downstream SOP summary functions.
 
 # automatic SOP prediction never substitutes a later profile row
 
@@ -65,8 +65,8 @@
 # factor and character time require explicit first follow-up values
 
     Code
-      vglm_markov(ordered(y) ~ time + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
-        parallel = TRUE), data = data, id_var = "id")
+      mostm(ordered(y) ~ time + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
+        parallel = TRUE), data = data, id_var = "id", engine = "vglm")
     Condition
       Error:
       ! Factor and character time require an explicit `first_followup_time`.
@@ -74,8 +74,8 @@
 ---
 
     Code
-      vglm_markov(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(
-        reverse = TRUE, parallel = TRUE), data = data, id_var = "id", time_var = "visit")
+      mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
+        parallel = TRUE), data = data, id_var = "id", time_var = "visit", engine = "vglm")
     Condition
       Error:
       ! Factor and character time require an explicit `first_followup_time`.
@@ -83,8 +83,9 @@
 ---
 
     Code
-      vglm_markov(ordered(y) ~ time + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
-        parallel = TRUE), data = data, id_var = "id", first_followup_time = "v7")
+      mostm(ordered(y) ~ time + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
+        parallel = TRUE), data = data, id_var = "id", first_followup_time = "v7",
+      engine = "vglm")
     Condition
       Error:
       ! `first_followup_time = v7` is not observed in the factor or character time variable.

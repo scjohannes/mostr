@@ -1,8 +1,8 @@
 ---
-title: "Time as a Factor with orm_markov()"
+title: "Time as a Factor with the orm Engine"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Time as a Factor with orm_markov()}
+  %\VignetteIndexEntry{Time as a Factor with the orm Engine}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -19,7 +19,7 @@ treated as a separate category of time.
 
 This article shows how to
 
-1. turn daily data into visit data and fit an `orm_markov()` model with time
+1. turn daily data into visit data and fit a model with `mostm()` and time
    as a factor;
 2. estimate state occupancy probabilities (SOPs) at each visit;
 3. convert these to a calendar-day scale by interpolating between visits; and
@@ -117,10 +117,7 @@ this defaults to 1; for factor time, set it explicitly with
 days, to `times` in `avg_sops()`. The resulting SOPs refer to visits 1 to 4.
 
 ```{r fit-model}
-dd <- rms::datadist(model_data)
-options(datadist = "dd")
-
-fit_visit <- orm_markov(
+fit_visit <- mostm(
   y ~ tx + time + yprev,
   data = model_data,
   id_var = "id",

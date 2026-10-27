@@ -1,9 +1,10 @@
 fit_reverse_vglm <- function(data, family) {
-  vglm_markov(
+  mostm(
     ordered(y) ~ time + tx + yprev,
     family = family,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 }
 
@@ -20,11 +21,12 @@ avg_sops_reverse_case <- function(fit) {
 test_that("the reverse check accepts `reverse` set from a local variable", {
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5401)
   fit_in_closure <- function(data, rev_flag) {
-    vglm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = rev_flag, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     )
   }
   fit <- fit_in_closure(data, rev_flag = TRUE)
@@ -45,11 +47,12 @@ test_that("the reverse check accepts a family object passed by name", {
 test_that("the reverse check uses the fitted family, not later variable values", {
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5403)
   rev_flag <- TRUE
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = rev_flag, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   rev_flag <- FALSE
 

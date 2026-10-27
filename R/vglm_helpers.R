@@ -1,196 +1,35 @@
-#' Fit a VGAM Markov Model
-#'
-#' `vglm_markov()` is the recommended VGAM fitting entrypoint for
-#' `mostr` SOP workflows. It follows `VGAM::vglm()` closely, stores
-#' separate likelihood, refit, and designated-start profile data for downstream
-#' SOP inference, and marks the fit so the SOP prediction code can use
-#' package-native Markov prediction. For inline
-#' registered RMS spline terms such as `rcs(time, 4)`, `lsp(time, 5)`, or their
-#' namespace-qualified forms, the internal VGAM assignment metadata is split by
-#' generated spline column.
-#' This makes it possible to give individual spline basis columns separate
-#' constraint matrices for partial proportional odds models. Inline splines may
-#' be used for time or for numeric previous-state effects such as
-#' `rcs(yprev, 6)`.
-#'
-#' `vglm_markov()` also makes the registered `rms` formula helpers `rcs()`,
-#' `lsp()`, and `%ia%`
-#' available while building model frames and prediction design matrices. This
-#' lets formulas use `time %ia% yprev` for a linear-time by previous-state
-#' interaction without requiring `library(rms)` in the user's session.
-#'
-#' Non-spline terms, factor terms, and workflows that use explicit precomputed
-#' basis columns keep ordinary VGAM assignment behavior. When `id_var` is
-#' supplied, the returned object is wrapped with [robcov_vglm()] using that
-#' patient/cluster ID. When `id_var` is omitted, a plain S4 `vglm` object is
-#' returned; if `data` contains an `id` column, a warning reminds the user that
-#' automatic cluster-robust covariance and FWB refits need `id_var`.
-#'
-#' Offsets are not supported in `mostr` SOP workflows, so `vglm_markov()`
-#' rejects both `offset()` terms and the `offset` argument.
-#'
-#' @inheritParams VGAM::vglm
-#' @param weights Optional positive prior weights. A vector supplies one weight
-#'   per observation. For families with multiple responses, a matrix can supply
-#'   one column per response; a vector is recycled across response columns.
-#'   See [VGAM::vglm()] for family-specific weighting behavior. Weights are
-#'   evaluated once when the model is fitted, so they can be a column of
-#'   `data` or a vector defined outside it; they must be finite and
-#'   non-negative. Each row keeps its weight in the data stored on the fit, so
-#'   bootstrap refits resample rows together with their weights.
-#' @param etastart Optional starting linear predictors: a matrix with one row
-#'   per observation and \eqn{L} columns, where \eqn{L} is the number of linear
-#'   predictors (\eqn{K - 1} for an ordinal model with \eqn{K} states).
-#'   A vector is allowed when \eqn{L = 1}.
-#' @param mustart Optional starting fitted values, with the same structure as
-#'   `fitted(fit)`. If a matrix, it must have one row per observation. Whether
-#'   these values can initialize all linear predictors depends on the family;
-#'   many families do not use this argument.
-#' @param offset Not supported. Supplying offsets raises an error.
-#' @param family A VGAM family object, e.g. `VGAM::cumulative()`.
-#' @param id_var Optional character scalar naming the patient or cluster ID
-#'   column in `data`. When supplied, [robcov_vglm()] is applied automatically.
-#' @param type HC correction passed to [robcov_vglm()] when `id_var` is
-#'   supplied: `"HC0"` (the default) or `"HC1"`.
-#' @param cadjust Optional logical cluster correction passed to [robcov_vglm()]
-#'   when `id_var` is supplied. `NULL` uses the clustered default, which applies
-#'   correction \eqn{n / (n - 1)}, where \eqn{n} is the number of patient clusters.
-#' @param time_var Character scalar naming the modeled time column used to
-#'   identify the designated starting-profile row.
-#' @param first_followup_time First scheduled post-baseline outcome time used to
-#'   select the starting-profile row. For numeric time, `NULL` uses 1. Numeric
-#'   schedules may not contain values below 1, and an explicit value must be the
-#'   earliest observed time. Factor and character time require an explicit
-#'   matching value.
-#' @param constraints Optional VGAM constraints list. For inline registered RMS
-#'   basis terms, names should match the column-level constraint names in a full
-#'   proportional odds fit returned by `vglm_markov()`.
-#'
-#' @details Starting profiles are retained before response-driven model-frame
-#'   omission. Every fitted patient must have exactly one complete profile at
-#'   the cohort-wide `first_followup_time`, including ID, model predictors,
-#'   time, and the previous state; the transition response on that row may be
-#'   missing. A patient is included only when at least one usable likelihood
-#'   transition is fitted somewhere. Patients with no fitted transition are
-#'   excluded, and a fitted patient without a complete designated profile is an
-#'   error. Later likelihood rows are not substituted for that profile.
-#'
-#' @return A fitted S4 `vglm` object with internal Markov marker attributes, or
-#'   a `robcov_vglm` object when `id_var` is supplied.
-#'
-#' @examples
-#' \dontrun{
-#' library(VGAM)
-#' library(rms)
-#'
-#' fit_po <- vglm_markov(
-#'   ordered(y) ~ rcs(time, 4) + tx + age + yprev,
-#'   family = cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = data,
-#'   id_var = "id"
-#' )
-#'
-#' fit_numeric_prev <- vglm_markov(
-#'   ordered(y) ~ rcs(time, 4) + tx + age + rcs(yprev, 6),
-#'   family = cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = prepare_markov_data(data, factor_previous = FALSE)
-#' )
-#'
-#' fit_linear_time_by_prev <- vglm_markov(
-#'   ordered(y) ~ rcs(time, 6) + tx + age + yprev + time %ia% yprev,
-#'   family = cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = data
-#' )
-#'
-#' # In contrast, rcs(time, 6) %ia% yprev follows rms semantics and interacts
-#' # the spline basis columns with yprev when yprev is categorical.
-#' fit_spline_basis_by_prev <- vglm_markov(
-#'   ordered(y) ~ rcs(time, 6) + tx + age + yprev + rcs(time, 6) %ia% yprev,
-#'   family = cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = data
-#' )
-#'
-#' constraints <- fit_po$vglm_fit@constraints
-#' linear_time_term <- grep("^rcs\\(time, 4\\).*time$", names(constraints),
-#'   value = TRUE
-#' )[[1]]
-#' n_thresholds <- nrow(constraints[[linear_time_term]])
-#' constraints[[linear_time_term]] <- cbind(
-#'   PO_effect = rep(1, n_thresholds),
-#'   linear_deviation = seq_len(n_thresholds) - 1
-#' )
-#'
-#' fit_ppo <- vglm_markov(
-#'   ordered(y) ~ rcs(time, 4) + tx + age + yprev,
-#'   family = cumulative(reverse = TRUE, parallel = FALSE),
-#'   data = data,
-#'   constraints = constraints
-#' )
-#' }
-#'
-#' @seealso [robcov_vglm()], [avg_sops()], [sops()]
-#' @export
-vglm_markov <- function(
-  formula,
-  family = stop("argument 'family' needs to be assigned"),
-  data = list(),
-  id_var = NULL,
-  type = c("HC0", "HC1"),
-  cadjust = NULL,
-  weights = NULL,
-  subset = NULL,
+# Fit the vglm engine of mostm(). The model is built as in VGAM::vglm(), with
+# two differences that the SOP prediction code relies on. Inline registered
+# rms basis terms such as `rcs(time, 4)` or `lsp(time, 5)` get one VGAM
+# assignment per generated column, so each basis column can have its own
+# constraint matrix in a partial proportional odds model. The rms helpers
+# `rcs()`, `lsp()`, and `%ia%` are available to the formula without
+# `library(rms)`, so `time %ia% yprev` works as in rms.
+#
+# `setup` holds the arguments that mostm() has already resolved; the other
+# formals are the VGAM::vglm() arguments a user may pass through mostm().
+mostm_fit_vglm <- function(
+  setup,
+  family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
   na.action,
   etastart = NULL,
   mustart = NULL,
   coefstart = NULL,
   control = VGAM::vglm.control(...),
-  offset = NULL,
   model = FALSE,
-  x.arg = TRUE,
-  y.arg = TRUE,
   contrasts = NULL,
   constraints = NULL,
   extra = list(),
   form2 = NULL,
   qr.arg = TRUE,
   smart = TRUE,
-  time_var = "time",
-  first_followup_time = NULL,
   ...
 ) {
-  refit_args <- markov_capture_refit_args(
-    match.call(),
-    environment(),
-    names(formals(sys.function())),
-    ...
-  )
-  type <- match.arg(type)
-  markov_call <- match.call(expand.dots = FALSE)
-  markov_reject_legacy_wrapper_args(markov_call$..., "vglm_markov()")
-  dataname <- as.character(substitute(data))
+  data <- setup$data
+  subset_rows <- setup$subset_rows
   function.name <- "vglm"
-  ocall <- match.call()
-  data_was_supplied <- !missing(data)
-  original_data <- if (data_was_supplied && is.data.frame(data)) data else NULL
 
-  # Row weights are evaluated once, as `model.frame()` would evaluate them,
-  # and stored as a column of the data. The weights may then refer to
-  # variables that exist only in the caller's frame, and bootstrap refits
-  # resample each row together with its weight.
-  prior_weight_column <- NULL
-  if (!is.null(original_data) && !is.null(ocall$weights)) {
-    prior_weights <- markov_eval_prior_weights(
-      ocall$weights,
-      original_data,
-      environment(formula) %||% parent.frame()
-    )
-    if (!is.null(prior_weights)) {
-      prior_weight_column <- markov_prior_weight_column()
-      original_data[[prior_weight_column]] <- prior_weights
-    }
-  }
-
-  formula <- add_rms_formula_helpers(formula)
+  formula <- add_rms_formula_helpers(setup$formula)
   if (!is.null(form2)) {
     form2 <- add_rms_formula_helpers(form2)
   }
@@ -219,50 +58,31 @@ vglm_markov <- function(
     )
   }
 
-  if (missing(data)) {
-    data <- environment(formula)
+  # The row selection and weights were evaluated by mostm(). `na.action`,
+  # `etastart`, and `mustart` are added to the model frame as in VGAM::vglm().
+  mf <- list(quote(stats::model.frame), formula = formula, data = data)
+  if (!is.null(subset_rows)) {
+    mf$subset <- subset_rows
   }
-
-  if (!is.null(id_var)) {
-    if (is.null(original_data)) {
-      stop("`id_var` requires `data` to be supplied as a data frame.")
+  if (!is.null(setup$prior_weight_column)) {
+    mf$weights <- as.name(setup$prior_weight_column)
+  }
+  for (nm in c("na.action", "etastart", "mustart")) {
+    if (!is.null(setup$dots[[nm]])) {
+      mf[[nm]] <- setup$dots[[nm]]
     }
-    id_var <- validate_markov_id_var(id_var, original_data, "data")
-    warn_duplicate_markov_id_time(
-      original_data,
-      id_var,
-      time_var = time_var,
-      wrapper = "vglm_markov()"
-    )
-  } else if (!is.null(original_data) && "id" %in% names(original_data)) {
-    warn_missing_markov_id_var("vglm_markov()")
-  }
-
-  mf <- match.call(expand.dots = FALSE)
-  m <- match(
-    c(
-      "formula",
-      "data",
-      "subset",
-      "weights",
-      "na.action",
-      "etastart",
-      "mustart",
-      "offset"
-    ),
-    names(mf),
-    0
-  )
-  mf <- mf[c(1, m)]
-  mf$formula <- formula
-  if (!is.null(prior_weight_column)) {
-    mf$data <- original_data
-    mf$weights <- as.name(prior_weight_column)
   }
   mf$drop.unused.levels <- TRUE
-  mf[[1]] <- as.name("model.frame")
-  mf <- eval(mf, parent.frame())
-  fit_data <- markov_align_model_data(original_data, mf)
+  mf <- eval(as.call(mf), setup$eval_env)
+  fit_data <- markov_align_model_data(data, mf)
+
+  # Take the starting values from the model frame, as stats::glm() does, so
+  # that they keep only the rows left after `subset` and `na.action`. Passing
+  # the supplied values on unchanged would give them more rows than the fit.
+  # Without `etastart` or `mustart` the frame has no such column and both stay
+  # `NULL`.
+  etastart <- stats::model.extract(mf, "etastart")
+  mustart <- stats::model.extract(mf, "mustart")
 
   mt <- attr(mf, "terms")
   if (terms_has_offset(mt) || !is.null(stats::model.offset(mf))) {
@@ -282,7 +102,7 @@ vglm_markov <- function(
   attr(x, "orig.assign.lm") <- split_assign$orig_assign
 
   if (!is.null(form2)) {
-    if (!is.null(subset)) {
+    if (!is.null(subset_rows)) {
       stop(
         "argument 'subset' cannot be used when argument 'form2' is used"
       )
@@ -295,8 +115,8 @@ vglm_markov <- function(
       control = VGAM::vglm.control(...),
       method = "vglm.fit",
       model = model,
-      x.arg = x.arg,
-      y.arg = y.arg,
+      x.arg = TRUE,
+      y.arg = TRUE,
       contrasts = contrasts,
       constraints = constraints,
       extra = extra,
@@ -314,10 +134,7 @@ vglm_markov <- function(
     Xm2 <- Ym2 <- NULL
   }
 
-  offset <- stats::model.offset(mf)
-  if (is.null(offset)) {
-    offset <- 0
-  }
+  offset <- 0
 
   w <- stats::model.weights(mf)
   if (!length(w)) {
@@ -361,17 +178,18 @@ vglm_markov <- function(
     ...
   )
 
-  fit$misc$dataname <- dataname
+  fit$misc$dataname <- setup$data_name
   if (smart) {
     fit$smart.prediction <- get_smart_prediction()
     wrapup_smart()
     smart_open <- FALSE
   }
 
+  # mostm() replaces this call with its own.
   answer <- methods::new(
     Class = "vglm",
     assign = attr(x, "assign"),
-    call = ocall,
+    call = match.call(),
     coefficients = fit$coefficients,
     constraints = fit$constraints,
     criterion = fit$crit.list,
@@ -410,19 +228,15 @@ vglm_markov <- function(
   } else {
     list()
   }
-  if (length(offset)) {
-    methods::slot(answer, "offset") <- as.matrix(offset)
-  }
+  methods::slot(answer, "offset") <- as.matrix(offset)
   if (length(fit$weights)) {
     methods::slot(answer, "weights") <- as.matrix(fit$weights)
   }
-  if (x.arg) {
-    methods::slot(answer, "x") <- fit$x
-  }
-  if (x.arg && length(Xm2)) {
+  methods::slot(answer, "x") <- fit$x
+  if (length(Xm2)) {
     methods::slot(answer, "Xm2") <- Xm2
   }
-  if (y.arg && length(Ym2)) {
+  if (length(Ym2)) {
     methods::slot(answer, "Ym2") <- as.matrix(Ym2)
   }
   if (!is.null(form2)) {
@@ -434,9 +248,7 @@ vglm_markov <- function(
   if (length(xlev)) {
     methods::slot(answer, "xlevels") <- xlev
   }
-  if (y.arg) {
-    methods::slot(answer, "y") <- as.matrix(fit$y)
-  }
+  methods::slot(answer, "y") <- as.matrix(fit$y)
   methods::slot(answer, "control") <- fit$control
   methods::slot(answer, "extra") <- if (length(fit$extra)) {
     if (is.list(fit$extra)) {
@@ -465,49 +277,8 @@ vglm_markov <- function(
   attr(answer, "markov_vglm") <- TRUE
   attr(answer, "markov_split_assign") <- split_assign$has_basis
   attr(answer, "markov_basis_terms") <- split_assign$basis_terms
-  stored <- markov_prepare_stored_data(
-    data = original_data,
-    formula = formula,
-    subset = ocall$subset,
-    eval_env = parent.frame(),
-    fit_data = fit_data,
-    id_var = id_var,
-    time_var = time_var,
-    first_followup_time = first_followup_time
-  )
-  answer <- markov_attach_model_data(
-    answer,
-    data = fit_data,
-    id_var = id_var,
-    refit_data = stored$refit_data,
-    starting_profile_data = stored$starting_profile_data,
-    starting_profile_metadata = stored$starting_profile_metadata,
-    refit_args = refit_args,
-    prior_weight_column = prior_weight_column
-  )
-  answer <- markov_set_fit_wrapper(answer, "vglm_markov")
 
-  if (!is.null(id_var)) {
-    robust <- robcov_vglm(
-      answer,
-      cluster = fit_data[[id_var]],
-      type = type,
-      cadjust = cadjust
-    )
-    robust <- markov_attach_model_data(
-      robust,
-      data = fit_data,
-      id_var = id_var,
-      refit_data = stored$refit_data,
-      starting_profile_data = stored$starting_profile_data,
-      starting_profile_metadata = stored$starting_profile_metadata,
-      refit_args = refit_args,
-      prior_weight_column = prior_weight_column
-    )
-    return(robust)
-  }
-
-  answer
+  list(fit = answer, fit_data = fit_data)
 }
 
 add_rms_formula_helpers <- function(formula) {

@@ -78,7 +78,7 @@ model_data <- prepare_markov_data(
   ungroup() |>
   mutate(baseline_state = droplevels(baseline_state))
 
-fit <- orm_markov(
+fit <- mostm(
   y ~ tx + rcs(time, 4) + yprev + baseline_state,
   data = model_data,
   id_var = "id",
@@ -92,7 +92,7 @@ fit <- orm_markov(
 
 `by = "baseline_state"` asks `avg_sops()` to average the patient-level SOPs
 separately within each baseline state, after setting every patient to each
-treatment value. Because the model was fitted with `orm_markov()`, the full
+treatment value. Because the model was fitted with `mostm()`, the full
 longitudinal data needed for refitting and each patient's starting row are
 stored with the fit, so neither needs to be passed again.
 

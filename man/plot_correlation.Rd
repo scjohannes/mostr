@@ -31,7 +31,8 @@ plot_correlation(
 \item{x}{A trajectory data frame or a fitted Markov model.}
 
 \item{newdata}{Optional data frame of prediction profiles for model-based
-plots. If \code{NULL}, wrapper-fitted models use their stored data and extract
+plots. If \code{NULL}, models fitted with \code{\link[=mostm]{mostm()}} use their stored data and
+extract
 one prediction row per ID.}
 
 \item{times}{Optional time values to include. Required for model-based plots.}

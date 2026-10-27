@@ -170,7 +170,7 @@ and 14. To get SOPs at selected visits, request every visit, such as
 \code{times = 1:14}, and keep the rows you need.
 
 When \code{newdata} is omitted, each patient starts from their state before the
-first follow-up visit (\code{first_followup_time} of the fitting wrapper), so
+first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}), so
 \code{times} must begin at that visit. Each row of a supplied \code{newdata} starts
 from its previous state at the first requested visit, which may be a later
 visit.

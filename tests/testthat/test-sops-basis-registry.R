@@ -95,7 +95,7 @@ test_that("formula helper injection includes every registered RMS basis", {
   expect_equal(exists("%ia%", envir = out_env, inherits = TRUE), TRUE)
 })
 
-test_that("vglm_markov splits lsp basis columns and records metadata", {
+test_that("the vglm engine splits lsp basis columns and records metadata", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -105,10 +105,11 @@ test_that("vglm_markov splits lsp basis columns and records metadata", {
     env = baseenv()
   )
   fit <- suppressWarnings(
-    mostr::vglm_markov(
+    mostr::mostm(
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     )
   )
 
@@ -153,11 +154,9 @@ test_that("orm lsp terms use the optimized execution plan", {
     },
     add = TRUE
   )
-  fit <- suppressWarnings(orm_markov(
+  fit <- suppressWarnings(mostm(
     ordered(y) ~ rms::lsp(time, c(3, 7)) + tx + yprev,
-    data = data,
-    x = TRUE,
-    y = TRUE
+    data = data
   ))
   baseline <- data[data$time == 1, , drop = FALSE][1:8, , drop = FALSE]
 

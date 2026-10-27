@@ -74,59 +74,65 @@ describe("avg_sops() and inferences() pipeline", {
 
   fit_pipeline_model <- function(data) {
     suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
   }
 
-  fit_pipeline_wrapper_model <- function(data) {
-    suppressWarnings(mostr::vglm_markov(
+  fit_pipeline_mostm_model <- function(data) {
+    suppressWarnings(mostr::mostm(
       ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
-      time_var = "time_lin"
+      time_var = "time_lin",
+      engine = "vglm"
     ))
   }
 
   fit_inline_pipeline_model <- function(data) {
     suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
   }
 
-  fit_inline_pipeline_wrapper_model <- function(data) {
-    suppressWarnings(mostr::vglm_markov(
+  fit_inline_pipeline_mostm_model <- function(data) {
+    suppressWarnings(mostr::mostm(
       ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ))
   }
 
   fit_numeric_yprev_model <- function(data) {
     suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         ordered(y) ~ rms::rcs(time, 4) * tx + rms::rcs(yprev, 6),
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
   }
 
-  fit_numeric_yprev_wrapper_model <- function(data) {
-    suppressWarnings(mostr::vglm_markov(
+  fit_numeric_yprev_mostm_model <- function(data) {
+    suppressWarnings(mostr::mostm(
       ordered(y) ~ rms::rcs(time, 4) * tx + rms::rcs(yprev, 6),
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ))
   }
 
@@ -663,7 +669,7 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("rms")
 
     case <- build_markov_pipeline_case()
-    model <- fit_pipeline_wrapper_model(case$data)
+    model <- fit_pipeline_mostm_model(case$data)
 
     avg <- mostr::avg_sops(
       model = model,
@@ -712,7 +718,7 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("rms")
 
     case <- build_markov_pipeline_case()
-    model <- fit_pipeline_wrapper_model(case$data)
+    model <- fit_pipeline_mostm_model(case$data)
 
     avg <- mostr::avg_sops(
       model = model,
@@ -751,7 +757,7 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("rms")
 
     case <- build_numeric_yprev_case()
-    model <- fit_numeric_yprev_wrapper_model(case$data)
+    model <- fit_numeric_yprev_mostm_model(case$data)
 
     avg <- mostr::avg_sops(
       model = model,
@@ -781,7 +787,7 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("rms")
 
     case <- build_markov_pipeline_case()
-    model <- fit_pipeline_wrapper_model(case$data)
+    model <- fit_pipeline_mostm_model(case$data)
     robust_model <- model
 
     avg <- mostr::avg_sops(
@@ -834,7 +840,7 @@ describe("avg_sops() and inferences() pipeline", {
       follow_up_time = 5,
       seed = 2811
     ))
-    model <- orm_markov(
+    model <- mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       id_var = "id"
@@ -906,7 +912,7 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("rms")
 
     case <- build_numeric_yprev_case()
-    model <- fit_numeric_yprev_wrapper_model(case$data)
+    model <- fit_numeric_yprev_mostm_model(case$data)
     robust_model <- model
 
     avg <- mostr::avg_sops(
@@ -1005,8 +1011,8 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("rms")
 
     case <- build_markov_pipeline_case()
-    explicit_model <- fit_pipeline_wrapper_model(case$data)
-    inline_model <- fit_inline_pipeline_wrapper_model(case$data)
+    explicit_model <- fit_pipeline_mostm_model(case$data)
+    inline_model <- fit_inline_pipeline_mostm_model(case$data)
     explicit_robust <- explicit_model
     inline_robust <- inline_model
 
@@ -1069,7 +1075,7 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(inline_draws$draw, explicit_draws$draw, tolerance = 1e-10)
   })
 
-  test_that("full-PO vglm_markov() with inline rcs matches VGAM::vglm()", {
+  test_that("full-PO vglm engine fit with inline rcs matches VGAM::vglm()", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -1093,10 +1099,11 @@ describe("avg_sops() and inferences() pipeline", {
       )
     )
     markov_fit <- suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         form,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
 
@@ -1115,7 +1122,7 @@ describe("avg_sops() and inferences() pipeline", {
     )
   })
 
-  test_that("inline rcs vglm_markov() model can use column-level PPO constraints", {
+  test_that("inline rcs vglm engine fit can use column-level PPO constraints", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -1133,10 +1140,11 @@ describe("avg_sops() and inferences() pipeline", {
     form <- ordered(y) ~ rms::rcs(time, 4) + tx + age + yprev
 
     fit_po <- suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         form,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
 
@@ -1156,11 +1164,12 @@ describe("avg_sops() and inferences() pipeline", {
     )
 
     fit_ppo <- suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         form,
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
-        constraints = cons
+        constraints = cons,
+        engine = "vglm"
       )
     )
     fit_ppo@call$constraints <- cons
@@ -1189,7 +1198,7 @@ describe("avg_sops() and inferences() pipeline", {
     expect_true(all(is.finite(out$estimate)))
   })
 
-  test_that("vglm_markov() constrained PPO matches explicit spline basis", {
+  test_that("vglm engine fit with constrained PPO matches explicit spline basis", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -1237,21 +1246,23 @@ describe("avg_sops() and inferences() pipeline", {
     )
 
     explicit_fit <- suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + age + yprev,
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
-        constraints = explicit_constraints
+        constraints = explicit_constraints,
+        engine = "vglm"
       )
     )
     explicit_fit@call$constraints <- explicit_constraints
 
     inline_form <- ordered(y) ~ rms::rcs(time, 4) + tx + age + yprev
     inline_po <- suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         inline_form,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data
+        data = data,
+        engine = "vglm"
       )
     )
 
@@ -1273,11 +1284,12 @@ describe("avg_sops() and inferences() pipeline", {
     )
 
     inline_fit <- suppressWarnings(
-      mostr::vglm_markov(
+      mostr::mostm(
         inline_form,
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
-        constraints = inline_constraints
+        constraints = inline_constraints,
+        engine = "vglm"
       )
     )
     inline_fit@call$constraints <- inline_constraints

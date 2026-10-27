@@ -21,12 +21,13 @@ Prints a concise summary of the robust covariance estimation results.
 \dontshow{if (rlang::is_installed("VGAM")) withAutoprint(\{ # examplesIf}
 trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-fit <- vglm_markov(
+# With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+robust_fit <- mostm(
   ordered(y) ~ time + tx + yprev,
-  family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-  data = markov_data
+  data = markov_data,
+  id_var = "id",
+  engine = "vglm"
 )
-robust_fit <- robcov_vglm(fit, cluster = markov_data$id)
 print(robust_fit)
 \dontshow{\}) # examplesIf}
 }

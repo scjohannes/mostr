@@ -17,8 +17,7 @@ get_vcov_robust(
 \arguments{
 \item{model}{A fitted \code{vglm}, \code{orm}, or \code{lrm} object, or a \code{robcov_vglm}
 object that already contains robust covariance. Model-based SOP workflows
-separately require provenance from the corresponding \verb{*_markov()} fitting
-wrapper.}
+separately require that the model was fitted with \code{\link[=mostm]{mostm()}}.}
 
 \item{cluster}{Optional. Specifies how to compute cluster-robust standard
 errors:
@@ -87,7 +86,7 @@ number of coefficients. \code{cadjust = TRUE} independently applies
 \eqn{n / (n - 1)}, where \eqn{n} is the number of clusters (or fitting rows
 when no cluster is supplied). An explicit cluster or correction
 request recomputes the ORM covariance; otherwise a valid covariance stored by
-\code{\link[=orm_markov]{orm_markov()}} is returned unchanged.
+\code{\link[=mostm]{mostm()}} is returned unchanged.
 }
 \examples{
 \dontrun{
@@ -111,5 +110,5 @@ V3 <- get_vcov_robust(fit_robust)  # Same as fit_robust$var
 
 }
 \seealso{
-\code{\link[=orm_markov]{orm_markov()}}, \code{\link[=robcov_vglm]{robcov_vglm()}}, \code{\link[=set_coef]{set_coef()}}
+\code{\link[=mostm]{mostm()}}, \code{\link[=robcov_vglm]{robcov_vglm()}}, \code{\link[=set_coef]{set_coef()}}
 }

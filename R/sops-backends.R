@@ -17,25 +17,24 @@ validate_markov_model <- function(object) {
     object
   }
 
-  expected_wrapper <- if (inherits(model_chk, "blrm")) {
-    "blrm_markov"
+  expected_engine <- if (inherits(model_chk, "blrm")) {
+    "blrm"
   } else if (inherits(model_chk, "vglm")) {
-    "vglm_markov"
+    "vglm"
   } else if (inherits(model_chk, "orm")) {
-    "orm_markov"
+    "orm"
   } else {
     NULL
   }
   if (
-    !is.null(expected_wrapper) &&
-      !identical(markov_model_fit_wrapper(object), expected_wrapper)
+    !is.null(expected_engine) &&
+      !identical(markov_model_engine(object), expected_engine)
   ) {
     stop(
-      "Model-based Markov workflows require fits created by `",
-      expected_wrapper,
-      "()`. Refit this model with `",
-      expected_wrapper,
-      "()`.",
+      "Model-based Markov workflows require fits created by `mostm()`. ",
+      "Refit this model with `mostm(engine = \"",
+      expected_engine,
+      "\")`.",
       call. = FALSE
     )
   }

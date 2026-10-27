@@ -61,7 +61,7 @@ cannot reuse a previous diagnostic's image URL for a different plot.
 flowchart TD
     A[Longitudinal ordinal data] --> B[prepare_markov_data]
     G[sim_markov] --> B
-    B --> C[orm_markov / vglm_markov / blrm_markov]
+    B --> C["mostm: engine orm, vglm, or blrm"]
     C --> D[sops, state_time, comparisons and their avg_ partners]
     D --> E[inferences]
     E --> F[Plots / time_in_state / vcov]
@@ -74,7 +74,7 @@ flowchart TD
 |---|---|---|
 | Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`, `violet_baseline`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
-| Model fitting | `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `orm_markov`, `vglm_markov`, `blrm_markov`; ORM, VGAM, and optional rmsb backends with wrapper provenance |
+| Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
@@ -83,12 +83,80 @@ flowchart TD
 | Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
 
 Longitudinal rows use `id`, `time`, `y`, `yprev`, and covariates such as `tx`.
-Wrappers preserve the patient starting profiles used when `newdata` is omitted.
+`mostm()` preserves the patient starting profiles used when `newdata` is omitted.
 Second-order workflows additionally carry `ypprev` or the configured second lag.
 The `markov_sops`, `markov_avg_sops`, `markov_state_time`,
 `markov_avg_state_time`, `markov_comparisons`, and `markov_avg_comparisons` S3
 classes describe result semantics. Package-qualified
 calls, native registration symbols, and package options use `mostr`.
+
+### Model fitting
+
+`mostm()` in `R/mostm.R` is the only exported fitting function. Its `engine`
+argument chooses the package that fits the cumulative-logit transition model:
+`"orm"` (`rms::orm()`, the default), `"vglm"` (`VGAM::vglm()`), or `"blrm"`
+(`rmsb::blrm()`, in Suggests). The name `engine` leaves `backend` free, so a
+blrm fit can pass rmsb's own `backend` (rstan or cmdstan) through `...`.
+
+```mermaid
+flowchart TD
+    A["mostm(formula, data, ..., engine)"] --> B[Check engine arguments in ...]
+    B --> C[Validate data, offsets, id_var; evaluate weights and subset once]
+    C --> D{engine}
+    D -->|orm| E[mostm_fit_orm: rms::orm]
+    D -->|vglm| F[mostm_fit_vglm: VGAM model build]
+    D -->|blrm| G[mostm_fit_blrm: rmsb::blrm]
+    E --> H[Fit and aligned fitting rows]
+    F --> H
+    G --> H
+    H --> I[Stored refit data, starting profiles, refit argument values]
+    I --> J[mostm call and markov_engine attribute]
+    J --> K{id_var and orm or vglm?}
+    K -->|yes| L[robcov_orm or robcov_vglm]
+    K -->|no| M[Fit returned]
+    L --> M
+```
+
+- Shared arguments are named and handled once in `mostm()`: `id_var`,
+  `time_var`, `first_followup_time`, `weights`, `subset`, and the
+  patient-clustered covariance settings `type` and `cadjust`. `data` must be a
+  data frame. A missing `id_var` warns (`warn_missing_markov_id_var()`), and
+  duplicate ID-time rows warn (`warn_duplicate_markov_id_time()`).
+- Engine arguments go through `...`. `mostm_check_engine_args()` compares
+  their names with `mostm_engine_args()`: the formals of `rms::orm()` and
+  `rms::orm.fit()`; of `mostm_fit_vglm()`, `VGAM::vglm.control()`, and VGAM's
+  categorical-family control; or of `rmsb::blrm()`. A name that belongs to
+  another engine is an error naming that engine. Unknown names are errors for
+  `"orm"` and `"vglm"`; `"blrm"` passes them on, because `rmsb::blrm()` hands
+  its own `...` to the Stan optimizer. `x`, `y`, `x.arg`, `y.arg`, and `offset`
+  are rejected (the design matrix and response are always kept), as are the
+  former starting-profile arguments (`markov_reject_legacy_args()`). `type`,
+  `cadjust`, and `weights` are rejected for `"blrm"`. The other engines'
+  argument lists are looked up only when a name is not accepted, because the
+  blrm list loads rmsb and rstan, which would slow every orm or vglm fit and
+  bootstrap refit.
+- `mostm_fit_orm()` and `mostm_fit_blrm()` call the engine with
+  `x = TRUE, y = TRUE` and rebuild the fitting rows with
+  `markov_rms_model_frame()`. `mostm_fit_orm()` stops when `rms::orm()`
+  returns a failed fit (`fail = TRUE`). `mostm_fit_vglm()` in
+  `R/vglm_helpers.R` builds the model as `VGAM::vglm()` does, with rms formula
+  helpers and one VGAM assignment per inline rms basis column
+  (`split_rms_basis_assign()`); its `family` defaults to
+  `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`, the same
+  proportional-odds model as `"orm"`. It takes `etastart` and `mustart` from
+  the model frame, so starting values lose the rows that `subset` or
+  `na.action` remove.
+- After the engine fit, `mostm()` stores the refit data and starting profiles
+  (`markov_prepare_stored_data()`, `markov_attach_model_data()`), replaces the
+  engine's call with the matched `mostm()` call including the resolved
+  `engine` (`markov_set_model_call()`), and records the `markov_engine`
+  attribute (`markov_set_engine()`). With `id_var`, `"orm"` fits receive the
+  package-owned sandwich (`robcov_orm()`), and `"vglm"` fits are returned as a
+  `robcov_vglm` object holding the `vglm` fit in `$vglm_fit`.
+- `validate_markov_model()` in `R/sops-backends.R` accepts a model only when
+  `markov_model_engine()` matches its class. Raw engine fits and fits from the
+  removed `orm_markov()`, `vglm_markov()`, and `blrm_markov()` lack the
+  attribute and are rejected with a pointer to `mostm(engine = ...)`.
 
 `inferences()` adds Wald null tests (`statistic`, `p.value`, `s.value`, and a
 `null` attribute) through `add_null_test()` in `R/sops-result-helpers.R`, after
@@ -102,7 +170,7 @@ add tests, and the warnings for Bayesian outputs or missing standard errors
 fire only when the user supplied a numeric null.
 
 Ordinary and fractional weighted bootstrap refits (`update_bootstrap_model()` in
-`R/bootstrap_helpers.R`) are restricted to wrapper fits. They always resample
+`R/bootstrap_helpers.R`) are restricted to `mostm()` fits. They always resample
 the refit data stored on the fit (`markov_model_refit_data()`); the public API
 (`sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
 `avg_comparisons()`, and the plots) has
@@ -128,9 +196,15 @@ the SOP and time-in-state estimands of `avg_comparisons()`) and in the
 time-benefit bootstrap. Supplied `newdata` profiles are fixed, so every group
 is always present.
 
-Refits rebuild the fitted model's stored call with the resampled data,
-bootstrap weights, and optional starting coefficients. The
-wrappers store the values of the arguments the user passed at fit time
+Refits evaluate the fitted model's stored `mostm()` call
+(`bootstrap_model_call()`), so every refit calls `mostm()` again with the
+original engine, the resampled data, bootstrap weights, and optional starting
+coefficients. Refits drop `id_var`: they need only the coefficients, so
+`mostm()` skips the patient-clustered covariance and the starting profiles,
+and a `"vglm"` refit is a plain `vglm` fit. `suppress_expected_refit_warnings()`
+muffles the resulting missing-`id_var` warning and the rms warning that its own
+bootstrap ignores weights. `mostm()` stores the values of the arguments the
+user passed at fit time
 (`markov_capture_refit_args()`, read back with `markov_model_refit_args()`),
 and refits inline those values instead of re-evaluating the call's argument
 expressions, which may refer to variables local to the user's fitting function
@@ -147,24 +221,25 @@ is fitted without any `coefstart`, including the stored one. Row-aligned
 arguments are not stored as values:
 
 - Row `weights` are evaluated once at fit time (in `data`, enclosed by the
-  formula environment for `vglm_markov()` and by the caller's frame for
-  `orm_markov()`; `markov_eval_prior_weights()`) and stored as the reserved
+  frame that called `mostm()`; `markov_eval_prior_weights()`) and stored as the
+  reserved
   column `.mostr_prior_weight` of the fitted and refit data
   (`markov_prior_weight_column()`, recorded in the
   `markov_prior_weight_column` attribute). Resampled rows keep their own
   weights: ordinary refits use `weights = .mostr_prior_weight`, and FWB refits
-  use `.mostr_fit_weight`, the stored weight times the random weight. Wrapper
-  fits never fall back to unweighted refits; bootstrap data without the column
+  use `.mostr_fit_weight`, the stored weight times the random weight.
+  `mostm()` fits never fall back to unweighted refits; bootstrap data without
+  the column
   are rejected. The column is removed from stored starting profiles and
   excluded from bootstrap `datadist` data.
-- `subset` is evaluated at fit time (`orm_markov()` and `blrm_markov()` pass
-  the evaluated rows to the backend) and the stored refit data contain only the
+- `subset` is evaluated once at fit time (`mostm()` passes the evaluated rows
+  to the engine) and the stored refit data contain only the
   selected rows, so refit calls drop `subset`. They also drop `etastart` and
   `mustart`, which are aligned with the original rows. `offset` is rejected.
 
 `update_bootstrap_model()` still refits a model without stored argument values
 with `stats::update()`, but the bootstrap workflows reach it only through
-internal helpers because they require the refit data stored by a wrapper.
+internal helpers because they require the refit data stored by `mostm()`.
 
 The `vglm` reverse-coding check in `validate_markov_model()` reads `reverse`
 from the fitted family object (`family@infos()`, `vglm_family_reverse()`), not

@@ -447,7 +447,7 @@ robcov_vglm <- function(
     "markov_basis_terms",
     exact = TRUE
   )
-  result <- markov_inherit_fit_wrapper(result, fit)
+  result <- markov_inherit_engine(result, fit)
   return(result)
 }
 
@@ -980,12 +980,13 @@ align_cluster_vglm <- function(fit, cluster, n) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' fit <- vglm_markov(
+#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
-#'   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = markov_data
+#'   data = markov_data,
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
-#' robust_fit <- robcov_vglm(fit, cluster = markov_data$id)
 #' summary(robust_fit)
 #'
 #' @method summary robcov_vglm
@@ -1078,12 +1079,13 @@ summary.robcov_vglm <- function(object, ...) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' fit <- vglm_markov(
+#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
-#'   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = markov_data
+#'   data = markov_data,
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
-#' robust_fit <- robcov_vglm(fit, cluster = markov_data$id)
 #' print(robust_fit)
 #'
 #' @method print robcov_vglm
@@ -1133,12 +1135,13 @@ print.robcov_vglm <- function(x, ...) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' fit <- vglm_markov(
+#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
-#'   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = markov_data
+#'   data = markov_data,
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
-#' robust_fit <- robcov_vglm(fit, cluster = markov_data$id)
 #' coef(robust_fit)
 #'
 #' @method coef robcov_vglm
@@ -1160,12 +1163,13 @@ coef.robcov_vglm <- function(object, ...) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' fit <- vglm_markov(
+#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
-#'   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-#'   data = markov_data
+#'   data = markov_data,
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
-#' robust_fit <- robcov_vglm(fit, cluster = markov_data$id)
 #' vcov(robust_fit)
 #'
 #' @method vcov robcov_vglm

@@ -578,7 +578,7 @@ bootstrap_refit_model <- function(model) {
         "The supplied robcov_vglm object does not contain the original vglm fit."
       )
     }
-    return(markov_inherit_fit_wrapper(model$vglm_fit, model))
+    return(markov_inherit_engine(model$vglm_fit, model))
   }
 
   model
@@ -586,9 +586,9 @@ bootstrap_refit_model <- function(model) {
 
 bootstrap_original_fit_weights <- function(model, data) {
   if (!is.null(markov_model_refit_args(model))) {
-    # Wrapper fits store their row weights as a column of the refit data, so
-    # resampled rows carry their own weights. Unweighted wrapper fits have
-    # unit weights.
+    # `mostm()` fits store their row weights as a column of the refit data,
+    # so resampled rows carry their own weights. Unweighted fits have unit
+    # weights.
     prior_weight_column <- markov_model_prior_weight_column(model)
     if (is.null(prior_weight_column)) {
       return(rep(1, nrow(data)))
@@ -724,7 +724,7 @@ update_bootstrap_model <- function(
   model_call <- if (!is.null(refit_args)) bootstrap_model_call(model) else NULL
 
   if (is.null(model_call)) {
-    # Fits without stored wrapper arguments keep plain `update()` semantics.
+    # Fits without stored `mostm()` arguments keep plain `update()` semantics.
     updated <- bootstrap_update_model(
       model,
       boot_data,
@@ -732,13 +732,15 @@ update_bootstrap_model <- function(
       coefstart,
       drop_coefstart
     )
-    return(markov_inherit_fit_wrapper(updated, model))
+    return(markov_inherit_engine(updated, model))
   }
 
+  # The stored call is the `mostm()` call, so the refit calls `mostm()` with
+  # the original engine.
   refit_call <- model_call
   refit_call$data <- quote(boot_data)
 
-  # Wrapper refit data already exclude the rows removed by `subset`, and
+  # Stored refit data already exclude the rows removed by `subset`, and
   # starting values are aligned with the original rows, so neither applies to
   # resampled data.
   refit_call$subset <- NULL
@@ -747,7 +749,7 @@ update_bootstrap_model <- function(
 
   # Row weights come from columns of the resampled data: FWB refits use the
   # original weights times the random weights; ordinary refits use the
-  # weights the wrapper stored with each row.
+  # weights `mostm()` stored with each row.
   prior_weight_column <- markov_model_prior_weight_column(model)
   if (!is.null(fit_weights)) {
     refit_call$weights <- quote(.mostr_fit_weight)
@@ -763,9 +765,9 @@ update_bootstrap_model <- function(
     refit_call$coefstart <- NULL
   }
 
-  # Wrapper fits store their argument values from fit time. Inline them so
-  # the refit does not re-evaluate expressions that may refer to variables
-  # local to the user's fitting frame or changed after fitting.
+  # `mostm()` stores its argument values from fit time. Inline them so the
+  # refit does not re-evaluate expressions that may refer to variables local
+  # to the user's fitting frame or changed after fitting.
   inlined <- intersect(names(refit_args), setdiff(names(refit_call), ""))
   inlined <- setdiff(inlined, c("data", "weights"))
   if (!is.null(coefstart)) {
@@ -775,12 +777,16 @@ update_bootstrap_model <- function(
     refit_call[nm] <- list(refit_args[[nm]])
   }
 
-  updated <- suppress_orm_bootstrap_weight_warning(
+  # Refits need only the coefficients. Without `id_var`, `mostm()` skips the
+  # patient-clustered covariance and the starting profiles.
+  refit_call$id_var <- NULL
+
+  updated <- suppress_expected_refit_warnings(
     model,
     eval(refit_call)
   )
 
-  markov_inherit_fit_wrapper(updated, model)
+  markov_inherit_engine(updated, model)
 }
 
 bootstrap_update_model <- function(
@@ -803,7 +809,7 @@ bootstrap_update_model <- function(
     update_call["coefstart"] <- list(NULL)
   }
 
-  suppress_orm_bootstrap_weight_warning(model, eval(update_call))
+  suppress_expected_refit_warnings(model, eval(update_call))
 }
 
 bootstrap_model_call <- function(model) {
@@ -813,17 +819,18 @@ bootstrap_model_call <- function(model) {
   model$call
 }
 
-suppress_orm_bootstrap_weight_warning <- function(model, expr) {
+# Refits call `mostm()` without `id_var` on purpose, and rms warns that orm
+# ignores weights in its own bootstrap, which mostr does not use.
+suppress_expected_refit_warnings <- function(model, expr) {
   withCallingHandlers(
     expr,
     warning = function(w) {
       if (
-        inherits(model, "vglm") &&
-          grepl(
-            "`id_var` was not supplied to vglm_markov()",
-            conditionMessage(w),
-            fixed = TRUE
-          )
+        grepl(
+          "`id_var` was not supplied to mostm()",
+          conditionMessage(w),
+          fixed = TRUE
+        )
       ) {
         invokeRestart("muffleWarning")
       }

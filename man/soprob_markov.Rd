@@ -23,10 +23,9 @@ soprob_markov(
 )
 }
 \arguments{
-\item{model}{A Markov transition model fitted by \code{\link[=vglm_markov]{vglm_markov()}},
-\code{\link[=orm_markov]{orm_markov()}}, or \code{\link[=blrm_markov]{blrm_markov()}}. The robust \code{robcov_vglm} result
-returned by \code{vglm_markov()} is supported; raw backend fits without fitting-
-wrapper provenance are not.}
+\item{model}{A Markov transition model fitted by \code{\link[=mostm]{mostm()}}, including the
+\code{robcov_vglm} object that the vglm engine returns with \code{id_var}. Models
+fitted directly with rms, VGAM, or rmsb are not supported.}
 
 \item{newdata}{A data frame containing one baseline prediction row per
 patient or profile.}

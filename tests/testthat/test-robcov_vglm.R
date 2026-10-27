@@ -1317,10 +1317,11 @@ describe("robcov_vglm() stress tests", {
       seed = 1
     )
     data <- prepare_markov_data(trial, absorbing_state = 8)
-    fit <- suppressWarnings(vglm_markov(
+    fit <- suppressWarnings(mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     ))
     robust <- robcov_vglm(fit, cluster = data$id)
 

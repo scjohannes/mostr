@@ -191,16 +191,18 @@
 #' ## Bootstrap Method
 #'
 #' The bootstrap method refits the model on bootstrap-weighted data:
-#' 1. Sample patient IDs with replacement (`engine = "standard"`) or draw
-#'    exponential patient weights normalized to mean 1 (`engine = "fwb"`)
-#' 2. Refit model on bootstrap sample (handles missing states through releveling)
+#' 1. Sample patient IDs with replacement (`method = "bootstrap"`) or draw
+#'    exponential patient weights normalized to mean 1 (`method = "fwb"`)
+#' 2. Refit the model on the bootstrap sample by calling [mostm()] again with
+#'    the original engine and arguments (handles missing states through
+#'    releveling)
 #' 3. Compute SOPs using G-computation
 #' 4. Compute percentile-based confidence intervals
 #' Bootstrap refits always resample the full longitudinal data (all time
-#' points) that [orm_markov()] or [vglm_markov()] stored on the fitted model.
+#' points) that [mostm()] stored on the fitted model.
 #' These are the rows used for fitting, after any `subset`, together with their
 #' fitting weights, so every refit uses the same data rules as the original
-#' fit. Models fitted without these wrappers cannot be
+#' fit. Models not fitted with [mostm()] cannot be
 #' used for refit bootstraps. The prediction rows are separate: supplying
 #' `newdata` to `sops()` or `avg_sops()` changes which patient profiles are
 #' predicted, not which data are refitted.
@@ -237,7 +239,8 @@
 #' Starting values are the coefficient values from which the fitting algorithm
 #' begins its search. They can come from `use_coefstart = TRUE` (the original
 #' fit's coefficients) or from a `coefstart` argument you passed to
-#' [vglm_markov()]. A refit uses them only when its bootstrap sample contains
+#' [mostm()] with `engine = "vglm"`. A refit uses them only when its bootstrap
+#' sample contains
 #' every outcome state. When a state is missing, the refit has fewer intercepts
 #' than the original model, so the starting values no longer fit and the model
 #' is refitted without any. If a refit with starting values fails, for example
@@ -270,11 +273,11 @@
 #' @examples
 #' \dontrun{
 #' # Step 1: Fit model with stored data and cluster-robust vcov
-#' fit_robust <- vglm_markov(
+#' fit_robust <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
-#'   family = cumulative(reverse = TRUE, parallel = TRUE),
 #'   data = data,
-#'   id_var = "id"
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
 #'
 #' # Step 2a: Simulation inference
@@ -297,10 +300,10 @@
 #' ) |>
 #'   inferences(method = "score_bootstrap", n_draws = 1000)
 #'
-#' # orm_markov() stores the package-owned full robust covariance matrix.
+#' # The orm engine stores the package-owned full robust covariance matrix.
 #' dd <- rms::datadist(data)
 #' options(datadist = "dd")
-#' fit_orm <- orm_markov(y ~ time + tx + yprev, data = data, id_var = "id")
+#' fit_orm <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
 #'
 #' avg_orm <- avg_sops(
 #'   model = fit_orm,

@@ -372,11 +372,12 @@ test_that("get_draws() preserves covariates for individual SOP draws", {
   data$age <- stats::rnorm(nrow(data), 60, 10)
 
   expect_warning(
-    m_vglm_rob <- vglm_markov(
+    m_vglm_rob <- mostm(
       ordered(y) ~ rms::rcs(time, 3) + tx + yprev + age,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
     "fewer than 30 clusters"
   )
@@ -559,7 +560,7 @@ test_that("low-level SOP helpers validate model families and state metadata", {
   )
 
   model <- methods::new("vglm")
-  attr(model, "markov_fit_wrapper") <- "vglm_markov"
+  attr(model, "markov_engine") <- "vglm"
   model@family <- methods::new("vglmff", vfamily = "binomialff")
   expect_error(
     mostr:::validate_markov_model(model),
@@ -603,7 +604,7 @@ test_that("low-level SOP helpers validate model families and state metadata", {
       data = offset_data
     )
   )
-  attr(offset_model, "markov_fit_wrapper") <- "vglm_markov"
+  attr(offset_model, "markov_engine") <- "vglm"
   expect_error(
     mostr:::validate_markov_model(offset_model),
     "Model offsets are not supported",
@@ -618,7 +619,7 @@ test_that("low-level SOP helpers validate model families and state metadata", {
       offset = NULL
     )
   )
-  attr(null_offset_model, "markov_fit_wrapper") <- "vglm_markov"
+  attr(null_offset_model, "markov_engine") <- "vglm"
   expect_error(
     mostr:::validate_markov_model(null_offset_model),
     NA
@@ -633,7 +634,7 @@ test_that("low-level SOP helpers validate model families and state metadata", {
         offset = offset
       )
     )
-    attr(fit, "markov_fit_wrapper") <- "vglm_markov"
+    attr(fit, "markov_engine") <- "vglm"
     fit
   }
   expect_error(
@@ -690,7 +691,7 @@ test_that("low-level SOP helpers reject orm offsets", {
     x = TRUE,
     y = TRUE
   )
-  attr(offset_model, "markov_fit_wrapper") <- "orm_markov"
+  attr(offset_model, "markov_engine") <- "orm"
 
   expect_error(
     mostr:::validate_markov_model(offset_model),

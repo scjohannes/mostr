@@ -29,9 +29,9 @@ workflow:
 3. estimate SOPs for each treatment arm, with confidence intervals;
 4. check whether the fitted model reproduces features of the observed data.
 
-We fit the same model twice, once with `vglm_markov()` (using the VGAM
-package) and once with `orm_markov()` (using the rms package), to show that
-both give the same answer.
+We fit the model with `mostm()`, whose `engine` argument chooses the package
+that does the fitting. Fitting the same model twice, once with the VGAM
+package and once with the rms package, shows that both give the same answer.
 
 ## Example data
 
@@ -120,30 +120,32 @@ follow-up. The models assume *proportional odds*: each covariate shifts the
 odds of being in a worse state by the same factor, whichever cut-point of the
 scale we look at.
 
-The formula syntax follows each backend. VGAM needs an ordered-factor
-response and a `cumulative()` family, where `reverse = TRUE` models the odds of
-worse (higher) states and `parallel = TRUE` requests proportional odds. The
-rms model needs a `datadist` object, which rms uses to summarize predictors.
-The `opt_method`, `scale`, and `maxit` arguments help `rms::orm()` converge
-reliably.
+`engine = "vglm"` fits the model with `VGAM::vglm()`. VGAM needs an
+ordered-factor response, so the formula uses `ordered(y)`. Its default family,
+`cumulative(reverse = TRUE, parallel = TRUE)`, models the odds of worse
+(higher) states (`reverse = TRUE`) under proportional odds
+(`parallel = TRUE`). The default engine, `"orm"`, fits the model with
+`rms::orm()`. mostr does not need an rms `datadist` object; set one with
+`options(datadist = ...)` only if you also want rms's own summaries of the
+fit, such as `summary(fit_orm)` or `rms::Predict()`. Arguments of the
+engine's own fitting function can be added to the
+`mostm()` call: here `opt_method`, `scale`, and `maxit` help `rms::orm()`
+converge reliably.
 
-In both wrappers, `id_var = "id"` tells mostr which rows belong to the same
+In both fits, `id_var = "id"` tells mostr which rows belong to the same
 patient. mostr uses it to compute standard errors that account for repeated
 observations of the same patient, and it stores the patient data needed later
 to estimate SOPs and their confidence intervals.
 
 ```{r fit-models}
-fit_vglm <- vglm_markov(
+fit_vglm <- mostm(
   ordered(y) ~ tx + rcs(time, 4) + yprev,
-  family = cumulative(reverse = TRUE, parallel = TRUE),
   data = model_data,
-  id_var = "id"
+  id_var = "id",
+  engine = "vglm"
 )
 
-dd <- datadist(model_data)
-options(datadist = "dd")
-
-fit_orm <- orm_markov(
+fit_orm <- mostm(
   y ~ tx + rcs(time, 4) + yprev,
   data = model_data,
   id_var = "id",
@@ -217,21 +219,21 @@ sop_orm <- avg_sops(
   )
 
 combined_sops <- rbind(
-  data.frame(backend = "VGAM vglm", as.data.frame(sop_vglm)),
-  data.frame(backend = "rms orm", as.data.frame(sop_orm))
+  data.frame(engine = "VGAM vglm", as.data.frame(sop_vglm)),
+  data.frame(engine = "rms orm", as.data.frame(sop_orm))
 )
 ```
 
 The result has one row per day, state, and treatment value, with the estimated
 probability in `estimate` and its confidence limits in `conf.low` and
-`conf.high`. Plotting both backends side by side confirms that they agree.
+`conf.high`. Plotting both engines side by side confirms that they agree.
 
 ```{r plot-sops}
 plot_sops(
   combined_sops,
   geom = "line",
   linetype_var = "tx",
-  facet_var = c("backend")
+  facet_var = c("engine")
 ) +
   labs(
     x = "Day",

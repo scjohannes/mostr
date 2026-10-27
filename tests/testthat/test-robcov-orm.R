@@ -65,14 +65,14 @@ test_that("orm HC0 covariance equals a directly assembled cluster sandwich", {
 
 test_that("orm robust covariance is preserved when time units change", {
   case <- local_robcov_orm_case()
-  days <- orm_markov(
+  days <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = case$data,
     id_var = "id"
   )
   data <- case$data
   data$minutes <- data$time * 1440
-  minutes <- orm_markov(
+  minutes <- mostm(
     ordered(y) ~ minutes + tx + yprev,
     data = data,
     id_var = "id"
@@ -161,9 +161,9 @@ test_that("orm robust covariance aggregates repeated rows by represented cluster
   expect_false("9999" %in% rownames(clustered_scores))
 })
 
-test_that("orm_markov stores package robust covariance metadata by default", {
+test_that("the orm engine stores package robust covariance metadata by default", {
   case <- local_robcov_orm_case()
-  fit <- orm_markov(
+  fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = case$data,
     id_var = "id"
@@ -228,7 +228,7 @@ test_that("weighted orm scores equal numerical weighted row likelihood derivativ
 
   weighted_data <- case$data
   weighted_data$case_weight <- weights
-  wrapped <- suppressWarnings(orm_markov(
+  wrapped <- suppressWarnings(mostm(
     ordered(y) ~ time + tx + yprev,
     data = weighted_data,
     weights = case_weight,

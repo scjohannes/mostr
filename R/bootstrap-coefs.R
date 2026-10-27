@@ -6,9 +6,9 @@
 #' returns the refitted coefficients (intercepts and slopes). Percentiles of
 #' each column give bootstrap confidence intervals for that coefficient.
 #'
-#' @param model A model fitted with [orm_markov()] or [vglm_markov()]. These
-#'   wrappers store the data used for fitting, and the bootstrap resamples
-#'   patients from those stored data.
+#' @param model A model fitted with [mostm()] and the `"orm"` or `"vglm"`
+#'   engine. [mostm()] stores the data used for fitting, and the bootstrap
+#'   resamples patients from those stored data.
 #' @param n_boot Number of bootstrap samples.
 #' @param workers Number of workers for parallel processing. If NULL (default)
 #'   or 1, sequential processing is used. If > 1, uses parallel processing.
@@ -19,7 +19,7 @@
 #'   when the model was fitted without `id_var`.
 #' @param use_coefstart Logical. If `TRUE`, `vglm` refits start from the
 #'   original model coefficients, which can speed up convergence. Starting
-#'   values, including a `coefstart` passed to [vglm_markov()], are used only
+#'   values, including a `coefstart` passed to [mostm()], are used only
 #'   when a resample contains every outcome state; a refit with starting values
 #'   that fails is retried once without them. Default is `FALSE`.
 #'
@@ -44,7 +44,8 @@
 #'     when a state is absent from the resample
 #'   \item Updates the `rms` datadist for `orm` models (safe with
 #'     future.callr workers)
-#'   \item Refits the model and extracts its coefficients
+#'   \item Refits the model by calling [mostm()] again with the original
+#'     engine and arguments, and extracts its coefficients
 #' }
 #'
 #' When a state is missing from a resample, the refit has fewer intercepts than
@@ -65,11 +66,11 @@
 #'
 #' @examples
 #' \dontrun{
-#' fit <- vglm_markov(
+#' fit <- mostm(
 #'   ordered(y) ~ tx + yprev + time,
-#'   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
 #'   data = my_data,
-#'   id_var = "id"
+#'   id_var = "id",
+#'   engine = "vglm"
 #' )
 #'
 #' # Resample the patients stored on the fit.
@@ -117,8 +118,7 @@ bootstrap_model_coefs <- function(
   data <- markov_model_refit_data(model)
   if (is.null(data)) {
     stop(
-      "The model has no stored data to resample. Fit it with `orm_markov()` ",
-      "or `vglm_markov()`.",
+      "The model has no stored data to resample. Fit it with `mostm()`.",
       call. = FALSE
     )
   }

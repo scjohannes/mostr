@@ -230,16 +230,18 @@ subgroup; without \code{by}, they are normalized over the full set of stored pat
 
 The bootstrap method refits the model on bootstrap-weighted data:
 \enumerate{
-\item Sample patient IDs with replacement (\code{engine = "standard"}) or draw
-exponential patient weights normalized to mean 1 (\code{engine = "fwb"})
-\item Refit model on bootstrap sample (handles missing states through releveling)
+\item Sample patient IDs with replacement (\code{method = "bootstrap"}) or draw
+exponential patient weights normalized to mean 1 (\code{method = "fwb"})
+\item Refit the model on the bootstrap sample by calling \code{\link[=mostm]{mostm()}} again with
+the original engine and arguments (handles missing states through
+releveling)
 \item Compute SOPs using G-computation
 \item Compute percentile-based confidence intervals
 Bootstrap refits always resample the full longitudinal data (all time
-points) that \code{\link[=orm_markov]{orm_markov()}} or \code{\link[=vglm_markov]{vglm_markov()}} stored on the fitted model.
+points) that \code{\link[=mostm]{mostm()}} stored on the fitted model.
 These are the rows used for fitting, after any \code{subset}, together with their
 fitting weights, so every refit uses the same data rules as the original
-fit. Models fitted without these wrappers cannot be
+fit. Models not fitted with \code{\link[=mostm]{mostm()}} cannot be
 used for refit bootstraps. The prediction rows are separate: supplying
 \code{newdata} to \code{sops()} or \code{avg_sops()} changes which patient profiles are
 predicted, not which data are refitted.
@@ -278,7 +280,8 @@ those rows cannot be assumed to align with the bootstrap clusters.
 Starting values are the coefficient values from which the fitting algorithm
 begins its search. They can come from \code{use_coefstart = TRUE} (the original
 fit's coefficients) or from a \code{coefstart} argument you passed to
-\code{\link[=vglm_markov]{vglm_markov()}}. A refit uses them only when its bootstrap sample contains
+\code{\link[=mostm]{mostm()}} with \code{engine = "vglm"}. A refit uses them only when its bootstrap
+sample contains
 every outcome state. When a state is missing, the refit has fewer intercepts
 than the original model, so the starting values no longer fit and the model
 is refitted without any. If a refit with starting values fails, for example
@@ -310,11 +313,11 @@ MVN, score-bootstrap, and FWB methods.
 \examples{
 \dontrun{
 # Step 1: Fit model with stored data and cluster-robust vcov
-fit_robust <- vglm_markov(
+fit_robust <- mostm(
   ordered(y) ~ time + tx + yprev,
-  family = cumulative(reverse = TRUE, parallel = TRUE),
   data = data,
-  id_var = "id"
+  id_var = "id",
+  engine = "vglm"
 )
 
 # Step 2a: Simulation inference
@@ -337,10 +340,10 @@ result_score <- avg_sops(
 ) |>
   inferences(method = "score_bootstrap", n_draws = 1000)
 
-# orm_markov() stores the package-owned full robust covariance matrix.
+# The orm engine stores the package-owned full robust covariance matrix.
 dd <- rms::datadist(data)
 options(datadist = "dd")
-fit_orm <- orm_markov(y ~ time + tx + yprev, data = data, id_var = "id")
+fit_orm <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
 
 avg_orm <- avg_sops(
   model = fit_orm,

@@ -8,7 +8,7 @@
 \description{
 \if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
 
-Estimate state occupancy probabilities and treatment contrasts for longitudinal ordinal outcomes using discrete-time Markov transition models. Supports (partial) proportional-odds model backends from 'VGAM', 'rms', and 'rmsb'.
+Estimate state occupancy probabilities and treatment contrasts for longitudinal ordinal outcomes using discrete-time Markov transition models. Supports (partial) proportional-odds models fitted with 'VGAM', 'rms', or 'rmsb'.
 }
 \seealso{
 Useful links:

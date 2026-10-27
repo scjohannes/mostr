@@ -15,7 +15,7 @@ pak::pak("scjohannes/mostr")
 
 ## SOP Workflow
 
-This example simulates ordinal outcomes from a viral respiratory disease trials, fits a proportional-odds Markov transition model with `orm_markov()`, estimates marginal treatment-arm SOPs, adds uncertainty, and plots the result.
+This example simulates ordinal outcomes from a viral respiratory disease trials, fits a proportional-odds Markov transition model with `mostm()`, estimates marginal treatment-arm SOPs, adds uncertainty, and plots the result.
 
 ```r
 library(mostr)
@@ -35,10 +35,7 @@ trial <- sim_markov(
 
 markov_data <- prepare_markov_data(trial, absorbing_state = 8)
 
-dd <- datadist(markov_data)
-options(datadist = "dd")
-
-fit <- orm_markov(
+fit <- mostm(
   y ~ rms::rcs(time, 4) + tx + yprev,
   data = markov_data,
   id_var = "id",
@@ -63,9 +60,12 @@ plot_sops(sop, facet_var = NULL, linetype_var = "tx") +
   )
 ```
 
-Use `orm_markov()`, `vglm_markov()`, or `blrm_markov()` for package model-based
-SOP and diagnostic workflows. Raw `rms`, `VGAM`, or `rmsb` fits do not carry the
-wrapper provenance and stored-data contracts those workflows require.
+`mostm()` fits the model with one of three engines: `engine = "orm"` (the
+default) uses `rms::orm()`, `engine = "vglm"` uses `VGAM::vglm()`, for example
+for partial proportional-odds models, and `engine = "blrm"` fits a Bayesian
+model with `rmsb::blrm()`. The SOP and diagnostic functions need a model
+fitted with `mostm()`, which stores the patient data they use; a model fitted
+directly with rms, VGAM, or rmsb lacks these data.
 
 
 ## Learn More

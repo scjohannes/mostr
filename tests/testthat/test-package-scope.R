@@ -21,6 +21,9 @@ test_that("the package exposes Markov workflows without removed APIs", {
     "summarize_oc_results",
     "summarize_power_results",
     "tidy_bootstrap_coefs",
+    "orm_markov",
+    "vglm_markov",
+    "blrm_markov",
     "tidy_po",
     "calc_time_in_state_diff",
     "lp_violet",
@@ -35,9 +38,7 @@ test_that("the package exposes Markov workflows without removed APIs", {
   )
   retained <- c(
     "sim_markov",
-    "orm_markov",
-    "vglm_markov",
-    "blrm_markov",
+    "mostm",
     "sops",
     "avg_sops",
     "avg_state_time",

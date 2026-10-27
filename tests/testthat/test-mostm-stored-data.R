@@ -1,13 +1,14 @@
-test_that("vglm_markov stores fitting data and returns robust wrapper with id_var", {
+test_that("the vglm engine stores fitting data and returns a robust fit with id_var", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1001)
 
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 
   expect_s3_class(fit, "robcov_vglm")
@@ -30,17 +31,18 @@ test_that("vglm_markov stores fitting data and returns robust wrapper with id_va
   )
 })
 
-test_that("vglm_markov forwards robust covariance corrections", {
+test_that("the vglm engine forwards robust covariance corrections", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1019)
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
     type = "HC1",
-    cadjust = FALSE
+    cadjust = FALSE,
+    engine = "vglm"
   )
 
   expect_identical(fit$type, "HC1")
@@ -54,7 +56,7 @@ test_that("vglm_markov forwards robust covariance corrections", {
   expect_equal(fit$var, direct$var)
 })
 
-test_that("Markov wrappers validate numeric first follow-up schedules", {
+test_that("mostm() validates numeric first follow-up schedules", {
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
@@ -62,11 +64,12 @@ test_that("Markov wrappers validate numeric first follow-up schedules", {
   no_one <- data
   no_one$time <- no_one$time + 1
   expect_snapshot(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = no_one,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
     error = TRUE
   )
@@ -74,23 +77,25 @@ test_that("Markov wrappers validate numeric first follow-up schedules", {
   below_one <- data
   below_one$time[[1L]] <- 0
   expect_snapshot(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = below_one,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
     error = TRUE
   )
 
   alternative <- data
   alternative$time <- alternative$time + 1
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = alternative,
     id_var = "id",
-    first_followup_time = 2
+    first_followup_time = 2,
+    engine = "vglm"
   )
   expect_equal(
     markov_model_starting_profile_metadata(fit)$first_followup_time,
@@ -98,48 +103,51 @@ test_that("Markov wrappers validate numeric first follow-up schedules", {
   )
 
   expect_snapshot(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
-      first_followup_time = 2
+      first_followup_time = 2,
+      engine = "vglm"
     ),
     error = TRUE
   )
 })
 
-test_that("Markov wrappers reject legacy starting-profile arguments", {
+test_that("mostm() rejects former starting-profile arguments", {
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1017)
   expect_snapshot(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
       start_time = 1,
       origin_time = 0,
-      time_map = 1:6
+      time_map = 1:6,
+      engine = "vglm"
     ),
     error = TRUE
   )
 })
 
-test_that("vglm_markov aligns stored fitting data after subset and NA drops", {
+test_that("the vglm engine aligns stored fitting data after subset and NA drops", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1007)
   data$time_lin[2] <- NA_real_
 
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
-    subset = time <= 5
+    subset = time <= 5,
+    engine = "vglm"
   )
 
   stored_data <- attr(fit, "markov_data")
@@ -161,16 +169,17 @@ test_that("vglm_markov aligns stored fitting data after subset and NA drops", {
   )
 })
 
-test_that("vglm_markov without id_var does not require a profile schedule", {
+test_that("the vglm engine without id_var does not require a profile schedule", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1018)
   data$time <- NULL
   expect_warning(
-    fit <- vglm_markov(
+    fit <- mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data
+      data = data,
+      engine = "vglm"
     ),
     "`id_var` was not supplied"
   )
@@ -181,7 +190,7 @@ test_that("vglm_markov without id_var does not require a profile schedule", {
   expect_null(attr(fit, "markov_starting_profile_metadata"))
 })
 
-test_that("orm_markov stores fitting data and applies rms robust covariance", {
+test_that("the orm engine stores fitting data and applies robust covariance", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1002)
@@ -202,7 +211,7 @@ test_that("orm_markov stores fitting data and applies rms robust covariance", {
     add = TRUE
   )
 
-  fit <- orm_markov(
+  fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id"
@@ -219,7 +228,7 @@ test_that("orm_markov stores fitting data and applies rms robust covariance", {
   expect_false(is.null(fit$orig.var))
 
   subset_fit <- expect_no_error(
-    orm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       id_var = "id",
@@ -230,7 +239,7 @@ test_that("orm_markov stores fitting data and applies rms robust covariance", {
   expect_true(all(attr(subset_fit, "markov_data")$time <= 4))
 })
 
-test_that("blrm_markov stores fitting data without sampling when requested", {
+test_that("the blrm engine stores fitting data without sampling when requested", {
   skip_if_not_installed("rms")
   skip_if_not_installed("rmsb")
 
@@ -252,12 +261,13 @@ test_that("blrm_markov stores fitting data without sampling when requested", {
     add = TRUE
   )
 
-  fit <- blrm_markov(
+  fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
     subset = time <= 3,
-    standata = TRUE
+    standata = TRUE,
+    engine = "blrm"
   )
 
   expect_type(fit, "list")
@@ -266,11 +276,12 @@ test_that("blrm_markov stores fitting data without sampling when requested", {
   expect_true(all(attr(fit, "markov_data")$time <= 3))
 
   expect_error(
-    blrm_markov(
+    mostm(
       ordered(y) ~ offset(time) + tx + yprev,
       data = data,
       id_var = "id",
-      standata = TRUE
+      standata = TRUE,
+      engine = "blrm"
     ),
     "offset"
   )
@@ -281,11 +292,12 @@ test_that("automatic SOP prediction never substitutes a later profile row", {
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1003)
   data <- data[!(data$id == 1 & data$time == min(data$time)), , drop = FALSE]
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 
   local_reproducible_output(width = 80)
@@ -306,11 +318,12 @@ test_that("missing first outcome preserves a complete starting profile", {
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1010)
   first <- data$id == 1 & data$time == min(data$time)
   data$y[first] <- NA
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 
   fitted_data <- attr(fit, "markov_data")
@@ -349,7 +362,7 @@ test_that("missing later times do not create incomplete starting profiles", {
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 1001)
   data$time[which(data$time == 3)[1L]] <- NA_real_
-  fit <- orm_markov(y ~ time + tx + yprev, data = data, id_var = "id")
+  fit <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
   profiles <- markov_validate_starting_profiles(fit)
   starting_rows <- which(data$time == 1)
 
@@ -374,11 +387,12 @@ test_that("profile-only patients are excluded from the fitted cohort", {
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1011)
   data$y[data$id == 1] <- NA
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   profiles <- markov_validate_starting_profiles(fit)
   fitted_ids <- unique(attr(fit, "markov_data")$id)
@@ -399,11 +413,12 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
   )
   incomplete$tx[incomplete$id == 1 & incomplete$time == min(incomplete$time)] <-
     NA_real_
-  incomplete_fit <- vglm_markov(
+  incomplete_fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = incomplete,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   expect_snapshot(
     avg_sops(
@@ -425,11 +440,12 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
     duplicated$id == 1 & duplicated$time == min(duplicated$time)
   )[[1L]]
   duplicated <- rbind(duplicated, duplicated[duplicate_row, , drop = FALSE])
-  duplicated_fit <- suppressWarnings(vglm_markov(
+  duplicated_fit <- suppressWarnings(mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = duplicated,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   ))
   expect_snapshot(
     avg_sops(
@@ -447,11 +463,12 @@ test_that("avg_sops() keeps the refit data stored on the fit", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1014)
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
   out <- avg_sops(
     fit,
@@ -476,21 +493,23 @@ test_that("factor and character time require explicit first follow-up values", {
   visits <- paste0("v", seq_len(6L))
   data$time <- factor(paste0("v", data$time), levels = visits)
   expect_snapshot(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
     error = TRUE
   )
 
-  fit_factor <- vglm_markov(
+  fit_factor <- mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
-    first_followup_time = "v1"
+    first_followup_time = "v1",
+    engine = "vglm"
   )
   expect_equal(
     unique(as.character(markov_validate_starting_profiles(fit_factor)$time)),
@@ -499,22 +518,24 @@ test_that("factor and character time require explicit first follow-up values", {
 
   data$visit <- as.character(data$time)
   expect_snapshot(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
-      time_var = "visit"
+      time_var = "visit",
+      engine = "vglm"
     ),
     error = TRUE
   )
-  fit_character <- vglm_markov(
+  fit_character <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
     time_var = "visit",
-    first_followup_time = "v1"
+    first_followup_time = "v1",
+    engine = "vglm"
   )
   expect_equal(
     unique(markov_validate_starting_profiles(fit_character)$visit),
@@ -522,12 +543,13 @@ test_that("factor and character time require explicit first follow-up values", {
   )
 
   expect_snapshot(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
-      first_followup_time = "v7"
+      first_followup_time = "v7",
+      engine = "vglm"
     ),
     error = TRUE
   )
@@ -537,11 +559,12 @@ test_that("sops treats supplied newdata rows as fixed prediction profiles", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1008)
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 
   profiles <- data[data$time == 1, , drop = FALSE][seq_len(3), ]
@@ -587,11 +610,12 @@ test_that("avg_sops treats supplied newdata rows as standardization profiles", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1009)
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 
   profiles <- data[data$time == 1, , drop = FALSE][seq_len(4), ]
@@ -632,18 +656,19 @@ test_that("avg_sops treats supplied newdata rows as standardization profiles", {
   expect_equal(attr(inferred, "n_successful"), 1L)
 })
 
-test_that("Markov wrappers warn about duplicate id-time rows", {
+test_that("mostm() warns about duplicate id-time rows", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1010)
   data <- rbind(data, data[1, , drop = FALSE])
 
   expect_warning(
-    vglm_markov(
+    mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      id_var = "id"
+      id_var = "id",
+      engine = "vglm"
     ),
     "duplicate `id` x `time` combinations"
   )
@@ -653,11 +678,12 @@ test_that("individual sops supports FWB but rejects standard bootstrap", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1004)
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 
   object <- sops(fit, times = 1:2, y_levels = 1:6, absorb = 6)
@@ -687,7 +713,7 @@ test_that("individual sops supports FWB but rejects standard bootstrap", {
   expect_false(is.null(attr(out, "draws")))
 })
 
-test_that("orm_markov supports FWB for grouped and ungrouped sops", {
+test_that("the orm engine supports FWB for grouped and ungrouped sops", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 1006)
@@ -715,7 +741,7 @@ test_that("orm_markov supports FWB for grouped and ungrouped sops", {
     add = TRUE
   )
 
-  fit <- orm_markov(
+  fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id"

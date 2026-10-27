@@ -42,11 +42,9 @@ delta_orm_case <- local({
         follow_up_time = 8,
         seed = 7311
       )
-      model <- suppressWarnings(orm_markov(
+      model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data,
-        x = TRUE,
-        y = TRUE
+        data = data
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:3,
@@ -250,10 +248,11 @@ test_that("absorbing states propagate probability and derivative mass", {
 test_that("factor visit designs use the same analytical recursion", {
   skip_if_not_installed("VGAM")
   data <- make_delta_factor_visit_case()
-  model <- suppressWarnings(vglm_markov(
+  model <- suppressWarnings(mostm(
     y ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data
+    data = data,
+    engine = "vglm"
   ))
   baseline <- data[!duplicated(data$id), , drop = FALSE][1:5, , drop = FALSE]
   plan <- compile_sop_execution_plan(
@@ -473,10 +472,11 @@ test_that("analytical SOP validation rejects unsupported model structures", {
     error = TRUE
   )
 
-  partial_model <- suppressWarnings(vglm_markov(
+  partial_model <- suppressWarnings(mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
-    data = case$data
+    data = case$data,
+    engine = "vglm"
   ))
   partial_plan <- compile_sop_execution_plan(
     model = partial_model,

@@ -95,11 +95,9 @@ delta_public_orm_case <- local({
         follow_up_time = 7,
         seed = 8102
       )
-      model <- suppressWarnings(orm_markov(
+      model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data,
-        x = TRUE,
-        y = TRUE
+        data = data
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:8,
@@ -129,11 +127,12 @@ delta_public_unconditional_case <- local({
         follow_up_time = 6,
         seed = 8103
       )
-      model <- vglm_markov(
+      model <- mostm(
         ordered(y) ~ time_lin + tx + yprev,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
-        id_var = "id"
+        id_var = "id",
+        engine = "vglm"
       )
       value <<- list(
         data = data,

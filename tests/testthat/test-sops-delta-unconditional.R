@@ -8,11 +8,12 @@ local_delta_vglm_fit <- local({
         follow_up_time = 6,
         seed = 2401
       )
-      fit <<- vglm_markov(
+      fit <<- mostm(
         ordered(y) ~ time_lin + tx + yprev,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
-        id_var = "id"
+        id_var = "id",
+        engine = "vglm"
       )
     }
     fit
@@ -29,7 +30,7 @@ local_delta_orm_fit <- local({
         follow_up_time = 6,
         seed = 2402
       )
-      fit <<- orm_markov(
+      fit <<- mostm(
         ordered(y) ~ time + tx + yprev,
         data = data,
         id_var = "id"
@@ -53,7 +54,7 @@ test_that("explicit zero ORM penalties preserve unpenalized inference", {
     inferences(avg, method = "delta", vcov = covariance)
   }
   for (variance in c("simple", "sandwich")) {
-    model <- orm_markov(
+    model <- mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       id_var = "id",
@@ -546,14 +547,15 @@ test_that("unconditional score machinery rejects partial proportional odds", {
     follow_up_time = 6,
     seed = 2403
   )
-  fit <- vglm_markov(
+  fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(
       reverse = TRUE,
       parallel = FALSE ~ tx
     ),
     data = data,
-    id_var = "id"
+    id_var = "id",
+    engine = "vglm"
   )
 
   expect_error(
