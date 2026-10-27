@@ -80,6 +80,14 @@ proportional odds for time:
 `cluster(id)` adds a random effect for each patient, which allows for
 patient-level differences not explained by the covariates.
 
+The remaining arguments control the Stan sampler. `iter` is the number of
+iterations in each of the `chains`, of which the first `warmup` are discarded,
+and `method = "sampling"` skips rmsb's preliminary search for the posterior
+mode. Settings of the sampler that `rmsb::blrm()` has no argument for go in
+`sampling.args`: its `seed` makes the posterior draws reproducible, and adding
+`cores = 2` would run the two chains in parallel. A `seed` given directly to
+`mostm()` would reach only that preliminary search, not the sampler.
+
 ```{r fit-blrm, eval = RUN_BAYESIAN}
 dd <- rms::datadist(model_data)
 options(datadist = "dd")
@@ -96,7 +104,7 @@ fit_blrm <- mostm(
   chains = 2,
   method = "sampling",
   refresh = 0,
-  seed = SEED
+  sampling.args = list(seed = SEED)
 )
 fit_blrm
 ```

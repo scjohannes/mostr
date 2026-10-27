@@ -37,9 +37,16 @@
 #'     `maxit` or `trace`. `family` defaults to
 #'     `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`.
 #'   * `"blrm"`: arguments of [rmsb::blrm()], such as `ppo`, `cppo`, `iter`,
-#'     `chains`, the prior settings `conc` and `psigma`, or `backend`, which
-#'     chooses between rstan and cmdstan. Other arguments are passed on by
-#'     [rmsb::blrm()] to the Stan optimizer.
+#'     `warmup`, `chains`, the prior settings `conc` and `psigma`, or
+#'     `backend`, which chooses between rstan and cmdstan. Settings of the
+#'     Stan sampler that [rmsb::blrm()] has no argument for go in
+#'     `sampling.args`: for example, `sampling.args = list(seed = 123)` makes
+#'     the posterior draws reproducible, and `cores = 4` in the same list runs
+#'     four chains in parallel. Without `cores` or `options(mc.cores = ...)`,
+#'     the chains run one after another. Other arguments are passed on by
+#'     [rmsb::blrm()] to the Stan optimizer only, which finds the posterior
+#'     mode before sampling, so a `seed` given directly to `mostm()` does not
+#'     make the draws reproducible.
 #'
 #'   The design matrix and response are always kept on the fit, because the
 #'   state occupancy and inference functions need them, so the engine
@@ -180,7 +187,8 @@
 #'     subset = id <= 60,
 #'     ppo = ~time,
 #'     iter = 1000,
-#'     chains = 2
+#'     chains = 2,
+#'     sampling.args = list(seed = 1)
 #'   )
 #' }
 #' }

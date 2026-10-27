@@ -36,9 +36,16 @@ engine is an error that names the engine it belongs to.
 \code{maxit} or \code{trace}. \code{family} defaults to
 \code{VGAM::cumulative(reverse = TRUE, parallel = TRUE)}.
 \item \code{"blrm"}: arguments of \code{\link[rmsb:blrm]{rmsb::blrm()}}, such as \code{ppo}, \code{cppo}, \code{iter},
-\code{chains}, the prior settings \code{conc} and \code{psigma}, or \code{backend}, which
-chooses between rstan and cmdstan. Other arguments are passed on by
-\code{\link[rmsb:blrm]{rmsb::blrm()}} to the Stan optimizer.
+\code{warmup}, \code{chains}, the prior settings \code{conc} and \code{psigma}, or
+\code{backend}, which chooses between rstan and cmdstan. Settings of the
+Stan sampler that \code{\link[rmsb:blrm]{rmsb::blrm()}} has no argument for go in
+\code{sampling.args}: for example, \code{sampling.args = list(seed = 123)} makes
+the posterior draws reproducible, and \code{cores = 4} in the same list runs
+four chains in parallel. Without \code{cores} or \code{options(mc.cores = ...)},
+the chains run one after another. Other arguments are passed on by
+\code{\link[rmsb:blrm]{rmsb::blrm()}} to the Stan optimizer only, which finds the posterior
+mode before sampling, so a \code{seed} given directly to \code{mostm()} does not
+make the draws reproducible.
 }
 
 The design matrix and response are always kept on the fit, because the
@@ -216,7 +223,8 @@ if (requireNamespace("rmsb", quietly = TRUE)) {
     subset = id <= 60,
     ppo = ~time,
     iter = 1000,
-    chains = 2
+    chains = 2,
+    sampling.args = list(seed = 1)
   )
 }
 }
