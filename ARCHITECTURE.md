@@ -101,7 +101,7 @@ blrm fit can pass rmsb's own `backend` (rstan or cmdstan) through `...`.
 ```mermaid
 flowchart TD
     A["mostm(formula, data, ..., engine)"] --> B[Check engine arguments in ...]
-    B --> C[Validate data, offsets, id_var; evaluate weights and subset once]
+    B --> C[Validate data, offsets, inline factors, id_var; evaluate weights and subset once]
     C --> N{missing_states or Ocens and rows needing the recursion?}
     N -->|yes| O[Missing states path, see below]
     N -->|no| D{engine}
@@ -124,6 +124,16 @@ flowchart TD
   patient-clustered covariance settings `type` and `cadjust`. `data` must be a
   data frame. A missing `id_var` warns (`warn_missing_markov_id_var()`), and
   duplicate ID-time rows warn (`warn_duplicate_markov_id_time()`).
+- For `"orm"` and `"blrm"`, `mostm_check_inline_factors()` stops before
+  fitting when the right-hand side of the formula calls `factor()`,
+  `as.factor()`, `ordered()`, or `as.ordered()` (found at any depth by
+  `formula_inline_factor_calls()`; the response is not searched). rms names
+  the design columns of such a term after the variable (`x=2`), while
+  `stats::model.matrix()` names them after the call (`factor(x)2`), so rms 8.1
+  fails with "subscript out of bounds". The error asks for a factor column of
+  `data`, and, when the time variable is converted, for a factor time column
+  with `first_followup_time`. `"vglm"` builds its own model frame and fits
+  these terms.
 - Engine arguments go through `...`. `mostm_check_engine_args()` compares
   their names with `mostm_engine_args()`: the formals of `rms::orm()` and
   `rms::orm.fit()`; of `mostm_fit_vglm()`, `VGAM::vglm.control()`, and VGAM's
