@@ -413,3 +413,138 @@ test_that("orm supports refit bootstrap inference", {
   expect_equal(attr(boot, "n_successful"), 1L)
   expect_false(anyNA(boot$conf.low))
 })
+
+test_that("sops() does not require the outcome column in orm newdata", {
+  skip_if_not_installed("rms")
+
+  data <- sim_markov("actt2", n_patients = 200, seed = 1) |>
+    prepare_markov_data(absorbing_state = 8, ordered_response = FALSE)
+  local_orm_datadist(data)
+  fit <- mostm(
+    y ~ tx + yprev + rms::rcs(time, 4),
+    data = data,
+    id_var = "id"
+  )
+  profile <- data.frame(
+    id = 1,
+    tx = 0,
+    time = 1,
+    yprev = factor(5, levels = levels(data$yprev))
+  )
+  profile_with_y <- profile
+  profile_with_y$y <- NA_real_
+
+  result <- sops(
+    fit,
+    newdata = profile,
+    times = 1:3,
+    y_levels = 1:8,
+    absorb = 8
+  )
+  expected <- sops(
+    fit,
+    newdata = profile_with_y,
+    times = 1:3,
+    y_levels = 1:8,
+    absorb = 8
+  )
+
+  expect_equal(result$estimate, expected$estimate, tolerance = 1e-12)
+})
+
+test_that("orm design-matrix callers do not require the outcome column", {
+  skip_if_not_installed("rms")
+
+  data <- sim_markov("actt2", n_patients = 200, seed = 1) |>
+    prepare_markov_data(absorbing_state = 8, ordered_response = FALSE)
+  local_orm_datadist(data)
+  fit <- mostm(
+    y ~ tx + yprev + rms::rcs(time, 4),
+    data = data,
+    id_var = "id"
+  )
+  profile <- data.frame(
+    id = 1:2,
+    tx = 0:1,
+    time = 1,
+    yprev = factor(c(5, 4), levels = levels(data$yprev))
+  )
+  profile_with_y <- profile
+  profile_with_y$y <- NA_real_
+
+  expect_equal(
+    mostr:::predict_orm_response_markov(fit, profile),
+    mostr:::predict_orm_response_markov(fit, profile_with_y)
+  )
+  expect_equal(
+    mostr:::markov_linear_predictor_matrix(fit, profile),
+    mostr:::markov_linear_predictor_matrix(fit, profile_with_y)
+  )
+
+  run_plan <- function(newdata, builder) {
+    plan <- mostr:::compile_sop_execution_plan(
+      fit,
+      newdata,
+      times = 1:3,
+      y_levels = 1:8,
+      absorb = 8,
+      builder = builder
+    )
+    mostr:::run_sop_execution_plan(plan, mostr::get_effective_coefs(fit))
+  }
+  for (builder in c("batched", "streamed")) {
+    expect_equal(
+      run_plan(profile, builder),
+      run_plan(profile_with_y, builder)
+    )
+  }
+})
+
+test_that("second-order orm SOPs do not require the outcome column", {
+  skip_if_not_installed("rms")
+
+  data <- sim_markov("actt2", n_patients = 200, seed = 1)
+  data$ypprev <- stats::ave(data$yprev, data$id, FUN = function(value) {
+    c(value[1L], value[-length(value)])
+  })
+  data <- prepare_markov_data(
+    data,
+    absorbing_state = 8,
+    ordered_response = FALSE
+  )
+  data$ypprev <- factor(data$ypprev)
+  local_orm_datadist(data)
+  fit <- mostm(
+    y ~ tx + yprev + ypprev + rms::rcs(time, 4),
+    data = data,
+    id_var = "id"
+  )
+  profile <- data.frame(
+    id = 1,
+    tx = 0,
+    time = 1,
+    yprev = factor(5, levels = levels(data$yprev)),
+    ypprev = factor(5, levels = levels(data$ypprev))
+  )
+  profile_with_y <- profile
+  profile_with_y$y <- NA_real_
+
+  result <- sops(
+    fit,
+    newdata = profile,
+    times = 1:3,
+    y_levels = 1:8,
+    absorb = 8,
+    p2_var = "ypprev"
+  )
+  expected <- sops(
+    fit,
+    newdata = profile_with_y,
+    times = 1:3,
+    y_levels = 1:8,
+    absorb = 8,
+    p2_var = "ypprev"
+  )
+
+  expect_equal(result$estimate, expected$estimate, tolerance = 1e-12)
+})

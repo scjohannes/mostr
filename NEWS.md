@@ -59,6 +59,14 @@
   try. Previously a fit with `id_var` stopped with an unrelated error about
   the robust covariance, and a fit without `id_var` returned the failed fit.
 
+* For models fitted with `mostm(engine = "orm")` (previously `orm_markov()`),
+  `newdata` no longer needs an outcome column. Prediction profiles without
+  one, such as a single patient's starting state and covariates, previously
+  failed with "object 'y' not found" in `sops()`, `avg_sops()`,
+  `state_time()`, `comparisons()`, `avg_comparisons()`, and
+  `plot_lp_difference()`, and you had to add a placeholder column such as
+  `y = NA`. Results are unchanged (#6).
+
 * With `engine = "orm"` or `"blrm"`, `mostm()` stops before fitting when the
   formula converts a predictor with `factor()`, `as.factor()`, `ordered()`, or
   `as.ordered()`, for example `ordered(y) ~ factor(time) + tx + yprev`. rms
