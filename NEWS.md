@@ -67,6 +67,15 @@
   `plot_lp_difference()`, and you had to add a placeholder column such as
   `y = NA`. Results are unchanged (#6).
 
+* With `engine = "orm"` or `"blrm"`, `mostm()` stops before fitting when the
+  formula converts a predictor with `factor()`, `as.factor()`, `ordered()`, or
+  `as.ordered()`, for example `ordered(y) ~ factor(time) + tx + yprev`. rms
+  cannot fit such terms, and the fit previously stopped with "subscript out of
+  bounds". The new error asks for a factor column in `data` instead. For time,
+  store `time` as a factor column and set `first_followup_time`, as shown in
+  `vignette("factor-time-orm-sops")`. `engine = "vglm"` still fits these
+  formulas.
+
 # mostr 0.2.0
 
 ## Breaking changes

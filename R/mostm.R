@@ -25,7 +25,10 @@
 #'
 #' @param formula A model formula with the current state as the response, for
 #'   example `ordered(y) ~ yprev + rms::rcs(time, 4) + tx`. Offsets are not
-#'   supported.
+#'   supported. For the `"orm"` and `"blrm"` engines, categorical predictors,
+#'   including time, must be factor or character columns of `data` rather
+#'   than converted with `factor()` inside the formula; for factor time, also
+#'   set `first_followup_time`.
 #' @param data A data frame with one row per patient and visit.
 #' @param ... Arguments for the engine, given by name. Each must be an
 #'   argument of the chosen engine; an argument that belongs to a different
@@ -252,6 +255,9 @@ mostm <- function(
   }
   if (terms_has_offset(stats::terms(formula, specials = "offset", data = data))) {
     stop_unsupported_offset()
+  }
+  if (engine %in% c("orm", "blrm")) {
+    mostm_check_inline_factors(formula, engine, time_var)
   }
 
   id_var <- validate_markov_id_var(id_var, data, "data")
@@ -540,6 +546,88 @@ mostm_check_engine_args <- function(engine, dots, values) {
     )
   }
   invisible(NULL)
+}
+
+# rms::orm() and rmsb::blrm() name the design matrix columns of a factor after
+# the variable (`x=2`), but stats::model.matrix() names those of a variable
+# converted inside the formula after the call (`factor(x)2`). rms then fails
+# with "subscript out of bounds", so mostm() rejects such terms before fitting.
+mostm_check_inline_factors <- function(formula, engine, time_var) {
+  calls <- formula_inline_factor_calls(formula)
+  if (!length(calls)) {
+    return(invisible(NULL))
+  }
+  labels <- unique(vapply(calls, deparse1, character(1)))
+  several <- length(labels) > 1L
+  fitter <- switch(engine, orm = "`rms::orm()`", blrm = "`rmsb::blrm()`")
+
+  # A call whose first argument is a variable name gives a concrete example.
+  bare <- Filter(function(call) length(call) >= 2L && is.name(call[[2L]]), calls)
+  example <- NULL
+  if (length(bare)) {
+    converted <- bare[[1L]]
+    column <- call("$", as.name("data"), converted[[2L]])
+    converted[[2L]] <- column
+    example <- deparse1(call("<-", column, converted))
+  }
+
+  converts_time <- is.character(time_var) &&
+    any(vapply(calls, function(call) any(time_var %in% all.vars(call)), TRUE))
+
+  stop(
+    fitter,
+    " cannot fit ",
+    if (several) {
+      "variables that are converted to factors"
+    } else {
+      "a variable that is converted to a factor"
+    },
+    " inside the formula: ",
+    format_sop_visit_list(paste0("`", labels, "`")),
+    ". Create ",
+    if (several) "each factor" else "the factor",
+    " as a column of `data` and use that column in the formula instead",
+    if (!is.null(example)) paste0(", for example `", example, "`"),
+    ".",
+    if (converts_time) {
+      paste0(
+        " To use time as a factor, store it as a factor column of `data` ",
+        "and set `first_followup_time` to the level of the first visit ",
+        "after baseline, for example `first_followup_time = \"1\"`. See ",
+        "`vignette(\"factor-time-orm-sops\")`."
+      )
+    },
+    call. = FALSE
+  )
+}
+
+# Calls on the right-hand side of `formula` that convert a variable to a
+# factor, such as `factor(time)` or `base::as.ordered(tx)`, wherever they
+# appear, including inside interactions and other calls. The response, often
+# `ordered(y)`, is not searched.
+formula_inline_factor_calls <- function(formula) {
+  converters <- c("factor", "as.factor", "ordered", "as.ordered")
+  find_calls <- function(expr) {
+    fun <- expr[[1L]]
+    if (
+      is.call(fun) &&
+        length(fun) == 3L &&
+        is.name(fun[[1L]]) &&
+        as.character(fun[[1L]]) %in% c("::", ":::")
+    ) {
+      fun <- fun[[3L]]
+    }
+    if (is.name(fun) && as.character(fun) %in% converters) {
+      return(list(expr))
+    }
+    args <- Filter(is.call, as.list(expr)[-1L])
+    unlist(lapply(args, find_calls), recursive = FALSE)
+  }
+  rhs <- formula[[length(formula)]]
+  if (!is.call(rhs)) {
+    return(list())
+  }
+  find_calls(rhs)
 }
 
 markov_set_model_call <- function(model, call) {

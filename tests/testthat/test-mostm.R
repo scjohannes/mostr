@@ -488,3 +488,92 @@ test_that("orm refits keep the fit's na.action and penalty", {
   inferred <- inferences(out, method = "bootstrap", n_draws = 2)
   expect_equal(attr(inferred, "n_successful"), 2L)
 })
+
+test_that("orm fits reject factor() written inside the formula", {
+  skip_if_not_installed("rms")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6301)
+
+  # rms::orm() cannot build the design matrix for such terms and stops with
+  # "subscript out of bounds", so mostm() stops before fitting.
+  err <- expect_error(
+    mostm(ordered(y) ~ factor(time) + tx + yprev, data = data, id_var = "id"),
+    "`factor(time)`",
+    fixed = TRUE
+  )
+  expect_match(conditionMessage(err), "`rms::orm()`", fixed = TRUE)
+  expect_match(conditionMessage(err), "column of `data`", fixed = TRUE)
+  expect_match(conditionMessage(err), "first_followup_time", fixed = TRUE)
+  expect_match(
+    conditionMessage(err),
+    "vignette(\"factor-time-orm-sops\")",
+    fixed = TRUE
+  )
+
+  # The time advice follows `time_var`.
+  renamed <- data
+  names(renamed)[names(renamed) == "time"] <- "day"
+  err <- expect_error(
+    mostm(
+      ordered(y) ~ factor(day) + tx + yprev,
+      data = renamed,
+      id_var = "id",
+      time_var = "day"
+    ),
+    "`factor(day)`",
+    fixed = TRUE
+  )
+  expect_match(conditionMessage(err), "first_followup_time", fixed = TRUE)
+
+  formulas <- list(
+    ordered(y) ~ time + as.factor(tx) + yprev,
+    ordered(y) ~ time + base::factor(tx) + yprev,
+    ordered(y) ~ time * ordered(tx) + yprev,
+    ordered(y) ~ time + yprev + as.ordered(tx)
+  )
+  for (formula in formulas) {
+    err <- expect_error(
+      mostm(formula, data = data, id_var = "id"),
+      "column of `data`",
+      fixed = TRUE
+    )
+    expect_no_match(conditionMessage(err), "first_followup_time", fixed = TRUE)
+  }
+
+  # A factor column in `data` fits, and `ordered()` on the response is allowed.
+  data$tx_factor <- factor(data$tx)
+  fit <- mostm(ordered(y) ~ time + tx_factor + yprev, data = data, id_var = "id")
+  expect_s3_class(fit, "orm")
+})
+
+test_that("blrm fits reject factor() written inside the formula", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("rmsb")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6302)
+  err <- expect_error(
+    mostm(
+      ordered(y) ~ factor(time) + tx + yprev,
+      data = data,
+      id_var = "id",
+      engine = "blrm"
+    ),
+    "`factor(time)`",
+    fixed = TRUE
+  )
+  expect_match(conditionMessage(err), "`rmsb::blrm()`", fixed = TRUE)
+  expect_match(conditionMessage(err), "first_followup_time", fixed = TRUE)
+})
+
+test_that("vglm fits accept factor() written inside the formula", {
+  skip_if_not_installed("VGAM")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6303)
+  fit <- mostm(
+    ordered(y) ~ factor(time) + tx + yprev,
+    data = data,
+    id_var = "id",
+    engine = "vglm"
+  )
+  expect_s3_class(fit, "robcov_vglm")
+})
