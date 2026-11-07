@@ -542,8 +542,9 @@ test_that("get_vcov_robust validates clusters before dispatching by model class"
   )
 
   skip_if_not_installed("rms")
+  # The states overlap across `x`, so rms can estimate the coefficients.
   data <- data.frame(
-    y = ordered(rep(1:3, each = 4)),
+    y = ordered(c(1, 2, 1, 3, 2, 1, 3, 2, 3, 1, 3, 2)),
     x = seq_len(12),
     id = rep(1:4, each = 3)
   )

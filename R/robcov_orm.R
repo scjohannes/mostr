@@ -74,9 +74,27 @@ orm_case_weights <- function(model, n) {
   as.numeric(weights)
 }
 
+stop_failed_orm_fit <- function() {
+  stop(
+    "`rms::orm()` could not fit the model: its fitting algorithm stopped ",
+    "without finding the coefficient estimates. You can try another ",
+    "algorithm with `opt_method = \"LM\"`, scale the covariates with ",
+    "`scale = TRUE`, allow more iterations with a larger `maxit`, or ",
+    "simplify the model, for example by removing covariates that are ",
+    "nearly collinear.",
+    call. = FALSE
+  )
+}
+
 validate_robcov_orm_fit <- function(fit) {
   if (!inherits(fit, "orm")) {
     stop("'fit' must be an orm object.")
+  }
+  if (isTRUE(fit$fail)) {
+    stop_failed_orm_fit()
+  }
+  if (orm_has_random_effects(fit)) {
+    stop_unsupported_orm_random_effects()
   }
   if (!identical(fit$family, "logistic")) {
     stop("`robcov_orm()` supports only ordinary ordinal logistic orm fits.")

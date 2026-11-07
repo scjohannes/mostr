@@ -24,7 +24,8 @@ example \code{ordered(y) ~ yprev + rms::rcs(time, 4) + tx}. Offsets are not
 supported. For the \code{"orm"} and \code{"blrm"} engines, categorical predictors,
 including time, must be factor or character columns of \code{data} rather
 than converted with \code{factor()} inside the formula; for factor time, also
-set \code{first_followup_time}.}
+set \code{first_followup_time}. Random-effect terms are available only for the
+\code{"blrm"} engine; see "Random effects" below.}
 
 \item{data}{A data frame with one row per patient and visit.}
 
@@ -162,6 +163,32 @@ corrections. These standard errors are used by \code{inferences(method = "delta"
 Unconditional variance also accounts for which patients were sampled; see
 \code{\link[=inferences]{inferences()}}. For the \code{"blrm"} engine, uncertainty comes from the
 posterior draws.
+}
+
+\subsection{Random effects}{
+
+A random effect is a shift on the log-odds scale that belongs to one patient
+and applies at all of that patient's visits. It describes patients who do
+better or worse throughout than their previous state and covariates predict.
+
+Only \code{engine = "blrm"} supports random effects. For a random intercept for
+each patient, add \code{cluster(id)} to the formula, where \code{id} is the column that
+identifies patients, and attach rms and rmsb with \code{library()} so that
+\code{cluster()} can be found. Write the term without a package prefix:
+\code{\link[rmsb:blrm]{rmsb::blrm()}} would fit \code{rms::cluster(id)} as an ordinary predictor, a
+straight-line effect of the ID number, so \code{mostm()} stops with an error. To
+include each patient's estimated random effect in predictions, use
+\code{include_re = TRUE} in \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}}; see
+\code{vignette("bayesian-rmsb-sops")}.
+
+With \code{engine = "orm"} or \code{"vglm"}, \code{cluster()} and \code{mix_re()} terms are
+errors, although \code{\link[rms:orm]{rms::orm()}} can fit them from rms version 8.2 on. State
+occupancy probabilities from such a fit would describe only a patient whose
+random effect is 0, which is not the average over patients. To allow for
+correlation between the transitions of one patient with these engines, use
+\code{id_var}, as described under "Standard errors". \code{mix_re()}, which lets the
+size of the random effect differ between the first follow-up and later visits,
+is not available for any engine.
 }
 
 \subsection{Refits}{

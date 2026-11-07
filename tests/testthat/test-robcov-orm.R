@@ -300,6 +300,52 @@ test_that("orm robust covariance rejects invalid fits and inputs", {
   expect_error(robcov_orm(malformed_bread, cluster), "orm model bread")
 })
 
+test_that("orm robust covariance explains failed fits", {
+  skip_if_not_installed("rms")
+
+  # When its fitting algorithm fails, rms 8.2 and later return only this field.
+  failed <- structure(list(fail = TRUE), class = "orm")
+  expect_error(robcov_orm(failed, 1:2), "could not fit the model", fixed = TRUE)
+  expect_error(
+    get_vcov_robust(failed, cluster = 1:2),
+    "could not fit the model",
+    fixed = TRUE
+  )
+})
+
+test_that("orm robust covariance rejects fits that hold random effects", {
+  case <- local_robcov_orm_case()
+
+  for (field in c("sigma", "sigma1", "sigma2", "gamma")) {
+    with_random_effects <- case$fit
+    with_random_effects[[field]] <- 1
+    expect_error(
+      robcov_orm(with_random_effects, case$data$id),
+      "random effects",
+      fixed = TRUE
+    )
+  }
+
+  skip_if_not_installed("rms", "8.2-0")
+  cluster <- function(x) x
+  random_intercept <- suppressWarnings(rms::orm(
+    ordered(y) ~ time + tx + yprev + cluster(id),
+    data = case$data,
+    x = TRUE,
+    y = TRUE
+  ))
+  expect_error(
+    robcov_orm(random_intercept, case$data$id),
+    "random effects",
+    fixed = TRUE
+  )
+  expect_error(
+    get_vcov_robust(random_intercept, cluster = case$data$id),
+    "random effects",
+    fixed = TRUE
+  )
+})
+
 test_that("stored orm covariance integrity detects mutation", {
   case <- local_robcov_orm_case()
   robust <- robcov_orm(case$fit, case$data$id)

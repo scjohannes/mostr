@@ -94,6 +94,9 @@ validate_markov_model <- function(object) {
   }
 
   if (inherits(model_chk, "orm")) {
+    if (orm_has_random_effects(model_chk)) {
+      stop_unsupported_orm_random_effects()
+    }
     family <- model_chk$family
     if (
       is.null(family) ||

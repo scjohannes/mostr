@@ -28,7 +28,8 @@
 #'   supported. For the `"orm"` and `"blrm"` engines, categorical predictors,
 #'   including time, must be factor or character columns of `data` rather
 #'   than converted with `factor()` inside the formula; for factor time, also
-#'   set `first_followup_time`.
+#'   set `first_followup_time`. Random-effect terms are available only for the
+#'   `"blrm"` engine; see "Random effects" below.
 #' @param data A data frame with one row per patient and visit.
 #' @param ... Arguments for the engine, given by name. Each must be an
 #'   argument of the chosen engine; an argument that belongs to a different
@@ -118,6 +119,31 @@
 #' Unconditional variance also accounts for which patients were sampled; see
 #' [inferences()]. For the `"blrm"` engine, uncertainty comes from the
 #' posterior draws.
+#'
+#' ## Random effects
+#'
+#' A random effect is a shift on the log-odds scale that belongs to one patient
+#' and applies at all of that patient's visits. It describes patients who do
+#' better or worse throughout than their previous state and covariates predict.
+#'
+#' Only `engine = "blrm"` supports random effects. For a random intercept for
+#' each patient, add `cluster(id)` to the formula, where `id` is the column that
+#' identifies patients, and attach rms and rmsb with `library()` so that
+#' `cluster()` can be found. Write the term without a package prefix:
+#' [rmsb::blrm()] would fit `rms::cluster(id)` as an ordinary predictor, a
+#' straight-line effect of the ID number, so `mostm()` stops with an error. To
+#' include each patient's estimated random effect in predictions, use
+#' `include_re = TRUE` in [sops()] or [avg_sops()]; see
+#' `vignette("bayesian-rmsb-sops")`.
+#'
+#' With `engine = "orm"` or `"vglm"`, `cluster()` and `mix_re()` terms are
+#' errors, although [rms::orm()] can fit them from rms version 8.2 on. State
+#' occupancy probabilities from such a fit would describe only a patient whose
+#' random effect is 0, which is not the average over patients. To allow for
+#' correlation between the transitions of one patient with these engines, use
+#' `id_var`, as described under "Standard errors". `mix_re()`, which lets the
+#' size of the random effect differ between the first follow-up and later visits,
+#' is not available for any engine.
 #'
 #' ## Refits
 #'
@@ -259,6 +285,7 @@ mostm <- function(
   if (engine %in% c("orm", "blrm")) {
     mostm_check_inline_factors(formula, engine, time_var)
   }
+  mostm_check_random_effects(formula, engine)
 
   id_var <- validate_markov_id_var(id_var, data, "data")
   if (is.null(id_var)) {
@@ -377,15 +404,7 @@ mostm_fit_orm <- function(setup, ...) {
   # When its fitting algorithm fails, rms::orm() returns an object that holds
   # only `fail = TRUE` instead of stopping.
   if (isTRUE(fit$fail)) {
-    stop(
-      "`rms::orm()` could not fit the model: its fitting algorithm stopped ",
-      "without finding the coefficient estimates. You can try another ",
-      "algorithm with `opt_method = \"LM\"`, scale the covariates with ",
-      "`scale = TRUE`, allow more iterations with a larger `maxit`, or ",
-      "simplify the model, for example by removing covariates that are ",
-      "nearly collinear.",
-      call. = FALSE
-    )
+    stop_failed_orm_fit()
   }
 
   fit_frame <- markov_rms_model_frame(
@@ -601,12 +620,77 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
   )
 }
 
+# rms 8.2 and later fit `cluster()` and `mix_re()` terms as random effects, and
+# state occupancy probabilities from such a fit would be wrong without any
+# message. VGAM::vglm() and rmsb::blrm() would fit these terms as ordinary
+# predictors, except that rmsb::blrm() recognizes a bare `cluster(id)` as a
+# random intercept. mostm() therefore rejects them before fitting.
+mostm_check_random_effects <- function(formula, engine) {
+  calls <- formula_rhs_calls(formula, c("cluster", "mix_re"))
+  if (engine == "blrm") {
+    calls <- Filter(
+      function(call) !identical(call[[1L]], as.name("cluster")),
+      calls
+    )
+  }
+  if (!length(calls)) {
+    return(invisible(NULL))
+  }
+  labels <- unique(vapply(calls, deparse1, character(1)))
+  several <- length(labels) > 1L
+  formatted <- format_sop_visit_list(paste0("`", labels, "`"))
+
+  if (engine == "blrm") {
+    stop(
+      "`rmsb::blrm()` would fit ",
+      formatted,
+      if (several) {
+        " as ordinary predictors rather than random effects. "
+      } else {
+        " as an ordinary predictor rather than a random effect. "
+      },
+      "For a random intercept for each patient, write `cluster(id)` without ",
+      "a package prefix and attach rms and rmsb with `library()`. Other ",
+      "random-effect terms, such as `mix_re()`, are not available.",
+      call. = FALSE
+    )
+  }
+
+  stop(
+    "`engine = \"",
+    engine,
+    "\"` does not support random effects, so remove ",
+    formatted,
+    " from the formula. ",
+    if (engine == "orm") {
+      paste0(
+        "State occupancy probabilities from such a fit would describe only a ",
+        "patient whose random effect is 0, which is not the average over ",
+        "patients. "
+      )
+    } else if (several) {
+      "`VGAM::vglm()` would fit such terms as ordinary predictors. "
+    } else {
+      "`VGAM::vglm()` would fit such a term as an ordinary predictor. "
+    },
+    "`id_var` already gives standard errors that allow for correlation ",
+    "between the transitions of one patient. For a random intercept for each ",
+    "patient, use `engine = \"blrm\"` with `cluster(id)` in the formula.",
+    call. = FALSE
+  )
+}
+
 # Calls on the right-hand side of `formula` that convert a variable to a
 # factor, such as `factor(time)` or `base::as.ordered(tx)`, wherever they
 # appear, including inside interactions and other calls. The response, often
 # `ordered(y)`, is not searched.
 formula_inline_factor_calls <- function(formula) {
-  converters <- c("factor", "as.factor", "ordered", "as.ordered")
+  formula_rhs_calls(formula, c("factor", "as.factor", "ordered", "as.ordered"))
+}
+
+# Calls to `functions`, with or without a package prefix, on the right-hand side
+# of `formula`, wherever they appear. A matching call is not searched further.
+formula_rhs_calls <- function(formula, functions) {
   find_calls <- function(expr) {
     fun <- expr[[1L]]
     if (
@@ -617,7 +701,7 @@ formula_inline_factor_calls <- function(formula) {
     ) {
       fun <- fun[[3L]]
     }
-    if (is.name(fun) && as.character(fun) %in% converters) {
+    if (is.name(fun) && as.character(fun) %in% functions) {
       return(list(expr))
     }
     args <- Filter(is.call, as.list(expr)[-1L])
