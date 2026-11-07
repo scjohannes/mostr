@@ -230,6 +230,23 @@ stop_unsupported_offset <- function() {
   )
 }
 
+# Uses names() because `$` would partial-match other fields of the fit.
+orm_has_random_effects <- function(model) {
+  any(c("sigma", "sigma1", "sigma2", "gamma") %in% names(model))
+}
+
+stop_unsupported_orm_random_effects <- function() {
+  stop(
+    "Orm fits with random effects are not supported. State occupancy ",
+    "probabilities would describe only a patient whose random effect is 0, ",
+    "which is not the average over patients, and the patient-clustered ",
+    "standard errors would not account for the random effects. Refit without ",
+    "`cluster()` and `mix_re()` terms, or use `mostm(engine = \"blrm\")` with ",
+    "`cluster(id)` for a random intercept for each patient.",
+    call. = FALSE
+  )
+}
+
 with_sop_fallback_notification_scope <- function(code) {
   old <- getOption("mostr.sop_fallback_notification")
   if (is.environment(old)) {

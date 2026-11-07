@@ -132,6 +132,18 @@ flowchart TD
   `data`, and, when the time variable is converted, for a factor time column
   with `first_followup_time`. `"vglm"` builds its own model frame and fits
   these terms.
+- For every engine, `mostm_check_random_effects()` stops before fitting when
+  the right-hand side of the formula calls `cluster()` or `mix_re()`, with or
+  without a package prefix (found by `formula_rhs_calls()`, the search that
+  `formula_inline_factor_calls()` also uses). From rms 8.2 on, `rms::orm()` fits
+  these terms as random effects, but the SOP functions would predict at a random
+  effect of 0, which is not the average over patients, and `robcov_orm()` knows
+  nothing about them. `VGAM::vglm()` and `rmsb::blrm()` do not recognize the
+  other forms and would fit them as ordinary predictors, such as a straight-line
+  effect of the patient ID number. The one form allowed is an unprefixed
+  `cluster(id)` with `"blrm"`, the random intercept behind `include_re`. The
+  check reads only the formula, so it behaves the same for every rms version;
+  `cluster()` itself comes from rms from version 8.2 on and from rmsb before.
 - Engine arguments go through `...`. `mostm_check_engine_args()` compares
   their names with `mostm_engine_args()`: the formals of `rms::orm()` and
   `rms::orm.fit()`; of `mostm_fit_vglm()`, `VGAM::vglm.control()`, and VGAM's
@@ -167,6 +179,14 @@ flowchart TD
   `markov_model_engine()` matches its class. Raw engine fits and fits from the
   removed `orm_markov()`, `vglm_markov()`, and `blrm_markov()` lack the
   attribute and are rejected with a pointer to `mostm(engine = ...)`.
+- Fits that reach mostr without passing `mostm()`'s formula checks are caught
+  later. `validate_markov_model()` and `validate_robcov_orm_fit()` in
+  `R/robcov_orm.R` reject orm fits that hold random effects
+  (`orm_has_random_effects()` looks for `sigma`, `sigma1`, `sigma2`, or `gamma`),
+  such as a fit saved before the formula check existed or a raw fit passed to
+  `get_vcov_robust()`. `validate_robcov_orm_fit()` also reports a failed fit
+  through `stop_failed_orm_fit()`, the message `mostm_fit_orm()` uses, because a
+  failed fit from rms 8.2 or later holds only `fail = TRUE`.
 
 `inferences()` adds Wald null tests (`statistic`, `p.value`, `s.value`, and a
 `null` attribute) through `add_null_test()` in `R/sops-result-helpers.R`, after

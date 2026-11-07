@@ -76,6 +76,27 @@
   `vignette("factor-time-orm-sops")`. `engine = "vglm"` still fits these
   formulas.
 
+* `mostm()` no longer accepts random-effect terms that mostr cannot use. From
+  rms 8.2 on, `rms::orm()` fits `cluster(id)` and `mix_re()` terms as random
+  effects, and `mostm(engine = "orm")` accepted such a fit without a message.
+  `sops()`, `avg_sops()`, and `inferences()` then described only a patient whose
+  random effect is 0, which is not the average over patients, and their
+  standard errors did not account for the random effects. With
+  `engine = "orm"` or `"vglm"`, these terms are now errors, with or without a
+  package prefix. `id_var` already gives standard errors that allow for
+  correlation between the transitions of one patient. With `engine = "blrm"`,
+  `cluster(id)` still adds a random intercept for each patient, but
+  `rms::cluster(id)` and `mix_re()` are errors: `rmsb::blrm()` fitted them as
+  ordinary predictors, so the first one fitted a straight-line effect of the
+  patient ID number.
+
+* The state occupancy and inference functions and `get_vcov_robust()` also
+  reject an `rms::orm()` fit that holds random effects, such as a fit saved
+  before this change. `get_vcov_robust()` now says so when `rms::orm()` could
+  not fit the model, which rms 8.2 and later report by returning a fit without
+  coefficients. Previously it stopped with an error about unsupported model
+  families.
+
 # mostr 0.2.0
 
 ## Breaking changes

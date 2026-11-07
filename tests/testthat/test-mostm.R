@@ -577,3 +577,146 @@ test_that("vglm fits accept factor() written inside the formula", {
   )
   expect_s3_class(fit, "robcov_vglm")
 })
+
+test_that("orm fits reject random-effect terms before fitting", {
+  skip_if_not_installed("rms")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6304)
+  data$mre <- as.numeric(data$time > 1)
+
+  # Stopping before the fit keeps this the same for every rms version: rms 8.2
+  # and later fit these terms, and earlier versions do not have the functions.
+  err <- expect_error(
+    mostm(ordered(y) ~ time + tx + yprev + cluster(id), data = data, id_var = "id"),
+    "`cluster(id)`",
+    fixed = TRUE
+  )
+  expect_match(conditionMessage(err), "does not support random effects", fixed = TRUE)
+  expect_match(conditionMessage(err), "random effect is 0", fixed = TRUE)
+  expect_match(conditionMessage(err), "`id_var`", fixed = TRUE)
+  expect_match(conditionMessage(err), "`engine = \"blrm\"`", fixed = TRUE)
+
+  # Found with a package prefix, inside other calls, and next to each other.
+  err <- expect_error(
+    mostm(
+      ordered(y) ~ time + tx + yprev + cluster(id) + mix_re(mre),
+      data = data,
+      id_var = "id"
+    ),
+    "`cluster(id)` and `mix_re(mre)`",
+    fixed = TRUE
+  )
+  labels <- list(
+    "`rms::cluster(id)`" = ordered(y) ~ time + tx + yprev + rms::cluster(id),
+    "`rms::mix_re(mre)`" = ordered(y) ~ time + tx + yprev + rms::mix_re(mre),
+    "`cluster(id)`" = ordered(y) ~ time * cluster(id) + yprev
+  )
+  for (label in names(labels)) {
+    expect_error(
+      mostm(labels[[label]], data = data, id_var = "id"),
+      label,
+      fixed = TRUE
+    )
+  }
+
+  # Only calls count: a column named `cluster` is an ordinary predictor.
+  data$cluster <- data$tx
+  fit <- mostm(ordered(y) ~ time + cluster + yprev, data = data, id_var = "id")
+  expect_s3_class(fit, "orm")
+})
+
+test_that("vglm fits reject random-effect terms before fitting", {
+  skip_if_not_installed("VGAM")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6305)
+  # VGAM would otherwise fit the patient ID number as a straight-line predictor.
+  cluster <- function(x) x
+  err <- expect_error(
+    mostm(
+      ordered(y) ~ time + tx + yprev + cluster(id),
+      data = data,
+      id_var = "id",
+      engine = "vglm"
+    ),
+    "`cluster(id)`",
+    fixed = TRUE
+  )
+  expect_match(conditionMessage(err), "does not support random effects", fixed = TRUE)
+  expect_match(conditionMessage(err), "ordinary predictor", fixed = TRUE)
+  expect_match(conditionMessage(err), "`engine = \"blrm\"`", fixed = TRUE)
+})
+
+test_that("blrm fits accept only an unprefixed cluster() random intercept", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("rmsb")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6306)
+  data$mre <- as.numeric(data$time > 1)
+
+  # rmsb::blrm() recognizes only `cluster(id)` as a random intercept. It would
+  # fit the other forms as ordinary predictors, such as the patient ID number.
+  err <- expect_error(
+    mostm(
+      ordered(y) ~ time + tx + yprev + rms::cluster(id),
+      data = data,
+      id_var = "id",
+      engine = "blrm"
+    ),
+    "`rms::cluster(id)`",
+    fixed = TRUE
+  )
+  expect_match(conditionMessage(err), "ordinary predictor", fixed = TRUE)
+  expect_match(conditionMessage(err), "without a package prefix", fixed = TRUE)
+  err <- expect_error(
+    mostm(
+      ordered(y) ~ time + tx + yprev + cluster(id) + mix_re(mre),
+      data = data,
+      id_var = "id",
+      engine = "blrm"
+    ),
+    "`mix_re(mre)`",
+    fixed = TRUE
+  )
+  expect_no_match(conditionMessage(err), "`cluster(id)` and", fixed = TRUE)
+
+  # `standata = TRUE` prepares the data for Stan without sampling. `cluster()`
+  # comes from rms from version 8.2 on and from rmsb before that, and rms 8.1
+  # does not look for it in the formula's environment, so it is global here.
+  assign("cluster", function(x) x, envir = globalenv())
+  withr::defer(rm("cluster", envir = globalenv()))
+  fit <- mostm(
+    ordered(y) ~ time + tx + yprev + cluster(id),
+    data = data,
+    id_var = "id",
+    engine = "blrm",
+    standata = TRUE
+  )
+  expect_identical(mostr:::markov_model_engine(fit), "blrm")
+  expect_equal(fit$Nc, length(unique(data$id)))
+})
+
+test_that("model-based functions reject orm fits that hold random effects", {
+  skip_if_not_installed("rms")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6307)
+  fit <- mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id")
+  expect_null(mostr:::validate_markov_model(fit))
+
+  # A fit saved before mostm() rejected these terms can still hold them.
+  for (field in c("sigma", "sigma1", "sigma2", "gamma")) {
+    with_random_effects <- fit
+    with_random_effects[[field]] <- 1
+    expect_error(
+      mostr:::validate_markov_model(with_random_effects),
+      "random effects",
+      fixed = TRUE
+    )
+  }
+  with_random_effects <- fit
+  with_random_effects$sigma <- 1
+  expect_error(
+    sops(with_random_effects, times = 1:2, y_levels = 1:6, absorb = 6),
+    "random effects",
+    fixed = TRUE
+  )
+})
