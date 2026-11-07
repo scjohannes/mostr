@@ -53,6 +53,18 @@ When changing the analytical recursion, update its test-only R reference and
 native-versus-R checks in the same change. Cover the affected behavior with a
 shared deterministic example; the R reference must never become a production
 fallback. Keep analytical recursion tests in the existing native-safety CI jobs.
+This rule is about the references under `tests/`. `soprob_markov_reference()` in
+`R/sops-engine.R` is a production engine despite its name, so it does not count as
+an independent check.
+
+`tests/testthat/helper-slow-loop.R` is the readable reference for SOPs. Keep it as
+plain loops that call no package code, so that a maintainer can check it by eye
+against the formulas in its comments. When adding a model feature, add a set-up to
+`tests/testthat/helper-grid.R` and compare public results with the loop. Tests that
+need `MOSTR_RUN_SLOW=true` belong in files named `test-slow-*.R`. If a test
+consolidation removes or merges tests, run the planted-bug checks in
+`benchmarks/local/mutation/` first and after: no planted bug may go from caught to
+missed.
 
 Optional performance benchmark scripts and results belong in ignored
 `benchmarks/local/`. Do not add performance benchmarks to package tests or

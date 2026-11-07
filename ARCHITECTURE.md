@@ -718,8 +718,33 @@ Every native routine in `src/sops.cpp` is checked against an independent
 test-only R reference written from the mathematics of the calculation
 (`tests/testthat/helper-sops-native-reference.R` and
 `tests/testthat/helper-sops-delta-oracle.R`); these references are never
-production fallbacks. GitHub Actions runs R CMD check and runs the native and
-analytical-inference tests under address/undefined sanitizers and Valgrind.
+production fallbacks. They start from prediction designs that the package built,
+so they cannot see a bug in how those designs are made.
+
+`tests/testthat/helper-slow-loop.R` closes that gap. It holds plain per-patient,
+per-visit, per-previous-state loops for first- and second-order recursion, which
+call no package code and take transition probabilities only from the fitting
+package's `predict()`. `tests/testthat/test-sops-native-slow-loop.R` compares
+public `sops()` and `avg_sops()` with those loops on a shared grid of model set-ups
+from `tests/testthat/helper-grid.R` (engine, Markov order, time coding, odds
+structure, absorbing states, gaps, explicit time bases, numeric previous states,
+and weights). It also compares analytical derivatives with numerical differences
+(`tests/testthat/helper-numeric-jacobian.R`).
+`tests/testthat/test-sops-native-blrm-slow-loop.R` does the same draw by draw for
+`blrm`, on hand-made posterior draws with a mocked design matrix.
+`tests/testthat/test-slow-blrm.R` uses real `rmsb::blrm()` fits and runs only with
+`MOSTR_RUN_SLOW=true`.
+
+`soprob_markov_reference()` in `R/sops-engine.R` is not one of these test-only
+references, despite its name. It is a production engine: the only one for `blrm`,
+and the fallback when prediction designs exceed
+`mostr.execution_plan_max_bytes`.
+
+GitHub Actions runs R CMD check and runs the native and analytical-inference
+tests under address/undefined sanitizers and Valgrind. Planted-bug checks, which
+test whether the tests would fail on wrong code, are local tools in the ignored
+`benchmarks/local/mutation/`.
+
 The ten vignettes demonstrate Markov-generated data, including a custom
 30-state generator and a waning-treatment-effect simulation study comparing
 constant and time-varying treatment models on full-grid SOP and time-in-state
