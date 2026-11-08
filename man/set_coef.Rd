@@ -59,14 +59,7 @@ to replace the coefficients - not any stored linear predictors.
 \dontshow{if (rlang::is_installed("rms")) withAutoprint(\{ # examplesIf}
 trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-fit <- rms::orm(
-  y ~ time + tx + yprev,
-  data = markov_data,
-  x = TRUE,
-  y = TRUE,
-  opt_method = "LM",
-  scale = TRUE
-)
+fit <- rms::orm(y ~ time + tx + yprev, data = markov_data, x = TRUE, y = TRUE)
 
 new_coefs <- coef(fit)
 new_coefs["tx"] <- new_coefs["tx"] - 0.1
