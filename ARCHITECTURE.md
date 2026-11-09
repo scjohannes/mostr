@@ -212,7 +212,11 @@ data. `bootstrap_model_coefs()` resamples the same stored data, clustered on the
 fit's stored `id_var` unless the user names another column. The low-level
 helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample_indexed()`,
 `apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
-`relevel_factors_consecutive()`) are internal.
+`relevel_factors_consecutive()`) are internal. `fast_group_bootstrap()` gives
+each copy of a patient drawn more than once its own character `new_id`
+(`"<id>_1"`, `"<id>_2"`), numbered by sampled position so that factor,
+character, and integer IDs give the same resamples; refits and the averaged
+cohort use `new_id` as the patient ID.
 
 The ordinary bootstrap refits each resample on all of its patients, so a state
 missing from one `by` group but present elsewhere still has its coefficients.
@@ -423,6 +427,23 @@ In `R/sops-interpolate.R`, `empirical_baseline_anchor()` anchors per-profile
 SOPs at each row's `p_var` value and errors if that column is missing, while
 `empirical_baseline_anchor_from_data()` and `baseline_rows_for_anchor()` serve
 averaged results, reading their scenarios and groups from `avg_args`.
+
+`interpolate_sops()` and tidy-SOP `time_in_state()` group by every column
+other than `time`, `state`, the measures (`sop_measure_cols()`), the null-test
+columns (`sop_test_cols()`), and draw weights, because those columns are the
+profile, scenario, and draw identifiers. Two rules keep one group per series:
+
+- A missing identifier, such as a profile column the model does not use, is an
+  ordinary key value. These paths call `split_key(keep_na = TRUE)`,
+  `aggregate_value(keep_na_groups = TRUE)`, and
+  `compute_ci_from_draws(keep_na_groups = TRUE)`; all three default to
+  omitting missing keys, which the comparison reductions and `by` averages
+  keep.
+- The null tests from `inferences(null = )` are never keys.
+  `interpolate_sops()` removes them before interpolating and recomputes them
+  with `add_null_test()` from the interpolated estimates against the stored
+  `null`; `time_in_state()` drops them, because a null for probabilities
+  does not apply to a total time.
 
 `sops(variables = ...)` predicts each profile once per combination of values,
 as marginaleffects' `predictions()`: `stack_prediction_profiles()` stacks the
@@ -661,7 +682,7 @@ their existing data-frame subsetting semantics.
 |---|---|
 | Draw chunks, bootstrap results, diagnostic panels, interpolation pieces | `utils.R`: `bind_rows_fill` uses `rbindlist(use.names = TRUE, fill = TRUE)` and resets row names. |
 | Interpolation, time-in-state and empirical plot metadata | `utils.R`: `left_join_preserve_order` uses a typed data-table join, preserves left row/column order and repeated right matches, and permits many-to-many expansion. Missing keys match missing keys, not the literal string `"NA"`. |
-| Treatment state-set sums, unweighted averages, time-in-state draw totals | `sops-comparisons-reduce.R`: `aggregate_value` groups observed rows without constructing formulas. It preserves aggregate's missing-value omission, factor levels, and ordering with the first grouping column varying fastest. |
+| Treatment state-set sums, unweighted averages, time-in-state draw totals | `sops-comparisons-reduce.R`: `aggregate_value` groups observed rows without constructing formulas. It preserves aggregate's missing-value omission, factor levels, and ordering with the first grouping column varying fastest; `keep_na_groups = TRUE` keeps missing grouping values as their own groups. |
 | Weighted averages | `sops-result-helpers.R`: `aggregate_sops_estimates` groups through data.table and retains `weighted_sop_mean`, including missing estimates and zero-total-weight groups. |
 | Percentile and Wald intervals | `sops-draws.R`: `compute_ci_from_draws` groups through data.table and retains R's quantile and standard-deviation calculations and point-estimate centering. |
 | Patient bootstrap materialization | `bootstrap_helpers.R`: the existing cached row plan still determines sampled copies and row order; data.table extracts the rows without constructing data-frame row names. |

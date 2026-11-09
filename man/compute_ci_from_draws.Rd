@@ -9,7 +9,8 @@ compute_ci_from_draws(
   group_cols,
   conf_level = 0.95,
   conf_type = "perc",
-  point_estimates = NULL
+  point_estimates = NULL,
+  keep_na_groups = FALSE
 )
 }
 \arguments{
@@ -20,6 +21,10 @@ compute_ci_from_draws(
 \item{conf_level}{Confidence level (default 0.95).}
 
 \item{conf_type}{Type of CI: "perc" (percentile) or "wald".}
+
+\item{keep_na_groups}{Logical. If \code{FALSE} (the default), draws with a
+missing value in \code{group_cols} are omitted. If \code{TRUE}, a missing value
+forms its own group, as needed for profile columns the model does not use.}
 }
 \value{
 Data frame with summary statistics.

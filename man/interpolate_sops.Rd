@@ -31,7 +31,9 @@ state probabilities sum to one within each time and group.}
 }
 \value{
 An interpolated data frame with the same core columns as \code{x}, where
-\code{time} is on the real-time scale.
+\code{time} is on the real-time scale. If \code{x} has tests from
+\code{inferences(null = )}, \code{statistic}, \code{p.value}, and \code{s.value} test the
+interpolated estimates against the same null value.
 }
 \description{
 Maps visit-scale SOP output from \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}} to a real elapsed

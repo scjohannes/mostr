@@ -8,6 +8,9 @@
 #' @param group_cols Character vector of grouping columns.
 #' @param conf_level Confidence level (default 0.95).
 #' @param conf_type Type of CI: "perc" (percentile) or "wald".
+#' @param keep_na_groups Logical. If `FALSE` (the default), draws with a
+#'   missing value in `group_cols` are omitted. If `TRUE`, a missing value
+#'   forms its own group, as needed for profile columns the model does not use.
 #'
 #' @return Data frame with summary statistics.
 #'
@@ -17,7 +20,8 @@ compute_ci_from_draws <- function(
   group_cols,
   conf_level = 0.95,
   conf_type = "perc",
-  point_estimates = NULL
+  point_estimates = NULL,
+  keep_na_groups = FALSE
 ) {
   .datatable.aware <- TRUE
   draws_df <- as.data.frame(draws_df)
@@ -72,7 +76,11 @@ compute_ci_from_draws <- function(
   work <- data.table::as.data.table(
     draws_df[, c(group_cols, "estimate"), drop = FALSE]
   )
-  work <- work[stats::complete.cases(work)]
+  work <- if (isTRUE(keep_na_groups)) {
+    work[!is.na(work$estimate)]
+  } else {
+    work[stats::complete.cases(work)]
+  }
   if (nrow(work) == 0L) {
     stop("no rows to aggregate")
   }
@@ -85,7 +93,13 @@ compute_ci_from_draws <- function(
   rownames(summary_stats) <- NULL
   if (conf_type == "wald") {
     if (is.null(point_estimates)) {
-      centers <- aggregate_value(draws_df, "estimate", group_cols, mean)
+      centers <- aggregate_value(
+        draws_df,
+        "estimate",
+        group_cols,
+        mean,
+        keep_na_groups = keep_na_groups
+      )
     } else {
       centers <- point_estimates[, c(group_cols, "estimate"), drop = FALSE]
     }

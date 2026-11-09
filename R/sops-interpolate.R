@@ -88,11 +88,29 @@ sop_measure_cols <- function(x) {
   )
 }
 
-split_key <- function(data, cols) {
+# The test columns that `inferences(null = )` adds. They describe a row's
+# estimate, so summaries must neither group by them nor carry them unchanged.
+sop_test_cols <- function(x) {
+  intersect(c("statistic", "p.value", "s.value"), names(x))
+}
+
+# A factor with one level per combination of `cols`. By default, a row with a
+# missing value in any of `cols` gets a missing key, so `split()` drops it.
+# With `keep_na = TRUE`, a missing value is an ordinary value: rows sharing it
+# form their own group, after the groups with observed values. The summaries
+# of SOP tables use this, because their grouping columns include every
+# profile column, such as a note that the model does not use.
+split_key <- function(data, cols, keep_na = FALSE) {
   if (length(cols) == 0) {
     return(rep("all", nrow(data)))
   }
-  do.call(interaction, c(data[, cols, drop = FALSE], drop = TRUE, sep = "\r"))
+  columns <- data[, cols, drop = FALSE]
+  if (isTRUE(keep_na)) {
+    columns <- lapply(columns, function(column) {
+      addNA(as.factor(column), ifany = TRUE)
+    })
+  }
+  do.call(interaction, c(columns, drop = TRUE, sep = "\r"))
 }
 
 coerce_state_like <- function(labels, prototype) {
@@ -299,7 +317,7 @@ empirical_baseline_anchor <- function(x, baseline_time) {
   if (!p_var %in% names(x)) {
     stop("Previous-state variable `", p_var, "` not found in SOP output.")
   }
-  value_cols <- sop_measure_cols(x)
+  value_cols <- c(sop_measure_cols(x), sop_test_cols(x))
   meta_cols <- setdiff(names(x), c("time", value_cols, ".sop_real_time"))
   anchor_meta <- unique(x[, meta_cols, drop = FALSE])
   anchor <- x[rep(NA_integer_, nrow(anchor_meta)), , drop = FALSE]
@@ -421,7 +439,7 @@ interpolate_sop_table_matrix <- function(
     return(NULL)
   }
 
-  key <- split_key(work, group_cols)
+  key <- split_key(work, group_cols, keep_na = TRUE)
   if (anyNA(key)) {
     return(NULL)
   }
@@ -486,8 +504,11 @@ normalize_interpolated_sops <- function(x) {
     return(x)
   }
 
-  key_cols <- setdiff(names(x), c("state", sop_measure_cols(x)))
-  key <- split_key(x, key_cols)
+  key_cols <- setdiff(
+    names(x),
+    c("state", sop_measure_cols(x), sop_test_cols(x))
+  )
+  key <- split_key(x, key_cols, keep_na = TRUE)
   sums <- ave(x[[value_col]], key, FUN = function(z) sum(z, na.rm = TRUE))
   scale <- !is.na(sums) & sums > 0
   x[[value_col]][scale] <- x[[value_col]][scale] / sums[scale]
@@ -642,7 +663,7 @@ interpolate_sop_draws <- function(
   if (is.null(result)) {
     groups <- split(
       seq_len(nrow(work)),
-      split_key(work, group_cols),
+      split_key(work, group_cols, keep_na = TRUE),
       drop = TRUE
     )
     pieces <- lapply(groups, function(idx) {
@@ -696,7 +717,8 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
     group_cols = group_cols,
     conf_level = conf_level,
     conf_type = conf_type,
-    point_estimates = point_estimates
+    point_estimates = point_estimates,
+    keep_na_groups = TRUE
   )
 
   ci <- ci[, c(join_cols, "conf.low", "conf.high", "std.error"), drop = FALSE]
@@ -732,7 +754,9 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #'   state probabilities sum to one within each time and group.
 #'
 #' @return An interpolated data frame with the same core columns as `x`, where
-#'   `time` is on the real-time scale.
+#'   `time` is on the real-time scale. If `x` has tests from
+#'   `inferences(null = )`, `statistic`, `p.value`, and `s.value` test the
+#'   interpolated estimates against the same null value.
 #'
 #' @details
 #' The recommended workflow for irregular assessment schedules is:
@@ -823,6 +847,13 @@ interpolate_sops <- function(
 
   work <- x
   work$.sop_real_time <- real_time
+  # The tests from `inferences(null = )` differ between rows, so they would
+  # split every series into single rows. They are recomputed below from the
+  # interpolated estimates instead of being interpolated.
+  test_cols <- sop_test_cols(x)
+  for (column in test_cols) {
+    work[[column]] <- NULL
+  }
 
   anchor <- NULL
   if (use_baseline) {
@@ -846,7 +877,7 @@ interpolate_sops <- function(
   if (is.null(result)) {
     groups <- split(
       seq_len(nrow(work)),
-      split_key(work, group_cols),
+      split_key(work, group_cols, keep_na = TRUE),
       drop = TRUE
     )
     pieces <- lapply(groups, function(idx) {
@@ -906,5 +937,10 @@ interpolate_sops <- function(
   attr(result, "time_map") <- time_map
   attr(result, "baseline_time") <- if (use_baseline) baseline_time else NULL
   class(result) <- c("markov_interpolated_sops", class(x))
+  # Test the interpolated estimates against the null that `x` was tested
+  # against, using their interpolated or recomputed standard errors.
+  if (length(test_cols) > 0L && !is.null(attr(x, "null"))) {
+    result <- add_null_test(result, attr(x, "null"), warn = FALSE)
+  }
   result
 }

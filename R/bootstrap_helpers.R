@@ -50,34 +50,26 @@ fast_group_bootstrap <- function(data, id_var = "id", n_boot) {
   bootstrap_id_samples <- vector("list", n_boot)
 
   for (i in seq_len(n_boot)) {
-    # Sample group IDs with replacement
-    sampled_ids <- sample(unique_ids, size = n_groups, replace = TRUE)
+    # Sample group positions with replacement. Indexing by position keeps the
+    # random stream of sample(unique_ids, ...) and also works for a single
+    # numeric ID, which sample() would treat as 1:id.
+    sampled_pos <- sample.int(n_groups, size = n_groups, replace = TRUE)
+    sampled_ids <- unique_ids[sampled_pos]
 
-    # Create a lookup table with the sampled IDs
-    # Keep track of how many times each ID appears
-    id_table <- data.frame(
-      original_id = sampled_ids
-    )
-
-    # Add occurrence count for duplicate IDs
-    id_table$occurrence <- ave(
-      id_table$original_id,
-      id_table$original_id,
+    # Number repeated draws of the same group 1, 2, ... by counting integer
+    # positions. Counting inside the ID vector itself would fail for factor
+    # IDs, because ave() returns a factor that cannot hold the counts.
+    occurrence <- stats::ave(
+      seq_along(sampled_pos),
+      sampled_pos,
       FUN = seq_along
     )
 
-    # Create unique new_id combining original ID and occurrence
-    id_table$new_id <- paste(
-      id_table$original_id,
-      id_table$occurrence,
-      sep = "_"
+    id_table <- data.frame(
+      original_id = sampled_ids,
+      new_id = paste(as.character(sampled_ids), occurrence, sep = "_"),
+      boot_id = i
     )
-
-    # Add bootstrap iteration ID
-    id_table$boot_id <- i
-
-    # Remove temporary column
-    id_table$occurrence <- NULL
 
     bootstrap_id_samples[[i]] <- id_table
   }

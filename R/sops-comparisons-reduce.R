@@ -268,7 +268,18 @@ reduce_state_time_df <- function(
   }
 }
 
-aggregate_value <- function(data, value_col, group_cols, fun) {
+# Applies `fun` to `value_col` within the groups of `group_cols`. By default a
+# row with a missing grouping value is omitted, as in `aggregate()`. With
+# `keep_na_groups = TRUE`, a missing grouping value is an ordinary value that
+# forms its own group (only rows with a missing `value_col` are omitted); the
+# summaries of SOP tables use this for profile columns the model does not use.
+aggregate_value <- function(
+  data,
+  value_col,
+  group_cols,
+  fun,
+  keep_na_groups = FALSE
+) {
   .datatable.aware <- TRUE
   data <- as.data.frame(data)
   if (nrow(data) == 0L) {
@@ -286,7 +297,11 @@ aggregate_value <- function(data, value_col, group_cols, fun) {
   )
   # Match aggregate.formula: omit missing values and grouping keys, including
   # groups with no observed values. The first grouping column varies fastest.
-  work <- work[stats::complete.cases(work)]
+  work <- if (isTRUE(keep_na_groups)) {
+    work[!is.na(work[[value_col]])]
+  } else {
+    work[stats::complete.cases(work)]
+  }
   if (nrow(work) == 0L) {
     stop("no rows to aggregate")
   }

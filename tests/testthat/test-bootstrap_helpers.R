@@ -15,6 +15,56 @@ test_that("fast_group_bootstrap samples group ids and creates unique ids", {
   expect_equal(length(unique(boot[[1]]$new_id)), nrow(boot[[1]]))
 })
 
+test_that("fast_group_bootstrap numbers repeated factor ids like character ids", {
+  ids <- sprintf("p%02d", 1:10)
+  character_data <- data.frame(id = rep(ids, each = 2), value = 1:20)
+  factor_data <- character_data
+  factor_data$id <- factor(factor_data$id)
+
+  withr::local_seed(7)
+  expected <- fast_group_bootstrap(character_data, id_var = "id", n_boot = 4)
+  withr::local_seed(7)
+  expect_no_warning(
+    out <- fast_group_bootstrap(factor_data, id_var = "id", n_boot = 4)
+  )
+  for (i in seq_along(expected)) {
+    expect_identical(as.character(out[[i]]$original_id), expected[[i]]$original_id)
+    # A patient drawn twice is two bootstrap patients: p03_1 and p03_2.
+    expect_identical(as.character(out[[i]]$new_id), expected[[i]]$new_id)
+    expect_identical(anyDuplicated(out[[i]]$new_id), 0L)
+  }
+})
+
+test_that("factor and character patient ids give the same ordinary bootstrap", {
+  case <- make_comparisons_case()
+  character_data <- case$data
+  character_data$id <- sprintf("p%03d", character_data$id)
+  factor_data <- character_data
+  factor_data$id <- factor(factor_data$id)
+  fit <- function(data) {
+    mostm(
+      ordered(y) ~ time + tx + marker + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      first_followup_time = 1,
+      id_var = "id",
+      engine = "vglm"
+    )
+  }
+  boot <- function(data) {
+    inferences(
+      avg_sops(fit(data), times = 1:3, absorb = 3),
+      method = "bootstrap",
+      n_draws = 8,
+      seed = 9
+    )
+  }
+  expected <- boot(character_data)
+  expect_no_warning(out <- boot(factor_data))
+  expect_equal(out$estimate, expected$estimate)
+  expect_equal(out$std.error, expected$std.error)
+})
+
 test_that("fast_group_bootstrap validates the grouping column", {
   data <- data.frame(id = 1:3)
 

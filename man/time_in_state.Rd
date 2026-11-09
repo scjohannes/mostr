@@ -50,7 +50,9 @@ first mapped follow-up time.}
 columns. When stored draws are available, draw-based \code{conf.low},
 \code{conf.high}, and \code{std.error} columns are recomputed and the reduced draws
 are retained in a \code{draws} attribute. Any draw-specific baseline anchors
-have already been propagated by \code{\link[=interpolate_sops]{interpolate_sops()}}.
+have already been propagated by \code{\link[=interpolate_sops]{interpolate_sops()}}. Tests from
+\code{inferences(null = )} are dropped, because a null value for
+probabilities does not apply to a total time.
 \item \strong{Input = Bootstrap DF:} A tibble with columns:
 \itemize{
 \item \code{boot_id}: Bootstrap iteration

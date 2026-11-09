@@ -32,9 +32,13 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
   x <- x[keep, , drop = FALSE]
   measure_cols <- sop_measure_cols(x)
   weight_cols <- intersect(c("score_weight", "fwb_weight"), names(x))
+  # Every other column identifies a group: a profile, scenario, or draw.
+  # The tests from `inferences(null = )` are not identifiers; they are
+  # dropped, because a null value for probabilities says nothing about a
+  # total time.
   group_cols <- setdiff(
     names(x),
-    c("time", "state", measure_cols, weight_cols)
+    c("time", "state", measure_cols, sop_test_cols(x), weight_cols)
   )
   weight_metadata <- if (length(weight_cols) > 0L) {
     unique(x[, c(group_cols, weight_cols), drop = FALSE])
@@ -42,14 +46,28 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
     NULL
   }
 
-  by_time <- aggregate_value(x, value_col, c(group_cols, "time"), sum)
+  # Profile columns that the model does not use may be missing; such a
+  # profile still keeps its own group.
+  by_time <- aggregate_value(
+    x,
+    value_col,
+    c(group_cols, "time"),
+    sum,
+    keep_na_groups = TRUE
+  )
 
   if (!real_time) {
     if (length(group_cols) == 0) {
       out <- data.frame(total_time = sum(by_time[[value_col]], na.rm = TRUE))
       return(out)
     }
-    out <- aggregate_value(by_time, value_col, group_cols, sum)
+    out <- aggregate_value(
+      by_time,
+      value_col,
+      group_cols,
+      sum,
+      keep_na_groups = TRUE
+    )
     names(out)[names(out) == value_col] <- "total_time"
     if (!is.null(weight_metadata)) {
       out <- left_join_preserve_order(out, weight_metadata, by = group_cols)
@@ -59,7 +77,7 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
 
   groups <- split(
     seq_len(nrow(by_time)),
-    split_key(by_time, group_cols),
+    split_key(by_time, group_cols, keep_na = TRUE),
     drop = TRUE
   )
   pieces <- lapply(groups, function(idx) {
@@ -105,7 +123,8 @@ time_in_state_tidy_inference <- function(x, target_states, real_time) {
     group_cols = group_cols,
     conf_level = attr(x, "conf_level") %||% 0.95,
     conf_type = attr(x, "conf_type") %||% "perc",
-    point_estimates = point_estimates
+    point_estimates = point_estimates,
+    keep_na_groups = TRUE
   )
 
   result <- left_join_preserve_order(result, ci, by = group_cols)
@@ -233,7 +252,9 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     columns. When stored draws are available, draw-based `conf.low`,
 #'     `conf.high`, and `std.error` columns are recomputed and the reduced draws
 #'     are retained in a `draws` attribute. Any draw-specific baseline anchors
-#'     have already been propagated by [interpolate_sops()].
+#'     have already been propagated by [interpolate_sops()]. Tests from
+#'     `inferences(null = )` are dropped, because a null value for
+#'     probabilities does not apply to a total time.
 #'   \item **Input = Bootstrap DF:** A tibble with columns:
 #'     \itemize{
 #'       \item `boot_id`: Bootstrap iteration
