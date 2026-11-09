@@ -9,7 +9,6 @@ bootstrap_model_coefs(
   n_boot,
   workers = NULL,
   parallel = NULL,
-  id_var = NULL,
   use_coefstart = FALSE
 )
 }
@@ -25,10 +24,6 @@ or 1, sequential processing is used. If > 1, uses parallel processing.}
 
 \item{parallel}{(Deprecated) Logical indicating whether to use parallel
 processing. Use the \code{workers} parameter instead.}
-
-\item{id_var}{Name of the patient ID column in the stored data. The default,
-\code{NULL}, uses the \code{id_var} given when the model was fitted. Supply it only
-when the model was fitted without \code{id_var}.}
 
 \item{use_coefstart}{Logical. If \code{TRUE}, \code{vglm} refits start from the
 original model coefficients, which can speed up convergence. Starting

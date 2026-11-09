@@ -137,7 +137,7 @@ arguments of `mostm()` adjust it for small samples with the `"orm"` and
   of rows used in fitting (rows with positive weight, for `engine = "orm"`) and
   $p$ is the number of coefficients. `type = "HC0"` applies no such factor, and is used by default.
 - `cadjust = TRUE` multiplies it by $n/(n - 1)$, where $n$ is the number of
-  patients. Fits with `id_var` use this adjustment by default.
+  patients. `mostm()` uses this adjustment by default.
 
 Conditional variance, like MVN simulation, also works for weighted and
 penalized `"orm"` fits whose fitted covariance is valid.
@@ -354,9 +354,8 @@ identifying patients as follows:
 
 1. If you pass `cluster` to `inferences()`, its entries identify the patient
    for each fitting row, in the order of the fitting data.
-2. Otherwise, mostr uses the `id_var` column given to `mostm()`.
-3. Without patient IDs, patient-cluster robust variance cannot be
-   calculated.
+2. Otherwise, mostr uses the `id_var` column given to `mostm()`, which every
+   fit requires.
 
 For conditional variance, you can instead supply your own coefficient
 covariance matrix through `vcov`. It must cover all model coefficients, with

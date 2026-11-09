@@ -21,11 +21,17 @@ test_that("the vglm engine supplies rms formula helpers for %ia%", {
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )
 
-  ia_terms <- grep("%ia%", names(fit@constraints), value = TRUE, fixed = TRUE)
+  ia_terms <- grep(
+    "%ia%",
+    names(fit$vglm_fit@constraints),
+    value = TRUE,
+    fixed = TRUE
+  )
   expect_length(ia_terms, nlevels(data$yprev) - 1)
   expect_equal(grep("time'", ia_terms, fixed = TRUE), integer(0))
   expect_equal(
@@ -63,13 +69,14 @@ test_that("the vglm engine keeps explicit rms::%ia% calls working", {
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )
 
   ia_terms <- grep(
     "rms::`%ia%`",
-    names(fit@constraints),
+    names(fit$vglm_fit@constraints),
     value = TRUE,
     fixed = TRUE
   )
@@ -92,11 +99,17 @@ test_that("the vglm engine preserves rms %ia% semantics for spline bases", {
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )
 
-  ia_terms <- grep("%ia%", names(fit@constraints), value = TRUE, fixed = TRUE)
+  ia_terms <- grep(
+    "%ia%",
+    names(fit$vglm_fit@constraints),
+    value = TRUE,
+    fixed = TRUE
+  )
   expect_gt(length(ia_terms), nlevels(data$yprev) - 1)
   expect_gt(length(grep("time'", ia_terms, fixed = TRUE)), 0)
 })
@@ -105,6 +118,8 @@ test_that("the vglm engine accepts family names and requires a data frame", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
+    id = rep(1:4, each = 2),
+    time = rep(1:2, 4),
     y = c(0, 1, 0, 1, 0, 1, 0, 1),
     x = c(0, 0, 1, 1, 2, 2, 3, 3),
     w = c(1, 2, 1, 2, 1, 2, 1, 2)
@@ -113,10 +128,16 @@ test_that("the vglm engine accepts family names and requires a data frame", {
   form <- stats::as.formula("y ~ x", env = env)
 
   fit_from_name <- suppressWarnings(
-    mostm(form, family = "binomialff", data = data, engine = "vglm")
+    mostm(
+      form,
+      family = "binomialff",
+      data = data,
+      id_var = "id",
+      engine = "vglm"
+    )
   )
   expect_error(
-    mostm(form, family = "binomialff", engine = "vglm"),
+    mostm(form, family = "binomialff", id_var = "id", engine = "vglm"),
     "`data` must be supplied as a data frame.",
     fixed = TRUE
   )
@@ -125,13 +146,15 @@ test_that("the vglm engine accepts family names and requires a data frame", {
       y ~ x,
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       weights = w,
       smart = FALSE,
       engine = "vglm"
     )
   )
 
-  expect_s4_class(fit_from_name, "vglm")
+  expect_s4_class(fit_from_name$vglm_fit, "vglm")
+  weighted <- weighted$vglm_fit
   expect_s4_class(weighted, "vglm")
   expect_false(isTRUE(weighted@smart.prediction$smart.arg))
   expect_equal(nrow(weighted@prior.weights), nrow(data))
@@ -142,6 +165,8 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
+    id = c(1, 1, 2, 2),
+    time = c(1, 2, 1, 2),
     y = c(0, 1, 0, 1),
     x = c(0, 0, 1, 1),
     off = c(0.1, 0.2, 0.3, 0.4),
@@ -153,6 +178,7 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
       y ~ x,
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       weights = bad_w,
       engine = "vglm"
     )),
@@ -161,7 +187,13 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
   )
   expect_error(
     suppressWarnings(
-      mostm(y ~ x, family = list(), data = data, engine = "vglm")
+      mostm(
+        y ~ x,
+        family = list(),
+        data = data,
+        id_var = "id",
+        engine = "vglm"
+      )
     ),
     "is not a VGAM family function",
     fixed = TRUE
@@ -171,6 +203,7 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
       y ~ x,
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       form2 = ~x,
       subset = data$x == 1,
       engine = "vglm"
@@ -183,6 +216,7 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
       y ~ x + offset(off),
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       engine = "vglm"
     ),
     "Model offsets are not supported",
@@ -193,6 +227,7 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
       y ~ x,
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       offset = off,
       engine = "vglm"
     ),
@@ -205,19 +240,23 @@ test_that("the vglm engine records NA actions after dropping incomplete rows", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
+    id = c(1, 1, 2, 2, 3, 3),
+    time = c(1, 2, 1, 2, 1, 2),
     y = c(0, 1, 0, 1, NA, 1),
     x = c(0, 0, 1, 1, 2, 2)
   )
+  fit_binomial <- function(formula) {
+    mostm(
+      formula,
+      family = VGAM::binomialff,
+      data = data,
+      id_var = "id",
+      engine = "vglm"
+    )
+  }
 
-  expect_error(
-    suppressWarnings(
-      mostm(y ~ 0, family = VGAM::binomialff, data = data, engine = "vglm")
-    ),
-    "model matrix"
-  )
-  with_na <- suppressWarnings(
-    mostm(y ~ x, family = VGAM::binomialff, data = data, engine = "vglm")
-  )
+  expect_error(suppressWarnings(fit_binomial(y ~ 0)), "model matrix")
+  with_na <- suppressWarnings(fit_binomial(y ~ x))$vglm_fit
 
   expect_s4_class(with_na, "vglm")
   expect_length(with_na@na.action, 1)
@@ -290,6 +329,8 @@ test_that("the vglm engine stores form2 design slots", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
+    id = rep(1:4, each = 2),
+    time = rep(1:2, 4),
     y = c(0, 1, 0, 1, 0, 1, 0, 1),
     x = c(0, 0, 1, 1, 2, 2, 3, 3),
     z = c(1, 2, 1, 2, 1, 2, 1, 2)
@@ -300,11 +341,12 @@ test_that("the vglm engine stores form2 design slots", {
       y ~ x,
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       form2 = y ~ z,
       qr.arg = TRUE,
       engine = "vglm"
     )
-  )
+  )$vglm_fit
 
   expect_s4_class(fit, "vglm")
   expect_true(length(fit@Xm2) > 0)
@@ -317,6 +359,8 @@ test_that("the vglm engine validates form2 row alignment", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
+    id = rep(1:4, each = 2),
+    time = rep(1:2, 4),
     y = c(0, 1, 0, 1, 0, 1, 0, 1),
     x = c(0, 0, 1, 1, 2, 2, 3, 3)
   )
@@ -330,6 +374,7 @@ test_that("the vglm engine validates form2 row alignment", {
       y ~ x,
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       form2 = stats::as.formula("z_y ~ z", env = env),
       engine = "vglm"
     )),
@@ -341,6 +386,7 @@ test_that("the vglm engine validates form2 row alignment", {
       y ~ x,
       family = VGAM::binomialff,
       data = data,
+      id_var = "id",
       form2 = stats::as.formula("~ z", env = env),
       engine = "vglm"
     )),

@@ -24,7 +24,7 @@ soprob_markov(
 }
 \arguments{
 \item{model}{A Markov transition model fitted by \code{\link[=mostm]{mostm()}}, including the
-\code{robcov_vglm} object that the vglm engine returns with \code{id_var}. Models
+\code{robcov_vglm} object that the vglm engine returns. Models
 fitted directly with rms, VGAM, or rmsb are not supported.}
 
 \item{newdata}{A data frame containing one baseline prediction row per

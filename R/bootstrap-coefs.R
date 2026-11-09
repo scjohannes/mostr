@@ -14,9 +14,6 @@
 #'   or 1, sequential processing is used. If > 1, uses parallel processing.
 #' @param parallel (Deprecated) Logical indicating whether to use parallel
 #'   processing. Use the \code{workers} parameter instead.
-#' @param id_var Name of the patient ID column in the stored data. The default,
-#'   `NULL`, uses the `id_var` given when the model was fitted. Supply it only
-#'   when the model was fitted without `id_var`.
 #' @param use_coefstart Logical. If `TRUE`, `vglm` refits start from the
 #'   original model coefficients, which can speed up convergence. Starting
 #'   values, including a `coefstart` passed to [mostm()], are used only
@@ -92,7 +89,6 @@ bootstrap_model_coefs <- function(
   n_boot,
   workers = NULL,
   parallel = NULL,
-  id_var = NULL,
   use_coefstart = FALSE
 ) {
   # Handle deprecated parallel parameter
@@ -123,14 +119,7 @@ bootstrap_model_coefs <- function(
     )
   }
 
-  id_var <- markov_model_id_var(model, id_var)
-  if (is.null(id_var)) {
-    stop(
-      "No patient ID column is known for this model. Fit it with `id_var`, ",
-      "or supply `id_var`.",
-      call. = FALSE
-    )
-  }
+  id_var <- markov_require_id_var(model)
   if (!id_var %in% names(data)) {
     stop("id_var '", id_var, "' not found in the stored model data")
   }

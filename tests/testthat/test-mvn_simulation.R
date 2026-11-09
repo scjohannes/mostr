@@ -51,7 +51,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
       skip_if_not_installed("rms")
 
       data <- make_test_data(n_patients = 50, seed = 111)
-      m_vglm <- make_test_model(data)
+      m_vglm <- make_test_model(data)$vglm_fit
 
       # Get original coefficients
       orig_coefs <- coef(m_vglm)
@@ -158,7 +158,8 @@ describe("MVN Simulation-Based Inference for SOPs", {
       skip_if_not_installed("rms")
 
       data <- make_test_data(n_patients = 100, seed = 333, follow_up_time = 15)
-      m_vglm <- make_test_model(data)
+      # The vglm fit inside the patient-clustered robcov_vglm object
+      m_vglm <- make_test_model(data)$vglm_fit
 
       # Get vcov without clustering
       V <- get_vcov_robust(m_vglm, cluster = NULL)
@@ -284,7 +285,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
       skip_if_not_installed("VGAM")
 
       data <- make_test_data(n_patients = 30, seed = 555, follow_up_time = 15)
-      m_vglm <- make_test_model(data)
+      m_vglm <- make_test_model(data)$vglm_fit
 
       # Create robcov_vglm object
       m_robust <- robcov_vglm(m_vglm, cluster = data$id)
@@ -310,7 +311,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
         follow_up_time = 15
       )
       baseline_data <- data[data$time == 1, , drop = FALSE]
-      m_robust <- make_test_model(data, robust = TRUE)
+      m_robust <- make_test_model(data)
 
       # Compute avg_sops with robust model
       result <- avg_sops(
@@ -354,7 +355,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
 
       data <- make_test_data(n_patients = 40, seed = 777, follow_up_time = 10)
       baseline_data <- data[data$time == 1, , drop = FALSE]
-      m_robust <- make_test_model(data, robust = TRUE)
+      m_robust <- make_test_model(data)
 
       # Compute avg_sops with simulation CIs and draws
       result <- avg_sops(
@@ -505,7 +506,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
 
       data <- make_test_data(n_patients = 40, seed = 1010, follow_up_time = 10)
       baseline_data <- data[data$time == 1, , drop = FALSE]
-      m_robust <- make_test_model(data, robust = TRUE)
+      m_robust <- make_test_model(data)
 
       # Compute avg_sops with robust model
       avg_result <- avg_sops(
@@ -551,7 +552,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
       skip_if_not_installed("mvtnorm")
 
       data <- make_test_data(n_patients = 40, seed = 1313, follow_up_time = 10)
-      m_robust <- make_test_model(data, robust = TRUE)
+      m_robust <- make_test_model(data)
 
       # Compute individual sops with robust model
       sops_result <- sops(
@@ -636,28 +637,14 @@ describe("MVN Simulation-Based Inference for SOPs", {
         "'arg' should be one of"
       )
 
-      # Error: score bootstrap requires robcov_vglm
+      # Error: score bootstrap needs the patient scores of a robcov_vglm
+      # object, which `mostm(engine = "vglm")` always returns, so only the
+      # bare vglm fit inside it reaches this check.
       expect_error(
-        inferences(
-          avg_result,
-          method = "score_bootstrap",
-          n_draws = 20
-        ),
-        "requires a 'robcov_vglm' model"
-      )
-
-      # Error: score bootstrap requires a supported model backend
-      sops_result <- sops(
-        model = m_vglm,
-        newdata = data[data$time == 1, ],
-        times = 1:10,
-        y_levels = 1:6,
-        absorb = 6
-      )
-      expect_error(
-        inferences(
-          sops_result,
-          method = "score_bootstrap",
+        generate_score_bootstrap_draws(
+          m_vglm$vglm_fit,
+          baseline_data = baseline_data,
+          id_var = "id",
           n_draws = 20
         ),
         "requires a 'robcov_vglm' model"
@@ -671,7 +658,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
 
       data <- make_test_data(n_patients = 30, seed = 1212, follow_up_time = 10)
       baseline_data <- data[data$time == 1, , drop = FALSE]
-      m_robust <- make_test_model(data, robust = TRUE)
+      m_robust <- make_test_model(data)
 
       # Compute avg_sops without return_draws
       result <- avg_sops(
@@ -712,7 +699,7 @@ test_that("seeded inference is invariant to outer worker count", {
   }
 
   data <- make_test_data(n_patients = 40, seed = 889, follow_up_time = 6)
-  model <- make_test_model(data, robust = TRUE)
+  model <- make_test_model(data)
   baseline <- data[data$time == 1, , drop = FALSE]
   point <- avg_sops(
     model,

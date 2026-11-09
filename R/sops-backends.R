@@ -269,22 +269,6 @@ normalize_blrm_design_names <- function(model, X, second = FALSE) {
   X
 }
 
-resolve_blrm_id_var <- function(model, newdata, id_var = NULL) {
-  id_var <- markov_model_id_var(model, id_var)
-  if (!is.null(id_var)) {
-    return(id_var)
-  }
-
-  cluster_name <- model$clusterInfo$name
-  if (
-    !is.null(cluster_name) && length(cluster_name) == 1 && nzchar(cluster_name)
-  ) {
-    return(cluster_name)
-  }
-
-  "id"
-}
-
 get_blrm_gamma_draws <- function(model, draw_indices) {
   if (!is.null(model$gamma_draws)) {
     gamma <- model$gamma_draws
@@ -515,7 +499,7 @@ predict_blrm_response_markov <- function(
 
       u_draws <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
       if (include_re) {
-        id_var <- resolve_blrm_id_var(object, newdata, id_var)
+        id_var <- markov_require_id_var(object, id_var)
         u_draws <- blrm_random_effect_matrix(
           object,
           newdata,

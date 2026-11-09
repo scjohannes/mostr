@@ -5,7 +5,7 @@
 #' native engine; other supported workflows use the reference engine.
 #'
 #' @param model A Markov transition model fitted by [mostm()], including the
-#'   `robcov_vglm` object that the vglm engine returns with `id_var`. Models
+#'   `robcov_vglm` object that the vglm engine returns. Models
 #'   fitted directly with rms, VGAM, or rmsb are not supported.
 #' @param newdata A data frame containing one baseline prediction row per
 #'   patient or profile.

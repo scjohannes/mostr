@@ -473,21 +473,14 @@ inferences_bootstrap_sops_fwb <- function(
   gap_var <- attr(object, "gap_var")
   time_covariates <- attr(object, "time_covariates")
   times <- call_args$times
-  id_var <- attr(object, "id_var") %||% markov_model_id_var(model)
-
   if (is.null(model)) {
     stop("Model not stored in object. Cannot perform bootstrap.")
   }
+  id_var <- markov_require_id_var(model, attr(object, "id_var"))
   if (is.null(prediction_data)) {
     stop("Prediction data not stored. Cannot perform bootstrap.")
   }
   refit_data <- stored_refit_bootstrap_data(object, model)
-  if (is.null(id_var)) {
-    stop(
-      "`id_var` is required for fractional weighted bootstrap. Fit with ",
-      "`mostm(..., id_var = ...)`, or pass `id_var` to `sops()`."
-    )
-  }
   validate_refit_bootstrap_data(refit_data, id_var, time_var)
 
   prediction_data <- ensure_markov_rowid(prediction_data)

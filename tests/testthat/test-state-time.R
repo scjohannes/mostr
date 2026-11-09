@@ -159,7 +159,8 @@ test_that("posterior state_time() summarizes each profile's total per draw", {
       clusterInfo = list(name = "id", cluster = c("a", "b"))
     ),
     class = c("blrm", "orm"),
-    markov_engine = "blrm"
+    markov_engine = "blrm",
+    markov_id_var = "id"
   )
   profiles <- data.frame(
     id = c("a", "b"),

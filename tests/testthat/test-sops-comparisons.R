@@ -52,7 +52,7 @@ test_that("avg_comparisons() computes SOP differences and multiple levels", {
     avg_sops = function(...) avg,
     {
       out <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1, 2)),
         estimand = "sop",
         state_sets = "1",
@@ -78,7 +78,7 @@ test_that("avg_comparisons() computes time-in-state ratios for lumped states", {
     avg_sops = function(...) avg,
     {
       out <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1)),
         estimand = "time_in_state",
         state_sets = "1",
@@ -100,7 +100,7 @@ test_that("avg_comparisons() preserves by strata", {
     avg_sops = function(...) avg,
     {
       out <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1)),
         estimand = "sop",
         state_sets = "1",
@@ -124,7 +124,7 @@ test_that("avg_comparisons() uses real-time AUC for time-in-state", {
     avg_sops = function(...) avg,
     {
       out <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1)),
         estimand = "time_in_state",
         state_sets = "1",
@@ -145,7 +145,7 @@ test_that("real-time comparisons use baseline support without integrating it", {
     avg_sops = function(...) avg,
     {
       explicit <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1)),
         estimand = "time_in_state",
         state_sets = "1",
@@ -155,7 +155,7 @@ test_that("real-time comparisons use baseline support without integrating it", {
         target_times = 1:14
       )
       disabled <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1)),
         estimand = "time_in_state",
         state_sets = "1",
@@ -191,7 +191,7 @@ test_that("avg_comparisons() forwards model-structure args for marginal metrics"
     },
     {
       out <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1)),
         estimand = "time_in_state",
         state_sets = "1",
@@ -252,7 +252,7 @@ test_that("avg_comparisons() computes time benefit from paired profiles", {
     },
     {
       out <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         newdata = newdata,
         variables = list(tx = c(0, 1)),
         estimand = "time_benefit",
@@ -453,7 +453,7 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
     {
       expect_error(
         avg_comparisons(
-          structure(list(), class = "mock_model"),
+          structure(list(), class = "mock_model", markov_id_var = "id"),
           variables = list(tx = c(0, 1))
         ),
         "`times` must be supplied to `avg_comparisons()`.",
@@ -461,7 +461,7 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
       )
       expect_error(
         avg_comparisons(
-          structure(list(), class = "mock_model"),
+          structure(list(), class = "mock_model", markov_id_var = "id"),
           variables = list(tx = c(0, 1), z = c(0, 1)),
           times = 1
         ),
@@ -470,7 +470,7 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
       )
       expect_error(
         avg_comparisons(
-          structure(list(), class = "mock_model"),
+          structure(list(), class = "mock_model", markov_id_var = "id"),
           variables = list(tx = c(0, 1)),
           estimand = "time_benefit",
           times = 1,
@@ -481,7 +481,7 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
       )
       expect_error(
         avg_comparisons(
-          structure(list(), class = "mock_model"),
+          structure(list(), class = "mock_model", markov_id_var = "id"),
           variables = list(tx = c(0, 1)),
           estimand = "time_benefit",
           times = 1,
@@ -492,7 +492,7 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
       )
       expect_error(
         avg_comparisons(
-          structure(list(), class = "mock_model"),
+          structure(list(), class = "mock_model", markov_id_var = "id"),
           variables = list(tx = c(0, 1)),
           times = 1,
           origin_time = 0
@@ -502,7 +502,7 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
       )
       expect_error(
         avg_comparisons(
-          structure(list(), class = "mock_model"),
+          structure(list(), class = "mock_model", markov_id_var = "id"),
           variables = list(tx = c(0, 1)),
           times = 1,
           origin = "none"
@@ -542,7 +542,7 @@ test_that("comparison inference reduces paired draw-level SOPs", {
     avg_sops = function(...) avg,
     {
       cmp <- avg_comparisons(
-        structure(list(), class = "mock_model"),
+        structure(list(), class = "mock_model", markov_id_var = "id"),
         variables = list(tx = c(0, 1)),
         estimand = "sop",
         times = 1:2,
@@ -601,7 +601,7 @@ test_that("comparison inference centers Wald intervals on point comparisons", {
       avg_sops = function(...) avg,
       {
         cmp <- avg_comparisons(
-          structure(list(), class = "mock_model"),
+          structure(list(), class = "mock_model", markov_id_var = "id"),
           variables = list(tx = c(0, 1)),
           estimand = estimand,
           times = 1:2,

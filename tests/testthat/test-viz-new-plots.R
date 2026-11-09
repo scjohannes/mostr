@@ -72,7 +72,7 @@ test_that("plot_transitions orders sparse time facets chronologically", {
 })
 
 test_that("model transition diagnostics evaluate full sparse numeric grids", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   newdata <- data.frame(
     id = 1,
     time = 0,
@@ -106,7 +106,7 @@ test_that("model transition diagnostics evaluate full sparse numeric grids", {
 })
 
 test_that("second-order model diagnostics evaluate full sparse numeric grids", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   newdata <- data.frame(
     id = 1,
     time = 0,
@@ -161,7 +161,7 @@ test_that("model diagnostics expand sparse factor visit grids", {
 })
 
 test_that("transition traces preserve first- and second-order SOP marginals", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   first_order <- data.frame(
     id = 1:2,
     time = 0,
@@ -223,7 +223,7 @@ test_that("transition traces preserve first- and second-order SOP marginals", {
 })
 
 test_that("plot_transitions computes second-order treatment differences", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   newdata <- data.frame(
     id = 1:2,
     time = 0,
@@ -269,7 +269,7 @@ test_that("plot_transitions computes second-order treatment differences", {
 })
 
 test_that("plot_transitions carries absorbing states absent from yprev levels", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   newdata <- data.frame(
     id = 1,
     time = 0,
@@ -308,7 +308,8 @@ test_that("plot_transitions summarizes blrm transition draws without sampling", 
       y_levels = 1:2,
       draws = matrix(0, nrow = 3, ncol = 1)
     ),
-    class = "blrm"
+    class = "blrm",
+    markov_id_var = "id"
   )
   newdata <- data.frame(
     time = 0,
@@ -377,7 +378,8 @@ test_that("plot_transitions passes n_draws to blrm diagnostics", {
       y_levels = 1:2,
       draws = matrix(0, nrow = 3, ncol = 1)
     ),
-    class = "blrm"
+    class = "blrm",
+    markov_id_var = "id"
   )
   newdata <- data.frame(
     time = 0,
@@ -495,7 +497,7 @@ test_that("correlation diagnostics preserve negative correlations", {
 })
 
 test_that("plot_correlation uses first-order model-implied moments", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   newdata <- data.frame(
     time = 0,
     yprev = factor(c(1, 2), levels = 1:2)
@@ -540,7 +542,7 @@ test_that("plot_correlation uses first-order model-implied moments", {
 })
 
 test_that("plot_correlation uses second-order model-implied moments", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   newdata <- data.frame(
     time = 0,
     ypprev = factor(1, levels = 1:2),
@@ -574,7 +576,8 @@ test_that("plot_correlation summarizes blrm correlations by draw", {
       y_levels = 1:2,
       draws = matrix(0, nrow = 2, ncol = 1)
     ),
-    class = "blrm"
+    class = "blrm",
+    markov_id_var = "id"
   )
   newdata <- data.frame(
     time = 0,
@@ -636,7 +639,8 @@ test_that("plot_correlation and plot_variogram pass n_draws to blrm diagnostics"
       y_levels = 1:2,
       draws = matrix(0, nrow = 4, ncol = 1)
     ),
-    class = "blrm"
+    class = "blrm",
+    markov_id_var = "id"
   )
   newdata <- data.frame(
     time = 0,
@@ -707,7 +711,7 @@ test_that("plot_correlation and plot_variogram pass n_draws to blrm diagnostics"
 })
 
 test_that("plot_lp_difference plots profile-based contrasts by previous state", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   profile <- data.frame(
     tx = 0,
     age = 59,
@@ -743,7 +747,11 @@ test_that("plot_lp_difference plots profile-based contrasts by previous state", 
 })
 
 test_that("plot_lp_difference supports blrm posterior median linear predictors", {
-  model <- structure(list(ylevels = 1:3), class = "blrm")
+  model <- structure(
+    list(ylevels = 1:3),
+    class = "blrm",
+    markov_id_var = "id"
+  )
   profile <- data.frame(
     tx = 0,
     yprev = factor(1, levels = 1:3)
@@ -801,7 +809,7 @@ test_that("correlation methods match R with ties and pairwise missing values", {
 })
 
 test_that("model correlations match exact trajectories for both Markov orders", {
-  model <- structure(list(), class = "vglm")
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
   for (second_order in c(FALSE, TRUE)) {
     probabilities <- function(time, previous, second_previous) {
       if (time == 1) {

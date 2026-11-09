@@ -42,6 +42,7 @@ describe("SOP regression baselines", {
         ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
     )
@@ -53,6 +54,7 @@ describe("SOP regression baselines", {
         ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
     )
@@ -286,7 +288,13 @@ describe("SOP regression baselines", {
     skip_if_not_installed("rms")
 
     case <- build_markov_case()
-    model <- suppressWarnings(fit_explicit_spline_model(case$data))
+    # The simulated VIOLET states move by at most one level per day, so this
+    # proportional-odds fit drifts towards infinite coefficients and has no
+    # usable patient-clustered covariance. The point-estimate signatures need
+    # only the coefficients, so the model is fitted as bootstrap refits are.
+    model <- mostr:::markov_with_coefficients_only_refit(
+      suppressWarnings(fit_explicit_spline_model(case$data))
+    )
 
     sops_result <- mostr::soprob_markov(
       model = model,

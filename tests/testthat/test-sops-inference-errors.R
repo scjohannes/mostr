@@ -620,7 +620,8 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
       yname = "y"
     ),
     class = "blrm",
-    markov_engine = "blrm"
+    markov_engine = "blrm",
+    markov_id_var = "id"
   )
 
   with_mocked_bindings(

@@ -187,9 +187,10 @@ delta_reference_fits <- local({
       data <- make_test_data(n_patients = 80, follow_up_time = 6, seed = 7331)
       orm_fit <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data
+        data = data,
+        id_var = "id"
       ))
-      vglm_fit <- make_test_model(data)
+      vglm_fit <- make_test_model(data)$vglm_fit
       equidistant_fit <- suppressWarnings(mostm(
         ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
         family = VGAM::cumulative(
@@ -198,8 +199,9 @@ delta_reference_fits <- local({
           Thresh = "equid"
         ),
         data = data,
+        id_var = "id",
         engine = "vglm"
-      ))
+      ))$vglm_fit
       baseline <- data[!duplicated(data$id), , drop = FALSE]
       baseline <- baseline[1:4, , drop = FALSE]
       value <<- list(
@@ -323,14 +325,18 @@ test_that("factor-time delta plans match the independent reference", {
   models <- list(
     orm = suppressWarnings(mostm(
       y ~ time + tx + yprev,
-      data = data
+      data = data,
+      id_var = "id",
+      first_followup_time = "1"
     )),
     vglm = suppressWarnings(mostm(
       y ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
+      first_followup_time = "1",
       engine = "vglm"
-    ))
+    ))$vglm_fit
   )
 
   for (model in models) {

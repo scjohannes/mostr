@@ -28,9 +28,6 @@ markov_rms_model_frame <- function(
 }
 
 validate_markov_id_var <- function(id_var, data, data_arg = "data") {
-  if (is.null(id_var)) {
-    return(NULL)
-  }
   if (!is.character(id_var) || length(id_var) != 1 || is.na(id_var)) {
     stop("`id_var` must be a single column name.")
   }
@@ -40,11 +37,13 @@ validate_markov_id_var <- function(id_var, data, data_arg = "data") {
   id_var
 }
 
-warn_missing_markov_id_var <- function() {
-  warning(
-    "`id_var` was not supplied to mostm(); stored patient-ID metadata, ",
-    "cluster-robust standard errors for the \"orm\" and \"vglm\" engines, ",
-    "and automatic FWB refits will not be available from the fitted object.",
+stop_missing_mostm_id_var <- function() {
+  stop(
+    "`mostm()` needs `id_var`, the name of the column in `data` that ",
+    "identifies patients, for example `id_var = \"id\"`. Standard errors that ",
+    "allow for correlation between the transitions of one patient, the ",
+    "stored starting row of each patient, and the bootstrap all need to know ",
+    "which rows belong to the same patient.",
     call. = FALSE
   )
 }
@@ -55,11 +54,7 @@ warn_duplicate_markov_id_time <- function(
   time_var = "time",
   wrapper = "mostm()"
 ) {
-  if (
-    is.null(id_var) ||
-      !id_var %in% names(data) ||
-      !time_var %in% names(data)
-  ) {
+  if (!time_var %in% names(data)) {
     return(invisible(NULL))
   }
 
@@ -264,6 +259,21 @@ markov_model_id_var <- function(model, id_var = NULL) {
   NULL
 }
 
+# The patient-ID column: `id_var` when given, otherwise the column named in the
+# `mostm()` call. Every `mostm()` fit records one, so a model without it was
+# not made by `mostm()` or lost its metadata; no column is guessed.
+markov_require_id_var <- function(model, id_var = NULL) {
+  id_var <- markov_model_id_var(model, id_var)
+  if (is.null(id_var)) {
+    stop(
+      "The model does not record which column of its data identifies ",
+      "patients. Refit it with `mostm(..., id_var = ...)`.",
+      call. = FALSE
+    )
+  }
+  id_var
+}
+
 markov_model_metadata_attr <- function(model, name) {
   value <- attr(model, name, exact = TRUE)
   if (!is.null(value)) {
@@ -310,8 +320,8 @@ markov_validate_starting_profiles <- function(
   metadata <- markov_model_starting_profile_metadata(model)
   if (is.null(profiles) || is.null(metadata)) {
     stop(
-      "Provide newdata, or fit with `mostm(..., id_var = ...)` so ",
-      "automatic SOP prediction has stored starting-profile metadata.",
+      "Provide newdata: the model has no stored starting row for each ",
+      "patient. Fits made by `mostm()` store these rows.",
       call. = FALSE
     )
   }
@@ -546,7 +556,8 @@ markov_prepare_stored_data <- function(
   fit_data,
   id_var,
   time_var,
-  first_followup_time
+  first_followup_time,
+  starting_profiles = TRUE
 ) {
   if (!is.data.frame(data)) {
     return(list(
@@ -557,14 +568,13 @@ markov_prepare_stored_data <- function(
   }
   source <- markov_subset_source_data(data, subset, eval_env)
   refit_data <- source$data
-  if (is.null(id_var)) {
+  if (!starting_profiles) {
     return(list(
       refit_data = refit_data,
       starting_profile_data = NULL,
       starting_profile_metadata = NULL
     ))
   }
-  validate_markov_id_var(time_var, refit_data, "data")
   scheduled_start <- markov_first_followup_time(
     refit_data[[time_var]],
     first_followup_time
@@ -678,12 +688,6 @@ resolve_markov_source_data <- function(
     )
   }
 
-  if (is.null(source_data)) {
-    stop(
-      "Provide `newdata`, or fit with `mostm(..., id_var = ...)` so ",
-      "the model stores its designated starting profiles."
-    )
-  }
   if (!is.data.frame(source_data)) {
     stop("`newdata` must be a data frame.")
   }

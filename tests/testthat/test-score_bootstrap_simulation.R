@@ -200,7 +200,7 @@ test_that("generate_score_bootstrap_draws is reproducible with a fixed seed", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 30, seed = 2007, follow_up_time = 8)
-  model <- make_test_model(data, robust = TRUE)
+  model <- make_test_model(data)
   baseline_data <- data[data$time == 1, ]
 
   withr::local_seed(9999)
@@ -228,7 +228,7 @@ test_that("score bootstrap draws are invariant to working-memory chunks", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 30, seed = 2017, follow_up_time = 8)
-  model <- make_test_model(data, robust = TRUE)
+  model <- make_test_model(data)
   baseline_data <- data[data$time == 1, ]
 
   withr::local_options(mostr.score_bootstrap_working_bytes = 1)
@@ -259,7 +259,7 @@ test_that("generate_score_bootstrap_draws errors when baseline IDs do not match 
 
   withr::local_seed(2008)
   data <- make_test_data(n_patients = 30, seed = 2008, follow_up_time = 8)
-  model <- make_test_model(data, robust = TRUE)
+  model <- make_test_model(data)
   baseline_data <- data[data$time == 1, ]
   baseline_data$id <- as.character(baseline_data$id)
   baseline_data$id[1] <- "missing_cluster_id"
@@ -281,7 +281,7 @@ test_that("generate_score_bootstrap_draws errors when required robust components
 
   withr::local_seed(2009)
   data <- make_test_data(n_patients = 30, seed = 2009, follow_up_time = 8)
-  model <- make_test_model(data, robust = TRUE)
+  model <- make_test_model(data)
   baseline_data <- data[data$time == 1, ]
 
   broken_model <- model

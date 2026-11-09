@@ -26,7 +26,8 @@ make_fake_blrm <- function(draws = NULL, gamma_draws = NULL, pppo = 0L) {
       gamma_draws = gamma_draws
     ),
     class = c("blrm", "orm"),
-    markov_engine = "blrm"
+    markov_engine = "blrm",
+    markov_id_var = "id"
   )
 }
 
@@ -253,7 +254,9 @@ test_that("compiled second-order ORM plans match the reference recursion", {
   data$ypprev <- factor(data$ypprev, levels = 1:3)
   model <- suppressWarnings(mostm(
     y ~ tx + time + yprev + ypprev,
-    data = data[data$time > 2L, ]
+    data = data[data$time > 2L, ],
+    id_var = "id",
+    first_followup_time = 3
   ))
   baseline <- data[data$time == 1L, ]
   withr::local_options(mostr.execution_plan_max_bytes = 1)
@@ -466,6 +469,8 @@ test_that("avg_sops() streams and summarizes blrm posterior draws", {
   colnames(gamma) <- c("a", "b")
   model <- make_fake_blrm(gamma_draws = gamma)
   model$clusterInfo <- list(name = "subject", cluster = c("a", "b"))
+  # As for `mostm(..., id_var = "subject")` with `cluster(subject)`
+  attr(model, "markov_id_var") <- "subject"
   newdata <- data.frame(
     subject = c("a", "b"),
     tx = c(0, 1),

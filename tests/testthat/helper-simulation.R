@@ -82,20 +82,14 @@ make_time_covariates <- function(data, time_col = "time", ...) {
 #' Fit a standard VGLM model for testing
 #'
 #' @param data Data frame from make_test_data
-#' @param robust Logical, whether to return a robust covariance model
-#' @param cluster Cluster variable for robust covariance
 #'
-#' @return A fitted vglm or robcov_vglm object
-make_test_model <- function(data, robust = FALSE, cluster = NULL) {
-  if (robust && !is.null(cluster) && !identical(cluster, data$id)) {
-    stop("`cluster` must match `data$id` for mostm() test models.")
-  }
-
+#' @return A fitted robcov_vglm object, clustered on `data$id`
+make_test_model <- function(data) {
   suppressWarnings(mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = if (robust) "id" else NULL,
+    id_var = "id",
     engine = "vglm"
   ))
 }

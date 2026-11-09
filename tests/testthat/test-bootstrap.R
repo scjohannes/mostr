@@ -24,7 +24,7 @@ test_that("bootstrap_model_coefs validates inputs", {
       with_stored_refit_data(model, data.frame(id = 1:2), id_var = NULL),
       n_boot = 1
     ),
-    "No patient ID column is known",
+    "does not record which column of its data identifies patients",
     fixed = TRUE
   )
 

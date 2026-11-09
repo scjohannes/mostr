@@ -178,12 +178,21 @@ test_that("mostm() rejects arguments that every fit must keep", {
     fixed = TRUE
   )
   expect_error(
-    mostm(ordered(y) ~ time + tx + yprev, data = as.list(data)),
+    mostm(
+      ordered(y) ~ time + tx + yprev,
+      data = as.list(data),
+      id_var = "id"
+    ),
     "`data` must be supplied as a data frame.",
     fixed = TRUE
   )
   expect_error(
-    mostm(ordered(y) ~ time + tx + yprev, data = data, engine = "rms"),
+    mostm(
+      ordered(y) ~ time + tx + yprev,
+      data = data,
+      id_var = "id",
+      engine = "rms"
+    ),
     "should be one of"
   )
 })
@@ -266,9 +275,11 @@ test_that("bootstrap refits call mostm() with the original engine", {
 
     expect_identical(refit_call[[1L]], quote(mostm))
     expect_identical(refit_call$engine, engine)
+    expect_identical(refit_call$id_var, "id")
     # Refits need only the coefficients, so they skip the patient-clustered
-    # covariance.
-    expect_null(refit_call$id_var)
+    # covariance and the starting rows.
+    expect_null(attr(boot$model, "markov_robust_covariance"))
+    expect_null(attr(boot$model, "markov_starting_profile_data"))
     expect_identical(mostr:::markov_model_engine(boot$model), engine)
     expect_equal(
       stats::coef(boot$model),
@@ -354,20 +365,18 @@ test_that("mostm() reports an orm fit that rms could not fit", {
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6201)
   # `maxit = 0` stops rms::orm() before it converges.
-  for (id_var in list("id", NULL)) {
-    expect_error(
-      suppressMessages(suppressWarnings(capture.output(
-        mostm(
-          ordered(y) ~ time + tx + yprev,
-          data = data,
-          id_var = id_var,
-          maxit = 0
-        )
-      ))),
-      "`rms::orm()` could not fit the model",
-      fixed = TRUE
-    )
-  }
+  expect_error(
+    suppressMessages(suppressWarnings(capture.output(
+      mostm(
+        ordered(y) ~ time + tx + yprev,
+        data = data,
+        id_var = "id",
+        maxit = 0
+      )
+    ))),
+    "`rms::orm()` could not fit the model",
+    fixed = TRUE
+  )
 })
 
 test_that("mostm() accepts the engine arguments used in the articles", {
@@ -406,33 +415,77 @@ test_that("mostm() accepts the engine arguments used in the articles", {
   )
 })
 
-test_that("every engine warns without id_var, even without an id column", {
+test_that("every engine refuses a fit without id_var", {
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
+  # A column called `id` must not stand in for the missing argument.
   data <- make_test_data(n_patients = 30, follow_up_time = 6, seed = 6112)
-  data$id <- NULL
-  expect_warning(
-    mostm(ordered(y) ~ time + tx + yprev, data = data),
-    "`id_var` was not supplied to mostm()",
-    fixed = TRUE
+  engines <- list(
+    orm = list(),
+    vglm = list(
+      engine = "vglm",
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE)
+    )
   )
-  expect_warning(
-    mostm(ordered(y) ~ time + tx + yprev, data = data, engine = "vglm"),
-    "`id_var` was not supplied to mostm()",
-    fixed = TRUE
-  )
-  skip_if_not_installed("rmsb")
-  expect_warning(
+  if (requireNamespace("rmsb", quietly = TRUE)) {
+    engines$blrm <- list(engine = "blrm", standata = TRUE)
+  }
+  for (engine in names(engines)) {
+    base_args <- c(
+      list(ordered(y) ~ time + tx + yprev, data = data),
+      engines[[engine]]
+    )
+    for (id_args in list(list(), list(id_var = NULL))) {
+      expect_error(
+        do.call(mostm, c(base_args, id_args)),
+        "`mostm()` needs `id_var`",
+        fixed = TRUE,
+        info = paste(engine, length(id_args))
+      )
+    }
+  }
+})
+
+test_that("a patient column with another name gives the same results as `id`", {
+  skip_if_not_installed("VGAM")
+
+  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6113)
+  renamed <- data
+  names(renamed)[names(renamed) == "id"] <- "pid"
+  fit_model <- function(data, id_var) {
     mostm(
       ordered(y) ~ time + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
-      engine = "blrm",
-      standata = TRUE
-    ),
-    "`id_var` was not supplied to mostm()",
-    fixed = TRUE
-  )
+      id_var = id_var,
+      engine = "vglm"
+    )
+  }
+  fit_id <- fit_model(data, "id")
+  fit_pid <- fit_model(renamed, "pid")
+  expect_equal(stats::vcov(fit_pid), stats::vcov(fit_id))
+
+  args <- list(times = 1:3, absorb = 6, variables = list(tx = c(0, 1)))
+  profiles_id <- data[data$time == 1, , drop = FALSE]
+  profiles_pid <- renamed[renamed$time == 1, , drop = FALSE]
+  for (fun in c("avg_sops", "avg_comparisons")) {
+    expected <- do.call(fun, c(list(fit_id, newdata = profiles_id), args))
+    out <- do.call(fun, c(list(fit_pid, newdata = profiles_pid), args))
+    expect_equal(out$estimate, expected$estimate, info = fun)
+
+    # Conditional variance and the bootstrap both use patient clusters.
+    for (method in c("delta", "bootstrap")) {
+      extra <- if (method == "bootstrap") {
+        list(n_draws = 5, seed = 7)
+      } else {
+        list(vcov = "conditional")
+      }
+      expected_ci <- do.call(inferences, c(list(expected, method = method), extra))
+      out_ci <- do.call(inferences, c(list(out, method = method), extra))
+      expect_equal(out_ci$std.error, expected_ci$std.error, info = paste(fun, method))
+    }
+  }
 })
 
 test_that("orm refits keep the fit's na.action and penalty", {

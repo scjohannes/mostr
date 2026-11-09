@@ -28,7 +28,8 @@ markov_fake_blrm <- function(partial_odds = FALSE) {
       clusterInfo = list(name = "id", cluster = c("a", "b"))
     ),
     class = c("blrm", "orm"),
-    markov_engine = "blrm"
+    markov_engine = "blrm",
+    markov_id_var = "id"
   )
 }
 

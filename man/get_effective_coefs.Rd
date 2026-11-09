@@ -7,7 +7,8 @@
 get_effective_coefs(model, beta = NULL)
 }
 \arguments{
-\item{model}{A fitted \code{vglm} or \code{orm} object.}
+\item{model}{A fitted \code{vglm} or \code{orm} object, or the \code{robcov_vglm} object
+that \code{mostm(engine = "vglm")} returns.}
 
 \item{beta}{Optional coefficient vector to use instead of \code{coef(model)}.
 This is used internally for simulation draws.}

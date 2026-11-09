@@ -1321,9 +1321,10 @@ describe("robcov_vglm() stress tests", {
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     ))
-    robust <- robcov_vglm(fit, cluster = data$id)
+    robust <- robcov_vglm(fit$vglm_fit, cluster = data$id)
 
     cluster_scores <- rowsum(
       robust$scores,

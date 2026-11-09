@@ -69,16 +69,11 @@ infer the levels from \code{model}.}
 
 \item{absorb}{The absorbing state.}
 
-\item{id_var}{Name of the patient ID variable. Required for bootstrap
-inference and for \code{blrm} random-effect prediction. If \code{NULL}, defaults to
-\code{"id"}; for models fitted with \code{\link[=mostm]{mostm()}}, it is inferred from stored
-metadata.
-For user-supplied \code{newdata}, \code{id_var} is required only for \code{blrm} random
-effects. Refit bootstrap inference resamples patients by this column in
-the data stored on the fitted model. For \code{blrm} models with
-\code{include_re = TRUE},
-\code{model$clusterInfo$name} is used before the final \code{"id"} fallback when
-no \code{id_var} was given to \code{\link[=mostm]{mostm()}}.}
+\item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
+\code{id_var} given to \code{\link[=mostm]{mostm()}}. Bootstrap inference resamples patients by
+this column in the data stored on the fitted model. For user-supplied
+\code{newdata}, the column is needed only for \code{blrm} random-effect prediction
+(\code{include_re = TRUE}).}
 
 \item{time_var}{Name of the time variable in the model.}
 

@@ -188,10 +188,10 @@ Weighted and penalized ORM fits do not support unconditional variance because
 their score/sensitivity contracts have not been established. They remain
 eligible for conditional delta inference when their fitted covariance is valid.
 
-Analytical covariance is patient-cluster robust only when valid patient IDs
-are supplied explicitly or retained as the fitted model's \code{id_var}.
-Observation rows are not an automatic clustering fallback, and multiway or
-otherwise non-patient cluster structures are not currently supported.
+Analytical covariance is patient-cluster robust: it groups the fitting rows
+by the \code{id_var} column named in \code{\link[=mostm]{mostm()}}, or by the patient IDs given in
+\code{cluster}. Multiway or otherwise non-patient cluster structures are not
+currently supported.
 Patient-cluster robustness protects variance estimation against
 within-patient score correlation; it does not remove bias from a misspecified
 transition model, informative observation process, or Markov assumption.

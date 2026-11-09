@@ -76,9 +76,9 @@ fit_orm <- mostm(
 )
 ```
 
-Both methods rely on what `mostm()` stores with the fit. With
-`id_var = "id"`, it computes a covariance matrix that allows for correlation
-between each patient's transitions, which MVN simulation draws from. It also
+Both methods rely on what `mostm()` stores with the fit. Using the patient
+column named by `id_var = "id"`, it computes a covariance matrix that allows
+for correlation between each patient's transitions, which MVN simulation draws from. It also
 keeps the full longitudinal data, which the bootstrap resamples and refits,
 and each patient's starting row, over which `avg_sops()` averages.
 

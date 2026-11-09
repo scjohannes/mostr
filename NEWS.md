@@ -7,7 +7,8 @@
   default) uses `rms::orm()`, `"vglm"` uses `VGAM::vglm()`, and `"blrm"` uses
   `rmsb::blrm()`. The shared arguments `id_var`, `time_var`,
   `first_followup_time`, `weights`, `subset`, `type`, and `cadjust` work as
-  before. Translate existing calls as follows:
+  before, except that `id_var` is now required (see below). Translate existing
+  calls as follows:
 
   * `orm_markov(formula, data, ...)` becomes `mostm(formula, data, ...)`.
   * `vglm_markov(formula, family, data, ...)` becomes
@@ -35,8 +36,26 @@
 * `data` must be a data frame for every engine. `vglm_markov()` also looked up
   variables in the formula's environment when `data` was missing.
 
-* Without `id_var`, every engine warns. `vglm_markov()` warned only when
-  `data` had an `id` column.
+* `mostm()` requires `id_var`, the name of the column that identifies
+  patients, for every engine; a fit without it is an error. The removed
+  functions only warned, or, for `vglm_markov()`, warned only when `data` had
+  an `id` column. Such fits did not store each patient's starting row and used
+  the model-based covariance instead of patient-clustered standard errors.
+  Later steps then failed or quietly used a column called `id`: for example,
+  `avg_sops(newdata = ...)` failed with "ID variable 'id' not found" when the
+  patient column had another name, and the bootstrap resampled patients by an
+  `id` column the fit did not know about. Because `mostm()` now always finds
+  each patient's starting row, it also requires the time column named by
+  `time_var`. Every `"orm"` and `"vglm"` fit now computes the
+  patient-clustered covariance, so a fit for which it cannot be computed, such
+  as one whose coefficients grow without bound, or an `"orm"` fit with a link
+  other than logit, stops in `mostm()` instead of later.
+
+* `bootstrap_model_coefs()` no longer has an `id_var` argument. It resamples
+  patients by the `id_var` given to `mostm()`.
+
+* `get_effective_coefs()` accepts the `robcov_vglm` object that
+  `mostm(engine = "vglm")` returns.
 
 * `weights`, `type`, and `cadjust` are errors with `engine = "blrm"`:
   `rmsb::blrm()` has no row weights, and Bayesian fits take their uncertainty

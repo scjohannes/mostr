@@ -261,7 +261,7 @@ test_that("patient clusters never fall back to fitting rows", {
 
   expect_error(
     resolve_delta_cluster(fit),
-    "requires patient clustering",
+    "the model does not record its fitting data and patient-ID column",
     fixed = TRUE
   )
 })

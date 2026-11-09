@@ -46,6 +46,9 @@ markov_msm_build <- function(
   if (is.null(data)) {
     stop("`newdata` must be supplied.")
   }
+  if (inherits(model, "robcov_vglm")) {
+    model <- model$vglm_fit
+  }
   n_pat <- nrow(data)
   ylevel_names <- as_state_labels(y_levels)
   absorb_names <- as_state_labels(absorb)

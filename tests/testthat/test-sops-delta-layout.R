@@ -2,7 +2,7 @@ test_that("analytical averaging checks scenario and starting-profile order", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   data <- make_test_data(n_patients = 48, follow_up_time = 6, seed = 2711)
-  model <- make_test_model(data)
+  model <- make_test_model(data)$vglm_fit
   baseline <- data[!duplicated(data$id), , drop = FALSE][1:8, , drop = FALSE]
   baseline$metadata <- I(cbind(first = 1:8, second = 8:1))
   variables <- list(tx = c(0, 1))

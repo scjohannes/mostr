@@ -97,7 +97,8 @@ delta_public_orm_case <- local({
       )
       model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data
+        data = data,
+        id_var = "id"
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:8,
@@ -811,10 +812,19 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
     ),
     error = TRUE
   )
-  expect_snapshot(
-    inferences(fixed, method = "delta", vcov = "conditional"),
-    error = TRUE
+  # Conditional variance uses the patient-clustered covariance that
+  # `mostm()` stores on the fit.
+  conditional <- inferences(fixed, method = "delta", vcov = "conditional")
+  explicit <- inferences(
+    fixed,
+    method = "delta",
+    vcov = robcov_vglm(
+      case$model$vglm_fit,
+      cluster = attr(case$model, "markov_data")$id
+    )$var
   )
+  expect_true(all(is.finite(conditional$std.error)))
+  expect_equal(conditional$std.error, explicit$std.error, tolerance = 1e-10)
 
   unconditional_case <- delta_public_unconditional_case()
   avg <- avg_sops(

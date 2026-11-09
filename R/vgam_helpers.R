@@ -7,7 +7,8 @@
 #' thresholds. In both cases this allows fast linear predictor calculation via
 #' simple matrix multiplication with the "small" design matrix.
 #'
-#' @param model A fitted `vglm` or `orm` object.
+#' @param model A fitted `vglm` or `orm` object, or the `robcov_vglm` object
+#'   that `mostm(engine = "vglm")` returns.
 #' @param beta Optional coefficient vector to use instead of `coef(model)`.
 #'   This is used internally for simulation draws.
 #'
@@ -43,6 +44,9 @@
 #'
 #' @export
 get_effective_coefs <- function(model, beta = NULL) {
+  if (inherits(model, "robcov_vglm")) {
+    model <- model$vglm_fit
+  }
   if (inherits(model, "vglm")) {
     return(get_effective_coefs_vglm(model, beta = beta))
   }

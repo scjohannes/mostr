@@ -41,8 +41,9 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
+    id_var = "id",
     engine = "vglm"
-  ))
+  ))$vglm_fit
 
   # Test single patient (first patient)
   a <- Hmisc::soprobMarkovOrdm(
@@ -111,8 +112,9 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
     data = data,
+    id_var = "id",
     engine = "vglm"
-  ))
+  ))$vglm_fit
 
   # Test single patient (first patient)
   a <- Hmisc::soprobMarkovOrdm(
@@ -180,8 +182,9 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
     data = data,
+    id_var = "id",
     engine = "vglm"
-  ))
+  ))$vglm_fit
 
   # Test ALL patients
   # Get results from soprobMarkovOrdm (one patient at a time)
@@ -276,9 +279,10 @@ test_that("compiled plan matches markov_msm_build() and the R reference for cons
       tx:age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx + time_lin),
     data = data,
+    id_var = "id",
     constraints = cons,
     engine = "vglm"
-  ))
+  ))$vglm_fit
 
   # Setup comparison
   newdata <- data[data$time == 1, ] # Baseline rows
@@ -379,8 +383,9 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO"
       parallel = FALSE ~ tx + time_lin
     ),
     data = data,
+    id_var = "id",
     engine = "vglm"
-  ))
+  ))$vglm_fit
 
   # Setup comparison
   newdata <- data[data$time == 1, ] # Baseline rows

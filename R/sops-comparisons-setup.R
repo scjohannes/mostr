@@ -208,11 +208,9 @@ avg_comparison_setup <- function(
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
 
+  id_var <- markov_require_id_var(model, id_var)
   if (inherits(model, "blrm") && isTRUE(include_re)) {
-    id_var <- resolve_blrm_id_var(model, newdata_orig, id_var)
     validate_markov_id_var(id_var, newdata_orig, "newdata")
-  } else {
-    id_var <- markov_model_id_var(model, id_var) %||% "id"
   }
 
   if (!is.null(refit_data)) {

@@ -43,12 +43,13 @@
 #'   time, and state. `TRUE` averages over all profiles, and a character
 #'   vector of column names averages within the groups those columns define;
 #'   both return the result of [avg_sops()] with the same arguments.
-#' @param id_var Character ID column used when `include_re = TRUE`. For `blrm`,
-#'   `NULL` is inferred from the `id_var` given to [mostm()], then
-#'   `model$clusterInfo$name`
-#'   when available, otherwise `"id"`. For frequentist models, `id_var` is used
-#'   for stored starting-profile validation and refit bootstrap metadata, not
-#'   for ordinary user-supplied prediction rows.
+#' @param id_var Name of the patient ID column. `NULL` (the default) uses the
+#'   `id_var` given to [mostm()], which is almost always what you want. It
+#'   selects one starting row per patient from the stored data and tells the
+#'   bootstrap which rows belong to one patient. With `include_re = TRUE` for a
+#'   `blrm` fit, `newdata` must contain this column, so that each row gets its
+#'   patient's estimated random effect. Rows of user-supplied `newdata` need it
+#'   only in that case.
 #' @param time_var Name of the time variable in the model.
 #' @param p_var Name of the previous state variable in the model.
 #' @param p2_var Optional second previous-state variable. `NULL` uses a
@@ -237,30 +238,18 @@ sops <- function(
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
-  id_var <- markov_model_id_var(model, id_var)
-
+  id_var <- markov_require_id_var(model, id_var)
   if (inherits(model, "blrm") && isTRUE(include_re)) {
-    id_var <- resolve_blrm_id_var(model, newdata_orig, id_var)
     validate_markov_id_var(id_var, newdata_orig, "newdata")
   }
-
-  if (!is.null(id_var)) {
-    if (!is.null(refit_data)) {
-      validate_markov_id_var(
-        id_var,
-        refit_data,
-        "the refit data stored on the fitted model"
-      )
-    }
+  if (!is.null(refit_data)) {
+    validate_markov_id_var(
+      id_var,
+      refit_data,
+      "the refit data stored on the fitted model"
+    )
   }
-
   if (!newdata_supplied) {
-    if (is.null(id_var)) {
-      stop(
-        "Automatic SOP prediction from stored model data requires `id_var`. ",
-        "Fit with `mostm(..., id_var = ...)`, or supply explicit `newdata`."
-      )
-    }
     validate_markov_id_var(id_var, newdata_orig, "stored model data")
   }
 
@@ -752,16 +741,11 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
 #'   infer the levels from `model`.
 #' @param absorb The absorbing state.
-#' @param id_var Name of the patient ID variable. Required for bootstrap
-#'   inference and for `blrm` random-effect prediction. If `NULL`, defaults to
-#'   `"id"`; for models fitted with [mostm()], it is inferred from stored
-#'   metadata.
-#'   For user-supplied `newdata`, `id_var` is required only for `blrm` random
-#'   effects. Refit bootstrap inference resamples patients by this column in
-#'   the data stored on the fitted model. For `blrm` models with
-#'   `include_re = TRUE`,
-#'   `model$clusterInfo$name` is used before the final `"id"` fallback when
-#'   no `id_var` was given to [mostm()].
+#' @param id_var Name of the patient ID column. `NULL` (the default) uses the
+#'   `id_var` given to [mostm()]. Bootstrap inference resamples patients by
+#'   this column in the data stored on the fitted model. For user-supplied
+#'   `newdata`, the column is needed only for `blrm` random-effect prediction
+#'   (`include_re = TRUE`).
 #' @param time_var Name of the time variable in the model.
 #' @param p_var Name of the previous state variable in the model.
 #' @param p2_var Optional second previous-state variable. `NULL` uses a
@@ -941,11 +925,9 @@ avg_sops <- function(
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
 
+  id_var <- markov_require_id_var(model, id_var)
   if (inherits(model, "blrm") && isTRUE(include_re)) {
-    id_var <- resolve_blrm_id_var(model, newdata_orig, id_var)
     validate_markov_id_var(id_var, newdata_orig, "newdata")
-  } else {
-    id_var <- markov_model_id_var(model, id_var) %||% "id"
   }
 
   if (!is.null(refit_data)) {

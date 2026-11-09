@@ -23,6 +23,7 @@ test_that("absorption during prediction does not certify numerical saturation", 
     ordered(y) ~ tx,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
+    id_var = "id",
     engine = "vglm"
   ))
   states <- seq_len(nrow(get_effective_coefs(model)) + 1L)

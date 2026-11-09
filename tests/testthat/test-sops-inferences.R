@@ -78,6 +78,7 @@ describe("avg_sops() and inferences() pipeline", {
         ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
     )
@@ -100,6 +101,7 @@ describe("avg_sops() and inferences() pipeline", {
         ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
     )
@@ -121,6 +123,7 @@ describe("avg_sops() and inferences() pipeline", {
         ordered(y) ~ rms::rcs(time, 4) * tx + rms::rcs(yprev, 6),
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
     )
@@ -1103,9 +1106,10 @@ describe("avg_sops() and inferences() pipeline", {
         form,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
-    )
+    )$vglm_fit
 
     ordinary_fitted <- stats::predict(ordinary_fit, type = "response")
     markov_fitted <- mostr:::predict_vglm_response_markov(
@@ -1144,9 +1148,10 @@ describe("avg_sops() and inferences() pipeline", {
         form,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
-    )
+    )$vglm_fit
 
     cons <- fit_po@constraints
     linear_time_term <- grep(
@@ -1168,10 +1173,11 @@ describe("avg_sops() and inferences() pipeline", {
         form,
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
+        id_var = "id",
         constraints = cons,
         engine = "vglm"
       )
-    )
+    )$vglm_fit
     fit_ppo@call$constraints <- cons
 
     robust_fit <- mostr::robcov_vglm(fit_ppo, cluster = data$id)
@@ -1250,10 +1256,11 @@ describe("avg_sops() and inferences() pipeline", {
         ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + age + yprev,
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
+        id_var = "id",
         constraints = explicit_constraints,
         engine = "vglm"
       )
-    )
+    )$vglm_fit
     explicit_fit@call$constraints <- explicit_constraints
 
     inline_form <- ordered(y) ~ rms::rcs(time, 4) + tx + age + yprev
@@ -1262,9 +1269,10 @@ describe("avg_sops() and inferences() pipeline", {
         inline_form,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
+        id_var = "id",
         engine = "vglm"
       )
-    )
+    )$vglm_fit
 
     inline_constraints <- inline_po@constraints
     inline_time_terms <- grep(
@@ -1288,10 +1296,11 @@ describe("avg_sops() and inferences() pipeline", {
         inline_form,
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
+        id_var = "id",
         constraints = inline_constraints,
         engine = "vglm"
       )
-    )
+    )$vglm_fit
     inline_fit@call$constraints <- inline_constraints
 
     explicit_fitted <- stats::predict(explicit_fit, type = "response")

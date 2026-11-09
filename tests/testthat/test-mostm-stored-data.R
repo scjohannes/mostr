@@ -169,25 +169,22 @@ test_that("the vglm engine aligns stored fitting data after subset and NA drops"
   )
 })
 
-test_that("the vglm engine without id_var does not require a profile schedule", {
+test_that("mostm() needs the time column that finds the starting rows", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1018)
   data$time <- NULL
-  expect_warning(
-    fit <- mostm(
+  expect_error(
+    mostm(
       ordered(y) ~ time_lin + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     ),
-    "`id_var` was not supplied"
+    "The time column `time` is not in `data`",
+    fixed = TRUE
   )
-
-  expect_s4_class(fit, "vglm")
-  expect_equal(nrow(attr(fit, "markov_refit_data")), nrow(data))
-  expect_null(attr(fit, "markov_starting_profile_data"))
-  expect_null(attr(fit, "markov_starting_profile_metadata"))
 })
 
 test_that("the orm engine stores fitting data and applies robust covariance", {

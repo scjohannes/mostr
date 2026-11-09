@@ -769,13 +769,11 @@ update_bootstrap_model <- function(
     refit_call[nm] <- list(refit_args[[nm]])
   }
 
-  # Refits need only the coefficients. Without `id_var`, `mostm()` skips the
+  # Refits need only the coefficients, so `mostm()` skips the
   # patient-clustered covariance and the starting profiles.
-  refit_call$id_var <- NULL
-
   updated <- suppress_expected_refit_warnings(
     model,
-    eval(refit_call)
+    markov_with_coefficients_only_refit(eval(refit_call))
   )
 
   markov_inherit_engine(updated, model)
@@ -811,21 +809,29 @@ bootstrap_model_call <- function(model) {
   model$call
 }
 
-# Refits call `mostm()` without `id_var` on purpose, and rms warns that orm
-# ignores weights in its own bootstrap, which mostr does not use.
+# State of a bootstrap refit in progress. While `coefficients_only` is TRUE,
+# `mostm()` fits only the coefficients: it skips the patient-clustered
+# covariance, the starting profiles, and the duplicate-visit warning.
+markov_refit_state <- new.env(parent = emptyenv())
+markov_refit_state$coefficients_only <- FALSE
+
+markov_refit_coefficients_only <- function() {
+  isTRUE(markov_refit_state$coefficients_only)
+}
+
+markov_with_coefficients_only_refit <- function(expr) {
+  previous <- markov_refit_state$coefficients_only
+  markov_refit_state$coefficients_only <- TRUE
+  on.exit(markov_refit_state$coefficients_only <- previous, add = TRUE)
+  expr
+}
+
+# rms warns that orm ignores weights in its own bootstrap, which mostr does
+# not use.
 suppress_expected_refit_warnings <- function(model, expr) {
   withCallingHandlers(
     expr,
     warning = function(w) {
-      if (
-        grepl(
-          "`id_var` was not supplied to mostm()",
-          conditionMessage(w),
-          fixed = TRUE
-        )
-      ) {
-        invokeRestart("muffleWarning")
-      }
       if (
         inherits(model, "orm") &&
           grepl(

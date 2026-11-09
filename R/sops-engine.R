@@ -46,9 +46,8 @@
 #'   fitted random-effect draws in posterior predictions. This does not
 #'   integrate over the random-effects distribution; it uses the fitted effects
 #'   for known IDs.
-#' @param id_var Character ID column used when `include_re = TRUE`. If `NULL`
-#'   for `blrm`, inferred from `model$clusterInfo$name` when available,
-#'   otherwise `"id"`.
+#' @param id_var Character ID column used when `include_re = TRUE`. `NULL`
+#'   uses the `id_var` given to [mostm()].
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible `blrm` draw sampling.

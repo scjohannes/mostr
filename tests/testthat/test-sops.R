@@ -14,9 +14,10 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
       ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
-  )
+  )$vglm_fit
 
   expected <- Hmisc::soprobMarkovOrdm(
     model,
@@ -64,6 +65,7 @@ test_that("soprob_markov gives the same predictions for inline and precomputed s
       ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )
@@ -72,6 +74,7 @@ test_that("soprob_markov gives the same predictions for inline and precomputed s
       ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )
@@ -120,17 +123,13 @@ test_that("soprob_markov supports inline splines of numeric previous state", {
     factor_previous = FALSE
   )
   baseline <- data[data$time == 1, , drop = FALSE][seq_len(8), , drop = FALSE]
-  fit_data <- data[, setdiff(names(data), "id"), drop = FALSE]
-  expect_warning(
-    model <- mostm(
-      ordered(y) ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 6),
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = fit_data,
-      engine = "vglm"
-    ),
-    "`id_var` was not supplied",
-    fixed = TRUE
-  )
+  model <- mostm(
+    ordered(y) ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 6),
+    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+    data = data,
+    id_var = "id",
+    engine = "vglm"
+  )$vglm_fit
 
   slow <- soprob_markov(
     model = model,
@@ -203,10 +202,11 @@ test_that("soprob_markov handles partial proportional-odds constraints", {
       ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
       data = data,
+      id_var = "id",
       constraints = constraints,
       engine = "vglm"
     )
-  )
+  )$vglm_fit
   model@call$constraints <- constraints
 
   result <- soprob_markov(
@@ -268,10 +268,11 @@ test_that("soprob_markov incorporates treatment interactions into predictions", 
         yprev:time_lin,
       family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
       data = data,
+      id_var = "id",
       constraints = constraints,
       engine = "vglm"
     )
-  )
+  )$vglm_fit
   model@call$constraints <- constraints
 
   baseline <- data[data$time == 1, , drop = FALSE][1, , drop = FALSE]
@@ -317,6 +318,7 @@ test_that("soprob_markov carries absorbing-state mass forward", {
       ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )
@@ -353,6 +355,7 @@ test_that("soprob_markov normalizes transitions when no state is absorbing", {
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )

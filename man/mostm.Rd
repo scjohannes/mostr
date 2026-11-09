@@ -9,7 +9,7 @@ mostm(
   data,
   ...,
   engine = c("orm", "vglm", "blrm"),
-  id_var = NULL,
+  id_var,
   time_var = "time",
   first_followup_time = NULL,
   weights = NULL,
@@ -60,12 +60,12 @@ arguments that control this (\code{x} and \code{y} for rms and rmsb, \code{x.arg
 \item{engine}{The package that fits the model: \code{"orm"}, \code{"vglm"}, or
 \code{"blrm"}. See the description above.}
 
-\item{id_var}{Name of the column in \code{data} that identifies patients. With
-it, \code{mostm()} stores each patient's starting row for automatic
-predictions, and the \code{"orm"} and \code{"vglm"} engines compute standard errors
-that allow for correlation between the transitions of one patient. Without
-it, a warning is given, and these features, as well as the fractional
-weighted bootstrap, are not available from the fit.}
+\item{id_var}{Name of the column in \code{data} that identifies patients, for
+example \code{"id"}. It is required, because the rows of one patient belong
+together: \code{mostm()} uses it to store each patient's starting row for
+automatic predictions, the \code{"orm"} and \code{"vglm"} engines use it for
+standard errors that allow for correlation between the transitions of one
+patient, and the bootstrap resamples or reweights whole patients by it.}
 
 \item{time_var}{Name of the time column in \code{data}. It is used to find each
 patient's starting row.}
@@ -91,20 +91,20 @@ the number of model coefficients.}
 
 \item{cadjust}{Logical. Multiply the patient-clustered variance of the
 \code{"orm"} and \code{"vglm"} engines by \eqn{n / (n - 1)}, where \eqn{n} is the
-number of patients? \code{NULL} (the default) applies this correction when
-\code{id_var} is supplied. It is independent of \code{type}, so \code{type = "HC1"} with
-\code{cadjust = TRUE} applies both factors.}
+number of patients? \code{NULL} (the default) applies this correction. It is
+independent of \code{type}, so \code{type = "HC1"} with \code{cadjust = TRUE} applies
+both factors.}
 }
 \value{
 The fitted model, with the data needed by the state occupancy and
 inference functions attached. The returned object's \code{call} is the
 \code{mostm()} call. Its class depends on \code{engine}:
 \itemize{
-\item \code{"orm"}: an \code{orm} object. With \code{id_var}, its covariance matrix
-(\code{vcov(fit)}) holds the patient-clustered variance.
-\item \code{"vglm"}: with \code{id_var}, a \code{robcov_vglm} object that holds the
-patient-clustered variance and the fitted \code{vglm} object in \verb{$vglm_fit}
-(see \code{\link[=robcov_vglm]{robcov_vglm()}}); without \code{id_var}, the S4 \code{vglm} object.
+\item \code{"orm"}: an \code{orm} object whose covariance matrix (\code{vcov(fit)}) holds
+the patient-clustered variance.
+\item \code{"vglm"}: a \code{robcov_vglm} object that holds the patient-clustered
+variance and the fitted \code{vglm} object in \verb{$vglm_fit} (see
+\code{\link[=robcov_vglm]{robcov_vglm()}}).
 \item \code{"blrm"}: a \code{blrm} object with the posterior draws.
 }
 }
@@ -155,14 +155,22 @@ bootstrap refits resample rows together with their weights.
 
 \subsection{Standard errors}{
 
-For the \code{"orm"} and \code{"vglm"} engines, \code{id_var} gives standard errors that
-remain valid when the transitions of one patient are correlated. They come
-from a sandwich estimator that adds up the contributions of each patient
-(cluster-robust standard errors); \code{type} and \code{cadjust} set its small-sample
-corrections. These standard errors are used by \code{inferences(method = "delta")} with conditional variance and by \code{inferences(method = "mvn")}.
-Unconditional variance also accounts for which patients were sampled; see
-\code{\link[=inferences]{inferences()}}. For the \code{"blrm"} engine, uncertainty comes from the
-posterior draws.
+For the \code{"orm"} and \code{"vglm"} engines, the covariance matrix of the
+coefficients stored on the fit gives standard errors that remain valid when
+the transitions of one patient are correlated. It comes from a sandwich
+estimator that adds up the contributions of each patient, as identified by
+\code{id_var} (cluster-robust standard errors); \code{type} and \code{cadjust} set its
+small-sample corrections. These standard errors are used by
+\code{inferences(method = "delta")} with conditional variance and by
+\code{inferences(method = "mvn")}. Unconditional variance also accounts for which
+patients were sampled; see \code{\link[=inferences]{inferences()}}. For the \code{"blrm"} engine,
+uncertainty comes from the posterior draws.
+
+\code{mostm()} stops when this covariance cannot be computed, for example when
+the fitting algorithm has not converged or some coefficients grow without
+bound because a transition never occurs in the data. The \code{"orm"} engine
+also needs the logit link (\code{family = "logistic"}, the default), which the
+state occupancy functions require as well.
 }
 
 \subsection{Random effects}{
@@ -184,9 +192,10 @@ include each patient's estimated random effect in predictions, use
 With \code{engine = "orm"} or \code{"vglm"}, \code{cluster()} and \code{mix_re()} terms are
 errors, although \code{\link[rms:orm]{rms::orm()}} can fit them from rms version 8.2 on. State
 occupancy probabilities from such a fit would describe only a patient whose
-random effect is 0, which is not the average over patients. To allow for
-correlation between the transitions of one patient with these engines, use
-\code{id_var}, as described under "Standard errors". \code{mix_re()}, which lets the
+random effect is 0, which is not the average over patients. With these
+engines, the patient-clustered standard errors described under "Standard
+errors" already allow for correlation between the transitions of one
+patient. \code{mix_re()}, which lets the
 size of the random effect differ between the first follow-up and later visits,
 is not available for any engine.
 }

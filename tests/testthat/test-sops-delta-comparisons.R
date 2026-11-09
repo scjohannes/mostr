@@ -501,6 +501,8 @@ test_that("analytical comparisons reject partial proportional odds", {
     y ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
     data = case$data,
+    id_var = "id",
+    first_followup_time = "v1",
     engine = "vglm"
   ))
   baseline <- case$data[!duplicated(case$data$id), , drop = FALSE]

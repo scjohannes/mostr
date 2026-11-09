@@ -9,14 +9,6 @@
 ---
 
     Code
-      inferences(fixed, method = "delta", vcov = "conditional")
-    Condition
-      Error:
-      ! Analytical unconditional inference requires patient clustering. Supply `cluster`, or fit with `mostm(..., id_var = ...)` so row-aligned fitting data and patient-ID metadata are stored. Observation rows are not used as implicit clusters.
-
----
-
-    Code
       inferences(avg, method = "delta", vcov = c("conditional", "unconditional"))
     Condition
       Error:

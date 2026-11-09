@@ -363,15 +363,17 @@ native_plan_fits <- local({
         models = list(
           orm = suppressWarnings(mostm(
             y ~ time + tx + yprev,
-            data = data
+            data = data,
+            id_var = "id"
           )),
-          vglm_po = make_test_model(data),
+          vglm_po = make_test_model(data)$vglm_fit,
           vglm_partial_po = suppressWarnings(mostm(
             ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
             family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
             data = data,
+            id_var = "id",
             engine = "vglm"
-          ))
+          ))$vglm_fit
         )
       )
     }
@@ -432,14 +434,18 @@ test_that("compiled second-order SOPs match the reference recursion", {
   models <- list(
     orm = suppressWarnings(mostm(
       y ~ tx + time + yprev + ypprev,
-      data = fit_data
+      data = fit_data,
+      id_var = "id",
+      first_followup_time = 3
     )),
     vglm_partial_po = suppressWarnings(mostm(
       ordered(y) ~ tx + time + yprev + ypprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
       data = fit_data,
+      id_var = "id",
+      first_followup_time = 3,
       engine = "vglm"
-    ))
+    ))$vglm_fit
   )
   baseline <- data[data$time == 1L, , drop = FALSE][1:6, , drop = FALSE]
   baseline$yprev <- factor(c(1, 2, 3, 1, 2, 3), levels = 1:3)

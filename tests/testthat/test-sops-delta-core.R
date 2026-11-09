@@ -7,7 +7,7 @@ delta_vglm_case <- local({
         follow_up_time = 8,
         seed = 7301
       )
-      model <- make_test_model(data)
+      model <- make_test_model(data)$vglm_fit
       y_levels <- seq_len(nrow(get_effective_coefs(model)) + 1L)
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:4,
@@ -44,7 +44,8 @@ delta_orm_case <- local({
       )
       model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data
+        data = data,
+        id_var = "id"
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:3,
@@ -252,8 +253,10 @@ test_that("factor visit designs use the same analytical recursion", {
     y ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
+    id_var = "id",
+    first_followup_time = "1",
     engine = "vglm"
-  ))
+  ))$vglm_fit
   baseline <- data[!duplicated(data$id), , drop = FALSE][1:5, , drop = FALSE]
   plan <- compile_sop_execution_plan(
     model = model,
@@ -472,12 +475,15 @@ test_that("analytical SOP validation rejects unsupported model structures", {
     error = TRUE
   )
 
-  partial_model <- suppressWarnings(mostm(
+  # This small non-parallel fit has a singular model covariance, so it has no
+  # patient-clustered covariance; the check needs only its coefficients.
+  partial_model <- markov_with_coefficients_only_refit(suppressWarnings(mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
     data = case$data,
+    id_var = "id",
     engine = "vglm"
-  ))
+  )))
   partial_plan <- compile_sop_execution_plan(
     model = partial_model,
     newdata = case$baseline,

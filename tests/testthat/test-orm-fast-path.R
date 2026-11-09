@@ -25,7 +25,8 @@ test_that("orm fast path supports categorical previous state", {
 
   fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
-    data = data
+    data = data,
+    id_var = "id"
   ))
   baseline <- data[!duplicated(data$id), ][1:12, , drop = FALSE]
 
@@ -67,7 +68,8 @@ test_that("orm fast path validates state support and initial probabilities", {
   local_orm_datadist(data)
   fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
-    data = data
+    data = data,
+    id_var = "id"
   ))
   baseline <- data[!duplicated(data$id), ][1:3, , drop = FALSE]
 
@@ -101,7 +103,8 @@ test_that("execution-plan budgets bound all retained first-order designs", {
   local_orm_datadist(data)
   fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
-    data = data
+    data = data,
+    id_var = "id"
   ))
   baseline <- data[!duplicated(data$id), ][1:4, , drop = FALSE]
   args <- list(
@@ -387,7 +390,8 @@ test_that("orm supports refit bootstrap inference", {
 
   fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
-    data = data
+    data = data,
+    id_var = "id"
   ))
 
   avg <- mostr::avg_sops(

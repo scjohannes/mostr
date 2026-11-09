@@ -109,6 +109,7 @@ test_that("the vglm engine splits lsp basis columns and records metadata", {
       form,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       engine = "vglm"
     )
   )
@@ -119,7 +120,11 @@ test_that("the vglm engine splits lsp basis columns and records metadata", {
   expect_length(basis_terms[[1L]]$columns, 3L)
   expect_equal(attr(fit, "markov_split_assign", exact = TRUE), TRUE)
 
-  lsp_constraints <- grep("lsp\\(", names(fit@constraints), value = TRUE)
+  lsp_constraints <- grep(
+    "lsp\\(",
+    names(fit$vglm_fit@constraints),
+    value = TRUE
+  )
   expect_length(lsp_constraints, 3L)
 
   baseline <- data[data$time == 1, , drop = FALSE][1:8, , drop = FALSE]
@@ -156,7 +161,8 @@ test_that("orm lsp terms use the optimized execution plan", {
   )
   fit <- suppressWarnings(mostm(
     ordered(y) ~ rms::lsp(time, c(3, 7)) + tx + yprev,
-    data = data
+    data = data,
+    id_var = "id"
   ))
   baseline <- data[data$time == 1, , drop = FALSE][1:8, , drop = FALSE]
 

@@ -58,12 +58,12 @@
 #'   `y.arg` for VGAM) are not accepted.
 #' @param engine The package that fits the model: `"orm"`, `"vglm"`, or
 #'   `"blrm"`. See the description above.
-#' @param id_var Name of the column in `data` that identifies patients. With
-#'   it, `mostm()` stores each patient's starting row for automatic
-#'   predictions, and the `"orm"` and `"vglm"` engines compute standard errors
-#'   that allow for correlation between the transitions of one patient. Without
-#'   it, a warning is given, and these features, as well as the fractional
-#'   weighted bootstrap, are not available from the fit.
+#' @param id_var Name of the column in `data` that identifies patients, for
+#'   example `"id"`. It is required, because the rows of one patient belong
+#'   together: `mostm()` uses it to store each patient's starting row for
+#'   automatic predictions, the `"orm"` and `"vglm"` engines use it for
+#'   standard errors that allow for correlation between the transitions of one
+#'   patient, and the bootstrap resamples or reweights whole patients by it.
 #' @param time_var Name of the time column in `data`. It is used to find each
 #'   patient's starting row.
 #' @param first_followup_time Time of the first visit after baseline. Each
@@ -83,9 +83,9 @@
 #'   the number of model coefficients.
 #' @param cadjust Logical. Multiply the patient-clustered variance of the
 #'   `"orm"` and `"vglm"` engines by \eqn{n / (n - 1)}, where \eqn{n} is the
-#'   number of patients? `NULL` (the default) applies this correction when
-#'   `id_var` is supplied. It is independent of `type`, so `type = "HC1"` with
-#'   `cadjust = TRUE` applies both factors.
+#'   number of patients? `NULL` (the default) applies this correction. It is
+#'   independent of `type`, so `type = "HC1"` with `cadjust = TRUE` applies
+#'   both factors.
 #'
 #' @details
 #' ## Starting rows
@@ -110,15 +110,22 @@
 #'
 #' ## Standard errors
 #'
-#' For the `"orm"` and `"vglm"` engines, `id_var` gives standard errors that
-#' remain valid when the transitions of one patient are correlated. They come
-#' from a sandwich estimator that adds up the contributions of each patient
-#' (cluster-robust standard errors); `type` and `cadjust` set its small-sample
-#' corrections. These standard errors are used by `inferences(method =
-#' "delta")` with conditional variance and by `inferences(method = "mvn")`.
-#' Unconditional variance also accounts for which patients were sampled; see
-#' [inferences()]. For the `"blrm"` engine, uncertainty comes from the
-#' posterior draws.
+#' For the `"orm"` and `"vglm"` engines, the covariance matrix of the
+#' coefficients stored on the fit gives standard errors that remain valid when
+#' the transitions of one patient are correlated. It comes from a sandwich
+#' estimator that adds up the contributions of each patient, as identified by
+#' `id_var` (cluster-robust standard errors); `type` and `cadjust` set its
+#' small-sample corrections. These standard errors are used by
+#' `inferences(method = "delta")` with conditional variance and by
+#' `inferences(method = "mvn")`. Unconditional variance also accounts for which
+#' patients were sampled; see [inferences()]. For the `"blrm"` engine,
+#' uncertainty comes from the posterior draws.
+#'
+#' `mostm()` stops when this covariance cannot be computed, for example when
+#' the fitting algorithm has not converged or some coefficients grow without
+#' bound because a transition never occurs in the data. The `"orm"` engine
+#' also needs the logit link (`family = "logistic"`, the default), which the
+#' state occupancy functions require as well.
 #'
 #' ## Random effects
 #'
@@ -139,9 +146,10 @@
 #' With `engine = "orm"` or `"vglm"`, `cluster()` and `mix_re()` terms are
 #' errors, although [rms::orm()] can fit them from rms version 8.2 on. State
 #' occupancy probabilities from such a fit would describe only a patient whose
-#' random effect is 0, which is not the average over patients. To allow for
-#' correlation between the transitions of one patient with these engines, use
-#' `id_var`, as described under "Standard errors". `mix_re()`, which lets the
+#' random effect is 0, which is not the average over patients. With these
+#' engines, the patient-clustered standard errors described under "Standard
+#' errors" already allow for correlation between the transitions of one
+#' patient. `mix_re()`, which lets the
 #' size of the random effect differ between the first follow-up and later visits,
 #' is not available for any engine.
 #'
@@ -160,11 +168,11 @@
 #' @return The fitted model, with the data needed by the state occupancy and
 #'   inference functions attached. The returned object's `call` is the
 #'   `mostm()` call. Its class depends on `engine`:
-#'   * `"orm"`: an `orm` object. With `id_var`, its covariance matrix
-#'     (`vcov(fit)`) holds the patient-clustered variance.
-#'   * `"vglm"`: with `id_var`, a `robcov_vglm` object that holds the
-#'     patient-clustered variance and the fitted `vglm` object in `$vglm_fit`
-#'     (see [robcov_vglm()]); without `id_var`, the S4 `vglm` object.
+#'   * `"orm"`: an `orm` object whose covariance matrix (`vcov(fit)`) holds
+#'     the patient-clustered variance.
+#'   * `"vglm"`: a `robcov_vglm` object that holds the patient-clustered
+#'     variance and the fitted `vglm` object in `$vglm_fit` (see
+#'     [robcov_vglm()]).
 #'   * `"blrm"`: a `blrm` object with the posterior draws.
 #'
 #' @examples
@@ -231,7 +239,7 @@ mostm <- function(
   data,
   ...,
   engine = c("orm", "vglm", "blrm"),
-  id_var = NULL,
+  id_var,
   time_var = "time",
   first_followup_time = NULL,
   weights = NULL,
@@ -287,10 +295,28 @@ mostm <- function(
   }
   mostm_check_random_effects(formula, engine)
 
+  if (missing(id_var) || is.null(id_var)) {
+    stop_missing_mostm_id_var()
+  }
   id_var <- validate_markov_id_var(id_var, data, "data")
-  if (is.null(id_var)) {
-    warn_missing_markov_id_var()
-  } else {
+  if (
+    !is.character(time_var) ||
+      length(time_var) != 1L ||
+      is.na(time_var) ||
+      !time_var %in% names(data)
+  ) {
+    stop(
+      "The time column `",
+      format(time_var),
+      "` is not in `data`. Set `time_var` to the column that holds the ",
+      "visit time; `mostm()` uses it to find each patient's starting row.",
+      call. = FALSE
+    )
+  }
+  # Bootstrap refits use only the coefficients, so they skip the duplicate
+  # check, the starting rows, and the patient-clustered covariance.
+  coefficients_only <- markov_refit_coefficients_only()
+  if (!coefficients_only) {
     warn_duplicate_markov_id_time(data, id_var, time_var = time_var)
   }
 
@@ -344,7 +370,8 @@ mostm <- function(
     fit_data = fit_data,
     id_var = id_var,
     time_var = time_var,
-    first_followup_time = first_followup_time
+    first_followup_time = first_followup_time,
+    starting_profiles = !coefficients_only
   )
   attach_data <- function(model) {
     model <- markov_attach_model_data(
@@ -361,8 +388,13 @@ mostm <- function(
   }
 
   fit <- attach_data(markov_set_model_call(fitted$fit, model_call))
-  if (is.null(id_var) || engine == "blrm") {
+  if (coefficients_only || engine == "blrm") {
     return(fit)
+  }
+  # The patient-clustered covariance of orm fits needs the logit link, which
+  # every state occupancy function also requires.
+  if (engine == "orm" && !identical(fit$family, "logistic")) {
+    stop_unsupported_markov_link(fit$family)
   }
 
   robust <- switch(

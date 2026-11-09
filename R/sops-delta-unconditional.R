@@ -263,8 +263,9 @@ delta_validate_cluster <- function(cluster, n_rows) {
   list(cluster = cluster, ids = ids)
 }
 
-# Resolve patient clusters for analytical unconditional inference. Explicit
-# row-level IDs take precedence; fitting rows are never implicit clusters.
+# Resolve the patient of each fitting row for analytical inference with
+# conditional or unconditional variance. Explicit row-level IDs take
+# precedence; fitting rows are never implicit clusters.
 resolve_delta_cluster <- function(model, cluster = NULL) {
   delta_validate_full_po_model(model)
   n_rows <- delta_fitting_row_count(model)
@@ -302,20 +303,13 @@ resolve_delta_cluster <- function(model, cluster = NULL) {
   } else {
     id_var <- markov_model_id_var(model)
     data <- markov_model_data(model)
-    if (
-      is.null(id_var) ||
-        !is.character(id_var) ||
-        length(id_var) != 1L ||
-        is.na(id_var) ||
-        is.null(data) ||
-        !is.data.frame(data)
-    ) {
+    if (is.null(id_var) || !is.data.frame(data)) {
       stop(
-        "Analytical unconditional inference requires patient clustering. ",
-        "Supply ",
-        "`cluster`, or fit with `mostm(..., id_var = ...)` so row-aligned ",
-        "fitting data and patient-ID metadata are stored. Observation rows ",
-        "are not used as implicit clusters.",
+        "Analytical standard errors need the patient of each fitting row, ",
+        "but the model does not record its fitting data and patient-ID ",
+        "column. Refit it with `mostm(..., id_var = ...)`, or give the ",
+        "patient of each fitting row in `cluster`. Rows are never treated as ",
+        "separate patients.",
         call. = FALSE
       )
     }

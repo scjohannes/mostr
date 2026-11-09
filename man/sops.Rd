@@ -63,12 +63,13 @@ time, and state. \code{TRUE} averages over all profiles, and a character
 vector of column names averages within the groups those columns define;
 both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same arguments.}
 
-\item{id_var}{Character ID column used when \code{include_re = TRUE}. For \code{blrm},
-\code{NULL} is inferred from the \code{id_var} given to \code{\link[=mostm]{mostm()}}, then
-\code{model$clusterInfo$name}
-when available, otherwise \code{"id"}. For frequentist models, \code{id_var} is used
-for stored starting-profile validation and refit bootstrap metadata, not
-for ordinary user-supplied prediction rows.}
+\item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
+\code{id_var} given to \code{\link[=mostm]{mostm()}}, which is almost always what you want. It
+selects one starting row per patient from the stored data and tells the
+bootstrap which rows belong to one patient. With \code{include_re = TRUE} for a
+\code{blrm} fit, \code{newdata} must contain this column, so that each row gets its
+patient's estimated random effect. Rows of user-supplied \code{newdata} need it
+only in that case.}
 
 \item{time_var}{Name of the time variable in the model.}
 

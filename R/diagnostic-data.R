@@ -22,7 +22,7 @@ plot_transition_model_setup <- function(
   data_res <- resolve_markov_source_data(model, newdata)
   source_data <- data_res$source_data
   newdata_supplied <- data_res$newdata_supplied
-  id_var <- markov_model_id_var(model, id_var) %||% "id"
+  id_var <- markov_require_id_var(model, id_var)
 
   if (!newdata_supplied) {
     validate_markov_id_var(id_var, source_data, "stored model data")

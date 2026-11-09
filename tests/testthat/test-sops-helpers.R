@@ -16,7 +16,7 @@ test_that("baseline selection keeps factor id order, earliest visits and ties", 
 })
 
 test_that("sops() validates inputs and supports stratified aggregation", {
-  model <- structure(list(), class = "mock_model")
+  model <- structure(list(), class = "mock_model", markov_id_var = "id")
   newdata <- data.frame(
     id = 1:3,
     time = c(1, 2, 1),
@@ -167,6 +167,10 @@ test_that("sops() infers y_levels from supported model containers", {
 
       orm_model <- list(yunique = c("1", "2"))
       class(orm_model) <- "orm"
+      # `mostm()` fits record their patient column.
+      attr(vglm_model, "markov_id_var") <- "id"
+      attr(robust_model, "markov_id_var") <- "id"
+      attr(orm_model, "markov_id_var") <- "id"
 
       expect_equal(nrow(sops(vglm_model, newdata = newdata, times = 1)), 2)
       expect_equal(nrow(sops(robust_model, newdata = newdata, times = 1)), 2)
@@ -194,7 +198,11 @@ test_that("sops() infers y_levels from supported model containers", {
       )
 
       expect_error(
-        sops(structure(list(), class = "other"), newdata = newdata, times = 1),
+        sops(
+          structure(list(), class = "other", markov_id_var = "id"),
+          newdata = newdata,
+          times = 1
+        ),
         "`y_levels` cannot be NULL",
         fixed = TRUE
       )
@@ -203,7 +211,7 @@ test_that("sops() infers y_levels from supported model containers", {
 })
 
 test_that("avg_sops() validates inputs and preserves grouping metadata", {
-  model <- structure(list(), class = "mock_model")
+  model <- structure(list(), class = "mock_model", markov_id_var = "id")
   newdata <- data.frame(
     id = c(1, 2),
     tx = c(0, 1),
@@ -298,7 +306,7 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
 })
 
 test_that("avg_sops() reports missing grouping variables from individual SOPs", {
-  model <- structure(list(), class = "mock_model")
+  model <- structure(list(), class = "mock_model", markov_id_var = "id")
   newdata <- data.frame(id = 1, tx = 0, yprev = 1)
 
   with_mocked_bindings(

@@ -101,7 +101,7 @@ blrm fit can pass rmsb's own `backend` (rstan or cmdstan) through `...`.
 ```mermaid
 flowchart TD
     A["mostm(formula, data, ..., engine)"] --> B[Check engine arguments in ...]
-    B --> C[Validate data, offsets, inline factors, id_var; evaluate weights and subset once]
+    B --> C[Validate data, offsets, inline factors, required id_var and time_var; evaluate weights and subset once]
     C --> D{engine}
     D -->|orm| E[mostm_fit_orm: rms::orm]
     D -->|vglm| F[mostm_fit_vglm: VGAM model build]
@@ -111,7 +111,7 @@ flowchart TD
     G --> H
     H --> I[Stored refit data, starting profiles, refit argument values]
     I --> J[mostm call and markov_engine attribute]
-    J --> K{id_var and orm or vglm?}
+    J --> K{orm or vglm, and not a bootstrap refit?}
     K -->|yes| L[robcov_orm or robcov_vglm]
     K -->|no| M[Fit returned]
     L --> M
@@ -120,8 +120,11 @@ flowchart TD
 - Shared arguments are named and handled once in `mostm()`: `id_var`,
   `time_var`, `first_followup_time`, `weights`, `subset`, and the
   patient-clustered covariance settings `type` and `cadjust`. `data` must be a
-  data frame. A missing `id_var` warns (`warn_missing_markov_id_var()`), and
-  duplicate ID-time rows warn (`warn_duplicate_markov_id_time()`).
+  data frame. `id_var` has no default: a missing or `NULL` value stops with
+  `stop_missing_mostm_id_var()`, and `validate_markov_id_var()` requires one
+  column name present in `data`. The `time_var` column must also be present,
+  because every fit stores its starting profiles. Duplicate ID-time rows warn
+  (`warn_duplicate_markov_id_time()`).
 - For `"orm"` and `"blrm"`, `mostm_check_inline_factors()` stops before
   fitting when the right-hand side of the formula calls `factor()`,
   `as.factor()`, `ordered()`, or `as.ordered()` (found at any depth by
@@ -172,9 +175,21 @@ flowchart TD
   (`markov_prepare_stored_data()`, `markov_attach_model_data()`), replaces the
   engine's call with the matched `mostm()` call including the resolved
   `engine` (`markov_set_model_call()`), and records the `markov_engine`
-  attribute (`markov_set_engine()`). With `id_var`, `"orm"` fits receive the
-  package-owned sandwich (`robcov_orm()`), and `"vglm"` fits are returned as a
-  `robcov_vglm` object holding the `vglm` fit in `$vglm_fit`.
+  attribute (`markov_set_engine()`). `"orm"` fits always receive the
+  package-owned patient-clustered sandwich (`robcov_orm()`), and `"vglm"` fits
+  are always returned as a `robcov_vglm` object holding the `vglm` fit in
+  `$vglm_fit`; only bootstrap refits skip this step (see below). Before
+  `robcov_orm()`, a non-logistic orm family stops with
+  `stop_unsupported_markov_link()`, the classed error `validate_markov_model()`
+  raises, so such fits fail at fit time rather than in the sandwich code.
+- Downstream code reads the patient column with `markov_require_id_var()` in
+  `R/markov-model-data.R`, which returns an explicit `id_var` argument or the
+  one stored by `mostm()` and otherwise stops; no column name is guessed. The
+  same holds for `resolve_delta_cluster()` in `R/sops-delta-unconditional.R`,
+  which serves analytical inference with conditional and unconditional
+  variance: without an explicit `cluster`, it needs the stored fitting data
+  and `id_var`, and never treats rows as separate patients. Such errors are
+  reachable only for objects whose `mostm()` metadata were removed.
 - `validate_markov_model()` in `R/sops-backends.R` accepts a model only when
   `markov_model_engine()` matches its class. Raw engine fits and fits from the
   removed `orm_markov()`, `vglm_markov()`, and `blrm_markov()` lack the
@@ -209,7 +224,7 @@ internal `refit_data` attribute, and `stored_refit_bootstrap_data()` in
 `R/sops-bootstrap-inference.R` reads it back or errors when a model has none.
 User-supplied `newdata` only changes the prediction profiles, never the refit
 data. `bootstrap_model_coefs()` resamples the same stored data, clustered on the
-fit's stored `id_var` unless the user names another column. The low-level
+fit's stored `id_var`. The low-level
 helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample_indexed()`,
 `apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
 `relevel_factors_consecutive()`) are internal. `fast_group_bootstrap()` gives
@@ -233,11 +248,15 @@ is always present.
 Refits evaluate the fitted model's stored `mostm()` call
 (`bootstrap_model_call()`), so every refit calls `mostm()` again with the
 original engine, the resampled data, bootstrap weights, and optional starting
-coefficients. Refits drop `id_var`: they need only the coefficients, so
-`mostm()` skips the patient-clustered covariance and the starting profiles,
-and a `"vglm"` refit is a plain `vglm` fit. `suppress_expected_refit_warnings()`
-muffles the resulting missing-`id_var` warning and the rms warning that its own
-bootstrap ignores weights. `mostm()` stores the values of the arguments the
+coefficients. Refits keep `id_var`, which `mostm()` requires, but need only
+the coefficients: `update_bootstrap_model()` evaluates the refit inside
+`markov_with_coefficients_only_refit()`, which sets the package-level
+`markov_refit_state` so that `markov_refit_coefficients_only()` is `TRUE` while
+the refit runs. `mostm()` then skips the duplicate ID-time warning, the starting
+profiles, and the patient-clustered covariance, so a `"vglm"` refit is a plain
+`vglm` fit. The flag is restored on exit, also in parallel workers, where the
+refit runs in the worker's own session. `suppress_expected_refit_warnings()`
+muffles the rms warning that its own bootstrap ignores weights. `mostm()` stores the values of the arguments the
 user passed at fit time
 (`markov_capture_refit_args()`, read back with `markov_model_refit_args()`),
 and refits inline those values instead of re-evaluating the call's argument

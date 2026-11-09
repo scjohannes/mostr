@@ -163,6 +163,7 @@ test_that("factor visit time works through SOP APIs and the fast path", {
       y ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       first_followup_time = "1",
       engine = "vglm"
     )
@@ -225,6 +226,7 @@ test_that("factor visit gap requires explicit numeric time_covariates", {
       y ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
       first_followup_time = "1",
       engine = "vglm"
     )
