@@ -54,8 +54,18 @@ including their observed treatment.}
 default) averages over all profiles. A character vector of column names
 averages within the groups those columns define after standardization;
 rows missing any grouping value are omitted, and an error is raised if
-none remain. \code{FALSE} or \code{NULL} does not average and returns the \code{\link[=sops]{sops()}}
-result, one row per profile, value of \code{variables}, time, and state.}
+none remain. Without \code{variables}, groups use each profile's observed
+values, so \code{by = "tx"} averages separately among the untreated and the
+treated. \code{by} cannot name a variable that \code{variables} also sets: the
+result's column for that variable holds the value that was set, so it
+cannot also hold groups of the observed value, and this is an error. The
+averages for each set value are already returned without \code{by}. To
+average under each set treatment within groups of the observed
+treatment, copy the column first, for example
+\code{newdata$observed_tx <- newdata$tx}, and use \code{by = "observed_tx"}.
+\code{\link[=avg_comparisons]{avg_comparisons()}} with \code{by = "tx"} does this for treatment effects.
+\code{FALSE} or \code{NULL} does not average and returns the \code{\link[=sops]{sops()}} result, one
+row per profile, value of \code{variables}, time, and state.}
 
 \item{times}{Required. The consecutive visits at which to calculate SOPs,
 in increasing order, for example \code{times = 1:30} for daily visits up to day

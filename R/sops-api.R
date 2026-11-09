@@ -734,8 +734,18 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   default) averages over all profiles. A character vector of column names
 #'   averages within the groups those columns define after standardization;
 #'   rows missing any grouping value are omitted, and an error is raised if
-#'   none remain. `FALSE` or `NULL` does not average and returns the [sops()]
-#'   result, one row per profile, value of `variables`, time, and state.
+#'   none remain. Without `variables`, groups use each profile's observed
+#'   values, so `by = "tx"` averages separately among the untreated and the
+#'   treated. `by` cannot name a variable that `variables` also sets: the
+#'   result's column for that variable holds the value that was set, so it
+#'   cannot also hold groups of the observed value, and this is an error. The
+#'   averages for each set value are already returned without `by`. To
+#'   average under each set treatment within groups of the observed
+#'   treatment, copy the column first, for example
+#'   `newdata$observed_tx <- newdata$tx`, and use `by = "observed_tx"`.
+#'   [avg_comparisons()] with `by = "tx"` does this for treatment effects.
+#'   `FALSE` or `NULL` does not average and returns the [sops()] result, one
+#'   row per profile, value of `variables`, time, and state.
 #' @inheritParams sops
 #' @param y_levels A vector of state levels in fitted outcome order. Its length
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
@@ -914,6 +924,7 @@ avg_sops <- function(
   # all profiles.
   by <- by_choice$by
   var_list <- resolve_prediction_variables(variables, model, newdata)
+  stop_by_names_set_variable(by, var_list, "avg_sops()")
 
   data_res <- resolve_markov_source_data(
     model,
@@ -968,7 +979,12 @@ avg_sops <- function(
 
   grid <- create_counterfactual_grid(var_list)
 
-  newdata_expanded <- create_counterfactual_data(baseline_data, grid, var_list)
+  newdata_expanded <- create_counterfactual_data(
+    baseline_data,
+    grid,
+    var_list,
+    by = by
+  )
   warn_skipped_sop_visits(
     model,
     newdata_orig,

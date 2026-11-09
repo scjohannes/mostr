@@ -194,6 +194,96 @@ resolve_by_choice <- function(by) {
   )
 }
 
+# Grouping by the compared variable of `avg_comparisons()`. `by` naming that
+# variable groups the profiles by the value they were observed with. The
+# averaged SOPs behind the comparison keep the value that was set in the
+# variable's own column, so the observed value is copied, before it is set,
+# into a column with this internal name, and the averages are grouped on the
+# copy. `restore_observed_by_names()` gives the copy the variable's name once
+# the comparison has replaced the set values with contrasts.
+observed_by_column <- function(variable) {
+  paste0(".mostr_observed_", variable)
+}
+
+# `by` with every variable set by `variables` replaced by its observed copy.
+observed_by <- function(by, variables) {
+  if (is.null(by)) {
+    return(NULL)
+  }
+  set <- by %in% names(variables)
+  by[set] <- observed_by_column(by[set])
+  by
+}
+
+# Adds the observed copies that `by` asks for to profiles that still hold
+# their observed values. A copy that is already present is kept, because
+# profiles after `create_counterfactual_data()` hold set values.
+add_observed_by_columns <- function(data, variables, by) {
+  for (variable in names(variables)) {
+    column <- observed_by_column(variable)
+    if (
+      column %in% by &&
+        variable %in% names(data) &&
+        !column %in% names(data)
+    ) {
+      data[[column]] <- data[[variable]]
+    }
+  }
+  data
+}
+
+# Names observed copies after their variable, in a table that no longer has
+# a column of set values.
+restore_observed_by_names <- function(data, variables) {
+  if (is.null(data)) {
+    return(data)
+  }
+  for (variable in names(variables)) {
+    column <- observed_by_column(variable)
+    if (column %in% names(data) && !variable %in% names(data)) {
+      names(data)[names(data) == column] <- variable
+    }
+  }
+  data
+}
+
+# The user's name for a grouping column, for messages.
+observed_by_label <- function(by) {
+  sub("^\\.mostr_observed_", "", by)
+}
+
+# `avg_sops()` and `avg_state_time()` return the set value in the column of
+# each variable in `variables`, so a `by` group of the observed value would
+# need the same column name.
+stop_by_names_set_variable <- function(by, variables, fn) {
+  clash <- intersect(by, names(variables))
+  if (length(clash) == 0L) {
+    return(invisible(NULL))
+  }
+  name <- clash[1L]
+  stop(
+    "`by` names `",
+    name,
+    "`, which `variables` also sets. In the result of `",
+    fn,
+    "`, the `",
+    name,
+    "` column holds the value that was set, so it cannot also hold groups of ",
+    "the value each patient was observed with. The averages for each set ",
+    "value are already returned without `by`. To average within groups of ",
+    "the observed value, copy the column first, in `newdata` or in the data ",
+    "given to `mostm()`, for example ",
+    "`newdata$observed_",
+    name,
+    " <- newdata$",
+    name,
+    "`, and use `by = \"observed_",
+    name,
+    "\"`.",
+    call. = FALSE
+  )
+}
+
 create_counterfactual_grid <- function(variables) {
   if (length(variables)) {
     do.call(expand.grid, variables)
@@ -209,11 +299,20 @@ create_counterfactual_grid <- function(variables) {
 #' @param baseline_data Data frame with one row per patient.
 #' @param grid Data frame of variable combinations.
 #' @param variables Named list of variable values.
+#' @param by Optional grouping columns. For each internal observed-value
+#'   column that `by` names, the observed value of its variable is copied
+#'   before the variable is set.
 #'
 #' @return Data frame with counterfactual data stacked.
 #'
 #' @keywords internal
-create_counterfactual_data <- function(baseline_data, grid, variables) {
+create_counterfactual_data <- function(
+  baseline_data,
+  grid,
+  variables,
+  by = NULL
+) {
+  baseline_data <- add_observed_by_columns(baseline_data, variables, by)
   cf_data_list <- vector("list", nrow(grid))
   for (i in seq_len(nrow(grid))) {
     dt_copy <- baseline_data

@@ -68,6 +68,26 @@
 
 ## Bug fixes
 
+* `avg_comparisons()` and `comparisons()` with `by` naming the compared
+  variable, for example `variables = list(tx = c(0, 1))` with `by = "tx"`,
+  now group patients by the treatment they were observed with for every
+  estimand, giving the average effect among the untreated and among the
+  treated. Each group's estimate equals the same call with `newdata`
+  restricted to that group, and intervals from `inferences()` with
+  `method = "mvn"`, `"score_bootstrap"`, `"bootstrap"`, or `"fwb"` follow the
+  same groups. Previously, SOP and time-in-state comparisons silently ignored
+  such a `by` and returned the overall average without a `tx` column, and
+  with `time_map` they mixed the starting states of one group with the
+  averages of all patients. Time benefit was already grouped correctly.
+  Analytical intervals (`method = "delta"`) remain unavailable with `by`.
+
+* `avg_sops()` and `avg_state_time()` now stop with an explanation when `by`
+  names a variable that `variables` also sets. Their result's column for that
+  variable holds the value that was set, so `by` was silently ignored. To
+  average within groups of the observed value, copy the column first, for
+  example `newdata$observed_tx <- newdata$tx`, and use `by = "observed_tx"`.
+  `by` without `variables`, or on other columns, works as before.
+
 * With `engine = "vglm"`, starting values given through `etastart` or
   `mustart`, with one row per row of `data`, now drop the rows that `subset`
   or missing values remove. Previously such a fit stopped with a dimension

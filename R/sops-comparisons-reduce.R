@@ -81,11 +81,16 @@ avg_comparison_from_avg_sops <- function(
     }
 
     if (isTRUE(return_draws)) {
-      attr(point, draw_attr) <- draw_reduced
+      attr(point, draw_attr) <- restore_observed_by_names(
+        draw_reduced,
+        variables
+      )
     }
   }
 
-  point
+  # A group of the compared variable's observed value takes that variable's
+  # name; the contrasts have replaced the set values.
+  restore_observed_by_names(point, variables)
 }
 
 # Default real-time grid: the observed starting-state time, when used, followed

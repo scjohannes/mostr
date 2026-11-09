@@ -62,8 +62,12 @@ reference level. \code{"time_benefit"} only supports \code{"difference"}.}
 profile. \code{TRUE} averages the comparisons over all profiles, and a
 character vector of column names averages them within the groups those
 columns define. Both return the result of \code{\link[=avg_comparisons]{avg_comparisons()}} with the
-same arguments. For \code{comparison = "ratio"}, that average is the ratio of
-the averaged summaries, not the average of the profiles' ratios.}
+same arguments. Groups use each profile's observed values, so naming the
+compared variable, for example \code{by = "tx"}, gives the average effect among
+the untreated and among the treated; analytical intervals
+(\code{method = "delta"}) are not available with \code{by}. For
+\code{comparison = "ratio"}, that average is the ratio of the averaged
+summaries, not the average of the profiles' ratios.}
 
 \item{times}{Required. The consecutive visits to include, in increasing
 order, for example \code{times = 1:30}. Each value is one transition, so

@@ -787,7 +787,12 @@ inferences_simulation <- function(
         id_var = id_var,
         time_var = time_var
       )
-      newdata_pred <- create_counterfactual_data(baseline_data, grid, variables)
+      newdata_pred <- create_counterfactual_data(
+        baseline_data,
+        grid,
+        variables,
+        by = by
+      )
       n_each <- nrow(baseline_data)
     }
   } else {

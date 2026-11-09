@@ -56,9 +56,12 @@ per named state set, for example
 
 \item{by}{How to average, as in the marginaleffects package. \code{TRUE} (the
 default) averages over all profiles, and a character vector of column
-names averages within the groups those columns define. \code{FALSE} or \code{NULL}
-does not average and returns the \code{\link[=state_time]{state_time()}} result, one total per
-profile, value of \code{variables}, and state set.}
+names averages within the groups those columns define, using each
+profile's observed values. As in \code{\link[=avg_sops]{avg_sops()}}, \code{by} cannot name a
+variable that \code{variables} also sets; copy the column first, for example
+\code{newdata$observed_tx <- newdata$tx}, and use \code{by = "observed_tx"}.
+\code{FALSE} or \code{NULL} does not average and returns the \code{\link[=state_time]{state_time()}} result,
+one total per profile, value of \code{variables}, and state set.}
 
 \item{times}{Required. The consecutive visits to include, in increasing
 order and each listed once, for example \code{times = 1:30}. Each value is one

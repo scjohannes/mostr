@@ -63,7 +63,18 @@ reference level. \code{"time_benefit"} only supports \code{"difference"}.}
 \item{by}{How to average the comparisons of the individual profiles, as in
 the marginaleffects package. \code{TRUE} (the default) averages over all
 profiles. A character vector of column names averages within the groups
-those columns define. \code{FALSE} or \code{NULL} does not average and returns the
+those columns define, using each profile's values as observed. Naming the
+compared variable itself, for example \code{by = "tx"} with
+\code{variables = list(tx = c(0, 1))}, groups the patients by the treatment
+they actually received: the result has a \code{tx} column holding that
+observed value, and gives the average effect of treatment among the
+untreated (\code{tx = 0}) and among the treated (\code{tx = 1}). Each group's
+estimate equals the same call with \code{newdata} restricted to that group's
+profiles. For \code{comparison = "ratio"}, a group's result is the ratio of
+the group's averaged summaries. Intervals from \code{\link[=inferences]{inferences()}} with
+\code{method = "mvn"}, \code{"score_bootstrap"}, \code{"bootstrap"}, or \code{"fwb"} follow
+the same groups; analytical intervals (\code{method = "delta"}) are not
+available with \code{by}. \code{FALSE} or \code{NULL} does not average and returns the
 \code{\link[=comparisons]{comparisons()}} result, one comparison per profile; analytical intervals
 for it use conditional variance only, and the ordinary bootstrap is not
 available.}

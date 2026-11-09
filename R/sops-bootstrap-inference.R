@@ -178,7 +178,12 @@ inferences_bootstrap <- function(
       )
 
       # Create counterfactual datasets for each variable value
-      newdata_cf <- create_counterfactual_data(baseline_boot, grid, variables)
+      newdata_cf <- create_counterfactual_data(
+        baseline_boot,
+        grid,
+        variables,
+        by = by
+      )
     }
 
     # Compute individual SOPs for counterfactual data
@@ -294,11 +299,15 @@ inferences_bootstrap <- function(
     if (!newdata_supplied && !is.null(by)) {
       check_bootstrap_by_groups(
         boot_ids,
-        baseline_data = resolve_markov_prediction_data(
-          refit_data,
-          id_var = id_var,
-          time_var = time_var,
-          data_label = "refit data"
+        baseline_data = add_observed_by_columns(
+          resolve_markov_prediction_data(
+            refit_data,
+            id_var = id_var,
+            time_var = time_var,
+            data_label = "refit data"
+          ),
+          variables,
+          by
         ),
         id_var = id_var,
         by = by
@@ -705,7 +714,11 @@ check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
     paste,
     c(
       lapply(by, function(col) {
-        paste(col, "=", as.character(baseline_data[[col]][complete]))
+        paste(
+          observed_by_label(col),
+          "=",
+          as.character(baseline_data[[col]][complete])
+        )
       }),
       sep = ", "
     )

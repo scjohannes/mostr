@@ -21,8 +21,12 @@
 #'   profile. `TRUE` averages the comparisons over all profiles, and a
 #'   character vector of column names averages them within the groups those
 #'   columns define. Both return the result of [avg_comparisons()] with the
-#'   same arguments. For `comparison = "ratio"`, that average is the ratio of
-#'   the averaged summaries, not the average of the profiles' ratios.
+#'   same arguments. Groups use each profile's observed values, so naming the
+#'   compared variable, for example `by = "tx"`, gives the average effect among
+#'   the untreated and among the treated; analytical intervals
+#'   (`method = "delta"`) are not available with `by`. For
+#'   `comparison = "ratio"`, that average is the ratio of the averaged
+#'   summaries, not the average of the profiles' ratios.
 #' @param return_draws Logical. For `blrm`, store the posterior draws of each
 #'   comparison for extraction with [get_draws()].
 #'

@@ -430,6 +430,33 @@ Internally, averaged results still store `by = NULL` for the overall average
 average SOPs goes through `avg_comparison_replay_avg_sops()`, which passes
 `by %||% TRUE` so it keeps getting averages.
 
+`by` groups use each profile's observed values. A column that `variables`
+sets holds the set value in the averaged SOPs, so for `avg_sops()` and
+`avg_state_time()` a `by` naming such a variable would need the same column
+for two meanings; `stop_by_names_set_variable()` refuses it and tells the user
+to group by a copy of the column. `avg_comparisons()` (and `comparisons(by =)`,
+which hands off to it) does group by the observed value of the compared
+variable. Time benefit groups the paired per-profile values on the
+pre-counterfactual profiles (`average_profile_values()`), so it reads `by` as
+given. SOP and time-in-state comparisons are reduced from averaged SOPs, so
+`avg_comparisons()` replaces the compared variable in `by` with an internal
+observed copy, `observed_by()` and `observed_by_column()`
+(`.mostr_observed_<variable>`), before replaying `avg_sops()`; that internal
+`by` is what `avg_args$by` stores, so every replay groups the same way.
+`create_counterfactual_data(by = )` copies the observed value into that
+column before setting the variable, which covers `avg_sops()`, the MVN and
+score-bootstrap draws (`inferences_simulation()`), and the bootstrap and FWB
+refits (`inferences_bootstrap_sops_fwb()`, whose `check_bootstrap_by_groups()`
+labels the copy by its variable's name). `empirical_baseline_anchor_from_data()`
+adds the copy to the baseline rows with `add_observed_by_columns()`, so with
+`time_map` each observed group starts from its own starting-state
+distribution. `avg_comparison_from_avg_sops()` renames the copy to the
+variable's name with `restore_observed_by_names()` once the contrasts have
+replaced the set values, in the estimates and in the stored draws. Ratios
+stay ratios of each group's averaged summaries. The delta method still
+refuses any `by` (`delta_validate_comparison_scope()` in
+`R/sops-delta-comparisons.R`).
+
 Grouping therefore exists only on averaged results, in `avg_args$by`. A
 `markov_sops` result always has one row per profile, time, and state, and
 stores no `by` attribute or `call_args$by`. The code that reads it assumes

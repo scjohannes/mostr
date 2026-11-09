@@ -267,6 +267,9 @@ empirical_baseline_anchor_from_data <- function(
   avg_args <- attr(x, "avg_args")
   variables <- names(avg_args$variables %||% list())
   by <- avg_args$by %||% character()
+  # Groups of an observed value use the observed copy, which profiles read
+  # from the data still need.
+  baseline <- add_observed_by_columns(baseline, avg_args$variables, by)
   group_cols <- unique(c(variables, by))
   combos <- if (length(group_cols) > 0) {
     unique(x[, group_cols, drop = FALSE])

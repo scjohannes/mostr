@@ -18,9 +18,12 @@
 #'   covariates.
 #' @param by How to average, as in the marginaleffects package. `TRUE` (the
 #'   default) averages over all profiles, and a character vector of column
-#'   names averages within the groups those columns define. `FALSE` or `NULL`
-#'   does not average and returns the [state_time()] result, one total per
-#'   profile, value of `variables`, and state set.
+#'   names averages within the groups those columns define, using each
+#'   profile's observed values. As in [avg_sops()], `by` cannot name a
+#'   variable that `variables` also sets; copy the column first, for example
+#'   `newdata$observed_tx <- newdata$tx`, and use `by = "observed_tx"`.
+#'   `FALSE` or `NULL` does not average and returns the [state_time()] result,
+#'   one total per profile, value of `variables`, and state set.
 #' @param state_sets States to summarize. `NULL` returns every state separately.
 #'   A vector pools its states into one total; a named list returns one total
 #'   per named state set, for example
@@ -213,6 +216,7 @@ avg_state_time <- function(
   # all profiles.
   by <- by_choice$by
   variables <- resolve_prediction_variables(variables, model, newdata)
+  stop_by_names_set_variable(by, variables, "avg_state_time()")
   reserved <- intersect(
     c(names(variables), by),
     c("state_set", if (!is.null(time_unit)) "time_unit")

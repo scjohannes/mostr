@@ -28,7 +28,18 @@
 #' @param by How to average the comparisons of the individual profiles, as in
 #'   the marginaleffects package. `TRUE` (the default) averages over all
 #'   profiles. A character vector of column names averages within the groups
-#'   those columns define. `FALSE` or `NULL` does not average and returns the
+#'   those columns define, using each profile's values as observed. Naming the
+#'   compared variable itself, for example `by = "tx"` with
+#'   `variables = list(tx = c(0, 1))`, groups the patients by the treatment
+#'   they actually received: the result has a `tx` column holding that
+#'   observed value, and gives the average effect of treatment among the
+#'   untreated (`tx = 0`) and among the treated (`tx = 1`). Each group's
+#'   estimate equals the same call with `newdata` restricted to that group's
+#'   profiles. For `comparison = "ratio"`, a group's result is the ratio of
+#'   the group's averaged summaries. Intervals from [inferences()] with
+#'   `method = "mvn"`, `"score_bootstrap"`, `"bootstrap"`, or `"fwb"` follow
+#'   the same groups; analytical intervals (`method = "delta"`) are not
+#'   available with `by`. `FALSE` or `NULL` does not average and returns the
 #'   [comparisons()] result, one comparison per profile; analytical intervals
 #'   for it use conditional variance only, and the ordinary bootstrap is not
 #'   available.
@@ -251,11 +262,13 @@ avg_comparisons <- function(
     result <- tb$result
     setup <- tb$setup
   } else {
+    # The averaged SOPs hold the set value in the compared variable's column,
+    # so a group of its observed value uses an observed copy.
     avg <- avg_comparison_replay_avg_sops(
       model = model,
       newdata = newdata,
       variables = variables,
-      by = by,
+      by = observed_by(by, variables),
       times = times,
       y_levels = y_levels,
       absorb = absorb,
