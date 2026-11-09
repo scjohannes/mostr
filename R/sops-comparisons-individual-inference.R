@@ -354,6 +354,7 @@ comparison_simulation_draws <- function(
     sops_array <- tryCatch(
       predict_array(beta_draws[i, ]),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning(
           "SOP prediction failed in draw ",
           i,
@@ -467,6 +468,7 @@ comparison_fwb_draws <- function(
         time_covariates = setup$time_covariates
       ),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning("soprob_markov failed: ", conditionMessage(e), call. = FALSE)
         NULL
       }

@@ -337,7 +337,7 @@ test_that("compiled plan matches markov_msm_build() and the R reference for cons
   res_reference <- reference_first_order_plan_sops(
     plan,
     reference_backend_gamma(fit2, plan$components$col_names),
-    category_probabilities = reference_clipped_probabilities
+    category_probabilities = reference_checked_probabilities
   )
 
   # Fix dimnames for comparison
@@ -443,7 +443,7 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO"
   res_reference <- reference_first_order_plan_sops(
     plan,
     reference_backend_gamma(fit, plan$components$col_names),
-    category_probabilities = reference_clipped_probabilities
+    category_probabilities = reference_checked_probabilities
   )
 
   # Fix dimnames for comparison

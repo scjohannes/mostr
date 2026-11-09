@@ -60,6 +60,73 @@ double stable_logistic(const double value) {
   return exponent / (1.0 + exponent);
 }
 
+// Crossed cut-points in partial proportional-odds models (see
+// R/sops-crossed-thresholds.R). A category probability below
+// -kCrossedTolerance means the cut-points cross: SOPs are not defined, and the
+// kernels report it instead of clipping. Smaller negative values are rounding
+// and are set to zero, after which the row is rescaled. Keep this equal to
+// crossed_threshold_tolerance() in R.
+constexpr double kCrossedTolerance = 1e-10;
+
+// Records which profiles have crossed cut-points and the lowest probability.
+struct CrossedThresholds {
+  explicit CrossedThresholds(const int profiles) : crossed(profiles, false) {}
+
+  void record(const int profile, const double probability) {
+    if (!crossed[profile]) {
+      crossed[profile] = true;
+      ++count;
+    }
+    minimum = std::min(minimum, probability);
+  }
+
+  // Marks `out` with the 1-based profiles and the lowest probability, which
+  // the R wrappers in R/sops-native.R turn into an error.
+  void mark(writable::doubles& out) const {
+    if (count == 0) {
+      return;
+    }
+    writable::integers profiles(count);
+    int position = 0;
+    for (int i = 0; i < static_cast<int>(crossed.size()); ++i) {
+      if (crossed[i]) {
+        profiles[position++] = i + 1;
+      }
+    }
+    out.attr("crossed_profiles") = profiles;
+    out.attr("minimum_probability") = writable::doubles({minimum});
+  }
+
+  std::vector<bool> crossed;
+  int count = 0;
+  double minimum = 0.0;
+};
+
+// Category probabilities from reverse cumulative probabilities
+// cumulative[k] = P(Y >= k + 2), k = 0..states - 2. Returns the lowest raw
+// probability, then clips rounding negatives to zero. `total` receives the
+// clipped row sum.
+double cumulative_to_categories(
+    const std::vector<double>& cumulative,
+    std::vector<double>& probabilities,
+    double& total) {
+  const int states = static_cast<int>(probabilities.size());
+  const int thresholds = states - 1;
+  probabilities[0] = 1.0 - cumulative[0];
+  for (int state = 1; state < thresholds; ++state) {
+    probabilities[state] = cumulative[state - 1] - cumulative[state];
+  }
+  probabilities[states - 1] = cumulative[thresholds - 1];
+  double minimum = probabilities[0];
+  total = 0.0;
+  for (int state = 0; state < states; ++state) {
+    minimum = std::min(minimum, probabilities[state]);
+    probabilities[state] = std::max(0.0, probabilities[state]);
+    total += probabilities[state];
+  }
+  return minimum;
+}
+
 }  // namespace
 
 [[cpp11::register]] doubles cpp_markov_propagate(
@@ -139,28 +206,30 @@ double stable_logistic(const double value) {
     return static_cast<R_xlen_t>(i) + static_cast<R_xlen_t>(n) * state;
   };
   std::vector<double> probabilities(states, 0.0);
+  std::vector<double> cumulative(thresholds, 0.0);
+  CrossedThresholds crossed(n);
 
   for (int origin_pos = 0; origin_pos < origins; ++origin_pos) {
     const int origin = non_absorb[origin_pos] - 1;
     const int row_offset = origin_pos * n;
     for (int i = 0; i < n; ++i) {
+      // Every row is checked for crossed cut-points, including previous
+      // states the patient cannot be in at this visit, as the reference
+      // engine does.
+      const int row = row_offset + i;
+      for (int threshold = 0; threshold < thresholds; ++threshold) {
+        cumulative[threshold] = stable_logistic(logits(row, threshold));
+      }
+      double total = 0.0;
+      const double minimum =
+        cumulative_to_categories(cumulative, probabilities, total);
+      if (minimum < -kCrossedTolerance) {
+        crossed.record(i, minimum);
+      }
       const double mass = previous(i, origin);
       if (mass == 0.0) {
         continue;
       }
-      const int row = row_offset + i;
-      double prior_cumulative = stable_logistic(logits(row, 0));
-      probabilities[0] = std::max(0.0, 1.0 - prior_cumulative);
-      double total = probabilities[0];
-      for (int threshold = 1; threshold < thresholds; ++threshold) {
-        const double cumulative = stable_logistic(logits(row, threshold));
-        probabilities[threshold] =
-          std::max(0.0, prior_cumulative - cumulative);
-        total += probabilities[threshold];
-        prior_cumulative = cumulative;
-      }
-      probabilities[states - 1] = std::max(0.0, prior_cumulative);
-      total += probabilities[states - 1];
       if (!std::isfinite(total) || total <= 0.0) {
         cpp11::stop("Invalid transition probabilities in native SOP propagation.");
       }
@@ -180,6 +249,7 @@ double stable_logistic(const double value) {
       out[output_index(i, state)] += previous(i, state);
     }
   }
+  crossed.mark(out);
   return out;
 }
 
@@ -206,28 +276,29 @@ double stable_logistic(const double value) {
     return static_cast<R_xlen_t>(i) + static_cast<R_xlen_t>(n) * state;
   };
   std::vector<double> probabilities(states, 0.0);
+  std::vector<double> cumulative(thresholds, 0.0);
+  CrossedThresholds crossed(n);
 
   for (int origin_pos = 0; origin_pos < origins; ++origin_pos) {
     const int origin = non_absorb[origin_pos] - 1;
     const R_xlen_t row_offset = static_cast<R_xlen_t>(origin_pos) * n;
     for (int i = 0; i < n; ++i) {
+      // With one slope for all cut-points they cross only when the cut-points
+      // themselves are out of order; rows are checked like the logit kernel.
+      const double scalar = scalar_predictor[row_offset + i];
+      for (int threshold = 0; threshold < thresholds; ++threshold) {
+        cumulative[threshold] = stable_logistic(cutpoints[threshold] + scalar);
+      }
+      double total = 0.0;
+      const double minimum =
+        cumulative_to_categories(cumulative, probabilities, total);
+      if (minimum < -kCrossedTolerance) {
+        crossed.record(i, minimum);
+      }
       const double mass = previous(i, origin);
       if (mass == 0.0) {
         continue;
       }
-      const double scalar = scalar_predictor[row_offset + i];
-      double prior_cumulative = stable_logistic(cutpoints[0] + scalar);
-      probabilities[0] = std::max(0.0, 1.0 - prior_cumulative);
-      double total = probabilities[0];
-      for (int threshold = 1; threshold < thresholds; ++threshold) {
-        const double cumulative = stable_logistic(cutpoints[threshold] + scalar);
-        probabilities[threshold] =
-          std::max(0.0, prior_cumulative - cumulative);
-        total += probabilities[threshold];
-        prior_cumulative = cumulative;
-      }
-      probabilities[states - 1] = std::max(0.0, prior_cumulative);
-      total += probabilities[states - 1];
       if (!std::isfinite(total) || total <= 0.0) {
         cpp11::stop("Invalid transition probabilities in native PO propagation.");
       }
@@ -247,6 +318,7 @@ double stable_logistic(const double value) {
       out[output_index(i, state)] += previous(i, state);
     }
   }
+  crossed.mark(out);
   return out;
 }
 
@@ -340,7 +412,7 @@ bool delta_category_probabilities(
     minimum_probability = std::min(minimum_probability, probabilities[state]);
     probability_sum += probabilities[state];
   }
-  if (minimum_probability < -1e-10) {
+  if (minimum_probability < -kCrossedTolerance) {
     failure.code = DeltaFailureCode::crossed_probability;
     failure.value = minimum_probability;
     return false;
@@ -1084,6 +1156,7 @@ bool delta_category_probabilities(
   };
 
   std::vector<double> cumulative(static_cast<size_t>(thresholds));
+  std::vector<double> raw(static_cast<size_t>(states));
   for (int i = 0; i < observations; ++i) {
     for (int d = 0; d < draws; ++d) {
       const R_xlen_t eta_pos = matrix_index(d, i);
@@ -1095,6 +1168,7 @@ bool delta_category_probabilities(
         cumulative[static_cast<size_t>(k)] = logistic(value);
       }
       double total = 0.0;
+      bool crossed = false;
       for (int state = 0; state < states; ++state) {
         double probability;
         if (state == 0) {
@@ -1105,9 +1179,22 @@ bool delta_category_probabilities(
           probability = cumulative[static_cast<size_t>(state - 1)] -
             cumulative[static_cast<size_t>(state)];
         }
+        if (probability < -kCrossedTolerance) {
+          crossed = true;
+        }
+        raw[static_cast<size_t>(state)] = probability;
         probability = std::max(0.0, probability);
         out[output_index(d, i, state)] = probability;
         total += probability;
+      }
+      if (crossed) {
+        // Crossed cut-points (partial proportional odds): return the raw
+        // probabilities, negative values included, so that the R caller
+        // reports them (check_crossed_thresholds()).
+        for (int state = 0; state < states; ++state) {
+          out[output_index(d, i, state)] = raw[static_cast<size_t>(state)];
+        }
+        continue;
       }
       if (!std::isfinite(total) || total <= 0.0) {
         cpp11::stop("BLRM prediction produced invalid probability mass.");
@@ -1176,28 +1263,29 @@ bool delta_category_probabilities(
   };
 
   std::vector<double> probabilities(static_cast<size_t>(states));
+  std::vector<double> cumulative(static_cast<size_t>(thresholds));
+  CrossedThresholds crossed(observations);
   for (int pair = 0; pair < pairs; ++pair) {
     const int h = older[pair] - 1;
     const int j = current[pair] - 1;
     for (int i = 0; i < observations; ++i) {
+      // Every history is checked for crossed cut-points, as in the
+      // first-order kernels.
+      const double scalar = scalar_predictor[scalar_index(i, pair)];
+      for (int target = 0; target < thresholds; ++target) {
+        cumulative[static_cast<size_t>(target)] =
+          logistic(scalar + cutpoints[target]);
+      }
+      double total = 0.0;
+      const double minimum =
+        cumulative_to_categories(cumulative, probabilities, total);
+      if (minimum < -kCrossedTolerance) {
+        crossed.record(i, minimum);
+      }
       const double mass = previous[joint_index(i, h, j)];
       if (mass == 0.0) {
         continue;
       }
-      const double scalar = scalar_predictor[scalar_index(i, pair)];
-      double prior_cumulative = logistic(scalar + cutpoints[0]);
-      probabilities[0] = std::max(0.0, 1.0 - prior_cumulative);
-      double total = probabilities[0];
-      for (int target = 1; target < thresholds; ++target) {
-        const double cumulative = logistic(scalar + cutpoints[target]);
-        probabilities[static_cast<size_t>(target)] =
-          std::max(0.0, prior_cumulative - cumulative);
-        total += probabilities[static_cast<size_t>(target)];
-        prior_cumulative = cumulative;
-      }
-      probabilities[static_cast<size_t>(states - 1)] =
-        std::max(0.0, prior_cumulative);
-      total += probabilities[static_cast<size_t>(states - 1)];
       if (!std::isfinite(total) || total <= 0.0) {
         cpp11::stop("Second-order PO prediction produced invalid probability mass.");
       }
@@ -1219,5 +1307,6 @@ bool delta_category_probabilities(
     }
   }
   out.attr("dim") = writable::integers({observations, states, states});
+  crossed.mark(out);
   return out;
 }

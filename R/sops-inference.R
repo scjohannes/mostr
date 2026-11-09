@@ -18,8 +18,6 @@
 #'   \itemize{
 #'     \item `"mvn"`: Multivariate-normal coefficient draws.
 #'     \item `"delta"`: Deterministic analytical delta-method inference.
-#'     \item `"score_bootstrap"`: One-step score perturbation using fixed
-#'       exponential cluster weights.
 #'     \item `"bootstrap"`: Ordinary patient-level refit bootstrap.
 #'     \item `"fwb"`: Fractional weighted refits using fixed exponential
 #'       patient weights.
@@ -47,8 +45,7 @@
 #'   stored fitting-data column. Otherwise the model's stored `id_var` is used;
 #'   fitting rows are never treated as implicit clusters. For unconditional
 #'   inference, the cluster labels must match the stored starting-profile patient
-#'   IDs exactly. For score bootstrap with `orm`, this is the row-aligned cluster
-#'   vector.
+#'   IDs exactly.
 #' @param workers Number of parallel workers. If NULL (default) or 1, uses
 #'   sequential processing. If > 1, uses parallel processing with that many
 #'   workers.
@@ -110,9 +107,8 @@
 #'   `"draws"` attribute containing all individual draws. Delta results instead
 #'   store a low-rank `"analytical"` attribute and never store draws. For
 #'   per-profile results from `sops()`, [state_time()], and [comparisons()]
-#'   evaluated on the stored prediction cohort, score-bootstrap and FWB draws
-#'   include the
-#'   draw-specific `score_weight` or `fwb_weight` column.
+#'   evaluated on the stored prediction cohort, FWB draws include the
+#'   draw-specific `fwb_weight` column.
 #'
 #' @details
 #' ## Analytical Delta Method
@@ -151,9 +147,13 @@
 #' transition and have exactly one complete model-stored starting profile. The
 #' starting profile may have a missing first transition response; its ID,
 #' predictors, scheduled starting time, and previous state must be observed.
-#' Weighted and penalized ORM fits do not support unconditional variance because
-#' their score/sensitivity contracts have not been established. They remain
-#' eligible for conditional delta inference when their fitted covariance is valid.
+#' Unconditional variance is not available for models fitted with case weights
+#' (`weights` in [mostm()]) with any engine, because its calculation has not
+#' been checked with weights; this includes the default `vcov = NULL` for
+#' averages. Nor is it available for penalized `orm` fits, because their
+#' patients' contributions to coefficient estimation have not been shown to
+#' account for the penalty. Both kinds of fit still give conditional variance
+#' with `vcov = "conditional"`.
 #'
 #' Analytical covariance is patient-cluster robust: it groups the fitting rows
 #' by the `id_var` column named in [mostm()], or by the patient IDs given in
@@ -169,24 +169,13 @@
 #' The simulation method works as follows:
 #' 1. Extract the fitted coefficient vector \eqn{\hat\beta} and its estimated
 #'    covariance matrix \eqn{V_\beta}.
-#' 2. Generate `n_draws` coefficient vectors using the selected method:
-#'    \itemize{
-#'      \item `method = "mvn"`: Multivariate-normal draws from
-#'        \eqn{\mathcal{N}(\hat\beta, V_\beta)}.
-#'      \item `method = "score_bootstrap"`: one-step score perturbation with
-#'        cluster-level exponential multipliers.
-#'    }
+#' 2. Generate `n_draws` coefficient vectors from the multivariate normal
+#'    distribution \eqn{\mathcal{N}(\hat\beta, V_\beta)} (`method = "mvn"`).
 #' 3. For each draw, replace model coefficients and compute SOPs
 #' 4. Compute confidence intervals from the empirical distribution
 #'
-#' - Works for both individual-level (`sops()`) and averaged (`avg_sops()`) SOPs
-#'   for `method = "mvn"`
-#' - `method = "score_bootstrap"` supports `avg_sops()` and `sops()` with
-#'   `robcov_vglm` models and with `orm` models when `cluster` is supplied.
-#'   When the prediction rows are the stored patients, the same
-#'   cluster-level weights used for the score perturbation are used for every
-#'   empirical averaging step. With `by`, weights are normalized within each
-#'   subgroup; without `by`, they are normalized over the full set of stored patients.
+#' This works for both individual-level (`sops()`) and averaged (`avg_sops()`)
+#' SOPs.
 #'
 #' ## Bootstrap Method
 #'
@@ -215,11 +204,11 @@
 #' bootstrap keeps every patient in every refit and has no such gaps. Fractional weighted bootstrap keeps every row in
 #' the refit data with positive patient-level weights, so it is available for
 #' individual `sops()` objects. The same holds for [comparisons()] results,
-#' which also support `method = "mvn"` and `method = "score_bootstrap"`. For
+#' which also support `method = "mvn"`. For
 #' FWB, the same patient weights used for
 #' refitting are used for marginal or subgroup averaging. Stored-data
 #' `sops()` draws and stored-data [comparisons()] draws expose the patient
-#' weight as `fwb_weight` (or `score_weight` for the score bootstrap);
+#' weight as `fwb_weight`;
 #' averaging each draw's comparisons with these weights reproduces the
 #' [avg_comparisons()] draws. `avg_sops()` uses the weights internally and
 #' returns already averaged draws.
@@ -229,10 +218,10 @@
 #'
 #' For marginal `avg_sops()` objects built from user-supplied `newdata`, the
 #' supplied patients' starting states and covariates are treated as given.
-#' This also applies to `sops(newdata = ...)`. Score bootstrap and FWB use the
-#' data stored on the fitted model for coefficient or refit uncertainty, but do
+#' This also applies to `sops(newdata = ...)`. FWB uses the
+#' data stored on the fitted model for refit uncertainty, but does
 #' not attach or apply draw weights to the supplied prediction profiles because
-#' those rows cannot be assumed to align with the bootstrap clusters.
+#' those rows cannot be assumed to align with the bootstrap patients.
 #'
 #' ## Starting values in refits
 #'
@@ -259,13 +248,13 @@
 #' rather than from the patients' observed starting states. Such results
 #' support only conditional variance: use `method = "delta"` with
 #' `vcov = "conditional"` (or a coefficient covariance matrix), or
-#' `method = "mvn"`. Unconditional delta inference and the score-bootstrap,
-#' bootstrap, and FWB methods error, because they also account for which
+#' `method = "mvn"`. Unconditional delta inference and the bootstrap and FWB
+#' methods error, because they also account for which
 #' patients were sampled, and that calculation is not supported once the
 #' starting state is set. [state_time()] and [comparisons()] results are not
 #' averaged over
 #' patients, so with a set starting state they keep the conditional delta,
-#' MVN, score-bootstrap, and FWB methods.
+#' MVN, and FWB methods.
 #'
 #' @seealso [avg_sops()], [sops()], [get_draws()],
 #'   [robcov_vglm()], [set_coef()]
@@ -290,16 +279,6 @@
 #' ) |>
 #'   inferences(method = "mvn", n_draws = 1000)
 #'
-#' # Step 2a-bis: Score bootstrap simulation (requires robcov_vglm)
-#' result_score <- avg_sops(
-#'   model = fit_robust,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   y_levels = factor(1:6),
-#'   absorb = "6"
-#' ) |>
-#'   inferences(method = "score_bootstrap", n_draws = 1000)
-#'
 #' # The orm engine stores the package-owned full robust covariance matrix.
 #' dd <- rms::datadist(data)
 #' options(datadist = "dd")
@@ -314,13 +293,6 @@
 #' )
 #' result_orm <- avg_orm |>
 #'   inferences(method = "mvn", n_draws = 1000)
-#'
-#' result_orm_score <- avg_orm |>
-#'   inferences(
-#'     method = "score_bootstrap",
-#'     cluster = data$id,
-#'     n_draws = 1000
-#'   )
 #'
 #' # Step 2b: Bootstrap inference reuses stored full data
 #' result_boot <- avg_sops(
@@ -381,6 +353,54 @@ inferences <- function(
   update_datadist = TRUE,
   use_coefstart = FALSE
 ) {
+  if (identical(method, "score_bootstrap")) {
+    stop(
+      "`method = \"score_bootstrap\"` is no longer offered by `inferences()`. ",
+      "Use `method = \"mvn\"`, `\"delta\"`, `\"bootstrap\"`, or `\"fwb\"`.",
+      call. = FALSE
+    )
+  }
+  method <- match.arg(method, choices = inferences_public_methods())
+  inferences_internal(
+    x = x,
+    method = method,
+    n_draws = n_draws,
+    vcov = vcov,
+    cluster = cluster,
+    workers = workers,
+    seed = seed,
+    conf_level = conf_level,
+    conf_type = conf_type,
+    null = null,
+    return_draws = return_draws,
+    update_datadist = update_datadist,
+    use_coefstart = use_coefstart
+  )
+}
+
+inferences_public_methods <- function() {
+  c("mvn", "delta", "bootstrap", "fwb")
+}
+
+# Internal entry point to every inference method, including the score
+# bootstrap, which `inferences()` no longer offers. Package code that runs
+# inference on an intermediate result (for example, the SOPs behind an
+# average time) calls this so that the method of the outer call is kept.
+inferences_internal <- function(
+  x,
+  method = "mvn",
+  n_draws = 1000,
+  vcov = NULL,
+  cluster = NULL,
+  workers = NULL,
+  seed = NULL,
+  conf_level = 0.95,
+  conf_type = "auto",
+  null = "auto",
+  return_draws = TRUE,
+  update_datadist = TRUE,
+  use_coefstart = FALSE
+) {
   with_sop_fallback_notification_scope({
     with_local_seed(seed, {
       inferences_impl(
@@ -399,6 +419,42 @@ inferences <- function(
       )
     })
   })
+}
+
+# One-step score bootstrap: coefficient draws from score perturbations with
+# exponential patient-cluster multipliers (see `generate_score_bootstrap_draws()`).
+# It is kept and tested, but not offered by `inferences()`; call it as
+# `mostr:::inferences_score_bootstrap()`. Arguments are those of
+# `inferences()`. With orm fits, `cluster` is the row-aligned cluster vector.
+inferences_score_bootstrap <- function(
+  x,
+  n_draws = 1000,
+  vcov = NULL,
+  cluster = NULL,
+  workers = NULL,
+  seed = NULL,
+  conf_level = 0.95,
+  conf_type = "auto",
+  null = "auto",
+  return_draws = TRUE,
+  update_datadist = TRUE,
+  use_coefstart = FALSE
+) {
+  inferences_internal(
+    x = x,
+    method = "score_bootstrap",
+    n_draws = n_draws,
+    vcov = vcov,
+    cluster = cluster,
+    workers = workers,
+    seed = seed,
+    conf_level = conf_level,
+    conf_type = conf_type,
+    null = null,
+    return_draws = return_draws,
+    update_datadist = update_datadist,
+    use_coefstart = use_coefstart
+  )
 }
 
 inferences_impl <- function(
@@ -901,6 +957,7 @@ inferences_simulation <- function(
         sops_array <- tryCatch(
           run_sop_execution_plan(execution_plan, Gamma_i),
           error = function(e) {
+            rethrow_crossed_thresholds(e)
             warning("markov_msm_run failed in draw ", i, ": ", e$message)
             return(NULL)
           }
@@ -987,6 +1044,7 @@ inferences_simulation <- function(
           time_covariates = time_covariates
         ),
         error = function(e) {
+          rethrow_crossed_thresholds(e)
           warning("soprob_markov failed in draw ", i, ": ", e$message)
           return(NULL)
         }

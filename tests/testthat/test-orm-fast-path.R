@@ -265,17 +265,15 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   expect_equal(mvn_scaled$conf.high, mvn_default$conf.high, tolerance = 1e-8)
 
   withr::local_seed(61052)
-  score_default <- mostr::inferences(
+  score_default <- mostr:::inferences_score_bootstrap(
     avg_default,
-    method = "score_bootstrap",
     cluster = data$id,
     n_draws = 2,
     return_draws = TRUE
   )
   withr::local_seed(61052)
-  score_scaled <- mostr::inferences(
+  score_scaled <- mostr:::inferences_score_bootstrap(
     avg_scaled,
-    method = "score_bootstrap",
     cluster = data$id,
     n_draws = 2,
     return_draws = TRUE
@@ -360,18 +358,16 @@ test_that("orm supports MVN and score-bootstrap inference", {
   expect_s3_class(mostr::get_draws(mvn), "data.frame")
 
   expect_error(
-    mostr::inferences(
+    mostr:::inferences_score_bootstrap(
       avg,
-      method = "score_bootstrap",
       n_draws = 2
     ),
     "`cluster` is required"
   )
 
   withr::local_seed(61032)
-  score <- mostr::inferences(
+  score <- mostr:::inferences_score_bootstrap(
     avg,
-    method = "score_bootstrap",
     cluster = data$id,
     n_draws = 2,
     return_draws = TRUE

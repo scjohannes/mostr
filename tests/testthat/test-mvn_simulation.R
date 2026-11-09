@@ -419,9 +419,8 @@ describe("MVN Simulation-Based Inference for SOPs", {
         id_var = "id"
       )
 
-      result_score <- inferences(
+      result_score <- mostr:::inferences_score_bootstrap(
         avg_result,
-        method = "score_bootstrap",
         n_draws = 60,
         return_draws = TRUE
       )

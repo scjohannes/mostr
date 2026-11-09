@@ -103,11 +103,3 @@
       Error in `inferences_impl()`:
       ! Character `vcov` choices are only available with `method = "delta"`.
 
----
-
-    Code
-      inferences(object, method = method, vcov = "conditional")
-    Condition
-      Error in `inferences_impl()`:
-      ! Character `vcov` choices are only available with `method = "delta"`.
-

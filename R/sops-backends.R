@@ -1,5 +1,28 @@
 # SOP model adapters and time helpers.
 
+# Only `rmsb::blrm()` fits have random effects, so `include_re = TRUE` on any
+# other fit would otherwise be ignored without notice. Every public function
+# with an `include_re` argument calls this before doing any work.
+stop_include_re_without_blrm <- function(model, include_re) {
+  if (!isTRUE(include_re)) {
+    return(invisible(NULL))
+  }
+  fit <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
+  if (inherits(fit, "blrm")) {
+    return(invisible(NULL))
+  }
+  engine <- markov_model_engine(model) %||% class(fit)[1]
+  stop(
+    "`include_re = TRUE` adds each patient's random effect to the ",
+    "predictions, and only models fitted with `rmsb::blrm()` ",
+    "(`mostm(engine = \"blrm\")`) have random effects. This model was fitted ",
+    "with engine \"",
+    engine,
+    "\"; drop `include_re` or set it to FALSE.",
+    call. = FALSE
+  )
+}
+
 #' Validate Model for Markov Simulation
 #'
 #' Internal helper that checks whether a model is compatible with Markov

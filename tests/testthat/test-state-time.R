@@ -104,7 +104,7 @@ test_that("state_time() draws reduce to avg_state_time() draws", {
     list(method = "score_bootstrap", n_draws = 4L, seed = 602, weight = "score_weight"),
     list(method = "fwb", n_draws = 2L, seed = 603, weight = "fwb_weight")
   )) {
-    unit <- inferences(
+    unit <- run_inferences_method(
       do.call(state_time, args),
       method = setting$method,
       n_draws = setting$n_draws,
@@ -113,7 +113,7 @@ test_that("state_time() draws reduce to avg_state_time() draws", {
     expect_s3_class(unit, "markov_state_time")
     expect_identical(attr(unit, "method"), setting$method)
     expect_null(attr(unit, "null"))
-    average <- inferences(
+    average <- run_inferences_method(
       do.call(avg_state_time, args),
       method = setting$method,
       n_draws = setting$n_draws,

@@ -401,6 +401,7 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
     lp_to_probs(outer(scalar, po$cutpoints, "+"), M)
   }
   check_transition_probabilities(initial, "the first SOP time point")
+  check_crossed_thresholds(initial, n_pat, times[1L])
   P_out <- array(0, dim = c(n_pat, n_times, n_states))
   P_out[, 1L, ] <- initial
   previous <- initial
@@ -434,7 +435,8 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
           previous,
           logits,
           as.integer(non_absorb_idx),
-          as.integer(absorb_idx)
+          as.integer(absorb_idx),
+          time = times[t_idx]
         )
       } else {
         scalar <- drop(X_visit %*% po$beta)
@@ -444,7 +446,8 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
           scalar,
           po$cutpoints,
           as.integer(non_absorb_idx),
-          as.integer(absorb_idx)
+          as.integer(absorb_idx),
+          time = times[t_idx]
         )
       }
       P_out[, t_idx, ] <- previous
@@ -483,6 +486,10 @@ markov_po_structure <- function(Gamma, col_names, X_init) {
 #' Convert Cumulative Log-Odds to Probabilities (Internal)
 #'
 #' Converts a matrix of cumulative log-odds to category probabilities.
+#' Negative values from rounding (down to `-crossed_threshold_tolerance()`)
+#' are set to zero and the row is rescaled. Lower values mean that the
+#' cut-points of a partial proportional-odds model cross; they are kept so that
+#' the caller reports them with `check_crossed_thresholds()`.
 #'
 #' @param eta Matrix with one row per prediction and one column per ordinal
 #'   threshold.
@@ -502,7 +509,10 @@ lp_to_probs <- function(eta, M) {
   }
 
   probs[, M + 1] <- cum_probs[, M]
-  probs[probs < 0] <- 0
+  rounding <- !is.na(probs) &
+    probs < 0 &
+    probs >= -crossed_threshold_tolerance()
+  probs[rounding] <- 0
 
   normalize_probability_rows(probs)
 }

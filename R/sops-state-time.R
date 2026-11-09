@@ -59,10 +59,10 @@
 #'     supports first-order full proportional-odds `orm`, `vglm`, and
 #'     `robcov_vglm` fits; [stats::vcov()] then returns the covariance between
 #'     rows.
-#'   \item `method = "mvn"`, `"score_bootstrap"`, or `"fwb"` compute every
+#'   \item `method = "mvn"` or `"fwb"` compute every
 #'     profile's totals within each coefficient draw or weighted refit. For
-#'     the stored profiles, score-bootstrap and FWB draws also carry each
-#'     patient's weight in that draw (`score_weight` or `fwb_weight`);
+#'     the stored profiles, FWB draws also carry each
+#'     patient's weight in that draw (`fwb_weight`);
 #'     averaging a draw's totals with these weights reproduces the
 #'     [avg_state_time()] draw. See [get_draws()].
 #' }
@@ -123,6 +123,7 @@ state_time <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_include_re_without_blrm(model, include_re)
   validate_state_time_arguments(
     times,
     baseline_time = baseline_time,

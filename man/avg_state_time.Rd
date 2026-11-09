@@ -78,7 +78,12 @@ fitted visit levels.}
 must agree with the fitted model's threshold count. If \code{NULL}, attempts to
 infer the levels from \code{model}.}
 
-\item{absorb}{The absorbing state.}
+\item{absorb}{The absorbing states, such as death: states that a patient
+can't leave. Every profile must start outside them: a profile whose
+previous state (the \code{p_var} column) is absorbing, or with \code{p2_var} whose
+state two visits back is, gives an error. Such a patient can't move to
+another state, and the model has no transitions out of an absorbing state
+to predict from, so remove those patients from \code{newdata} first.}
 
 \item{time_map}{Optional named numeric vector or data frame giving the
 elapsed time of each visit label, for example
@@ -127,7 +132,8 @@ explicit precomputed time-basis columns. Registered inline terms such as
 \code{rms::rcs(time, 4)} and \code{rms::lsp(time, c(3, 7))} can be used without it.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -173,6 +179,11 @@ the total is the area under that curve. By default the curve starts at
 the interval before the first visit is included. For example, with visits
 on days 3, 7, 14, and 28 and \code{baseline_time = 0}, totals cover days 0 to 28.
 
+The average gives every profile the same weight. Case weights given to
+\code{\link[=mostm]{mostm()}} with \code{weights} are used only to fit the model, not in this
+average, so the result is not the same as repeating each patient according
+to their weight.
+
 \code{inferences(method = "delta")} provides analytical standard errors and
 confidence intervals of the form estimate plus or minus a normal quantile
 times the standard error. These intervals are not restricted to the
@@ -181,7 +192,8 @@ possible range of time and can, for example, extend below zero. Its default
 patients were sampled, including their observed starting states. Use
 \code{vcov = "conditional"} to treat the patients' starting states and
 covariates as given and account only for coefficient estimation. Supplied
-\code{newdata} requires conditional variance. When \code{variables} sets the
+\code{newdata}, and models fitted with case weights, require conditional
+variance. When \code{variables} sets the
 previous-state variable (a counterfactual starting state), the baseline
 starts in that state and only conditional variance is available
 (\verb{method = "delta", vcov = "conditional"} or \code{method = "mvn"}). The
@@ -202,9 +214,9 @@ multivariate normal distribution and keeps the patients, and therefore
 the distribution of starting states, fixed. It is comparable to
 conditional variance, so its intervals are typically narrower than the
 default analytical intervals.
-\item \code{method = "score_bootstrap"}, \code{method = "bootstrap"}, and \code{method = "fwb"}
-(fractional weighted bootstrap) re-draw or re-weight patients, including
-their starting states. They are comparable to unconditional variance.
+\item \code{method = "bootstrap"} and \code{method = "fwb"} (fractional weighted
+bootstrap) re-draw or re-weight patients, including their starting
+states. They are comparable to unconditional variance.
 }
 
 Each of these methods, and posterior summaries for \code{blrm} models, first

@@ -203,7 +203,13 @@ avg_comparison_setup <- function(
 ) {
   validate_markov_model(model)
 
-  data_res <- resolve_markov_source_data(model, newdata)
+  data_res <- resolve_markov_source_data(
+    model,
+    newdata,
+    p_var = p_var,
+    p2_var = p2_var,
+    absorb = absorb
+  )
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied

@@ -48,7 +48,12 @@ numeric values; factor-valued visit indices use fitted visit levels.}
 must agree with the fitted model's threshold count. If \code{NULL}, attempts to
 infer the levels from \code{model}.}
 
-\item{absorb}{The absorbing state.}
+\item{absorb}{The absorbing states, such as death: states that a patient
+can't leave. Every profile must start outside them: a profile whose
+previous state (the \code{p_var} column) is absorbing, or with \code{p2_var} whose
+state two visits back is, gives an error. Such a patient can't move to
+another state, and the model has no transitions out of an absorbing state
+to predict from, so remove those patients from \code{newdata} first.}
 
 \item{variables}{Optional covariates to set before predicting: a named list
 of values, such as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}.
@@ -93,7 +98,8 @@ explicit basis columns. Registered inline terms such as
 supplying \code{time_covariates}.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}

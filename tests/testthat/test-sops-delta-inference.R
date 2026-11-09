@@ -947,12 +947,17 @@ test_that("delta vcov validates strings and does not silently change targets", {
     inferences(object, method = "delta", target = "empirical"),
     error = TRUE
   )
-  for (method in c("mvn", "score_bootstrap", "bootstrap", "fwb")) {
+  for (method in c("mvn", "bootstrap", "fwb")) {
     expect_snapshot(
       inferences(object, method = method, vcov = "conditional"),
       error = TRUE
     )
   }
+  expect_error(
+    mostr:::inferences_score_bootstrap(object, vcov = "conditional"),
+    "Character `vcov` choices are only available with `method = \"delta\"`.",
+    fixed = TRUE
+  )
 })
 
 

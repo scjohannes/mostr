@@ -148,9 +148,8 @@ test_that("delta comparison inference keeps its restrictions", {
     absorb = 3,
     time_map = case$time_map
   )
-  scored <- inferences(
+  scored <- mostr:::inferences_score_bootstrap(
     set_start,
-    method = "score_bootstrap",
     n_draws = 3,
     seed = 21
   )

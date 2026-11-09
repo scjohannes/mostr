@@ -428,21 +428,37 @@ delta_normalize_orm_backend_matrix <- function(
   value
 }
 
-delta_reject_weighted_orm_unconditional <- function(model) {
-  weights <- model$weights
-  if (
-    is.null(weights) ||
-      length(weights) == 0L ||
-      all(is.finite(weights) & weights == 1)
-  ) {
+# The case weights the model was fitted with (`mostm(weights = )`), or NULL.
+# vglm fits store them as a one-column matrix, orm fits as a vector.
+delta_fit_case_weights <- function(model) {
+  fit <- delta_unconditional_model(model)
+  weights <- if (inherits(fit, "vglm")) {
+    tryCatch(methods::slot(fit, "prior.weights"), error = function(e) NULL)
+  } else {
+    tryCatch(fit$weights, error = function(e) NULL)
+  }
+  if (is.null(weights) || length(weights) == 0L) {
+    return(NULL)
+  }
+  as.numeric(weights)
+}
+
+# Unconditional variance has not been checked with case weights for any
+# engine, so it is refused whenever a fitted row has a weight other than 1.
+# This also covers the default `vcov = NULL` for averages.
+delta_reject_weighted_unconditional <- function(model) {
+  weights <- delta_fit_case_weights(model)
+  if (is.null(weights) || all(is.finite(weights) & weights == 1)) {
     return(invisible(NULL))
   }
 
   stop(
-    "Unconditional delta inference does not currently support orm fits with ",
-    "non-unit case weights because the required row score contributions ",
-    "must incorporate those weights. Use `vcov = \"conditional\"` or refit ",
-    "without case weights.",
+    "Models fitted with case weights (`weights` in `mostm()`) do not support ",
+    "unconditional variance, because its calculation has not been checked ",
+    "with weights. Unconditional variance is the default for averages; pass ",
+    "`vcov = \"conditional\"` to `inferences()` for conditional variance, ",
+    "which accounts for coefficient estimation and treats the patients' ",
+    "starting states and covariates as given.",
     call. = FALSE
   )
 }
@@ -637,8 +653,8 @@ get_delta_score_components <- function(model, cluster = NULL) {
   delta_validate_full_po_model(model)
   beta <- delta_unconditional_coefficients(model)
   fit <- delta_unconditional_model(model)
+  delta_reject_weighted_unconditional(model)
   if (inherits(fit, "orm")) {
-    delta_reject_weighted_orm_unconditional(fit)
     delta_reject_penalized_orm_unconditional(fit)
   }
   cluster_info <- resolve_delta_cluster(model, cluster = cluster)

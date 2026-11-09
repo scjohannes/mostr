@@ -553,7 +553,7 @@ test_that("comparison inference reduces paired draw-level SOPs", {
 
   with_mocked_bindings(
     avg_sops = function(...) avg,
-    inferences = function(...) inferred_avg,
+    inferences_internal = function(...) inferred_avg,
     {
       out <- mostr:::inferences_avg_comparisons_linear(
         object = cmp,
@@ -612,7 +612,7 @@ test_that("comparison inference centers Wald intervals on point comparisons", {
 
     with_mocked_bindings(
       avg_sops = function(...) avg,
-      inferences = function(...) inferred_avg,
+      inferences_internal = function(...) inferred_avg,
       {
         out <- mostr:::inferences_avg_comparisons_linear(
           object = cmp,

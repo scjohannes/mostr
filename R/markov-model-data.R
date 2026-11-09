@@ -656,11 +656,17 @@ markov_align_model_data <- function(data, model_or_frame) {
   data
 }
 
+# The data that SOP calls start from: the supplied `newdata`, or the starting
+# profiles stored by `mostm()`. With `absorb`, profiles that start in an
+# absorbing state are refused here, before anything is predicted, so the error
+# counts the user's profiles rather than the stacked prediction rows.
 resolve_markov_source_data <- function(
   model,
   newdata,
   time_var = NULL,
-  p_var = NULL
+  p_var = NULL,
+  p2_var = NULL,
+  absorb = NULL
 ) {
   newdata_supplied <- !is.null(newdata)
   refit_data <- markov_model_refit_data(model)
@@ -691,6 +697,16 @@ resolve_markov_source_data <- function(
   if (!is.data.frame(source_data)) {
     stop("`newdata` must be a data frame.")
   }
+  stop_absorbing_start(
+    source_data,
+    absorb = absorb,
+    p_var = p_var,
+    p2_var = p2_var,
+    source = if (newdata_supplied) "newdata" else "stored",
+    id_var = if (!newdata_supplied) {
+      markov_model_starting_profile_metadata(model)$id_var
+    }
+  )
 
   list(
     source_data = source_data,

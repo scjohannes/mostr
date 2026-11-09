@@ -76,7 +76,7 @@ untreated (\code{tx = 0}) and among the treated (\code{tx = 1}). Each group's
 estimate equals the same call with \code{newdata} restricted to that group's
 profiles. For \code{comparison = "ratio"}, a group's result is the ratio of
 the group's averaged summaries. Intervals from \code{\link[=inferences]{inferences()}} with
-\code{method = "mvn"}, \code{"score_bootstrap"}, \code{"bootstrap"}, or \code{"fwb"} follow
+\code{method = "mvn"}, \code{"bootstrap"}, or \code{"fwb"} follow
 the same groups; analytical intervals (\code{method = "delta"}) are not
 available with \code{by}. \code{FALSE} or \code{NULL} does not average and returns the
 \code{\link[=comparisons]{comparisons()}} result, one comparison per profile; analytical intervals
@@ -127,7 +127,8 @@ the previous visit, if the model includes one. See \code{\link[=avg_sops]{avg_so
 precomputed time-basis columns. See \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws.}
@@ -159,6 +160,11 @@ SOPs. \code{estimand = "time_benefit"} is computed before marginalization from
 paired patient/profile-level counterfactual state distributions, because it
 is nonlinear in the two state distributions.
 
+The average gives every profile the same weight. Case weights given to
+\code{\link[=mostm]{mostm()}} with \code{weights} are used only to fit the model, not in this
+average, so the result is not the same as repeating each patient according
+to their weight.
+
 Frequentist uncertainty follows the existing package workflow:
 \code{avg_comparisons(...) |> inferences(...)}. Bayesian \code{blrm} models use their
 posterior SOP draws directly and therefore return uncertainty from
@@ -169,8 +175,9 @@ analytical intervals for differences in SOPs or time in state. The default
 \code{vcov = "unconditional"} accounts for coefficient estimation and sampling
 the patients used in the averages. Use \code{vcov = "conditional"} to treat
 those patients' starting states and covariates as given and account only
-for coefficient estimation. User-supplied \code{newdata} requires the conditional
-choice. See \code{\link[=inferences]{inferences()}} for model restrictions.
+for coefficient estimation. User-supplied \code{newdata}, and models fitted with
+case weights, require the conditional choice. See \code{\link[=inferences]{inferences()}} for model
+restrictions.
 }
 \section{Choosing visits}{
 

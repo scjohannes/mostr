@@ -276,7 +276,7 @@ test_that("unconditional delta rejects weighted orm score construction", {
   expect_s3_class(condition, "error")
   expect_match(
     conditionMessage(condition),
-    "does not currently support orm fits with non-unit case weights",
+    "Models fitted with case weights (`weights` in `mostm()`) do not support unconditional variance",
     fixed = TRUE
   )
 })

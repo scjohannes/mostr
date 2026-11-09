@@ -23,6 +23,20 @@
 #'   posterior distribution with Stan. Partial proportional odds effects are
 #'   set with `ppo` and `cppo`. This engine needs the rmsb package.
 #'
+#' In a partial proportional odds model the thresholds (cut-points) between
+#' states move with the predictors that have a separate effect at each
+#' threshold, so for some covariate values, often outside the range of the
+#' data, two thresholds can cross. The model then gives a negative probability
+#' for a state, and state occupancy probabilities aren't defined. [sops()],
+#' [avg_sops()], [state_time()], [comparisons()] and the other functions that
+#' use the fit stop with an error that says for how many profiles and at which
+#' time this happens; for `"blrm"` fits it also says in how many posterior
+#' draws, and [inferences()] says in how many simulation draws or bootstrap
+#' samples. They never set the negative probability to zero. Check the
+#' covariate values of those profiles, or simplify the terms with a separate
+#' effect at each threshold. A negative value between \eqn{-10^{-10}} and zero
+#' comes from rounding, not from crossed thresholds, and is set to zero.
+#'
 #' @param formula A model formula with the current state as the response, for
 #'   example `ordered(y) ~ yprev + rms::rcs(time, 4) + tx`. Offsets are not
 #'   supported. For the `"orm"` and `"blrm"` engines, categorical predictors,
@@ -73,7 +87,10 @@
 #'   Factor and character time need an explicit value, such as `"day 1"`.
 #' @param weights Optional non-negative row weights: a column of `data` or a
 #'   vector with one value per row of `data`. Not available for
-#'   `engine = "blrm"`.
+#'   `engine = "blrm"`. The weights are used only to fit the model:
+#'   [avg_sops()], [avg_state_time()], and [avg_comparisons()] give every
+#'   profile the same weight, and [inferences()] offers only conditional
+#'   variance for a weighted fit.
 #' @param subset Optional selection of the rows of `data` to fit, as a logical
 #'   expression evaluated in `data`, for example `time <= 28`.
 #' @param type Small-sample correction of the patient-clustered standard

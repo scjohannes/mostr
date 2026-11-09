@@ -71,7 +71,12 @@ fitted visit levels.}
 must agree with the fitted model's threshold count. If \code{NULL}, attempts to
 infer the levels from \code{model}.}
 
-\item{absorb}{The absorbing state.}
+\item{absorb}{The absorbing states, such as death: states that a patient
+can't leave. Every profile must start outside them: a profile whose
+previous state (the \code{p_var} column) is absorbing, or with \code{p2_var} whose
+state two visits back is, gives an error. Such a patient can't move to
+another state, and the model has no transitions out of an absorbing state
+to predict from, so remove those patients from \code{newdata} first.}
 
 \item{time_map}{Optional named numeric vector or data frame giving the
 elapsed time of each visit label, for example
@@ -120,7 +125,8 @@ explicit precomputed time-basis columns. Registered inline terms such as
 \code{rms::rcs(time, 4)} and \code{rms::lsp(time, c(3, 7))} can be used without it.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -178,10 +184,10 @@ to the model coefficients and \eqn{V_\beta} is their covariance. It
 supports first-order full proportional-odds \code{orm}, \code{vglm}, and
 \code{robcov_vglm} fits; \code{\link[stats:vcov]{stats::vcov()}} then returns the covariance between
 rows.
-\item \code{method = "mvn"}, \code{"score_bootstrap"}, or \code{"fwb"} compute every
+\item \code{method = "mvn"} or \code{"fwb"} compute every
 profile's totals within each coefficient draw or weighted refit. For
-the stored profiles, score-bootstrap and FWB draws also carry each
-patient's weight in that draw (\code{score_weight} or \code{fwb_weight});
+the stored profiles, FWB draws also carry each
+patient's weight in that draw (\code{fwb_weight});
 averaging a draw's totals with these weights reproduces the
 \code{\link[=avg_state_time]{avg_state_time()}} draw. See \code{\link[=get_draws]{get_draws()}}.
 }

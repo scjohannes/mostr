@@ -104,9 +104,13 @@ apply_sop_simulation_draws <- function(
 ) {
   use_parallel <- !is.null(workers) && workers > 1
   draw_ids <- seq_len(n_draws)
+  # Draws whose cut-points cross are counted and reported together.
+  draw_fn <- function(i) run_draw_recording_crossings(analysis_fn, i)
 
   if (!use_parallel) {
-    return(lapply(draw_ids, analysis_fn))
+    results <- lapply(draw_ids, draw_fn)
+    stop_crossed_threshold_draws(results, "simulation draws", "draw")
+    return(results)
   }
   if (!requireNamespace("furrr", quietly = TRUE)) {
     stop("Package 'furrr' is required for parallel processing")
@@ -116,9 +120,9 @@ apply_sop_simulation_draws <- function(
   on.exit(future::plan(old_plan), add = TRUE)
   future::plan(future.callr::callr, workers = workers)
 
-  furrr::future_map(
+  results <- furrr::future_map(
     draw_ids,
-    analysis_fn,
+    draw_fn,
     .options = furrr::furrr_options(
       seed = FALSE,
       globals = globals,
@@ -126,4 +130,6 @@ apply_sop_simulation_draws <- function(
     ),
     .progress = FALSE
   )
+  stop_crossed_threshold_draws(results, "simulation draws", "draw")
+  results
 }

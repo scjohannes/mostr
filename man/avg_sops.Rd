@@ -79,7 +79,12 @@ numeric values; factor-valued visit indices use fitted visit levels.}
 must agree with the fitted model's threshold count. If \code{NULL}, attempts to
 infer the levels from \code{model}.}
 
-\item{absorb}{The absorbing state.}
+\item{absorb}{The absorbing states, such as death: states that a patient
+can't leave. Every profile must start outside them: a profile whose
+previous state (the \code{p_var} column) is absorbing, or with \code{p2_var} whose
+state two visits back is, gives an error. Such a patient can't move to
+another state, and the model has no transitions out of an absorbing state
+to predict from, so remove those patients from \code{newdata} first.}
 
 \item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
 \code{id_var} given to \code{\link[=mostm]{mostm()}}. Bootstrap inference resamples patients by
@@ -106,7 +111,8 @@ explicit precomputed time-basis columns. Registered inline terms such as
 \code{rms::rcs(time, 4)} and \code{rms::lsp(time, c(3, 7))} can be used without it.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -165,6 +171,12 @@ at least one usable likelihood transition. A missing response at the
 designated row alone does not exclude a patient who contributes a later
 transition. Patients with no usable fitted transition are excluded, and a
 fitted patient without a complete designated profile is an error.
+
+The average gives every profile the same weight. Case weights given to
+\code{\link[=mostm]{mostm()}} with \code{weights} are used only to fit the model, not in this
+average, so the result is not the same as repeating each patient according
+to their weight.
+
 For \code{rmsb::blrm()} models, patient-level posterior arrays are chunked and
 marginalized by draw before summarizing to reduce memory use.
 State-wise medians and interval bounds are not constrained to sum to one
@@ -177,8 +189,8 @@ analytical confidence intervals. Its default \code{vcov = "unconditional"}
 accounts for coefficient estimation and sampling the patients used in the
 average. Use \code{vcov = "conditional"} to treat those patients' starting states
 and covariates as given and account only for coefficient estimation.
-User-supplied \code{newdata} requires the conditional choice. See \code{\link[=inferences]{inferences()}}
-for model restrictions.
+User-supplied \code{newdata}, and models fitted with case weights, require the
+conditional choice. See \code{\link[=inferences]{inferences()}} for model restrictions.
 }
 \section{Choosing visits}{
 

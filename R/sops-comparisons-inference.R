@@ -110,7 +110,7 @@ inferences_avg_comparisons_linear <- function(
     extra_args = args$extra_args,
     warn_skipped_visits = FALSE
   )
-  avg <- inferences(
+  avg <- inferences_internal(
     avg,
     method = if (method == "simulation") {
       engine
@@ -240,6 +240,7 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
         time_covariates = setup$time_covariates
       ),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning("soprob_markov failed in draw ", i, ": ", e$message)
         NULL
       }
@@ -404,6 +405,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
         time_covariates = setup$time_covariates
       ),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning("soprob_markov failed: ", e$message)
         NULL
       }

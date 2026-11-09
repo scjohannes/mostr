@@ -78,12 +78,12 @@
 #'     covariance. It supports differences of SOPs and of time in states for
 #'     first-order full proportional-odds `orm`, `vglm`, and `robcov_vglm`
 #'     fits; [stats::vcov()] then returns the covariance between rows.
-#'   \item `method = "mvn"`, `"score_bootstrap"`, or `"fwb"` predict every
+#'   \item `method = "mvn"` or `"fwb"` predict every
 #'     profile under each compared value within each coefficient draw or
 #'     weighted refit, and compute the comparisons within that draw before
-#'     forming the intervals. For the stored profiles, score-bootstrap and FWB
-#'     draws also carry each patient's weight in that draw (`score_weight` or
-#'     `fwb_weight`); averaging a draw's comparisons with these weights
+#'     forming the intervals. For the stored profiles, FWB
+#'     draws also carry each patient's weight in that draw
+#'     (`fwb_weight`); averaging a draw's comparisons with these weights
 #'     reproduces the [avg_comparisons()] draw. See [get_draws()].
 #' }
 #' The ordinary resampling bootstrap (`method = "bootstrap"`) is not
@@ -171,6 +171,7 @@ comparisons <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
   stop_legacy_baseline_args(extra_args)
   estimand <- match.arg(estimand)

@@ -779,7 +779,7 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #' If `x` contains stored simulation, bootstrap, or posterior draws, the draws
 #' are interpolated too. Interval columns are then recomputed from the
 #' interpolated draws. Coefficient-only draws treat the empirical baseline anchor
-#' as fixed; empirical score-bootstrap, FWB, and refit-bootstrap draws use the
+#' as fixed; empirical FWB and refit-bootstrap draws use the
 #' corresponding draw-specific patient weights or resampled cohort.
 #' If interval columns are present but stored draws are unavailable,
 #' `interpolate_sops()` warns and falls back to interpolating interval endpoints.

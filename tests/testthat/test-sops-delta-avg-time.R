@@ -445,7 +445,7 @@ test_that("counterfactual starting states allow only conditional variance", {
   )
   for (method in c("score_bootstrap", "bootstrap", "fwb")) {
     expect_error(
-      inferences(point, method = method, n_draws = 3, seed = 1),
+      run_inferences_method(point, method = method, n_draws = 3, seed = 1),
       unconditional,
       info = method
     )

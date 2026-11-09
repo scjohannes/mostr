@@ -94,6 +94,17 @@ make_test_model <- function(data) {
   ))
 }
 
+# `inferences()` no longer offers the score bootstrap, but the package keeps
+# it behind the unexported `inferences_score_bootstrap()`. Tests that loop over
+# every draw-based method call this, which sends `"score_bootstrap"` there and
+# every other method to `inferences()`.
+run_inferences_method <- function(x, method, ...) {
+  if (identical(method, "score_bootstrap")) {
+    return(mostr:::inferences_score_bootstrap(x, ...))
+  }
+  inferences(x, method = method, ...)
+}
+
 make_score_bootstrap_case <- function(
   seed,
   n_patients = 60,

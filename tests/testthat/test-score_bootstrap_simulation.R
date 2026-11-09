@@ -12,8 +12,7 @@ test_that("score-bootstrap simulation adds CIs and metadata for avg_sops", {
     absorb = case$absorb,
     id_var = "id"
   ) |>
-    inferences(
-      method = "score_bootstrap",
+    mostr:::inferences_score_bootstrap(
       n_draws = 40,
       return_draws = TRUE
     )
@@ -39,8 +38,7 @@ test_that("score-bootstrap simulation stores draw-level output with expected str
     absorb = case$absorb,
     id_var = "id"
   ) |>
-    inferences(
-      method = "score_bootstrap",
+    mostr:::inferences_score_bootstrap(
       n_draws = 30,
       return_draws = TRUE
     )
@@ -74,9 +72,8 @@ test_that("score-bootstrap treats supplied newdata as fixed profiles", {
 
   withr::local_seed(2010)
   expect_warning(
-    result <- inferences(
+    result <- mostr:::inferences_score_bootstrap(
       avg,
-      method = "score_bootstrap",
       n_draws = 3,
       return_draws = TRUE
     ),
@@ -105,8 +102,7 @@ test_that("score-bootstrap simulation does not expose draws when return_draws is
     absorb = case$absorb,
     id_var = "id"
   ) |>
-    inferences(
-      method = "score_bootstrap",
+    mostr:::inferences_score_bootstrap(
       n_draws = 20,
       return_draws = FALSE
     )
@@ -131,9 +127,8 @@ test_that("score-bootstrap simulation rejects user-supplied vcov", {
   )
 
   expect_error(
-    inferences(
+    mostr:::inferences_score_bootstrap(
       avg_result,
-      method = "score_bootstrap",
       n_draws = 10,
       vcov = custom_vcov
     ),
@@ -157,7 +152,7 @@ test_that("score-bootstrap uses the fixed exponential weight distribution", {
 
   expect_false("score_weight_dist" %in% names(formals(inferences)))
   expect_s3_class(
-    inferences(avg_result, method = "score_bootstrap", n_draws = 10),
+    mostr:::inferences_score_bootstrap(avg_result, n_draws = 10),
     "markov_avg_sops"
   )
 })

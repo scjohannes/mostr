@@ -360,6 +360,7 @@ run_second_order_execution_plan <- function(plan, Gamma) {
   }
   initial <- probabilities(components$X_init)
   check_transition_probabilities(initial, "the first SOP time point")
+  check_crossed_thresholds(initial, components$n_pat, plan$times[1L])
   output <- array(
     0,
     dim = c(components$n_pat, length(plan$times), components$n_states)
@@ -369,20 +370,21 @@ run_second_order_execution_plan <- function(plan, Gamma) {
     0,
     dim = c(components$n_pat, components$n_states, components$n_states)
   )
+  # SOP calls refuse starting rows in an absorbing state before predicting
+  # (`stop_absorbing_start()`), so every patient's first visit is predicted
+  # from a non-absorbing history.
   for (patient in seq_len(components$n_pat)) {
-    previous <- components$previous[patient]
-    if (previous %in% components$absorb) {
-      joint[patient, previous, previous] <- 1
-      output[patient, 1L, ] <- 0
-      output[patient, 1L, previous] <- 1
-    } else {
-      joint[patient, previous, ] <- initial[patient, ]
-    }
+    joint[patient, components$previous[patient], ] <- initial[patient, ]
   }
   if (length(plan$times) >= 2L) {
     for (visit in 2:length(plan$times)) {
       if (is.null(po)) {
         transition <- probabilities(components$X_transition[[visit]])
+        check_crossed_thresholds(
+          transition,
+          components$n_pat,
+          plan$times[visit]
+        )
         joint <- markov_update_second_order_native(
           joint,
           transition,
@@ -398,7 +400,8 @@ run_second_order_execution_plan <- function(plan, Gamma) {
           po$cutpoints,
           components$older,
           components$current,
-          components$absorb
+          components$absorb,
+          time = plan$times[visit]
         )
       }
       output[, visit, ] <- apply(joint, c(1L, 3L), sum)

@@ -78,6 +78,9 @@ delta_resolve_vcov <- function(object, vcov) {
   if (identical(choice, "unconditional") && sets_starting_state(object)) {
     stop_starting_state_conditional_only()
   }
+  if (identical(choice, "unconditional") && !is.null(attr(object, "model"))) {
+    delta_reject_weighted_unconditional(attr(object, "model"))
+  }
   target <- if (identical(choice, "unconditional")) {
     "unconditional"
   } else if (individual) {

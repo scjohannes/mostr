@@ -115,7 +115,8 @@ the previous visit, if the model includes one. See \code{\link[=avg_sops]{avg_so
 precomputed time-basis columns. See \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws.}
@@ -186,12 +187,12 @@ reference scenario, and its variance is \eqn{G V_\beta G^\top}, where
 covariance. It supports differences of SOPs and of time in states for
 first-order full proportional-odds \code{orm}, \code{vglm}, and \code{robcov_vglm}
 fits; \code{\link[stats:vcov]{stats::vcov()}} then returns the covariance between rows.
-\item \code{method = "mvn"}, \code{"score_bootstrap"}, or \code{"fwb"} predict every
+\item \code{method = "mvn"} or \code{"fwb"} predict every
 profile under each compared value within each coefficient draw or
 weighted refit, and compute the comparisons within that draw before
-forming the intervals. For the stored profiles, score-bootstrap and FWB
-draws also carry each patient's weight in that draw (\code{score_weight} or
-\code{fwb_weight}); averaging a draw's comparisons with these weights
+forming the intervals. For the stored profiles, FWB
+draws also carry each patient's weight in that draw
+(\code{fwb_weight}); averaging a draw's comparisons with these weights
 reproduces the \code{\link[=avg_comparisons]{avg_comparisons()}} draw. See \code{\link[=get_draws]{get_draws()}}.
 }
 The ordinary resampling bootstrap (\code{method = "bootstrap"}) is not

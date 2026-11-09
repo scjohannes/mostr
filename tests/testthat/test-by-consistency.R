@@ -157,13 +157,13 @@ test_that("draw weights let users average sops() draws themselves", {
     list(method = "score_bootstrap", n_draws = 4L, seed = 502, weight = "score_weight"),
     list(method = "fwb", n_draws = 2L, seed = 503, weight = "fwb_weight")
   )) {
-    unit <- inferences(
+    unit <- run_inferences_method(
       do.call(sops, args),
       method = setting$method,
       n_draws = setting$n_draws,
       seed = setting$seed
     )
-    average <- inferences(
+    average <- run_inferences_method(
       do.call(avg_sops, args),
       method = setting$method,
       n_draws = setting$n_draws,

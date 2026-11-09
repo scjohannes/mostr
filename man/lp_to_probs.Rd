@@ -17,5 +17,9 @@ Matrix with one row per prediction and one column per outcome state.
 }
 \description{
 Converts a matrix of cumulative log-odds to category probabilities.
+Negative values from rounding (down to \code{-crossed_threshold_tolerance()})
+are set to zero and the row is rescaled. Lower values mean that the
+cut-points of a partial proportional-odds model cross; they are kept so that
+the caller reports them with \code{check_crossed_thresholds()}.
 }
 \keyword{internal}

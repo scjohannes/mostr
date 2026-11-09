@@ -15,12 +15,39 @@ reference_category_probabilities <- function(eta) {
   survival[, -ncol(survival), drop = FALSE] - survival[, -1L, drop = FALSE]
 }
 
-# Point-estimate and posterior kernels clip crossed probabilities at zero and
-# rescale every row to unit mass.
-reference_clipped_probabilities <- function(eta) {
+# The tolerance for negative category probabilities. In a partial
+# proportional-odds model the cut-points can cross, and then a category
+# probability is negative and SOPs are not defined. Rounding alone gives
+# negative values of about 1e-16.
+reference_crossed_tolerance <- 1e-10
+
+# TRUE for each row of category probabilities whose cut-points cross.
+reference_crossed_rows <- function(probabilities) {
+  apply(probabilities < -reference_crossed_tolerance, 1L, any)
+}
+
+# Category probabilities as the point-estimate and posterior kernels use them:
+# stop when the cut-points cross; otherwise set the rounding negatives to zero
+# and rescale every row to unit mass.
+reference_checked_probabilities <- function(eta) {
   probabilities <- reference_category_probabilities(eta)
+  if (any(reference_crossed_rows(probabilities))) {
+    stop("The cut-points cross, so a category probability is negative.")
+  }
   probabilities[probabilities < 0] <- 0
   probabilities / rowSums(probabilities)
+}
+
+# The posterior (blrm) kernel returns probabilities for its caller to check:
+# rows whose cut-points cross keep their raw values, negative ones included;
+# the other rows are as in reference_checked_probabilities().
+reference_posterior_probabilities <- function(eta) {
+  probabilities <- reference_category_probabilities(eta)
+  valid <- !reference_crossed_rows(probabilities)
+  rows <- probabilities[valid, , drop = FALSE]
+  rows[rows < 0] <- 0
+  probabilities[valid, ] <- rows / rowSums(rows)
+  probabilities
 }
 
 # One first-order Markov step, written as S_t = S_{t-1} %*% T_t per patient.
@@ -166,8 +193,9 @@ reference_backend_gamma <- function(model, col_names) {
 }
 
 # First-order SOPs from compiled design matrices and effective coefficients.
-# Pass `category_probabilities = reference_clipped_probabilities` for partial
-# proportional-odds fits, whose point estimates clip crossed probabilities.
+# Pass `category_probabilities = reference_checked_probabilities` for partial
+# proportional-odds fits, to stop where the cut-points cross and to treat
+# rounding negatives as the package does.
 reference_first_order_plan_sops <- function(
   plan,
   gamma,
@@ -199,8 +227,9 @@ reference_first_order_plan_sops <- function(
   probabilities
 }
 
-# Second-order SOPs from a compiled second-order plan. Patients whose most
-# recent observed state is absorbing start with all mass in that state.
+# Second-order SOPs from a compiled second-order plan. Patients start outside
+# the absorbing states, which mostr refuses, so the first visit is the model's
+# prediction from each patient's two starting states.
 reference_second_order_plan_sops <- function(plan, gamma) {
   components <- plan$components
   n <- components$n_pat
@@ -211,12 +240,7 @@ reference_second_order_plan_sops <- function(plan, gamma) {
   probabilities <- array(0, dim = c(n, times, K))
   joint <- array(0, dim = c(n, K, K))
   for (i in seq_len(n)) {
-    previous <- components$previous[i]
-    if (previous %in% absorb) {
-      joint[i, previous, previous] <- 1
-    } else {
-      joint[i, previous, ] <- initial[i, ]
-    }
+    joint[i, components$previous[i], ] <- initial[i, ]
   }
   probabilities[, 1L, ] <- apply(joint, c(1L, 3L), sum)
   if (times >= 2L) {

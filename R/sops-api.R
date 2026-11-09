@@ -31,7 +31,12 @@
 #' @param y_levels A vector of state levels in fitted outcome order. Its length
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
 #'   infer the levels from `model`.
-#' @param absorb The absorbing state.
+#' @param absorb The absorbing states, such as death: states that a patient
+#'   can't leave. Every profile must start outside them: a profile whose
+#'   previous state (the `p_var` column) is absorbing, or with `p2_var` whose
+#'   state two visits back is, gives an error. Such a patient can't move to
+#'   another state, and the model has no transitions out of an absorbing state
+#'   to predict from, so remove those patients from `newdata` first.
 #' @param variables Optional covariates to set before predicting: a named list
 #'   of values, such as `list(tx = c(0, 1))`, or bare names, such as `"tx"`.
 #'   Each profile is then predicted once for every combination of the values,
@@ -67,7 +72,8 @@
 #'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without
 #'   supplying `time_covariates`.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs.
+#'   fitted random-effect draws in posterior predictions for known IDs. Only
+#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.
@@ -199,6 +205,7 @@ sops <- function(
   # --- 1. Setup & Defaults ---
   # Validate model compatibility
   validate_markov_model(model)
+  stop_include_re_without_blrm(model, include_re)
   if (missing(times) || is.null(times)) {
     stop("`times` must be supplied to `sops()`.")
   }
@@ -235,7 +242,9 @@ sops <- function(
     model,
     newdata,
     time_var = time_var,
-    p_var = p_var
+    p_var = p_var,
+    p2_var = p2_var,
+    absorb = absorb
   )
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
@@ -754,7 +763,12 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' @param y_levels A vector of state levels in fitted outcome order. Its length
 #'   must agree with the fitted model's threshold count. If `NULL`, attempts to
 #'   infer the levels from `model`.
-#' @param absorb The absorbing state.
+#' @param absorb The absorbing states, such as death: states that a patient
+#'   can't leave. Every profile must start outside them: a profile whose
+#'   previous state (the `p_var` column) is absorbing, or with `p2_var` whose
+#'   state two visits back is, gives an error. Such a patient can't move to
+#'   another state, and the model has no transitions out of an absorbing state
+#'   to predict from, so remove those patients from `newdata` first.
 #' @param id_var Name of the patient ID column. `NULL` (the default) uses the
 #'   `id_var` given to [mostm()]. Bootstrap inference resamples patients by
 #'   this column in the data stored on the fitted model. For user-supplied
@@ -769,7 +783,8 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   explicit precomputed time-basis columns. Registered inline terms such as
 #'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without it.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs.
+#'   fitted random-effect draws in posterior predictions for known IDs. Only
+#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.
@@ -816,6 +831,12 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' designated row alone does not exclude a patient who contributes a later
 #' transition. Patients with no usable fitted transition are excluded, and a
 #' fitted patient without a complete designated profile is an error.
+#'
+#' The average gives every profile the same weight. Case weights given to
+#' [mostm()] with `weights` are used only to fit the model, not in this
+#' average, so the result is not the same as repeating each patient according
+#' to their weight.
+#'
 #' For `rmsb::blrm()` models, patient-level posterior arrays are chunked and
 #' marginalized by draw before summarizing to reduce memory use.
 #' State-wise medians and interval bounds are not constrained to sum to one
@@ -828,8 +849,8 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' accounts for coefficient estimation and sampling the patients used in the
 #' average. Use `vcov = "conditional"` to treat those patients' starting states
 #' and covariates as given and account only for coefficient estimation.
-#' User-supplied `newdata` requires the conditional choice. See [inferences()]
-#' for model restrictions.
+#' User-supplied `newdata`, and models fitted with case weights, require the
+#' conditional choice. See [inferences()] for model restrictions.
 #'
 #' @inheritSection sops Choosing visits
 #'
@@ -894,6 +915,7 @@ avg_sops <- function(
   # --- 1. Input Validation ---
   # Validate model compatibility
   validate_markov_model(model)
+  stop_include_re_without_blrm(model, include_re)
   if (missing(times) || is.null(times)) {
     stop("`times` must be supplied to `avg_sops()`.")
   }
@@ -934,7 +956,9 @@ avg_sops <- function(
     model,
     newdata,
     time_var = time_var,
-    p_var = p_var
+    p_var = p_var,
+    p2_var = p2_var,
+    absorb = absorb
   )
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data

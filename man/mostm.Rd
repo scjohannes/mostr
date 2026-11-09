@@ -78,7 +78,10 @@ Factor and character time need an explicit value, such as \code{"day 1"}.}
 
 \item{weights}{Optional non-negative row weights: a column of \code{data} or a
 vector with one value per row of \code{data}. Not available for
-\code{engine = "blrm"}.}
+\code{engine = "blrm"}. The weights are used only to fit the model:
+\code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_state_time]{avg_state_time()}}, and \code{\link[=avg_comparisons]{avg_comparisons()}} give every
+profile the same weight, and \code{\link[=inferences]{inferences()}} offers only conditional
+variance for a weighted fit.}
 
 \item{subset}{Optional selection of the rows of \code{data} to fit, as a logical
 expression evaluated in \code{data}, for example \code{time <= 28}.}
@@ -131,6 +134,20 @@ odds model as \code{"orm"}, so changing \code{engine} is enough to compare the t
 posterior distribution with Stan. Partial proportional odds effects are
 set with \code{ppo} and \code{cppo}. This engine needs the rmsb package.
 }
+
+In a partial proportional odds model the thresholds (cut-points) between
+states move with the predictors that have a separate effect at each
+threshold, so for some covariate values, often outside the range of the
+data, two thresholds can cross. The model then gives a negative probability
+for a state, and state occupancy probabilities aren't defined. \code{\link[=sops]{sops()}},
+\code{\link[=avg_sops]{avg_sops()}}, \code{\link[=state_time]{state_time()}}, \code{\link[=comparisons]{comparisons()}} and the other functions that
+use the fit stop with an error that says for how many profiles and at which
+time this happens; for \code{"blrm"} fits it also says in how many posterior
+draws, and \code{\link[=inferences]{inferences()}} says in how many simulation draws or bootstrap
+samples. They never set the negative probability to zero. Check the
+covariate values of those profiles, or simplify the terms with a separate
+effect at each threshold. A negative value between \eqn{-10^{-10}} and zero
+comes from rounding, not from crossed thresholds, and is set to zero.
 \subsection{Starting rows}{
 
 Functions such as \code{\link[=sops]{sops()}} and \code{\link[=avg_sops]{avg_sops()}} predict, by default, from each

@@ -67,8 +67,13 @@ test_that("observed simulation averages use the same patient draws and weights",
   average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
   individual <- sops(case$model, times = case$times, absorb = case$absorb)
   for (method in c("mvn", "score_bootstrap")) {
-    result <- inferences(average, method = method, n_draws = 4, seed = 4211)
-    patient_result <- inferences(
+    result <- run_inferences_method(
+      average,
+      method = method,
+      n_draws = 4,
+      seed = 4211
+    )
+    patient_result <- run_inferences_method(
       individual,
       method = method,
       n_draws = 4,

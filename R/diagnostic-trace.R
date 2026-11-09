@@ -214,6 +214,12 @@ markov_transition_trace <- function(
     if (any(predict_rows)) {
       p_t1 <- prd(object, data[predict_rows, , drop = FALSE])
       check_transition_probabilities(p_t1, "the first transition time point")
+      check_crossed_thresholds(
+        p_t1,
+        n_pat,
+        times[1L],
+        rows = which(predict_rows)
+      )
       P[predict_rows, 1, ] <- p_t1
       transitions <- trace_record_first_transition(
         transitions = transitions,
@@ -239,6 +245,12 @@ markov_transition_trace <- function(
     if (any(predict_rows)) {
       p_t1 <- prd(object, data[predict_rows, , drop = FALSE])
       check_transition_probabilities(p_t1, "the first transition time point")
+      check_crossed_thresholds(
+        p_t1,
+        n_pat,
+        times[1L],
+        rows = which(predict_rows)
+      )
       P[, predict_rows, 1, ] <- p_t1
       transitions <- trace_record_first_transition(
         transitions = transitions,
@@ -421,6 +433,7 @@ markov_transition_trace_first_order <- function(
       trans_probs,
       paste0("transition time point ", it)
     )
+    check_crossed_thresholds(trans_probs, n_pat, times[it])
 
     if (nd == 0) {
       transition_current <- array(
@@ -584,6 +597,7 @@ markov_transition_trace_second_order <- function(
       trans_probs,
       paste0("second-order transition time point ", it)
     )
+    check_crossed_thresholds(trans_probs, n_pat, times[it], rows = predict_rows)
     cursor <- 1L
 
     if (nd == 0) {

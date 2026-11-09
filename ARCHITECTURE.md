@@ -76,9 +76,9 @@ flowchart TD
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
-| Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
+| Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `R/sops-crossed-thresholds.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories; errors for crossed thresholds |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
-| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
+| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap (internal only, through `inferences_score_bootstrap()`) |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
 | Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
 
@@ -304,6 +304,44 @@ and their contribution to coefficient estimation. It is available for supported
 averaged results using stored patient profiles; supplied `newdata` requires
 conditional variance. Individual results support conditional variance only.
 
+Fits with case weights other than 1 (`mostm(weights = )`) support
+conditional variance only, for every engine, because the unconditional
+formula has not been checked with weights. `delta_resolve_vcov()`
+(`R/sops-delta-inference.R`) calls `delta_reject_weighted_unconditional()`
+(`R/sops-delta-unconditional.R`) as soon as unconditional variance is chosen,
+explicitly or as the default for averages, so the error comes before any
+derivative is computed and tells the user to pass `vcov = "conditional"`.
+`delta_fit_case_weights()` reads the `prior.weights` slot of a vglm fit (the
+inner fit of a `robcov_vglm`) or `weights` of an orm fit.
+`get_delta_score_components()` repeats the check for direct internal callers.
+Penalized orm fits are refused separately
+(`delta_reject_penalized_orm_unconditional()`).
+
+Case weights are used only to fit the model. `avg_sops()`, `avg_state_time()`,
+and `avg_comparisons()` average over profiles with equal weight per profile,
+so results differ from duplicating patients according to their weights; their
+help pages and `mostm()`'s `weights` say so.
+
+`inferences()` offers `method = "mvn"`, `"delta"`, `"bootstrap"`, and `"fwb"`
+(`inferences_public_methods()`) and refuses `"score_bootstrap"` with an error.
+The score bootstrap is kept: `inferences()` hands every call to the unexported
+`inferences_internal()`, which accepts all five methods and runs
+`inferences_impl()` inside the seed and fallback-notification scopes, and
+`inferences_score_bootstrap()` calls it with `method = "score_bootstrap"`.
+Tests reach the score bootstrap through `mostr:::inferences_score_bootstrap()`
+(or the test helper `run_inferences_method()` in
+`tests/testthat/helper-simulation.R` when looping over methods). Internal
+replays that pass the outer method on, `inferences_avg_time()` and
+`inferences_avg_comparisons_linear()`, call `inferences_internal()` so that a
+score-bootstrap call keeps working through them.
+
+`include_re = TRUE` is meaningful only for `rmsb::blrm()` fits, the only fits
+with random effects. `stop_include_re_without_blrm()` (`R/sops-backends.R`) is
+called first in every public function with the argument (`sops()`,
+`avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+`avg_comparisons()`, and `soprob_markov()`) and stops for any other fit,
+instead of letting the frequentist paths ignore it.
+
 ### Requested visit times
 
 The recursion takes one transition per value of `times`, in the order given:
@@ -346,6 +384,101 @@ so it still runs once. Internal `sops()` calls and inference replays
 `inferences()` never repeats the warning. `soprob_markov()` does not check. The model-based diagnostic plots expand
 sparse plot times to the full recursion grid (`complete_plot_recursion_times()`
 in `R/markov-plot-helpers.R`) and never call `sops()`.
+
+### Starting states
+
+A patient cannot start in an absorbing state. When `absorb` is non-empty,
+`stop_absorbing_start()` in `R/sops-dispatch.R` refuses starting rows whose
+previous state (`p_var`) is absorbing and, for second-order calls, rows whose
+state two visits back (`p2_var`) is absorbing, an impossible history. It
+compares state labels (`as_state_labels()`), so factor, character, and numeric
+previous-state columns behave alike, and checks `p_var` before `p2_var`. The
+error names the column, the absorbing state, and how many rows are affected.
+
+It runs at two places, before anything is predicted:
+
+- `resolve_markov_source_data()` in `R/markov-model-data.R`, which every public
+  SOP call passes through: `sops()` and `avg_sops()` directly, and
+  `comparisons()`, `avg_comparisons()`, `state_time()`, and `avg_state_time()`
+  through `avg_comparison_setup()` or `avg_sops()`. Here the rows are the
+  user's profiles, before `variables` stacks copies of them, so the count is
+  of patients. Supplied `newdata` and the starting profiles stored by `mostm()`
+  get different advice; the latter lists the patient IDs.
+- `soprob_markov()`, for direct calls, internal callers such as inference
+  replays, and `variables` that set the previous state to an absorbing state.
+  Its rows are prediction rows, which may hold several copies of a profile.
+
+Plans compiled without `soprob_markov()` (the delta-method and per-profile
+inference paths) start from the prediction rows of a result that already
+passed the check. The engines therefore have no special case for an absorbing
+start: the first-order recursion predicts the first visit from the starting
+row, and the second-order engines (`soprob_markov_second_order_run()` in
+`R/sops-engine.R`, `run_second_order_execution_plan()` in
+`R/sops-execution-plan.R`, and the test reference
+`reference_second_order_plan_sops()`) put each patient's predicted first-visit
+probabilities next to their most recent starting state. Before the check, a
+first-order start in an absorbing state was predicted from a previous state the
+model never saw, and the second-order engines kept such a patient in the
+absorbing state.
+
+### Crossed thresholds
+
+In a partial proportional-odds model (`"vglm"` with `parallel = FALSE ~ ...`,
+or `"blrm"` with `ppo`) the cut-points move with the non-proportional
+predictors, so for some covariate values two of them can cross. The cumulative
+probabilities P(Y >= k) then stop decreasing in k and a category probability
+is negative. SOPs are not defined there, so every route that turns linear
+predictors into category probabilities stops with a classed
+`mostr_crossed_thresholds` error; none clips and rescales.
+
+The tolerance is `crossed_threshold_tolerance()` = 1e-10 in
+`R/sops-crossed-thresholds.R`, mirrored by `kCrossedTolerance` in
+`src/sops.cpp` and already used by the analytical recursion
+(`delta_category_probabilities()`, `sop_delta_raw_probabilities()`). Rounding
+in a difference of two logistic values is of order 1e-16, so values in
+[-1e-10, 0) are rounding: they are set to zero and the row is rescaled, as
+before. Anything lower is a crossing.
+
+Where the check lives:
+
+- Probability-returning code keeps crossed values for the caller:
+  `lp_to_probs()` (fast-path first visit, second-order plans, `"orm"`
+  reference predictions) clips only rounding negatives;
+  `cpp_blrm_probabilities()` returns crossed rows raw; VGAM's own prediction
+  (`predict_vglm_response_markov()`) never clipped. The callers run
+  `check_crossed_thresholds()` next to `check_transition_probabilities()`:
+  `markov_msm_run()`, `run_second_order_execution_plan()`,
+  `soprob_markov_reference()` and its second-order run, and the transition
+  trace in `R/diagnostic-trace.R`. Prediction rows stack the profiles once per
+  previous state (or pair), so row r is profile (r - 1) %% n + 1; posterior
+  arrays also give the number of draws.
+- The update kernels that never return probabilities
+  (`cpp_markov_update_logits()`, `cpp_markov_update_po()`,
+  `cpp_markov_update_second_order_po()`) check every row, including previous
+  states with no probability at that visit, and mark their output with
+  `crossed_profiles` and `minimum_probability` attributes;
+  `check_native_crossed_thresholds()` in the `R/sops-native.R` wrappers turns
+  the mark into the error.
+- The analytical recursion reports crossing through its status code
+  (`mostr_delta_crossed_probabilities`); point estimates are computed first
+  with the same coefficients, so users meet the error above first.
+
+The message names the number of profiles, the time of the first visit where
+the cut-points cross, the lowest probability, and the number of posterior
+draws for `blrm`. Simulation and bootstrap loops otherwise turn a failed draw
+into a warning and drop it; their error handlers call
+`rethrow_crossed_thresholds()` first, and the drivers
+(`apply_sop_simulation_draws()`, `apply_to_bootstrap()`,
+`apply_to_fwb_bootstrap()`) record each crossed draw with
+`run_draw_recording_crossings()` and stop afterwards with
+`stop_crossed_threshold_draws()`, which counts the affected draws or samples.
+
+The test-only reference `reference_checked_probabilities()` in
+`tests/testthat/helper-sops-native-reference.R` follows the same rule, and
+`reference_posterior_probabilities()` describes the raw rows of the blrm
+kernel. `tests/testthat/test-sops-crossed-thresholds.R` covers the public
+calls, the reference engine, the tolerance, MVN and bootstrap inference, and a
+hand-made `blrm` fit with a non-proportional effect of time.
 
 ### Average time in states
 

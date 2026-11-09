@@ -317,6 +317,7 @@ apply_to_bootstrap <- function(
   use_parallel <- !is.null(workers) && workers > 1
   row_plan <- bootstrap_row_plan(data, id_var)
   materialize_indexed <- materialize_bootstrap_sample_indexed
+  record_crossings <- run_draw_recording_crossings
 
   # Wrapper function that materializes data then runs analysis
   wrapper_fn <- function(boot_ids) {
@@ -328,8 +329,9 @@ apply_to_bootstrap <- function(
       row_plan
     )
 
-    # Run user's analysis function
-    analysis_fn(boot_data)
+    # Run user's analysis function. Samples whose cut-points cross are
+    # counted and reported together below.
+    record_crossings(analysis_fn, boot_data)
   }
 
   # Apply function to bootstrap samples
@@ -349,13 +351,15 @@ apply_to_bootstrap <- function(
           "id_var",
           "analysis_fn",
           "row_plan",
-          "materialize_indexed"
+          "materialize_indexed",
+          "record_crossings"
         )
       )
     )
   } else {
     results <- lapply(boot_samples, wrapper_fn)
   }
+  stop_crossed_threshold_draws(results, "bootstrap samples", "sample")
 
   return(results)
 }
@@ -371,10 +375,11 @@ apply_to_fwb_bootstrap <- function(
 ) {
   use_parallel <- !is.null(workers) && workers > 1
   materialize_fwb <- materialize_fwb_bootstrap_sample
+  record_crossings <- run_draw_recording_crossings
 
   wrapper_fn <- function(fwb_weights) {
     boot_data <- materialize_fwb(fwb_weights, data, id_var)
-    analysis_fn(boot_data, fwb_weights)
+    record_crossings(analysis_fn, boot_data, fwb_weights)
   }
 
   if (use_parallel) {
@@ -387,12 +392,20 @@ apply_to_fwb_bootstrap <- function(
       wrapper_fn,
       .options = furrr::furrr_options(
         packages = c(packages),
-        globals = c(globals, "data", "id_var", "analysis_fn", "materialize_fwb")
+        globals = c(
+          globals,
+          "data",
+          "id_var",
+          "analysis_fn",
+          "materialize_fwb",
+          "record_crossings"
+        )
       )
     )
   } else {
     results <- lapply(fwb_samples, wrapper_fn)
   }
+  stop_crossed_threshold_draws(results, "bootstrap samples", "sample")
 
   results
 }

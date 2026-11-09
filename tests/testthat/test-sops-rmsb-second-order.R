@@ -117,16 +117,21 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
         p2_var = "ypprev"
       )
 
+      # A patient cannot start in an absorbing state.
       absorb_data <- data
       absorb_data$ypprev <- factor(3, levels = 1:3)
       absorb_data$yprev <- factor(3, levels = 1:3)
-      absorb_out <- soprob_markov(
-        model = model,
-        newdata = absorb_data,
-        times = 1:2,
-        y_levels = 1:3,
-        absorb = 3,
-        p2_var = "ypprev"
+      expect_error(
+        soprob_markov(
+          model = model,
+          newdata = absorb_data,
+          times = 1:2,
+          y_levels = 1:3,
+          absorb = 3,
+          p2_var = "ypprev"
+        ),
+        "`yprev` is the absorbing state 3 for 1 of the 1 prediction rows",
+        fixed = TRUE
       )
     }
   )
@@ -135,16 +140,6 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
   expect_equal(
     out[1, 2, ],
     c("1" = 0.12, "2" = 0.64, "3" = 0.24),
-    tolerance = 1e-12
-  )
-  expect_equal(
-    absorb_out[1, 1, ],
-    c("1" = 0, "2" = 0, "3" = 1),
-    tolerance = 1e-12
-  )
-  expect_equal(
-    absorb_out[1, 2, ],
-    c("1" = 0, "2" = 0, "3" = 1),
     tolerance = 1e-12
   )
   expect_identical(out, out_large_chunk)

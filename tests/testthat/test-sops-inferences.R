@@ -442,7 +442,8 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(nrow(overall), 1L)
   })
 
-  test_that("lp_to_probs() converts cumulative logits into valid category probabilities", {
+  test_that("lp_to_probs() keeps crossed cut-points for the caller to report", {
+    # Row 1 has increasing logits, so its cut-points cross; row 2 is valid.
     eta <- matrix(
       c(
         -1,
@@ -464,12 +465,16 @@ describe("avg_sops() and inferences() pipeline", {
       stats::plogis(eta[, 2]) - stats::plogis(eta[, 3]),
       stats::plogis(eta[, 3])
     )
-    expected[expected < 0] <- 0
-    expected <- expected / rowSums(expected)
 
     expect_equal(probs, expected)
-    expect_true(all(probs >= 0))
+    expect_true(all(probs[2, ] >= 0))
+    expect_lt(min(probs[1, ]), 0)
     expect_equal(rowSums(probs), rep(1, nrow(probs)))
+    expect_error(
+      mostr:::check_crossed_thresholds(probs, n_profiles = 2L, time = 1),
+      "cross for 1 of the 2 profiles at time 1",
+      class = "mostr_crossed_thresholds"
+    )
   })
 
   test_that("fast Markov components match soprob_markov() on a Markov model", {
@@ -808,9 +813,8 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(nrow(attr(avg, "refit_data")), nrow(case$data))
 
     withr::local_seed(4403)
-    inferred <- mostr::inferences(
+    inferred <- mostr:::inferences_score_bootstrap(
       avg,
-      method = "score_bootstrap",
       n_draws = 3,
       return_draws = TRUE
     )
@@ -849,9 +853,8 @@ describe("avg_sops() and inferences() pipeline", {
       id_var = "id"
     )
     avg <- avg_sops(model, variables = "tx", times = 1:3, absorb = "6")
-    previous <- inferences(
+    previous <- mostr:::inferences_score_bootstrap(
       avg,
-      method = "score_bootstrap",
       cluster = data$id,
       n_draws = 4,
       seed = 1
@@ -885,9 +888,8 @@ describe("avg_sops() and inferences() pipeline", {
       )
     }
 
-    replacement <- inferences(
+    replacement <- mostr:::inferences_score_bootstrap(
       previous,
-      method = "score_bootstrap",
       cluster = data$id,
       n_draws = 2,
       seed = 3
@@ -897,7 +899,7 @@ describe("avg_sops() and inferences() pipeline", {
       1:2
     )
     for (method in c("mvn", "score_bootstrap", "delta")) {
-      omitted <- inferences(
+      omitted <- run_inferences_method(
         previous,
         method = method,
         cluster = data$id,
@@ -929,9 +931,8 @@ describe("avg_sops() and inferences() pipeline", {
     )
 
     withr::local_seed(4415)
-    inferred <- mostr::inferences(
+    inferred <- mostr:::inferences_score_bootstrap(
       avg,
-      method = "score_bootstrap",
       n_draws = 2,
       return_draws = FALSE
     )
@@ -1043,16 +1044,14 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(inline_avg$estimate, explicit_avg$estimate, tolerance = 1e-10)
 
     withr::local_seed(4412)
-    explicit_inferred <- mostr::inferences(
+    explicit_inferred <- mostr:::inferences_score_bootstrap(
       explicit_avg,
-      method = "score_bootstrap",
       n_draws = 3,
       return_draws = TRUE
     )
     withr::local_seed(4412)
-    inline_inferred <- mostr::inferences(
+    inline_inferred <- mostr:::inferences_score_bootstrap(
       inline_avg,
-      method = "score_bootstrap",
       n_draws = 3,
       return_draws = TRUE
     )

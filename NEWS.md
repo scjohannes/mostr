@@ -76,6 +76,62 @@
   visit, which is not a starting row, does not matter. Summaries such as
   `time_in_state()` still keep missing values as their own group.
 
+* A patient can no longer start in an absorbing state. With `absorb`,
+  `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, and `soprob_markov()` stop when a profile's previous
+  state (`p_var`, usually `yprev`) is absorbing, or, with `p2_var`, when its
+  state two visits back is. The error names the column and says how many
+  profiles are affected; remove those patients from `newdata` first.
+  Previously, first-order models predicted a move out of the absorbing state
+  from a previous state never seen in the fitted data (a numeric `yprev` gave
+  a probability of staying dead below 1, a factor `yprev` failed with an
+  unrelated error), while second-order models kept such patients in the
+  absorbing state with probability 1.
+
+* `inferences()` no longer offers `method = "score_bootstrap"`; asking for it
+  is an error. Use `method = "mvn"`, `"delta"`, `"bootstrap"`, or `"fwb"`
+  instead.
+
+* `inferences(method = "delta")` refuses unconditional variance for every
+  model fitted with case weights (`mostm(weights = )`), whatever the engine,
+  because the calculation has not been checked with weights. Previously
+  weighted `"orm"` fits were refused but weighted `"vglm"` fits were not.
+  Unconditional variance is the default for `avg_sops()`,
+  `avg_state_time()`, and `avg_comparisons()` results, so for a weighted fit
+  pass `vcov = "conditional"`.
+
+* `include_re = TRUE` is an error for fits other than `rmsb::blrm()` in
+  `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, and `soprob_markov()`. Only `blrm` fits have random
+  effects; previously the argument was silently ignored for `"orm"` and
+  `"vglm"` fits.
+
+* State occupancy probabilities from partial proportional-odds models now stop
+  with an error where the model's thresholds (cut-points) cross. For some
+  covariate values, often outside the range of the data, a predictor with a
+  separate effect at each threshold can push two thresholds past each other,
+  and the model then gives a negative probability for a state. Previously the
+  compiled engine set such a probability to zero and rescaled the others, the
+  reference engine for `"vglm"` fits kept the negative probability, and
+  `blrm` fits clipped and rescaled each posterior draw, so the two
+  `"vglm"` engines could disagree by as much as 0.5. Now `sops()`,
+  `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, and `soprob_markov()` stop and say for how many
+  profiles and at which time the thresholds cross (and in how many posterior
+  draws for `blrm` fits). `inferences()` with `method = "mvn"`,
+  `"bootstrap"`, or `"fwb"` likewise stops, saying in how many simulation draws
+  or bootstrap samples the thresholds cross, instead of dropping those draws
+  with a warning. A negative value between -1e-10 and zero comes from rounding
+  and is still set to zero.
+
+## Documentation
+
+* The help pages of `avg_sops()`, `avg_state_time()`, `avg_comparisons()`,
+  and `mostm()` now say that the averages give every profile the same weight:
+  case weights given to `mostm(weights = )` are used only to fit the model,
+  so the result is not the same as repeating each patient according to their
+  weight.
+
 ## Bug fixes
 
 * `avg_comparisons()` and `comparisons()` with `by` naming the compared
@@ -84,7 +140,7 @@
   estimand, giving the average effect among the untreated and among the
   treated. Each group's estimate equals the same call with `newdata`
   restricted to that group, and intervals from `inferences()` with
-  `method = "mvn"`, `"score_bootstrap"`, `"bootstrap"`, or `"fwb"` follow the
+  `method = "mvn"`, `"bootstrap"`, or `"fwb"` follow the
   same groups. Previously, SOP and time-in-state comparisons silently ignored
   such a `by` and returned the overall average without a `tx` column, and
   with `time_map` they mixed the starting states of one group with the

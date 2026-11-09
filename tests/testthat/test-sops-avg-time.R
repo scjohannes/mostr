@@ -257,8 +257,18 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
     state_sets = list(alive = 1:2, all = 1:3)
   )
   for (method in c("mvn", "score_bootstrap", "bootstrap", "fwb")) {
-    inferred <- inferences(avg, method = method, n_draws = 6, seed = 9322)
-    result <- inferences(total, method = method, n_draws = 6, seed = 9322)
+    inferred <- run_inferences_method(
+      avg,
+      method = method,
+      n_draws = 6,
+      seed = 9322
+    )
+    result <- run_inferences_method(
+      total,
+      method = method,
+      n_draws = 6,
+      seed = 9322
+    )
     expected <- time_in_state(inferred, target_states = 1:2)
     joined <- merge(result[result$state_set == "alive", ], expected, by = "tx")
     expect_equal(joined$estimate, joined$total_time, info = method)
@@ -297,8 +307,18 @@ test_that("mapped resampling uses the baseline anchor of each draw", {
     target_times = c(0, 4, 7)
   )
   for (method in c("score_bootstrap", "bootstrap", "fwb")) {
-    inferred <- inferences(avg, method = method, n_draws = 6, seed = 9323)
-    result <- inferences(total, method = method, n_draws = 6, seed = 9323)
+    inferred <- run_inferences_method(
+      avg,
+      method = method,
+      n_draws = 6,
+      seed = 9323
+    )
+    result <- run_inferences_method(
+      total,
+      method = method,
+      n_draws = 6,
+      seed = 9323
+    )
     anchors <- attr(inferred, "baseline_anchor_draws")
     anchors <- anchors[as.character(anchors$state) == "1", ]
     sop_draws <- attr(inferred, "draws")

@@ -201,6 +201,7 @@ inferences_bootstrap <- function(
         time_covariates = time_covariates
       ),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning("soprob_markov failed: ", e$message)
         return(NULL)
       }
@@ -561,6 +562,7 @@ inferences_bootstrap_sops_fwb <- function(
         time_covariates = time_covariates
       ),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning("soprob_markov failed: ", e$message)
         return(NULL)
       }

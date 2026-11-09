@@ -104,7 +104,12 @@ test_that("blrm sops() draws match the readable loop draw by draw", {
   for (case in markov_fake_cases) {
     model <- markov_fake_blrm(case$partial_odds)
     for (absorb in list(4L, c(3L, 4L))) {
+      # SOP calls refuse a start in an absorbing state, and for second-order
+      # models also an absorbing state two visits back.
       keep <- !as.character(profiles$yprev) %in% as.character(absorb)
+      if (case$second_order) {
+        keep <- keep & !as.character(profiles$ypprev) %in% as.character(absorb)
+      }
       kept <- profiles[keep, , drop = FALSE]
       rownames(kept) <- NULL
       args <- list(

@@ -436,8 +436,8 @@ subtracts. The example compares the expected number of days outside hospital
 A patient's comparison involves only that patient, so no average over
 sampled patients is formed, and analytical intervals use conditional
 variance; `inferences(method = "delta")` selects it automatically. MVN
-simulation, the score bootstrap, and the fractional weighted bootstrap are
-also available, through `method = "mvn"`, `"score_bootstrap"`, and `"fwb"`.
+simulation and the fractional weighted bootstrap are also available, through
+`method = "mvn"` and `"fwb"`.
 
 ```{r patient-comparisons}
 patient_difference <- comparisons(

@@ -266,6 +266,7 @@ soprob_markov_reference <- function(
   # Predict probabilities at T1
   p_t1 <- prd(object, data) # Returns [n_pat x n_states] or [nd x n_pat x n_states]
   check_transition_probabilities(p_t1, "the first SOP time point")
+  check_crossed_thresholds(p_t1, n_pat, times[1L])
 
   if (nd == 0) {
     P[, 1, ] <- p_t1
@@ -330,6 +331,7 @@ soprob_markov_reference <- function(
     # Rows 1:N are transitions from State 1, Rows N+1:2N from State 2, etc.
     trans_probs <- prd(object, edata_base)
     check_transition_probabilities(trans_probs, paste0("SOP time point ", it))
+    check_crossed_thresholds(trans_probs, n_pat, times[it])
 
     # --- 5. The Update Step (Markov) ---
     # S_it(l) sums S_i,t-1(k) * T_it(l | k) over previous states k.
@@ -435,6 +437,9 @@ soprob_markov_second_order_run <- function(
   n_states <- length(ylevel_names)
   absorb_idx <- which(ylevel_names %in% absorb_names)
   non_absorb_idx <- setdiff(seq_len(n_states), absorb_idx)
+  # SOP calls refuse starting rows in an absorbing state before predicting
+  # (`stop_absorbing_start()`), so every patient's first visit is predicted
+  # from a non-absorbing history.
   prev_idx <- match_state_indices(data[[p_var]], ylevel_names, p_var)
 
   if (nd == 0) {
@@ -444,13 +449,7 @@ soprob_markov_second_order_run <- function(
       dimnames = list(rownames(data), ylevel_names, ylevel_names)
     )
     for (i in seq_len(n_pat)) {
-      if (prev_idx[i] %in% absorb_idx) {
-        joint_prev[i, prev_idx[i], prev_idx[i]] <- 1
-        P[i, 1, ] <- 0
-        P[i, 1, prev_idx[i]] <- 1
-      } else {
-        joint_prev[i, prev_idx[i], ] <- P[i, 1, ]
-      }
+      joint_prev[i, prev_idx[i], ] <- P[i, 1, ]
     }
   } else {
     joint_prev <- array(
@@ -464,13 +463,7 @@ soprob_markov_second_order_run <- function(
       )
     )
     for (i in seq_len(n_pat)) {
-      if (prev_idx[i] %in% absorb_idx) {
-        joint_prev[, i, prev_idx[i], prev_idx[i]] <- 1
-        P[, i, 1, ] <- 0
-        P[, i, 1, prev_idx[i]] <- 1
-      } else {
-        joint_prev[, i, prev_idx[i], ] <- P[, i, 1, ]
-      }
+      joint_prev[, i, prev_idx[i], ] <- P[, i, 1, ]
     }
   }
 
@@ -539,6 +532,7 @@ soprob_markov_second_order_run <- function(
           trans_probs,
           paste0("second-order SOP time point ", it)
         )
+        check_crossed_thresholds(trans_probs, n_pat, times[it])
         contribution <- markov_update_second_order_native(
           joint_prev,
           trans_probs,
@@ -604,6 +598,7 @@ soprob_markov_second_order_run <- function(
           trans_probs,
           paste0("second-order SOP time point ", it)
         )
+        check_crossed_thresholds(trans_probs, n_pat, times[it])
         for (chunk_pos in seq_along(chunk)) {
           pair_i <- chunk[chunk_pos]
           h <- pair_grid$h[pair_i]

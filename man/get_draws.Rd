@@ -39,15 +39,15 @@ the draws is renamed to \code{draw}.
 
 Draw-specific patient weights are included only when they are meaningful for
 manual downstream averaging: \code{sops()} and \code{\link[=comparisons]{comparisons()}} output
-from FWB or score bootstrap on the stored empirical prediction cohort. For
+from FWB on the stored empirical prediction cohort. For
 \code{\link[=comparisons]{comparisons()}} draws, the weighted mean of a draw's comparisons,
 \eqn{\sum_i w_i x_i / \sum_i w_i} over patients \eqn{i} with weights
 \eqn{w_i} and draw values \eqn{x_i}, reproduces the corresponding
 \code{\link[=avg_comparisons]{avg_comparisons()}} draw. They are not included for
 \code{avg_sops()} because its draws are already averaged, and
 they are not included when the original SOP object used user-supplied
-prediction profiles. The column names \code{fwb_weight} and \code{score_weight} are
-reserved for these draw weights when they are attached.
+prediction profiles. The column name \code{fwb_weight} is reserved for these draw
+weights when they are attached.
 }
 \examples{
 \dontrun{

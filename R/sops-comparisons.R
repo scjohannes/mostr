@@ -41,7 +41,7 @@
 #'   estimate equals the same call with `newdata` restricted to that group's
 #'   profiles. For `comparison = "ratio"`, a group's result is the ratio of
 #'   the group's averaged summaries. Intervals from [inferences()] with
-#'   `method = "mvn"`, `"score_bootstrap"`, `"bootstrap"`, or `"fwb"` follow
+#'   `method = "mvn"`, `"bootstrap"`, or `"fwb"` follow
 #'   the same groups; analytical intervals (`method = "delta"`) are not
 #'   available with `by`. `FALSE` or `NULL` does not average and returns the
 #'   [comparisons()] result, one comparison per profile; analytical intervals
@@ -78,7 +78,8 @@
 #' @param time_covariates Optional time-varying covariate lookup table for explicit
 #'   precomputed time-basis columns. See [avg_sops()].
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs.
+#'   fitted random-effect draws in posterior predictions for known IDs. Only
+#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws.
 #' @param seed Optional random seed for reproducible posterior draw sampling.
@@ -98,6 +99,11 @@
 #' paired patient/profile-level counterfactual state distributions, because it
 #' is nonlinear in the two state distributions.
 #'
+#' The average gives every profile the same weight. Case weights given to
+#' [mostm()] with `weights` are used only to fit the model, not in this
+#' average, so the result is not the same as repeating each patient according
+#' to their weight.
+#'
 #' Frequentist uncertainty follows the existing package workflow:
 #' `avg_comparisons(...) |> inferences(...)`. Bayesian `blrm` models use their
 #' posterior SOP draws directly and therefore return uncertainty from
@@ -108,8 +114,9 @@
 #' `vcov = "unconditional"` accounts for coefficient estimation and sampling
 #' the patients used in the averages. Use `vcov = "conditional"` to treat
 #' those patients' starting states and covariates as given and account only
-#' for coefficient estimation. User-supplied `newdata` requires the conditional
-#' choice. See [inferences()] for model restrictions.
+#' for coefficient estimation. User-supplied `newdata`, and models fitted with
+#' case weights, require the conditional choice. See [inferences()] for model
+#' restrictions.
 #'
 #' @inheritSection sops Choosing visits
 #'
@@ -160,6 +167,7 @@ avg_comparisons <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
   stop_legacy_baseline_args(extra_args)
   estimand <- match.arg(estimand)

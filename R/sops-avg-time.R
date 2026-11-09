@@ -80,6 +80,11 @@
 #' the interval before the first visit is included. For example, with visits
 #' on days 3, 7, 14, and 28 and `baseline_time = 0`, totals cover days 0 to 28.
 #'
+#' The average gives every profile the same weight. Case weights given to
+#' [mostm()] with `weights` are used only to fit the model, not in this
+#' average, so the result is not the same as repeating each patient according
+#' to their weight.
+#'
 #' `inferences(method = "delta")` provides analytical standard errors and
 #' confidence intervals of the form estimate plus or minus a normal quantile
 #' times the standard error. These intervals are not restricted to the
@@ -88,7 +93,8 @@
 #' patients were sampled, including their observed starting states. Use
 #' `vcov = "conditional"` to treat the patients' starting states and
 #' covariates as given and account only for coefficient estimation. Supplied
-#' `newdata` requires conditional variance. When `variables` sets the
+#' `newdata`, and models fitted with case weights, require conditional
+#' variance. When `variables` sets the
 #' previous-state variable (a counterfactual starting state), the baseline
 #' starts in that state and only conditional variance is available
 #' (`method = "delta", vcov = "conditional"` or `method = "mvn"`). The
@@ -108,9 +114,9 @@
 #'   the distribution of starting states, fixed. It is comparable to
 #'   conditional variance, so its intervals are typically narrower than the
 #'   default analytical intervals.
-#' * `method = "score_bootstrap"`, `method = "bootstrap"`, and `method = "fwb"`
-#'   (fractional weighted bootstrap) re-draw or re-weight patients, including
-#'   their starting states. They are comparable to unconditional variance.
+#' * `method = "bootstrap"` and `method = "fwb"` (fractional weighted
+#'   bootstrap) re-draw or re-weight patients, including their starting
+#'   states. They are comparable to unconditional variance.
 #'
 #' Each of these methods, and posterior summaries for `blrm` models, first
 #' converts every draw of occupancy probabilities into time totals and then
@@ -168,6 +174,7 @@ avg_state_time <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_include_re_without_blrm(model, include_re)
   validate_state_time_arguments(
     times,
     baseline_time = baseline_time,
@@ -506,7 +513,7 @@ inferences_avg_time <- function(
   use_coefstart
 ) {
   avg <- replay_avg_time_sops(object, conf_level)
-  avg <- inferences(
+  avg <- inferences_internal(
     avg,
     method = method,
     n_draws = n_draws,
