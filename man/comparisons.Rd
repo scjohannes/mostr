@@ -62,7 +62,9 @@ reference level. \code{"time_benefit"} only supports \code{"difference"}.}
 profile. \code{TRUE} averages the comparisons over all profiles, and a
 character vector of column names averages them within the groups those
 columns define. Both return the result of \code{\link[=avg_comparisons]{avg_comparisons()}} with the
-same arguments. Groups use each profile's observed values, so naming the
+same arguments. A \code{by} column must have no missing values among the
+averaged profiles; drop or impute those patients first. Groups use each
+profile's observed values, so naming the
 compared variable, for example \code{by = "tx"}, gives the average effect among
 the untreated and among the treated; analytical intervals
 (\code{method = "delta"}) are not available with \code{by}. For

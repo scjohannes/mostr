@@ -252,6 +252,46 @@ observed_by_label <- function(by) {
   sub("^\\.mostr_observed_", "", by)
 }
 
+# Refuses a `by` column with a missing value among the profiles that are
+# averaged. Such a profile would belong to no group and be left out of every
+# average without notice, which changes who is averaged. `profiles` holds the
+# averaged profiles, one row each, with observed values: `newdata`, or the
+# starting profiles stored by `mostm()`. Only these rows count, so a missing
+# value at a later visit of the fitted data does not matter. An internal
+# observed copy named in `by` is checked on its variable's observed column,
+# and the message uses the user's column name. Columns that are absent are
+# left to the checks that report them. Every averaging function resolves its
+# profiles in `avg_sops()` or `avg_comparison_setup()`, which call this check
+# before predicting, so inference replays and bootstrap refits never reach a
+# grouping step with a missing `by` value.
+stop_missing_by_values <- function(profiles, by, variables = NULL) {
+  if (is.null(by) || is.null(profiles)) {
+    return(invisible(NULL))
+  }
+  profiles <- add_observed_by_columns(profiles, variables, by)
+  for (column in intersect(by, names(profiles))) {
+    n_missing <- sum(is.na(profiles[[column]]))
+    if (n_missing == 0L) {
+      next
+    }
+    n_profiles <- nrow(profiles)
+    stop(
+      "`by` names `",
+      observed_by_label(column),
+      "`, which is missing for ",
+      n_missing,
+      " of the ",
+      n_profiles,
+      " profiles being averaged. A profile with a missing `by` value belongs ",
+      "to no group, so it would be left out of every average. Drop or impute ",
+      "those patients first, for example by removing them from `newdata` or ",
+      "from the data given to `mostm()`.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
 # `avg_sops()` and `avg_state_time()` return the set value in the column of
 # each variable in `variables`, so a `by` group of the observed value would
 # need the same column name.

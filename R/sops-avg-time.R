@@ -19,7 +19,10 @@
 #' @param by How to average, as in the marginaleffects package. `TRUE` (the
 #'   default) averages over all profiles, and a character vector of column
 #'   names averages within the groups those columns define, using each
-#'   profile's observed values. As in [avg_sops()], `by` cannot name a
+#'   profile's observed values. A `by` column must have no missing values
+#'   among the averaged profiles; drop or impute those patients first, in
+#'   `newdata` or in the data given to [mostm()]. As in [avg_sops()], `by`
+#'   cannot name a
 #'   variable that `variables` also sets; copy the column first, for example
 #'   `newdata$observed_tx <- newdata$tx`, and use `by = "observed_tx"`.
 #'   `FALSE` or `NULL` does not average and returns the [state_time()] result,

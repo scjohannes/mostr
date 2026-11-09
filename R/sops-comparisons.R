@@ -28,7 +28,11 @@
 #' @param by How to average the comparisons of the individual profiles, as in
 #'   the marginaleffects package. `TRUE` (the default) averages over all
 #'   profiles. A character vector of column names averages within the groups
-#'   those columns define, using each profile's values as observed. Naming the
+#'   those columns define, using each profile's values as observed. A `by`
+#'   column must have no missing values among the averaged profiles, because
+#'   a profile without a group would be left out of every average; drop or
+#'   impute those patients first, in `newdata` or in the data given to
+#'   [mostm()]. Naming the
 #'   compared variable itself, for example `by = "tx"` with
 #'   `variables = list(tx = c(0, 1))`, groups the patients by the treatment
 #'   they actually received: the result has a `tx` column holding that

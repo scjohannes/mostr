@@ -55,7 +55,9 @@ per named state set, for example
 \item{by}{\code{FALSE} (the default) or \code{NULL} returns one total per profile.
 \code{TRUE} averages over all profiles, and a character vector of column names
 averages within the groups those columns define; both return the result
-of \code{\link[=avg_state_time]{avg_state_time()}} with the same arguments.}
+of \code{\link[=avg_state_time]{avg_state_time()}} with the same arguments. A \code{by} column must have no
+missing values among the averaged profiles; drop or impute those patients
+first.}
 
 \item{times}{Required. The consecutive visits to include, in increasing
 order and each listed once, for example \code{times = 1:30}. Each value is one

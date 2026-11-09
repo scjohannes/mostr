@@ -61,7 +61,9 @@ its own covariates.}
 package. \code{FALSE} (the default) or \code{NULL} returns one row per profile,
 time, and state. \code{TRUE} averages over all profiles, and a character
 vector of column names averages within the groups those columns define;
-both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same arguments.}
+both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same arguments. A \code{by}
+column must have no missing values among the averaged profiles; drop or
+impute those patients first.}
 
 \item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
 \code{id_var} given to \code{\link[=mostm]{mostm()}}, which is almost always what you want. It

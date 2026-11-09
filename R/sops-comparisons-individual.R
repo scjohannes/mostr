@@ -21,7 +21,9 @@
 #'   profile. `TRUE` averages the comparisons over all profiles, and a
 #'   character vector of column names averages them within the groups those
 #'   columns define. Both return the result of [avg_comparisons()] with the
-#'   same arguments. Groups use each profile's observed values, so naming the
+#'   same arguments. A `by` column must have no missing values among the
+#'   averaged profiles; drop or impute those patients first. Groups use each
+#'   profile's observed values, so naming the
 #'   compared variable, for example `by = "tx"`, gives the average effect among
 #'   the untreated and among the treated; analytical intervals
 #'   (`method = "delta"`) are not available with `by`. For

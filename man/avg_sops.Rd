@@ -52,9 +52,11 @@ including their observed treatment.}
 
 \item{by}{How to average, as in the marginaleffects package. \code{TRUE} (the
 default) averages over all profiles. A character vector of column names
-averages within the groups those columns define after standardization;
-rows missing any grouping value are omitted, and an error is raised if
-none remain. Without \code{variables}, groups use each profile's observed
+averages within the groups those columns define after standardization.
+A \code{by} column must have no missing values among the averaged profiles,
+because a profile without a group would be left out of every average;
+drop or impute those patients first, in \code{newdata} or in the data given to
+\code{\link[=mostm]{mostm()}}. Without \code{variables}, groups use each profile's observed
 values, so \code{by = "tx"} averages separately among the untreated and the
 treated. \code{by} cannot name a variable that \code{variables} also sets: the
 result's column for that variable holds the value that was set, so it

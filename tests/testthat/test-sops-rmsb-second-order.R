@@ -602,7 +602,9 @@ test_that("second-order blrm posterior results are invariant to outer draw chunk
   expect_equal(attr(one, "draws"), attr(all, "draws"))
 })
 
-test_that("grouped blrm summaries omit incomplete grouping rows", {
+test_that("grouped blrm summaries refuse a missing grouping value", {
+  # A profile with a missing `by` value would be left out of every group, so
+  # the posterior averages refuse it like the frequentist ones.
   model <- make_fake_blrm()
   newdata <- data.frame(
     id = c("a", "b", "c"),
@@ -616,32 +618,24 @@ test_that("grouped blrm summaries omit incomplete grouping rows", {
   with_mocked_bindings(
     blrm_design_matrix = fake_blrm_design,
     {
-      grouped <- sops(
-        model,
-        newdata = newdata,
-        times = 1:2,
-        by = "grp",
-        n_draws = 3,
-        return_draws = TRUE
+      expect_error(
+        sops(model, newdata = newdata, times = 1:2, by = "grp", n_draws = 3),
+        "`grp`, which is missing for 1 of the 3 profiles",
+        fixed = TRUE
       )
-      expected <- sops(
-        model,
-        newdata = complete,
-        times = 1:2,
-        by = "grp",
-        n_draws = 3,
-        return_draws = TRUE
+      expect_error(
+        avg_sops(
+          model,
+          newdata = newdata,
+          variables = list(tx = c(0, 1)),
+          times = 1:2,
+          by = "grp",
+          n_draws = 3
+        ),
+        "`grp`, which is missing for 1 of the 3 profiles",
+        fixed = TRUE
       )
-      avg_grouped <- avg_sops(
-        model,
-        newdata = newdata,
-        variables = list(tx = c(0, 1)),
-        times = 1:2,
-        by = "grp",
-        n_draws = 3,
-        return_draws = TRUE
-      )
-      avg_expected <- avg_sops(
+      avg_complete <- avg_sops(
         model,
         newdata = complete,
         variables = list(tx = c(0, 1)),
@@ -653,12 +647,7 @@ test_that("grouped blrm summaries omit incomplete grouping rows", {
     }
   )
 
-  expect_equal(grouped, expected, ignore_attr = TRUE)
-  expect_equal(attr(grouped, "draws"), attr(expected, "draws"))
-  expect_equal(avg_grouped, avg_expected, ignore_attr = TRUE)
-  expect_equal(attr(avg_grouped, "draws"), attr(avg_expected, "draws"))
-  expect_identical(anyNA(grouped$grp), FALSE)
-  expect_identical(anyNA(avg_grouped$grp), FALSE)
+  expect_setequal(unique(avg_complete$grp), c("a", "b"))
 })
 
 test_that("grouped blrm summaries reject entirely incomplete grouping rows", {

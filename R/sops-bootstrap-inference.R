@@ -703,7 +703,9 @@ stored_refit_bootstrap_data <- function(object, model) {
 # absent from a resample. That resample then has no estimate for the group,
 # and the group's interval would rest on fewer resamples without notice. The
 # sampled IDs are checked against the stored starting profiles before any
-# refit. Profiles with a missing `by` value belong to no group.
+# refit. A missing `by` value among the starting profiles is refused by
+# `stop_missing_by_values()` before the point estimate, so the complete-case
+# filter below only guards against a profile that belongs to no group.
 check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
   if (is.null(by)) {
     return(invisible(NULL))

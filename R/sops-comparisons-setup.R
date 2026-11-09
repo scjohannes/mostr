@@ -239,6 +239,7 @@ avg_comparison_setup <- function(
     )
   }
   validate_sops_by(by, baseline_data)
+  stop_missing_by_values(baseline_data, by, variables)
   baseline_data <- ensure_markov_rowid(baseline_data)
 
   grid <- create_counterfactual_grid(variables)

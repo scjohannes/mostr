@@ -63,7 +63,11 @@ reference level. \code{"time_benefit"} only supports \code{"difference"}.}
 \item{by}{How to average the comparisons of the individual profiles, as in
 the marginaleffects package. \code{TRUE} (the default) averages over all
 profiles. A character vector of column names averages within the groups
-those columns define, using each profile's values as observed. Naming the
+those columns define, using each profile's values as observed. A \code{by}
+column must have no missing values among the averaged profiles, because
+a profile without a group would be left out of every average; drop or
+impute those patients first, in \code{newdata} or in the data given to
+\code{\link[=mostm]{mostm()}}. Naming the
 compared variable itself, for example \code{by = "tx"} with
 \code{variables = list(tx = c(0, 1))}, groups the patients by the treatment
 they actually received: the result has a \code{tx} column holding that

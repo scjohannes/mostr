@@ -42,7 +42,9 @@
 #'   package. `FALSE` (the default) or `NULL` returns one row per profile,
 #'   time, and state. `TRUE` averages over all profiles, and a character
 #'   vector of column names averages within the groups those columns define;
-#'   both return the result of [avg_sops()] with the same arguments.
+#'   both return the result of [avg_sops()] with the same arguments. A `by`
+#'   column must have no missing values among the averaged profiles; drop or
+#'   impute those patients first.
 #' @param id_var Name of the patient ID column. `NULL` (the default) uses the
 #'   `id_var` given to [mostm()], which is almost always what you want. It
 #'   selects one starting row per patient from the stored data and tells the
@@ -732,9 +734,11 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   including their observed treatment.
 #' @param by How to average, as in the marginaleffects package. `TRUE` (the
 #'   default) averages over all profiles. A character vector of column names
-#'   averages within the groups those columns define after standardization;
-#'   rows missing any grouping value are omitted, and an error is raised if
-#'   none remain. Without `variables`, groups use each profile's observed
+#'   averages within the groups those columns define after standardization.
+#'   A `by` column must have no missing values among the averaged profiles,
+#'   because a profile without a group would be left out of every average;
+#'   drop or impute those patients first, in `newdata` or in the data given to
+#'   [mostm()]. Without `variables`, groups use each profile's observed
 #'   values, so `by = "tx"` averages separately among the untreated and the
 #'   treated. `by` cannot name a variable that `variables` also sets: the
 #'   result's column for that variable holds the value that was set, so it
@@ -971,6 +975,7 @@ avg_sops <- function(
       time_var = time_var
     )
   }
+  stop_missing_by_values(baseline_data, by, var_list)
   baseline_data <- ensure_markov_rowid(baseline_data)
 
   # --- 3. Create Counterfactual Datasets ---

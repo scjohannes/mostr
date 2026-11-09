@@ -66,6 +66,16 @@
   arguments. They no longer compute patient-clustered standard errors for each
   refit, which only the original fit uses.
 
+* `avg_sops()`, `avg_comparisons()`, and `avg_state_time()`, and `sops()`,
+  `comparisons()`, and `state_time()` when they average with `by`, now stop
+  when a `by` column has a missing value among the averaged profiles, and say
+  how many profiles are affected. Previously those profiles were silently
+  left out of every group, which changed who was averaged. Drop or impute
+  those patients first, in `newdata` or in the data given to `mostm()`. Only
+  the averaged profiles count: with stored data, a missing value at a later
+  visit, which is not a starting row, does not matter. Summaries such as
+  `time_in_state()` still keep missing values as their own group.
+
 ## Bug fixes
 
 * `avg_comparisons()` and `comparisons()` with `by` naming the compared

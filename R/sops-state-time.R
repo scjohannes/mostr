@@ -21,7 +21,9 @@
 #' @param by `FALSE` (the default) or `NULL` returns one total per profile.
 #'   `TRUE` averages over all profiles, and a character vector of column names
 #'   averages within the groups those columns define; both return the result
-#'   of [avg_state_time()] with the same arguments.
+#'   of [avg_state_time()] with the same arguments. A `by` column must have no
+#'   missing values among the averaged profiles; drop or impute those patients
+#'   first.
 #' @param return_draws Logical. For `blrm`, store the posterior draws of each
 #'   total for extraction with [get_draws()].
 #'

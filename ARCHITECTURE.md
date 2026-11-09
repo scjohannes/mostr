@@ -457,6 +457,24 @@ stay ratios of each group's averaged summaries. The delta method still
 refuses any `by` (`delta_validate_comparison_scope()` in
 `R/sops-delta-comparisons.R`).
 
+A `by` column may name any column of the averaged profiles, whether the model
+uses it or not, but it must have no missing values among them, because a
+profile without a group would be dropped from every average.
+`stop_missing_by_values()` (`R/sops-result-helpers.R`) refuses such a column,
+naming it (`observed_by_label()` turns an internal observed copy back into the
+user's name) and counting the affected profiles out of all averaged profiles.
+It runs where the averaged profiles are resolved, before any prediction: in
+`avg_sops()`, which also serves `avg_state_time()`, the SOP and time-in-state
+estimands of `avg_comparisons()`, and the `by` hand-offs of `sops()`,
+`state_time()`, and `comparisons()`; and in `avg_comparison_setup()` for time
+benefit. Only those profiles are checked, `newdata` or the starting profiles
+from `resolve_markov_prediction_data()`, so a missing value at a later visit
+of the fitted data does not matter. In `avg_sops()` and `avg_state_time()`,
+`stop_by_names_set_variable()` runs first. Because the user's call refuses missing groups up front, inference
+replays and bootstrap refits only see complete `by` values: resamples draw
+from those same patients, and the omission of missing keys by the grouping
+helpers below never drops a profile from an average.
+
 Grouping therefore exists only on averaged results, in `avg_args$by`. A
 `markov_sops` result always has one row per profile, time, and state, and
 stores no `by` attribute or `call_args$by`. The code that reads it assumes
@@ -484,7 +502,8 @@ profile, scenario, and draw identifiers. Two rules keep one group per series:
   `aggregate_value(keep_na_groups = TRUE)`, and
   `compute_ci_from_draws(keep_na_groups = TRUE)`; all three default to
   omitting missing keys, which the comparison reductions and `by` averages
-  keep.
+  keep; `by` averages never meet a missing key, because
+  `stop_missing_by_values()` refuses it first.
 - The null tests from `inferences(null = )` are never keys.
   `interpolate_sops()` removes them before interpolating and recomputes them
   with `add_null_test()` from the interpolated estimates against the stored
