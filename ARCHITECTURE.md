@@ -954,6 +954,24 @@ and weights). It also compares analytical derivatives with numerical differences
 `tests/testthat/test-slow-blrm.R` uses real `rmsb::blrm()` fits and runs only with
 `MOSTR_RUN_SLOW=true`.
 
+Consistency checks run on the same grid, with patient-ID type (numeric,
+character, factor) as a further axis. They need no known answer: each computes
+one number by two public routes, checks a limit that holds for any model, or
+checks that a change which should not matter leaves the result alone.
+`tests/testthat/test-grid-consistency.R` covers probability limits, averages as
+means of per-profile results, contrasts as differences of averages, state sets,
+interpolation, analytical covariances, restarting the recursion part-way,
+swapped comparison values, unused variables, later visits, and orm against vglm
+on the same proportional-odds model. `tests/testthat/test-grid-consistency-time.R`
+covers time in state, comparisons and time benefit, on the visit scale and in
+real time, overall and within `by` groups. On CRAN only one set-up per engine
+and Markov order runs. `tests/testthat/test-grid-data-changes.R` refits base
+set-ups after changes to the data (row order, ID labels and types, treatment
+coding, covariate units, an unused column with missing values, case weights
+against duplicated patients) using the checks in
+`tests/testthat/helper-grid-changes.R`; `tests/testthat/test-slow-grid-data-changes.R`
+runs them on the remaining set-ups with `MOSTR_RUN_SLOW=true`.
+
 `soprob_markov_reference()` in `R/sops-engine.R` is not one of these test-only
 references, despite its name. It is a production engine: the only one for `blrm`,
 and the fallback when prediction designs exceed

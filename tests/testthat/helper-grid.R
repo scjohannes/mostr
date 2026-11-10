@@ -53,6 +53,9 @@ grid_data <- function() {
 # Set-ups as a list of cells. `previous`: how the previous state is coded.
 # `time`: linear, spline, factor, or an explicit spline basis given to prediction
 # through `time_covariates`. `visit`: "gap" adds a gap variable and uneven visits.
+# `id`: how patient IDs are stored, as numbers, character strings ("p1", ...) or
+# a factor of those strings, whose sorted levels differ from the order in which
+# patients appear.
 grid_cell <- function(
   engine,
   order = 1L,
@@ -60,7 +63,8 @@ grid_cell <- function(
   weighted = FALSE,
   odds = "full",
   previous = "factor",
-  visit = "regular"
+  visit = "regular",
+  id = "numeric"
 ) {
   list(
     engine = engine,
@@ -69,7 +73,8 @@ grid_cell <- function(
     weighted = weighted,
     odds = odds,
     previous = previous,
-    visit = visit
+    visit = visit,
+    id = id
   )
 }
 
@@ -82,8 +87,60 @@ grid_label <- function(cell) {
     paste0(cell$odds, " odds"),
     paste0(cell$previous, " previous state"),
     paste0(cell$visit, " visits"),
+    paste0(cell$id, " IDs"),
     sep = ", "
   )
+}
+
+# TRUE when tests run on CRAN, by the rule `skip_on_cran()` uses: not
+# interactive, and NOT_CRAN not set to "true" (devtools and CI set it).
+grid_on_cran <- function() {
+  !interactive() && !isTRUE(as.logical(Sys.getenv("NOT_CRAN", "false")))
+}
+
+# Every set-up for the consistency checks: the core crossing plus one cell per
+# engine for each extra axis. On CRAN only one cell per engine and Markov order
+# runs, so that the checks there stay cheap.
+grid_consistency_cells <- function() {
+  if (grid_on_cran()) {
+    return(list(
+      grid_cell("orm"),
+      grid_cell("orm", order = 2L, time = "factor"),
+      grid_cell("vglm", time = "rcs"),
+      grid_cell("vglm", order = 2L, odds = "partial")
+    ))
+  }
+  extras <- list()
+  for (engine in c("orm", "vglm")) {
+    extras <- c(
+      extras,
+      list(
+        grid_cell(engine, weighted = TRUE),
+        grid_cell(engine, visit = "gap"),
+        grid_cell(engine, time = "basis"),
+        grid_cell(engine, previous = "numeric"),
+        grid_cell(engine, id = "character"),
+        grid_cell(engine, time = "factor", id = "factor")
+      )
+    )
+  }
+  c(grid_core_cells(), extras)
+}
+
+# Analytical (delta) inference supports first-order, full proportional-odds
+# fits. Unconditional variance also needs a fit without case weights.
+grid_has_delta <- function(cell) {
+  cell$order == 1L && cell$odds == "full"
+}
+
+grid_has_unconditional <- function(cell) {
+  grid_has_delta(cell) && !cell$weighted
+}
+
+# Elapsed times of the requested visits, unevenly spaced, for real-time
+# summaries. The span from baseline time 0 is 14.
+grid_time_map <- function(cell, times = grid_times(cell)) {
+  stats::setNames(c(2, 5, 9, 14)[seq_along(times)], as.character(times))
 }
 
 # Engine x order x time, plus partial odds for vglm: the three axes that decide
@@ -118,16 +175,34 @@ grid_cell_data <- function(cell) {
   if (cell$previous == "numeric") {
     data$yprev <- as.numeric(as.character(data$yprev))
   }
+  if (cell$id != "numeric") {
+    data$id <- paste0("p", data$id)
+  }
+  if (cell$id == "factor") {
+    data$id <- factor(data$id)
+  }
   data
 }
 
 grid_fit <- function(cell) {
-  key <- grid_label(cell)
-  if (!is.null(grid_cache$fits[[key]])) {
-    return(grid_cache$fits[[key]])
-  }
+  grid_refit(cell, "unchanged data", identity)
+}
 
-  data <- grid_cell_data(cell)
+# Fits `cell` to `change(grid_cell_data(cell))` and caches the fit under
+# `change_name`, so that a changed data set is refitted once however many tests
+# use it.
+grid_refit <- function(cell, change_name, change) {
+  key <- paste(grid_label(cell), change_name, sep = " | ")
+  if (is.null(grid_cache$fits[[key]])) {
+    if (is.null(grid_cache$fits)) {
+      grid_cache$fits <- list()
+    }
+    grid_cache$fits[[key]] <- grid_fit_to(cell, change(grid_cell_data(cell)))
+  }
+  grid_cache$fits[[key]]
+}
+
+grid_fit_to <- function(cell, data) {
   time_term <- switch(
     cell$time,
     rcs = "rms::rcs(time, 3)",
@@ -151,7 +226,7 @@ grid_fit <- function(cell) {
     parallel = if (cell$odds == "partial") FALSE ~ tx else TRUE
   )
 
-  fit <- suppressWarnings(
+  suppressWarnings(
     if (cell$engine == "orm") {
       formula <- stats::as.formula(paste("y ~", rhs))
       if (cell$weighted) {
@@ -194,12 +269,6 @@ grid_fit <- function(cell) {
       }
     }
   )
-
-  if (is.null(grid_cache$fits)) {
-    grid_cache$fits <- list()
-  }
-  grid_cache$fits[[key]] <- fit
-  fit
 }
 
 grid_times <- function(cell) {
@@ -302,10 +371,133 @@ grid_largest_gap <- function(result, matrices, which_matrix, times) {
   max(gaps)
 }
 
+# One string per row from the `keys` columns, for matching rows of two results.
+grid_key <- function(x, keys) {
+  x <- as.data.frame(x)
+  if (length(keys) == 0L) {
+    return(rep("", nrow(x)))
+  }
+  do.call(
+    paste,
+    c(lapply(unname(as.list(x[keys])), as.character), sep = "|")
+  )
+}
+
+# The largest absolute difference between column `x_col` of `x` and `y_col`
+# of `y`, after matching rows on `keys`. Inf unless the rows match one to one,
+# so that a lost or duplicated row fails the check. With `all_rows = FALSE`,
+# `y` may have rows that `x` lacks.
+grid_gap <- function(x, y, keys, x_col = "estimate", y_col = x_col, all_rows = TRUE) {
+  key_x <- grid_key(x, keys)
+  key_y <- grid_key(y, keys)
+  index <- match(key_x, key_y)
+  if (
+    nrow(as.data.frame(x)) == 0L ||
+      (all_rows && length(key_x) != length(key_y)) ||
+      anyDuplicated(key_x) > 0L ||
+      anyDuplicated(key_y) > 0L ||
+      anyNA(index)
+  ) {
+    return(Inf)
+  }
+  gaps <- abs(x[[x_col]] - y[[y_col]][index])
+  if (anyNA(gaps)) {
+    return(Inf)
+  }
+  max(gaps)
+}
+
 # Tests that are too slow for the default run. Set MOSTR_RUN_SLOW=true to run them.
 skip_unless_slow_tier <- function() {
   skip_if_not(
     identical(Sys.getenv("MOSTR_RUN_SLOW"), "true"),
     "Set MOSTR_RUN_SLOW=true to run slow checks."
   )
+}
+
+# ---- Shared by the consistency checks ----
+
+grid_treatments <- list(tx = c(0, 1))
+
+# The public functions, called on a cell's fit with that cell's arguments.
+# Results are cached, because several checks start from the same result.
+grid_call <- function(fun, cell, ..., args = grid_public_args(cell)) {
+  # The order of named arguments does not matter for the key.
+  dots <- list(...)
+  if (length(dots) > 0L) {
+    dots <- dots[order(names(dots))]
+  }
+  key <- paste(grid_label(cell), rlang::hash(list(fun, dots, args)))
+  if (is.null(grid_cache$results[[key]])) {
+    if (is.null(grid_cache$results)) {
+      grid_cache$results <- list()
+    }
+    grid_cache$results[[key]] <- do.call(fun, c(list(grid_fit(cell), ...), args))
+  }
+  grid_cache$results[[key]]
+}
+
+# Analytical inference on a result, cached in the same way.
+grid_delta <- function(result, vcov) {
+  key <- paste("delta", vcov, rlang::hash(result))
+  if (is.null(grid_cache$results[[key]])) {
+    grid_cache$results[[key]] <- inferences(result, method = "delta", vcov = vcov)
+  }
+  grid_cache$results[[key]]
+}
+
+grid_vcov_types <- function(cell) {
+  c("conditional", if (grid_has_unconditional(cell)) "unconditional")
+}
+
+# The setting whose turn it is in the `index`-th set-up.
+grid_turn <- function(choices, index) {
+  choices[[(index - 1L) %% length(choices) + 1L]]
+}
+
+# Real-time time benefit is slow to compute, so every other set-up checks it,
+# and the others check real-time time in state instead.
+grid_real_time_benefit_turn <- function(index) {
+  index %% 2L == 1L
+}
+
+# Real-time totals for each profile are slow to compute, so each set-up
+# computes them with one choice of baseline time, shared by the checks.
+grid_profile_real_time <- function(cell, index) {
+  list(
+    time_map = grid_time_map(cell),
+    baseline_time = grid_turn(list(0, NULL), index)
+  )
+}
+
+# The proportion of stored profiles starting in each state: the averaged
+# occupancy at baseline time, the same in every treatment scenario.
+grid_start_distribution <- function(cell) {
+  first <- grid_call(sops, cell)
+  first <- first[as.character(first$time) == as.character(grid_times(cell)[1]) &
+    as.character(first$state) == "1", , drop = FALSE]
+  start <- as.character(first$yprev)
+  vapply(
+    as.character(seq_len(grid_n_states)),
+    function(state) mean(start == state),
+    numeric(1)
+  )
+}
+
+grid_trapezoid <- function(x, y) {
+  sum(diff(x) * (utils::head(y, -1L) + utils::tail(y, -1L)) / 2)
+}
+
+# Largest fall between consecutive times of the occupancy of `state`, within
+# each group of `groups`. `times` gives the order of the time values.
+grid_largest_fall <- function(x, state, groups, times) {
+  x <- as.data.frame(x)
+  x <- x[as.character(x$state) == as.character(state), , drop = FALSE]
+  position <- match(as.character(x$time), as.character(times))
+  x <- x[order(grid_key(x, groups), position), , drop = FALSE]
+  falls <- unlist(lapply(
+    split(x$estimate, grid_key(x, groups)),
+    function(values) -diff(values)
+  ))
+  max(c(0, falls))
 }
