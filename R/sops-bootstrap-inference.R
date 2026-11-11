@@ -181,13 +181,16 @@ inferences_bootstrap <- function(
       )
     }
 
-    # Compute individual SOPs for counterfactual data
+    # Compute individual SOPs for counterfactual data. The refit keeps the
+    # original state labels, so supplied profiles are predicted as they are;
+    # `check_bootstrap_starting_states()` has made sure that their starting
+    # states are in every resample.
     sops_array <- tryCatch(
       soprob_markov(
         model = m_boot,
         newdata = newdata_cf,
         times = times,
-        y_levels = factor(boot_ylevels),
+        y_levels = state_factor(boot_ylevels),
         absorb = boot_absorb,
         time_var = time_var,
         p_var = p_var,
@@ -214,7 +217,7 @@ inferences_bootstrap <- function(
       sops_array = sops_array,
       grid = grid,
       times = times,
-      y_levels = factor(boot_ylevels),
+      y_levels = state_factor(boot_ylevels),
       variables = variables,
       n_cf = n_cf,
       n_each = n_each,
@@ -241,11 +244,12 @@ inferences_bootstrap <- function(
       boot_avg = boot_avg,
       grid = grid,
       times = times,
-      states = factor(boot_ylevels),
+      states = state_factor(boot_ylevels),
       variables = variables
     )
 
-    # D. Expand back to original state space with zero-padding
+    # D. Expand back to original state space with zero-padding: the refit's
+    # states are the present states, in state order and with their labels.
     if (length(missing_states) > 0) {
       for (cf_i in seq_len(n_cf)) {
         avg_sops_mat <- avg_sops_list[[cf_i]]
@@ -289,6 +293,19 @@ inferences_bootstrap <- function(
       data = refit_data,
       id_var = id_var,
       n_boot = n_boot
+    )
+    # Supplied profiles keep their starting states in every refit, so each
+    # resample must hold those states.
+    check_bootstrap_starting_states(
+      boot_ids,
+      refit_data = refit_data,
+      id_var = id_var,
+      state_cols = factor_cols,
+      starting_states = bootstrap_starting_states(
+        profiles = if (newdata_supplied) prediction_data,
+        variables = variables,
+        state_vars = c(p_var, p2_var)
+      )
     )
     # Supplied profiles are fixed and always contain every group. Otherwise
     # each resample's profiles come from its own rows, as in `analysis_fn`.
@@ -338,7 +355,8 @@ inferences_bootstrap <- function(
         "engine",
         "id_var",
         "by",
-        "complete_bootstrap_sop_states"
+        "complete_bootstrap_sop_states",
+        "state_factor"
       )
     )
   } else {
@@ -376,17 +394,14 @@ inferences_bootstrap <- function(
         "engine",
         "id_var",
         "by",
-        "complete_bootstrap_sop_states"
+        "complete_bootstrap_sop_states",
+        "state_factor"
       )
     )
   }
 
   # --- 6. Combine and Compute Summary Statistics ---
-  boot_results <- Filter(Negate(is.null), boot_results)
-
-  if (length(boot_results) == 0) {
-    stop("All bootstrap iterations failed.")
-  }
+  boot_results <- keep_successful_draws(boot_results)
   baseline_anchor_draws <- combine_baseline_anchor_draws(
     lapply(boot_results, attr, "baseline_anchor"),
     seq_along(boot_results)
@@ -615,10 +630,7 @@ inferences_bootstrap_sops_fwb <- function(
     )
   )
 
-  boot_results <- Filter(Negate(is.null), boot_results)
-  if (length(boot_results) == 0) {
-    stop("All bootstrap iterations failed.")
-  }
+  boot_results <- keep_successful_draws(boot_results)
 
   for (i in seq_along(boot_results)) {
     boot_results[[i]]$draw_id <- i
@@ -746,6 +758,118 @@ check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
     "combine small groups.",
     call. = FALSE
   )
+}
+
+# The ordinary bootstrap can also leave out every patient who was ever in a
+# rare state. That resample's refit knows no transitions from the state, so it
+# can't predict for a prediction profile that starts there; with supplied
+# `newdata`, such a profile is in every resample's predictions. The sampled
+# IDs are checked against the refit data before any refit, as in
+# `check_bootstrap_by_groups()`. A state counts as present when a sampled
+# patient holds it in any state column (`state_cols`: the response and the
+# previous-state columns), as in `drop_absent_states()`. A state that no
+# profile starts from may be missing: it gets probability 0 in that draw.
+#
+# `starting_states` is a named list from `bootstrap_starting_states()`: for
+# each previous-state column, the state labels that prediction starts from.
+check_bootstrap_starting_states <- function(
+  boot_ids,
+  refit_data,
+  id_var,
+  state_cols,
+  starting_states
+) {
+  starting <- unique(unlist(
+    lapply(starting_states, as_state_labels),
+    use.names = FALSE
+  ))
+  starting <- starting[!is.na(starting)]
+  if (length(starting) == 0L) {
+    return(invisible(NULL))
+  }
+  ids <- as.character(refit_data[[id_var]])
+  state_cols <- intersect(state_cols, names(refit_data))
+  missing_counts <- vapply(
+    starting,
+    function(state) {
+      hit <- Reduce(
+        `|`,
+        lapply(state_cols, function(col) {
+          as_state_labels(refit_data[[col]]) %in% state
+        }),
+        FALSE
+      )
+      holders <- unique(ids[hit])
+      sum(vapply(
+        boot_ids,
+        function(sample) !any(as.character(sample$original_id) %in% holders),
+        logical(1)
+      ))
+    },
+    integer(1)
+  )
+  names(missing_counts) <- starting
+  missing_counts <- missing_counts[missing_counts > 0L]
+  if (length(missing_counts) == 0L) {
+    return(invisible(NULL))
+  }
+  states <- names(missing_counts)
+  columns <- vapply(
+    names(starting_states),
+    function(column) {
+      hits <- intersect(as_state_labels(starting_states[[column]]), states)
+      if (length(hits) == 0L) {
+        return(NA_character_)
+      }
+      paste0("`", column, "` = ", paste(hits, collapse = ", "))
+    },
+    character(1)
+  )
+  columns <- columns[!is.na(columns)]
+  one <- length(states) == 1L
+  stop(
+    "The ordinary bootstrap left out every patient who was ever in ",
+    paste0(
+      "state ",
+      states,
+      " in ",
+      missing_counts,
+      " of the ",
+      length(boot_ids),
+      " resamples",
+      collapse = "; "
+    ),
+    ", but some prediction profiles start from ",
+    if (one) "that state" else "those states",
+    " (",
+    paste(columns, collapse = "; "),
+    "). The refit of a resample without a state has no estimate for leaving ",
+    "it, so it can't predict for those profiles. Use `method = \"fwb\"`, ",
+    "which keeps every patient in every refit, or remove those profiles ",
+    "from `newdata`.",
+    call. = FALSE
+  )
+}
+
+# The states that prediction starts from, for each previous-state column in
+# `state_vars`: the values of supplied prediction `profiles` (NULL when the
+# profiles come from each resample's own patients) and the values that
+# `variables` sets.
+bootstrap_starting_states <- function(profiles, variables, state_vars) {
+  out <- list()
+  for (column in unique(state_vars)) {
+    values <- c(
+      if (is.data.frame(profiles) && column %in% names(profiles)) {
+        as_state_labels(profiles[[column]])
+      },
+      if (column %in% names(variables)) as_state_labels(variables[[column]])
+    )
+    values <- unique(values[!is.na(values)])
+    if (length(values) > 0L) {
+      out[[column]] <- values
+    }
+  }
+  out
 }
 
 validate_refit_bootstrap_data <- function(refit_data, id_var, time_var) {

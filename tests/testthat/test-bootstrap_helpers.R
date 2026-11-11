@@ -314,7 +314,7 @@ test_that("apply_to_bootstrap maps deprecated parallel argument to workers", {
   expect_equal(result[[1]], 7)
 })
 
-test_that("bootstrap_analysis_wrapper relevels data and refits models", {
+test_that("bootstrap_analysis_wrapper drops absent states and refits models", {
   original_data <- data.frame(
     y = factor(c(1, 2, 3)),
     x = c(0, 1, 2)
@@ -335,9 +335,10 @@ test_that("bootstrap_analysis_wrapper relevels data and refits models", {
   )
 
   expect_s3_class(result$model, "lm")
-  expect_equal(levels(result$data$y), c("1", "2"))
-  expect_equal(result$ylevels, 1:2)
-  expect_equal(unname(result$absorb), 2)
+  # The states keep their labels; the absent state 2 is no longer a level.
+  expect_equal(levels(result$data$y), c("1", "3"))
+  expect_equal(result$ylevels, c("1", "3"))
+  expect_equal(result$absorb, "3")
   expect_equal(result$missing_states, "2")
 })
 

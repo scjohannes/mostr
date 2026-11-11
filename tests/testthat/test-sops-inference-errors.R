@@ -849,16 +849,19 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
     },
     {
       expect_warning(
-        out <- mostr:::inferences_bootstrap(
-          object,
-          engine = "standard",
-          n_boot = 3,
-          workers = NULL,
-          conf_level = 0.8,
-          return_draws = TRUE,
-          use_coefstart = TRUE
+        expect_warning(
+          out <- mostr:::inferences_bootstrap(
+            object,
+            engine = "standard",
+            n_boot = 3,
+            workers = NULL,
+            conf_level = 0.8,
+            return_draws = TRUE,
+            use_coefstart = TRUE
+          ),
+          "soprob_markov failed"
         ),
-        "soprob_markov failed"
+        "2 of the 3 bootstrap draws failed"
       )
     }
   )

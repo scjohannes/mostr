@@ -247,27 +247,74 @@ data. `bootstrap_model_coefs()` resamples the same stored data, clustered on the
 fit's stored `id_var`. The low-level
 helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample_indexed()`,
 `apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
-`relevel_factors_consecutive()`) are internal. `fast_group_bootstrap()` gives
+`drop_absent_states()`) are internal. `fast_group_bootstrap()` gives
 each copy of a patient drawn more than once its own character `new_id`
 (`"<id>_1"`, `"<id>_2"`), numbered by sampled position so that factor,
 character, and integer IDs give the same resamples; refits and the averaged
 cohort use `new_id` as the patient ID.
 
-A resample can lack a state. `relevel_factors_consecutive()` (in
-`R/markov-data.R`) then maps the present states to `1, 2, ...` in every state
-column, keeping each column's type, and returns the renumbered `y_levels` and
-`absorb` with the missing labels. States are matched by label
-(`as_state_labels()`), never converted to numbers, so text labels on factor
-columns work as numbers do. The state order is `y_levels`, then any other
-labels of the original data (`state_column_labels()`: factor level order, or
-sorted values; numeric columns are sorted together). The state columns come
-from `bootstrap_state_columns()` in `R/bootstrap_helpers.R`: the response
-column read from the model formula (`bootstrap_response_column()`, so
-`ordered(state) ~ ...` relabels `state`), plus `p_var` and `p2_var` in the SOP,
+A resample can lack a state. `drop_absent_states()` (in `R/markov-data.R`)
+then removes the empty levels from each factor state column (`droplevels()`,
+which keeps the level order and ordered factors) and leaves numeric and
+character state columns unchanged. It returns the labels of the states and
+absorbing states present (`ylevels`, `absorb`) and the missing labels. The
+states are never renumbered: the refit's response categories, previous-state
+levels, intercepts, and coefficient names keep the original labels, so
+supplied prediction profiles and `variables` values need no translation, and
+a numeric `yprev` keeps its numbers, which matters for linear or spline terms
+such as `rcs(yprev, 3)`. Empty levels must go, because `rms::orm()` cannot fit
+an empty response category or an empty previous-state level (VGAM drops the
+latter itself); when no state is missing the data are left exactly as they
+are. States are matched by label (`as_state_labels()`), never converted to
+numbers, so text labels on factor columns work as numbers do. The state order
+is `y_levels`, then any other labels of the original data
+(`state_column_labels()`: factor level order, or sorted values; numeric
+columns are sorted together), and a state counts as present when any state
+column of the resample holds it. The state columns come from
+`bootstrap_state_columns()` in `R/bootstrap_helpers.R`: the response column
+read from the model formula (`bootstrap_response_column()`, so
+`ordered(state) ~ ...` handles `state`), plus `p_var` and `p2_var` in the SOP,
 comparison, and time-benefit bootstrap paths, or `yprev` in
 `bootstrap_model_coefs()`, which has no `p_var`. Factor covariates are never
-treated as states. The SOP paths then map the refit's states back to the
-original labels and give the missing states probability 0.
+treated as states. The SOP paths pass the present labels to
+`soprob_markov()` as `state_factor(ylevels)`, a factor that keeps the state
+order (`factor()` would sort text labels), and pad the missing states with
+probability 0 by label: positionally into the full state matrix in
+`inferences_bootstrap()`, by merging on `state` in
+`complete_bootstrap_sop_states()` for `by` groups, and by name in
+`complete_comparison_sops_array_states()` for time benefit. The native and
+reference recursions index states through `y_levels`, so a state set with a
+gap such as `1, 3, 4` needs nothing else. Earlier versions renumbered the
+present states to `1, 2, ...`; supplied profiles then kept the original
+labels, so a profile in a missing state was predicted from the next state
+and a profile in the last non-absorbing state was read as absorbing.
+
+A refit without a state cannot predict for a profile that starts in it. With
+supplied `newdata`, the same profiles are predicted in every draw, so
+`check_bootstrap_starting_states()` in `R/sops-bootstrap-inference.R`
+compares each resample's sampled IDs (`fast_group_bootstrap()`) with the
+patients holding each starting state in any state column of the refit data,
+before any refit, and stops with the states, their resample counts, and a
+pointer to FWB, in the style of `check_bootstrap_by_groups()`. The starting
+states come from `bootstrap_starting_states()`: the `p_var` and `p2_var`
+values of the stored prediction rows when `newdata` was supplied, plus any
+values that `variables` sets for those columns (which `sets_starting_state()`
+already refuses for the bootstrap). Stored-profile averages predict each
+resample's own patients, whose starting states are present by construction.
+The check runs in `inferences_bootstrap()` and in the time-benefit
+bootstrap; FWB keeps every patient and needs none. A target state missing
+from a resample keeps probability 0.
+
+A draw fails when its analysis function returns `NULL` after a warning
+(`"Bootstrap model fitting failed: ..."`, `"soprob_markov failed: ..."`).
+`apply_to_bootstrap()` and `apply_to_fwb_bootstrap()` run each draw through
+`run_draw_recording_failure()`, which keeps the draw's last warning message in
+a `mostr_failed_draw` marker (also in parallel workers), and
+`collect_failed_draws()` turns the markers back into `NULL` with the messages
+in a `"failure_reasons"` attribute. The callers then use
+`keep_successful_draws()` instead of filtering `NULL`s: it warns once with the
+number of failed draws and the first reason, and stops with "All bootstrap
+iterations failed." and that reason when every draw failed.
 
 The ordinary bootstrap refits each resample on all of its patients, so a state
 missing from one `by` group but present elsewhere still has its coefficients.
@@ -305,7 +352,7 @@ values in one place: when the sample contains every state, it refits with the
 original coefficients (`use_coefstart = TRUE`) or the stored
 `coefstart`, and retries once without any starting values if that refit errors
 (for example, VGAM's non-conformable arguments after a covariate level drops
-out). When states are missing, the relevelled refit has fewer intercepts, so it
+out). When states are missing, the refit has fewer intercepts, so it
 is fitted without any `coefstart`, including the stored one. Only `vglm`
 refits take starting coefficients, so `check_use_coefstart()` (called once by
 `inferences()` and `bootstrap_model_coefs()`, before any work) refuses
@@ -581,7 +628,10 @@ Because a set starting state has no sampling distribution in the observed
 cohort, `sets_starting_state()` makes `delta_resolve_vcov()` reject
 unconditional variance and `inferences_impl()` reject score bootstrap,
 bootstrap, and FWB for such averages; conditional delta and MVN remain
-available. Only `p_var` defines the anchor; `p2_var` does not.
+available. Only `p_var` defines the anchor; `p2_var` does not. A scenario
+that sets `p2_var` still fixes every patient's history, so
+`sets_starting_state()` treats it like one that sets `p_var` and the same
+methods are refused.
 Time inference uses Wald intervals and the existing memory guards and covariance
 accessors; it does not modify the native recursion or infer uncertainty by
 interpolating standard errors. Fresh replay replaces previous uncertainty

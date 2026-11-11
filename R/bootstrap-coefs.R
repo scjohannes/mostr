@@ -39,18 +39,23 @@
 #' For each bootstrap iteration:
 #' \enumerate{
 #'   \item Draws patients with replacement from the stored data
-#'   \item Renumbers the states of the response column (the variable on the
-#'     left of the model formula) and of \code{yprev} to consecutive integers
-#'     when a state is absent from the resample. States are matched by their
-#'     labels, so numbers and text labels such as \code{"home"} work alike.
-#'     Other factor columns are covariates and are left as they are.
+#'   \item When a state is absent from the resample, removes it from the
+#'     factor levels of the response column (the variable on the left of the
+#'     model formula) and of \code{yprev}. The other states keep their labels;
+#'     they are not renumbered. States are matched by their labels, so numbers
+#'     and text labels such as \code{"home"} work alike. Other factor columns
+#'     are covariates and are left as they are.
 #'   \item Refits the model by calling [mostm()] again with the original
 #'     engine and arguments, and extracts its coefficients
 #' }
 #'
 #' When a state is missing from a resample, the refit has fewer intercepts than
-#' the original model, so the intercept columns of that row refer to renumbered
-#' states.
+#' the original model. Coefficients named after a state, such as the
+#' intercept \code{y>=2} of an \code{"orm"} fit or the previous-state
+#' coefficient \code{yprev=2}, are then \code{NA} in that row. The intercepts of
+#' a \code{"vglm"} fit are numbered (\code{(Intercept):1}, \code{(Intercept):2},
+#' ...) in order of the states present, so in that row they belong to other
+#' cut-points than in the rows with every state.
 #'
 #' The refits do not use an rms `datadist`: a `datadist` you have set with
 #' `options(datadist = ...)` is ignored during the refits and left as it is.
@@ -59,8 +64,8 @@
 #' the `future.callr` package.
 #'
 #' \strong{Previous-state type:} \code{yprev} may be a factor for categorical
-#' previous-state effects or numeric for linear/spline effects. Bootstrap
-#' releveling preserves the column type used to fit the original model.
+#' previous-state effects or numeric for linear/spline effects. Refits keep
+#' the column type and the state numbers used to fit the original model.
 #'
 #' @keywords bootstrap coefficients confidence intervals
 #'
@@ -130,9 +135,9 @@ bootstrap_model_coefs <- function(
     stop("id_var '", id_var, "' not found in the stored model data")
   }
 
-  # The state columns that are relabelled when a resample lacks a state: the
-  # response and `yprev`. Other factor columns are covariates, whose levels
-  # are not states. Numeric yprev is preserved for linear/spline
+  # The state columns whose factor levels lose a state that a resample lacks:
+  # the response and `yprev`. Other factor columns are covariates, whose
+  # levels are not states. A numeric yprev keeps its values for linear/spline
   # previous-state models.
   factor_cols <- bootstrap_state_columns(model, data, p_var = "yprev")
 

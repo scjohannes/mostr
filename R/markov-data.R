@@ -95,50 +95,55 @@ prepare_markov_data <- function(
 }
 
 
-#' Relevel Factors to Consecutive Integers
+#' Drop States Absent From a Bootstrap Resample
 #'
-#' Handles missing state levels in data by releveling state columns to
-#' consecutive integers. This is useful when bootstrap samples or subsets are
-#' missing certain levels, which can cause model fitting failures.
+#' A bootstrap resample can lack a state. Its refit then has no outcome
+#' category, and no previous-state level, for that state. This function finds
+#' the states absent from `data` and removes them from the factor levels of the
+#' state columns. The states keep their original labels; they are never
+#' renumbered.
 #'
-#' @param data A data frame containing the data to relevel.
-#' @param factor_cols Character vector of column names to relevel: the
-#'   response and the previous-state columns. Despite the historical name,
-#'   these may be factor, character or numeric state columns. Each column keeps
-#'   its type after releveling.
+#' @param data A data frame containing the data to refit.
+#' @param factor_cols Character vector of the column names holding states: the
+#'   response and the previous-state columns. These may be factor, character
+#'   or numeric state columns.
 #' @param original_data Optional data frame containing the original data before
-#'   subsetting. Used to determine which levels are present in the full dataset.
+#'   subsetting. Used to determine which states exist in the full data.
 #' @param y_levels Optional vector of original state labels in state order
-#'   (e.g., 1:6 or `c("home", "ward", "dead")`). If provided, the updated
-#'   labels are returned.
-#' @param absorb Optional label(s) of the absorbing state(s) in the original
-#'   labels. Will be updated to the new labels if provided.
+#'   (e.g., 1:6 or `c("home", "ward", "dead")`). If provided, the labels of the
+#'   states present are returned.
+#' @param absorb Optional label(s) of the absorbing state(s). If provided, the
+#'   labels of those present are returned.
 #'
 #' @return A list with components:
-#'   - data: The data frame with releveled factors
-#'   - ylevels: Updated y_levels (if provided as input), or NULL
-#'   - absorb: Updated absorb (if provided as input), or NULL
-#'   - missing_levels: Character vector of levels that were missing
+#'   - data: The data frame, with absent states removed from factor levels
+#'   - ylevels: The labels of the states present, in state order (if
+#'     `y_levels` was provided), or NULL
+#'   - absorb: The labels of the absorbing states present (if `absorb` was
+#'     provided), or NULL
+#'   - missing_levels: Character vector of the absent state labels
 #'
 #' @details
 #' States are matched by their labels (`as.character()` of the values), never
 #' by converting labels to numbers, so letter labels such as `"a"`, `"b"`,
 #' `"c"` work as numbers do. The state order is that of `y_levels`, followed
 #' by any further labels of the original data in their own order (factor
-#' level order; sorted values for numeric and character columns). When
-#' certain states are absent from `data` (e.g., in bootstrap samples), this
-#' function:
-#' 1. Identifies which states are present
-#' 2. Maps the present states, in state order, to consecutive integers
-#' 3. Relevels the specified state columns while preserving their type
-#' 4. Updates y_levels and absorb if provided
+#' level order; sorted values for numeric and character columns). A state is
+#' present when any state column of `data` holds it.
 #'
-#' This is particularly useful for ordered factors representing health states
-#' in Markov models, where missing states would otherwise cause model fitting
-#' failures.
+#' When a state is absent, each factor state column keeps only the levels it
+#' holds in `data`, in their original order; an ordered factor stays ordered.
+#' The refit needs no empty levels, and `rms::orm()` cannot fit with one.
+#' Numeric and character columns are left unchanged, so a numeric previous
+#' state keeps its numbers and a term such as `rcs(yprev, 3)` sees the same
+#' scale as in the original fit. Because the labels are kept, the refit's
+#' states, previous-state levels and coefficient names match the original
+#' fit's, and supplied prediction profiles need no translation.
+#'
+#' When no state is absent, `data` is returned unchanged.
 #'
 #' @noRd
-relevel_factors_consecutive <- function(
+drop_absent_states <- function(
   data,
   factor_cols = c("y", "yprev"),
   original_data = NULL,
@@ -179,47 +184,18 @@ relevel_factors_consecutive <- function(
     ))
   }
 
-  # Create mapping from old to new state numbers
-  state_mapping <- stats::setNames(seq_along(states_present), states_present)
-
-  # Relevel each state column while preserving the column type. This matters for
-  # previous-state predictors that are intentionally numeric, e.g. rcs(yprev, 6).
-  for (col in factor_cols) {
-    if (col %in% names(data)) {
-      prototype <- if (
-        !is.null(original_data) && col %in% names(original_data)
-      ) {
-        original_data[[col]]
-      } else {
-        data[[col]]
-      }
-
-      mapped <- unname(state_mapping[as_state_labels(data[[col]])])
-
-      if (is.factor(prototype) || is.factor(data[[col]])) {
-        data[[col]] <- factor(
-          mapped,
-          levels = seq_along(states_present),
-          ordered = is.ordered(prototype) || is.ordered(data[[col]])
-        )
-      } else if (is.integer(prototype) || is.integer(data[[col]])) {
-        data[[col]] <- as.integer(mapped)
-      } else if (is.numeric(prototype) || is.numeric(data[[col]])) {
-        data[[col]] <- as.numeric(mapped)
-      } else {
-        data[[col]] <- as.character(mapped)
-      }
+  # Factor state columns lose their empty levels. `droplevels()` keeps the
+  # level order and whether the factor is ordered. Other columns keep their
+  # values: a numeric previous state must keep its scale.
+  for (col in intersect(factor_cols, names(data))) {
+    if (is.factor(data[[col]])) {
+      data[[col]] <- droplevels(data[[col]])
     }
   }
 
-  # Update y_levels if provided
-  new_ylevels <- if (!is.null(y_levels)) {
-    seq_along(states_present)
-  } else {
-    NULL
-  }
+  new_ylevels <- if (!is.null(y_levels)) states_present else NULL
 
-  # Update absorbing state if provided and present
+  # The absorbing states present keep their labels.
   new_absorb <- if (!is.null(absorb)) {
     absorb_labels <- as_state_labels(absorb)
     absorb_present <- absorb_labels[absorb_labels %in% states_present]
@@ -232,7 +208,7 @@ relevel_factors_consecutive <- function(
           " not present in data and were dropped."
         )
       }
-      unname(state_mapping[absorb_present])
+      absorb_present
     } else {
       warning(
         "Absorbing state(s) ",
@@ -251,6 +227,13 @@ relevel_factors_consecutive <- function(
     absorb = new_absorb,
     missing_levels = as.character(missing_levels)
   ))
+}
+
+# A factor of state labels whose levels keep the given state order; plain
+# `factor()` would sort text labels such as "home", "ward", "dead".
+state_factor <- function(states) {
+  labels <- as_state_labels(states)
+  factor(labels, levels = unique(labels))
 }
 
 # The state labels of the columns `cols` of `data`, in state order: factor

@@ -87,7 +87,7 @@ test_that("the package exposes Markov workflows without removed APIs", {
         "apply_to_bootstrap",
         "fast_group_bootstrap",
         "materialize_bootstrap_sample_indexed",
-        "relevel_factors_consecutive"
+        "drop_absent_states"
       ),
       within = declared_exports,
       present = FALSE

@@ -1058,6 +1058,25 @@ inference_refusals <- list(
       inferences(refusal_average(), method = "bootstrap", n_draws = 2, use_coefstart = NA)
     },
     "`use_coefstart` must be `TRUE` or `FALSE`."
+  ),
+  refusal(
+    "I52", "an ordinary bootstrap resample that lacks the state a supplied profile starts in",
+    function() {
+      # The one resample holds only the patients never in state 2; the
+      # refusal comes before any refit.
+      data <- grid_cell_data(refusal_orm)
+      ids <- setdiff(unique(data$id), data$id[data$y == 2 | data$yprev == 2])
+      local_mocked_bindings(
+        fast_group_bootstrap = function(data, id_var, n_boot) {
+          list(data.frame(original_id = ids, new_id = paste0(ids, "_1"), boot_id = 1))
+        }
+      )
+      profiles <- refusal_profiles()
+      profiles$yprev[1] <- "2"
+      average <- refusal_call(avg_sops, newdata = profiles)
+      inferences(average, method = "bootstrap", n_draws = 1)
+    },
+    "The ordinary bootstrap left out every patient who was ever in state 2"
   )
 )
 test_that("inferences() refuses what it cannot compute", {
@@ -1201,6 +1220,19 @@ inference_refusals_with_extra_fits <- list(
     },
     "simulation draws, so those simulation draws give a negative probability",
     class = "mostr_crossed_thresholds"
+  ),
+  refusal(
+    "I53", "the ordinary bootstrap when `variables` sets the state two visits back",
+    function() {
+      start <- factor(c("1", "2"), levels = levels(grid_data()$ypprev))
+      average <- refusal_call(
+        avg_sops,
+        grid_cell("orm", order = 2L),
+        variables = list(ypprev = start)
+      )
+      inferences(average, method = "bootstrap", n_draws = 2)
+    },
+    "Setting the starting state with `variables` supports only conditional"
   )
 )
 

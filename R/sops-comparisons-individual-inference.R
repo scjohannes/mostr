@@ -507,10 +507,7 @@ comparison_fwb_draws <- function(
       "weight_col"
     )
   )
-  results <- Filter(Negate(is.null), results)
-  if (length(results) == 0L) {
-    stop("All bootstrap iterations failed.")
-  }
+  results <- keep_successful_draws(results)
   list(
     values = do.call(rbind, lapply(results, `[[`, "estimate")),
     draw_ids = seq_along(results),

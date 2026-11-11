@@ -1,8 +1,9 @@
-# Bootstrap resamples can lack a state. relevel_factors_consecutive() then drops
-# it, renumbers the remaining states consecutively in the response and the
-# previous state, keeps each column's storage type, and moves the absorbing
-# states with them. `warning` is the expected warning, or NA for none.
-test_that("relevel_factors_consecutive drops missing states, keeps column types and moves absorbing states", {
+# Bootstrap resamples can lack a state. drop_absent_states() then reports it,
+# removes it from the factor levels of the response and the previous state,
+# and returns the labels of the states and absorbing states present. Labels
+# are never renumbered, and numeric columns keep their values. `warning` is
+# the expected warning, or NA for none.
+test_that("drop_absent_states drops missing states and keeps the state labels", {
   letters_abc <- c("a", "b", "c")
   cases <- list(
     list(
@@ -15,8 +16,8 @@ test_that("relevel_factors_consecutive drops missing states, keeps column types 
       ),
       warning = "were dropped",
       check = function(out, label) {
-        expect_equal(out$absorb, 2, info = label)
-        expect_equal(out$ylevels, 1:2, info = label)
+        expect_identical(out$absorb, "2", info = label)
+        expect_identical(out$ylevels, c("1", "2"), info = label)
       }
     ),
     list(
@@ -71,9 +72,9 @@ test_that("relevel_factors_consecutive drops missing states, keeps column types 
       warning = NULL,
       check = function(out, label) {
         expect_equal(out$missing_levels, "2", info = label)
-        expect_identical(typeof(out$data$y), "integer", info = label)
-        expect_equal(out$data$y, c(1L, 2L), info = label)
-        expect_equal(unname(out$absorb), 2, info = label)
+        expect_identical(out$data$y, c(1L, 3L), info = label)
+        expect_identical(out$absorb, "3", info = label)
+        expect_identical(out$ylevels, c("1", "3"), info = label)
       }
     ),
     list(
@@ -94,11 +95,36 @@ test_that("relevel_factors_consecutive drops missing states, keeps column types 
       warning = NULL,
       check = function(out, label) {
         expect_true(is.ordered(out$data$y), info = label)
-        expect_identical(typeof(out$data$yprev), "double", info = label)
-        expect_equal(out$data$yprev, c(1, 2, 3), info = label)
-        expect_equal(out$ylevels, 1:3, info = label)
-        expect_equal(unname(out$absorb), 3, info = label)
+        expect_identical(levels(out$data$y), c("1", "3", "4"), info = label)
+        # A numeric previous state keeps its numbers, so rcs(yprev) or a
+        # linear yprev effect sees the original scale.
+        expect_identical(out$data$yprev, c(1, 3, 4), info = label)
+        expect_identical(out$ylevels, c("1", "3", "4"), info = label)
+        expect_identical(out$absorb, "4", info = label)
         expect_equal(out$missing_levels, "2", info = label)
+      }
+    ),
+    list(
+      label = "a factor previous state gets no empty level",
+      args = list(
+        data = data.frame(
+          y = factor(c(1, 3, 4), levels = 1:4),
+          yprev = factor(c(1, 3, 3), levels = 1:3)
+        ),
+        factor_cols = c("y", "yprev"),
+        original_data = data.frame(
+          y = factor(1:4),
+          yprev = factor(c(1, 2, 3, 3), levels = 1:3)
+        ),
+        y_levels = 1:4,
+        absorb = 4
+      ),
+      warning = NA,
+      check = function(out, label) {
+        # rms::orm() cannot fit a factor with an empty level.
+        expect_identical(levels(out$data$yprev), c("1", "3"), info = label)
+        expect_identical(as.character(out$data$yprev), c("1", "3", "3"), info = label)
+        expect_identical(levels(out$data$y), c("1", "3", "4"), info = label)
       }
     ),
     list(
@@ -119,20 +145,17 @@ test_that("relevel_factors_consecutive drops missing states, keeps column types 
       warning = NA,
       check = function(out, label) {
         expect_identical(as.character(out$missing_levels), "b", info = label)
-        expect_identical(
-          nlevels(droplevels(out$data$y)),
-          nlevels(out$data$y),
-          info = label
-        )
-        expect_identical(length(out$ylevels), 2L, info = label)
-        # The absorbing state keeps its place as the last state.
-        expect_identical(match(out$absorb, out$ylevels), 2L, info = label)
+        expect_identical(levels(out$data$y), c("a", "c"), info = label)
+        expect_identical(levels(out$data$yprev), "a", info = label)
+        expect_identical(out$ylevels, c("a", "c"), info = label)
+        # The absorbing state keeps its label and its place as the last state.
+        expect_identical(out$absorb, "c", info = label)
       }
     )
   )
 
   for (case in cases) {
-    relevel <- function() do.call(relevel_factors_consecutive, case$args)
+    relevel <- function() do.call(drop_absent_states, case$args)
     if (is.null(case$warning)) {
       out <- relevel()
     } else if (is.na(case$warning)) {

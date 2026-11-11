@@ -154,6 +154,33 @@
 
 ## Bug fixes
 
+* The ordinary bootstrap (`inferences(method = "bootstrap")`) gave wrong
+  results when a resample lacked a state other than the absorbing one. The
+  refit renumbered the remaining states, for example 1, 3, 4 as 1, 2, 3, but
+  the profiles supplied in `newdata` kept their labels. A profile in the
+  missing state 2 was then predicted as if it started in state 3, without
+  any message, and a profile in state 3 was read as the absorbing state, so
+  the draw was dropped with a misleading warning. Averages within `by`
+  groups reported the probability of state 3 under state 2. `orm` refits of
+  such resamples always failed, and a numeric `yprev` was renumbered too,
+  which changed linear or spline terms such as `rcs(yprev, 3)`. Refits now
+  keep the original state labels and numbers and only drop the missing
+  state. When some resample lacks a state that a supplied profile starts in,
+  `inferences()` now stops before refitting, naming the state and the number
+  of resamples that lack it; use `method = "fwb"`, which keeps every patient
+  in every refit, or remove those profiles. A state that no profile starts
+  in may still be missing from a resample, with probability 0 in that draw.
+
+* Bootstrap and FWB draws whose refit or prediction fails are still left out
+  with one warning each, and now also with one warning that says how many of
+  the draws failed and why the first one did.
+
+* `variables` that set the state two visits back in a second-order model,
+  for example `variables = list(ypprev = c("1", "2"))`, now support only
+  conditional variance, as `variables` that set `yprev` do: the bootstrap,
+  FWB, and unconditional delta inference are refused. Previously they ran,
+  and the bootstrap could predict from the wrong state.
+
 * A comparison of a variable that the model doesn't use, for example
   `avg_comparisons(fit, variables = list(note = c(0, 1)))` where `note` is a
   column of the data but not of the model formula, is 0 (1 for a ratio)
@@ -237,20 +264,22 @@
 
 * Bootstrap refits (`inferences()` with `method = "bootstrap"` or `"fwb"`,
   and `bootstrap_model_coefs()`) now treat state labels as labels. When a
-  resample lacks a state, the refit renumbers the remaining states; this
+  resample lacked a state, the refit renumbered the remaining states and
   converted the labels to numbers, so text labels on factor columns, such as
   `"home"`, `"ward"`, `"dead"`, gave an "NAs introduced by coercion" warning
   for every refit and a missing state went unnoticed. States are now matched
-  by label, in the model's state order, for numbers and text alike.
+  by label, in the model's state order, for numbers and text alike, and
+  refits keep the labels (see the first bug fix above).
 
-* Bootstrap refits now renumber the response column whatever it is called,
-  for example `state` in `ordered(state) ~ yprev + time`. Previously only a
-  column called `y` was renumbered, so with another name a resample that
-  lacked a state was not noticed and that refit's state occupancy
-  probabilities failed and were dropped. `bootstrap_model_coefs()` now
-  renumbers only the response and `yprev`; previously it also renumbered
-  every factor covariate, such as a factor `tx`, together with the states,
-  which gave wrong labels or failed refits when a resample lacked a state.
+* Bootstrap refits now notice a missing state in the response column
+  whatever it is called, for example `state` in
+  `ordered(state) ~ yprev + time`. Previously only a column called `y` was
+  checked, so with another name a resample that lacked a state was not
+  noticed and that refit's state occupancy probabilities failed and were
+  dropped. `bootstrap_model_coefs()` now treats only the response and `yprev`
+  as states; previously it also renumbered every factor covariate, such as a
+  factor `tx`, together with the states, which gave wrong labels or failed
+  refits when a resample lacked a state.
 
 # mostr 0.2.0
 

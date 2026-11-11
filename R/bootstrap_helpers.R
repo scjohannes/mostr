@@ -317,6 +317,7 @@ apply_to_bootstrap <- function(
   row_plan <- bootstrap_row_plan(data, id_var)
   materialize_indexed <- materialize_bootstrap_sample_indexed
   record_crossings <- run_draw_recording_crossings
+  record_failure <- run_draw_recording_failure
 
   # Wrapper function that materializes data then runs analysis
   wrapper_fn <- function(boot_ids) {
@@ -329,8 +330,8 @@ apply_to_bootstrap <- function(
     )
 
     # Run user's analysis function. Samples whose cut-points cross are
-    # counted and reported together below.
-    record_crossings(analysis_fn, boot_data)
+    # counted and reported together below, and so are failed samples.
+    record_failure(function() record_crossings(analysis_fn, boot_data))
   }
 
   # Apply function to bootstrap samples
@@ -351,7 +352,8 @@ apply_to_bootstrap <- function(
           "analysis_fn",
           "row_plan",
           "materialize_indexed",
-          "record_crossings"
+          "record_crossings",
+          "record_failure"
         )
       )
     )
@@ -360,7 +362,7 @@ apply_to_bootstrap <- function(
   }
   stop_crossed_threshold_draws(results, "bootstrap samples", "sample")
 
-  return(results)
+  return(collect_failed_draws(results))
 }
 
 apply_to_fwb_bootstrap <- function(
@@ -375,10 +377,13 @@ apply_to_fwb_bootstrap <- function(
   use_parallel <- !is.null(workers) && workers > 1
   materialize_fwb <- materialize_fwb_bootstrap_sample
   record_crossings <- run_draw_recording_crossings
+  record_failure <- run_draw_recording_failure
 
   wrapper_fn <- function(fwb_weights) {
     boot_data <- materialize_fwb(fwb_weights, data, id_var)
-    record_crossings(analysis_fn, boot_data, fwb_weights)
+    record_failure(function() {
+      record_crossings(analysis_fn, boot_data, fwb_weights)
+    })
   }
 
   if (use_parallel) {
@@ -397,7 +402,8 @@ apply_to_fwb_bootstrap <- function(
           "id_var",
           "analysis_fn",
           "materialize_fwb",
-          "record_crossings"
+          "record_crossings",
+          "record_failure"
         )
       )
     )
@@ -406,22 +412,100 @@ apply_to_fwb_bootstrap <- function(
   }
   stop_crossed_threshold_draws(results, "bootstrap samples", "sample")
 
+  collect_failed_draws(results)
+}
+
+# A bootstrap draw fails when its analysis returns NULL, after a warning that
+# says why (for example "Bootstrap model fitting failed: ..."). This runs one
+# draw (`run()`, without arguments) and, if it fails, returns a
+# `mostr_failed_draw` marker holding the message of the draw's last warning,
+# so that `keep_successful_draws()` can report the reason. The warnings
+# themselves still reach the user.
+run_draw_recording_failure <- function(run) {
+  reason <- NULL
+  result <- withCallingHandlers(
+    run(),
+    warning = function(w) {
+      reason <<- conditionMessage(w)
+    }
+  )
+  if (is.null(result)) {
+    return(structure(list(reason = reason), class = "mostr_failed_draw"))
+  }
+  result
+}
+
+# Turns the failure markers of `run_draw_recording_failure()` back into NULL
+# results and keeps their reasons in the "failure_reasons" attribute (NA for
+# a successful draw or an unknown reason).
+collect_failed_draws <- function(results) {
+  failed <- vapply(results, inherits, logical(1), what = "mostr_failed_draw")
+  reasons <- rep(NA_character_, length(results))
+  reasons[failed] <- vapply(
+    results[failed],
+    function(marker) marker$reason %||% NA_character_,
+    character(1)
+  )
+  results[failed] <- list(NULL)
+  attr(results, "failure_reasons") <- reasons
   results
+}
+
+# The successful draws of a bootstrap loop. Each failed draw has already
+# warned on its own; this adds one warning that says how many draws failed,
+# since the intervals then rest on fewer draws, and the first reason. When
+# every draw failed, it stops.
+keep_successful_draws <- function(results) {
+  n_draws <- length(results)
+  failed <- which(vapply(results, is.null, logical(1)))
+  reasons <- attr(results, "failure_reasons")
+  first_reason <- if (length(failed) > 0L && length(reasons) == n_draws) {
+    reasons[failed[1L]]
+  } else {
+    NA_character_
+  }
+  first_text <- if (length(failed) > 0L) {
+    paste0(
+      " The first failure (draw ",
+      failed[1L],
+      ")",
+      if (is.na(first_reason)) "." else paste0(": ", first_reason)
+    )
+  }
+  if (length(failed) == n_draws) {
+    stop("All bootstrap iterations failed.", first_text, call. = FALSE)
+  }
+  if (length(failed) > 0L) {
+    n_left <- n_draws - length(failed)
+    warning(
+      length(failed),
+      " of the ",
+      n_draws,
+      " bootstrap draws failed and ",
+      if (length(failed) == 1L) "was" else "were",
+      " left out, so the confidence intervals rest on the other ",
+      n_left,
+      if (n_left == 1L) " draw." else " draws.",
+      first_text,
+      call. = FALSE
+    )
+  }
+  results[setdiff(seq_len(n_draws), failed)]
 }
 
 
 #' Bootstrap Analysis Wrapper
 #'
 #' Common bootstrap analysis steps used across multiple bootstrap functions.
-#' Handles releveling factors and refitting models.
+#' Drops states absent from the sample and refits the model.
 #'
 #' @param boot_data Bootstrap sample data frame
 #' @param model Original fitted model to update with bootstrap data
-#' @param factor_cols Character vector of factor columns to relevel (e.g.,
+#' @param factor_cols Character vector of the state columns (e.g.,
 #'   c("y", "yprev"))
 #' @param original_data Original data frame before bootstrap sampling
-#' @param y_levels Original state levels (e.g., 1:6)
-#' @param absorb Absorbing state in original levels
+#' @param y_levels Original state labels (e.g., 1:6)
+#' @param absorb Absorbing state label(s)
 #' @param use_coefstart Logical indicating whether to use starting coefficients
 #'   from the original model when refitting (only for vglm models). Starting
 #'   values (these or a `coefstart` stored with the fit) are used only when
@@ -432,19 +516,21 @@ apply_to_fwb_bootstrap <- function(
 #' @return A list with components:
 #'   \itemize{
 #'     \item model: Refitted model on bootstrap data (or NULL if fitting failed)
-#'     \item data: Bootstrap data with releveled factors
-#'     \item y_levels: Updated y_levels (or NULL if not provided)
-#'     \item absorb: Updated absorb (or NULL if not provided)
-#'     \item missing_states: Character vector of missing state levels
+#'     \item data: Bootstrap data, absent states removed from factor levels
+#'     \item ylevels: The original labels of the states present (or NULL if
+#'       `y_levels` was not provided)
+#'     \item absorb: The labels of the absorbing states present (or NULL)
+#'     \item missing_states: Character vector of missing state labels
 #'   }
 #'
 #' @details
 #' This function wraps common bootstrap operations:
-#' 1. Relevel factors to consecutive integers if states are missing
+#' 1. Drop the states absent from the sample from the factor levels of the
+#'    state columns, keeping the original labels (`drop_absent_states()`)
 #' 2. Refit the model on the bootstrap data, with the rms `datadist` option
 #'    unset (see `use_coefstart` for starting values)
 #'
-#' @seealso `relevel_factors_consecutive()`, `fast_group_bootstrap()`,
+#' @seealso `drop_absent_states()`, `fast_group_bootstrap()`,
 #'   `apply_to_bootstrap()`
 #'
 #' @noRd
@@ -480,8 +566,9 @@ bootstrap_analysis_wrapper <- function(
     boot_data$.mostr_fit_weight <- original_weights * fit_weights
   }
 
-  # Relevel factors to handle missing states
-  releveled <- relevel_factors_consecutive(
+  # A sample can lack a state; its refit then knows only the other states,
+  # under their original labels.
+  present <- drop_absent_states(
     data = boot_data,
     factor_cols = factor_cols,
     original_data = original_data,
@@ -489,10 +576,10 @@ bootstrap_analysis_wrapper <- function(
     absorb = absorb
   )
 
-  boot_data <- releveled$data
-  boot_ylevels <- releveled$ylevels
-  boot_absorb <- releveled$absorb
-  missing_states <- releveled$missing_levels
+  boot_data <- present$data
+  boot_ylevels <- present$ylevels
+  boot_absorb <- present$absorb
+  missing_states <- present$missing_levels
 
   # rms fitting functions read the user's `datadist` option, and stop when it
   # names an object that does not exist. The coefficients do not depend on it,
@@ -596,8 +683,9 @@ bootstrap_refit_model <- function(model) {
 }
 
 # The data column holding the fitted model's response, for example `state` in
-# `ordered(state) ~ yprev + time`. A bootstrap refit relabels this column,
-# together with the previous-state columns, when its resample lacks a state.
+# `ordered(state) ~ yprev + time`. A bootstrap refit drops a state that its
+# resample lacks from the levels of this column and of the previous-state
+# columns.
 # Every `mostm()` fit has a readable formula; `"y"` is used only for objects
 # without one, such as the stand-in models of the package tests.
 bootstrap_response_column <- function(model) {

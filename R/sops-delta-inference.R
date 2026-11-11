@@ -1,8 +1,10 @@
 # Analytical delta-method inference for SOP objects.
 
-# Averages whose scenarios set the previous-state variable start every patient
-# in the set state. Their baseline anchor is then a fixed point mass, and only
-# conditional variance (coefficient uncertainty) is defined for them.
+# Averages whose scenarios set the previous-state variable, or for
+# second-order models the state two visits back (`p2_var`), start every
+# patient in the set history. Their baseline anchor is then a fixed point
+# mass, and only conditional variance (coefficient uncertainty) is defined for
+# them.
 sets_starting_state <- function(object) {
   if (
     !inherits(
@@ -12,8 +14,8 @@ sets_starting_state <- function(object) {
   ) {
     return(FALSE)
   }
-  p_var <- attr(object, "p_var") %||% "yprev"
-  p_var %in% names(attr(object, "avg_args")$variables %||% list())
+  state_vars <- c(attr(object, "p_var") %||% "yprev", attr(object, "p2_var"))
+  any(state_vars %in% names(attr(object, "avg_args")$variables %||% list()))
 }
 
 stop_starting_state_conditional_only <- function() {

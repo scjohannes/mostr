@@ -393,7 +393,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
         model = m_boot,
         newdata = newdata_cf,
         times = setup$times,
-        y_levels = factor(boot_result$ylevels),
+        y_levels = state_factor(boot_result$ylevels),
         absorb = boot_result$absorb,
         time_var = setup$time_var,
         p_var = setup$p_var,
@@ -411,6 +411,8 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       return(NULL)
     }
 
+    # The refit keeps the original state labels, so its states are matched
+    # to the original ones by label; a missing state gets probability 0.
     sops_array <- complete_comparison_sops_array_states(
       sops_array = sops_array,
       boot_ylevels = boot_result$ylevels,
@@ -438,6 +440,19 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       id_var = setup$id_var,
       n_boot = n_boot
     )
+    # Supplied profiles keep their starting states in every refit, so each
+    # resample must hold those states.
+    check_bootstrap_starting_states(
+      boot_ids,
+      refit_data = refit_data,
+      id_var = setup$id_var,
+      state_cols = factor_cols,
+      starting_states = bootstrap_starting_states(
+        profiles = if (newdata_supplied) setup$newdata_pred,
+        variables = setup$variables,
+        state_vars = c(setup$p_var, setup$p2_var)
+      )
+    )
     # Supplied profiles are fixed and always contain every group.
     if (!newdata_supplied) {
       check_bootstrap_by_groups(
@@ -464,6 +479,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
         "engine",
         "use_coefstart",
         "complete_comparison_sops_array_states",
+        "state_factor",
         "reduce_time_benefit_array_for_setup",
         "time_benefit_sops_from_array"
       )
@@ -491,16 +507,14 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
         "engine",
         "use_coefstart",
         "complete_comparison_sops_array_states",
+        "state_factor",
         "reduce_time_benefit_array_for_setup",
         "time_benefit_sops_from_array"
       )
     )
   }
 
-  boot_results <- Filter(Negate(is.null), boot_results)
-  if (length(boot_results) == 0L) {
-    stop("All bootstrap iterations failed.")
-  }
+  boot_results <- keep_successful_draws(boot_results)
   for (i in seq_along(boot_results)) {
     boot_results[[i]]$draw_id <- i
   }

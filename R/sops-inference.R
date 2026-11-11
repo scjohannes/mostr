@@ -192,8 +192,9 @@
 #' 1. Sample patient IDs with replacement (`method = "bootstrap"`) or draw
 #'    exponential patient weights normalized to mean 1 (`method = "fwb"`)
 #' 2. Refit the model on the bootstrap sample by calling [mostm()] again with
-#'    the original engine and arguments (handles missing states through
-#'    releveling)
+#'    the original engine and arguments. A state that no sampled patient was
+#'    ever in is left out of that refit, and the other states keep their
+#'    labels (see below)
 #' 3. Compute SOPs using G-computation
 #' 4. Compute percentile-based confidence intervals
 #' Bootstrap refits always resample the full longitudinal data (all time
@@ -210,7 +211,28 @@
 #' also leave out every patient of a small group, and that resample would then
 #' have no estimate for the group. `inferences()` checks the resamples before
 #' refitting and stops if any resample lacks a group; the fractional weighted
-#' bootstrap keeps every patient in every refit and has no such gaps. Fractional weighted bootstrap keeps every row in
+#' bootstrap keeps every patient in every refit and has no such gaps.
+#'
+#' In the same way, an ordinary resample can leave out every patient who was
+#' ever in a rare state. The refit of that resample doesn't know the state, so
+#' in that draw the state's occupancy probability is 0, as it is in a resample
+#' where no patient visits it. The refit also has no estimate for moving out
+#' of the state, so it cannot predict for a profile that starts there. With
+#' `newdata`, each draw predicts the same supplied profiles, so
+#' before refitting `inferences()` checks that every resample holds every
+#' state that a profile starts in (`yprev`, and for second-order models also
+#' the state two visits back). If one does not, it stops, naming the state
+#' and the number of resamples that lack it. Use `method = "fwb"` then, or
+#' remove those profiles from `newdata`. Without `newdata`, each draw
+#' predicts its own resampled patients, so their starting states are always
+#' present.
+#'
+#' A draw whose refit or prediction fails, for example because the model
+#' cannot be fitted to that resample, is left out with a warning that says
+#' why. A final warning then says how many of the draws failed, because the
+#' confidence intervals rest on the remaining draws only.
+#'
+#' Fractional weighted bootstrap keeps every row in
 #' the refit data with positive patient-level weights, so it is available for
 #' individual `sops()` objects. The same holds for [comparisons()] results,
 #' which also support `method = "mvn"`. For
@@ -256,7 +278,9 @@
 #' When `variables` in [avg_sops()], [avg_state_time()], or [avg_comparisons()] sets
 #' the previous-state variable, for example
 #' `variables = list(yprev = c("1", "2"))`, every patient starts in the set
-#' state in each scenario. Real-time summaries then start from that state
+#' state in each scenario. The same holds for a second-order model when
+#' `variables` sets the state two visits back (the `p2_var` column, for
+#' example `variables = list(ypprev = c("1", "2"))`). Real-time summaries then start from that state
 #' rather than from the patients' observed starting states. Such results
 #' support only conditional variance: use `method = "delta"` with
 #' `vcov = "conditional"` (or a coefficient covariance matrix), or

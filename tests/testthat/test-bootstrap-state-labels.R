@@ -1,7 +1,7 @@
 # State labels are names, so relabelling the states (keeping their order) must
 # not change any result, including bootstrap refits. Bootstrap resamples can
-# lack a state; the refit then drops it and renumbers the rest, which must work
-# for letter labels on factor columns as it does for numbers.
+# lack a state; the refit then drops it and keeps the labels of the rest, which
+# must work for letter labels on factor columns as it does for numbers.
 
 letter_case <- function() {
   case <- make_comparisons_case()
