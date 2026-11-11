@@ -51,7 +51,6 @@ test_that("vcov selection preserves established positional arguments", {
       "conf_type",
       "null",
       "return_draws",
-      "update_datadist",
       "use_coefstart"
     )
   )
@@ -162,40 +161,18 @@ replay_public_sops <- function(object, model) {
 }
 
 central_public_sops_jacobian <- function(object, model) {
-  coefficient <- get_coef(model)
   object_key <- sop_draw_cell_key(object, c("rowid", "time", "state"))
-  jacobian <- matrix(
-    NA_real_,
-    nrow = nrow(object),
-    ncol = length(coefficient),
-    dimnames = list(NULL, names(coefficient))
-  )
-
-  for (column in seq_along(coefficient)) {
-    step <- .Machine$double.eps^(1 / 3) * max(1, abs(coefficient[column]))
-    upper <- coefficient
-    lower <- coefficient
-    upper[column] <- upper[column] + step
-    lower[column] <- lower[column] - step
-    upper_result <- replay_public_sops(object, set_coef(model, upper))
-    lower_result <- replay_public_sops(object, set_coef(model, lower))
-    upper_index <- match(
+  numeric_jacobian(model, function(model) {
+    result <- replay_public_sops(object, model)
+    index <- match(
       object_key,
-      sop_draw_cell_key(upper_result, c("rowid", "time", "state"))
+      sop_draw_cell_key(result, c("rowid", "time", "state"))
     )
-    lower_index <- match(
-      object_key,
-      sop_draw_cell_key(lower_result, c("rowid", "time", "state"))
-    )
-    if (anyNA(upper_index) || anyNA(lower_index)) {
+    if (anyNA(index)) {
       stop("Finite-difference SOP replay did not return every public cell.")
     }
-    jacobian[, column] <-
-      (upper_result$estimate[upper_index] -
-        lower_result$estimate[lower_index]) /
-      (2 * step)
-  }
-  jacobian
+    result$estimate[index]
+  })
 }
 
 `[.delta_subset_trap` <- function(x, ...) {

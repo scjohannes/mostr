@@ -5,9 +5,16 @@
 
 # A partial proportional-odds vglm fit with a non-proportional effect of a
 # continuous `score`. At score = -20 the fitted cut-points cross (state 2 gets
-# a predicted probability of about -0.06); at score = 0 they don't.
+# a predicted probability of about -0.06); at score = 0 they don't. Made once
+# per test run.
 make_crossed_threshold_case <- function() {
   case <- make_comparisons_case()
+  grid_fixture("crossed threshold case", function() {
+    build_crossed_threshold_case(case)
+  })
+}
+
+build_crossed_threshold_case <- function(case) {
   data <- case$data
   withr::local_seed(1)
   data$score <- stats::rnorm(nrow(data))
@@ -211,34 +218,10 @@ crossed_fake_blrm <- function() {
     c(1.2, 0.1, -1.3, 0.25, 0.05, -0.55, 0.02)
   )
   colnames(draws) <- c("y>=2", "y>=3", "y>=4", "tx", "time", "yprev", "tau_time")
-  structure(
-    list(
-      draws = draws,
-      non.slopes = 3L,
-      pppo = 1L,
-      tauInfo = data.frame(name = "tau_time"),
-      cppo = function(y) as.numeric(y) - 1,
-      ylevels = 1:4,
-      yname = "y",
-      clusterInfo = list(name = "id", cluster = c("a", "b"))
-    ),
-    class = c("blrm", "orm"),
-    markov_engine = "blrm",
-    markov_id_var = "id"
-  )
+  fake_blrm(draws, tau = "tau_time", cppo = function(y) as.numeric(y) - 1)
 }
 
-crossed_fake_design <- function(model, newdata, second = FALSE) {
-  time <- as.numeric(as.character(newdata$time))
-  if (second) {
-    return(matrix(time, ncol = 1, dimnames = list(NULL, "tau_time")))
-  }
-  cbind(
-    tx = newdata$tx,
-    time = time,
-    yprev = as.numeric(as.character(newdata$yprev))
-  )
-}
+crossed_fake_design <- fake_blrm_design(c("tx", "time", "yprev"), tau_var = "time")
 
 test_that("blrm partial proportional-odds fits stop where cut-points cross", {
   local_mocked_bindings(blrm_design_matrix = crossed_fake_design)

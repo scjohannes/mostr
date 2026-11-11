@@ -509,7 +509,6 @@ inferences_avg_time <- function(
   conf_level,
   conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   avg <- replay_avg_time_sops(object, conf_level)
@@ -523,7 +522,6 @@ inferences_avg_time <- function(
     conf_level = conf_level,
     conf_type = conf_type,
     return_draws = TRUE,
-    update_datadist = update_datadist,
     use_coefstart = use_coefstart
   )
   args <- attr(object, "time_args")

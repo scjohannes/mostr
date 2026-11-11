@@ -311,7 +311,12 @@ refits take starting coefficients, so `check_use_coefstart()` (called once by
 `inferences()` and `bootstrap_model_coefs()`, before any work) refuses
 `use_coefstart = TRUE` for any other model and for `inferences()` methods that
 do not refit (`"mvn"`, `"delta"`); internal callers such as
-`inferences_internal()` pass the already checked value on. Row-aligned
+`inferences_internal()` pass the already checked value on.
+`bootstrap_analysis_wrapper()` also unsets the rms `datadist` option for the
+duration of each refit (`options(datadist = NULL)`, restored on exit). rms
+fitting functions read that option and stop when it names an object that does
+not exist, but the coefficients do not depend on it, so refits neither read a
+user's `datadist` nor write to the global environment. Row-aligned
 arguments are not stored as values:
 
 - Row `weights` are evaluated once at fit time (in `data`, enclosed by the
@@ -324,8 +329,7 @@ arguments are not stored as values:
   use `.mostr_fit_weight`, the stored weight times the random weight.
   `mostm()` fits never fall back to unweighted refits; bootstrap data without
   the column
-  are rejected. The column is removed from stored starting profiles and
-  excluded from bootstrap `datadist` data.
+  are rejected. The column is removed from stored starting profiles.
 - `subset` is evaluated once at fit time (`mostm()` passes the evaluated rows
   to the engine) and the stored refit data contain only the
   selected rows, so refit calls drop `subset`. They also drop `etastart` and
@@ -989,11 +993,23 @@ public `sops()` and `avg_sops()` with those loops on a shared grid of model set-
 from `tests/testthat/helper-grid.R` (engine, Markov order, time coding, odds
 structure, absorbing states, gaps, explicit time bases, numeric previous states,
 and weights). It also compares analytical derivatives with numerical differences
-(`tests/testthat/helper-numeric-jacobian.R`).
+(`tests/testthat/helper-numeric-jacobian.R`). Every finite-difference check
+over model coefficients uses that file's one central-difference routine,
+`central_difference_jacobian()`, which takes a function of the coefficients,
+the coefficients and a relative step; `numeric_jacobian()` applies it to a
+fitted model through `set_coef()`. The function being differentiated re-runs
+the public calculation, so these checks share no derivative code with the
+package.
 `tests/testthat/test-sops-native-blrm-slow-loop.R` does the same draw by draw for
-`blrm`, on hand-made posterior draws with a mocked design matrix.
+`blrm`, on hand-made posterior draws with a mocked design matrix. All hand-made
+`blrm` fits in the tests come from `fake_blrm()` in
+`tests/testthat/helper-mocks.R`, and the mocked design matrices from
+`fake_blrm_design()` there.
 `tests/testthat/test-slow-blrm.R` uses real `rmsb::blrm()` fits and runs only with
-`MOSTR_RUN_SLOW=true`.
+`MOSTR_RUN_SLOW=true`. Fixtures that many tests build with the same arguments,
+such as the three-state `vglm` fit of `make_comparisons_case()`, are made once
+per test run through `grid_fixture()` in `tests/testthat/helper-grid.R`, which
+keeps them with the grid's fits.
 
 Consistency checks run on the same grid, with patient-ID type (numeric,
 character, factor) as a further axis. They need no known answer: each computes

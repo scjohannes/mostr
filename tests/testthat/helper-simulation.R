@@ -132,9 +132,14 @@ make_score_bootstrap_case <- function(
   )
 }
 
+# Made once per test run.
 make_observed_average_case <- function() {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
+  grid_fixture("observed average case", build_observed_average_case)
+}
+
+build_observed_average_case <- function() {
   data <- make_test_data(
     n_patients = 60,
     follow_up_time = 6,

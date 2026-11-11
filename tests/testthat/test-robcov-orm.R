@@ -194,25 +194,17 @@ test_that("weighted orm scores equal numerical weighted row likelihood derivativ
   scores <- compute_scores_orm(weighted)
   coefficient <- stats::coef(weighted)
   rows <- unique(c(1L, nrow(weighted$x) %/% 2L, nrow(weighted$x)))
-  numerical <- matrix(
-    NA_real_,
-    nrow = length(rows),
-    ncol = length(coefficient),
-    dimnames = list(NULL, names(coefficient))
+  numerical <- central_difference_jacobian(
+    function(coefficient) {
+      vapply(
+        rows,
+        function(row) orm_test_row_loglik(weighted, row, coefficient),
+        numeric(1)
+      )
+    },
+    coefficient
   )
   rownames(numerical) <- rownames(scores)[rows]
-
-  for (i in seq_along(rows)) {
-    for (j in seq_along(coefficient)) {
-      step <- .Machine$double.eps^(1 / 3) * max(1, abs(coefficient[j]))
-      upper <- lower <- coefficient
-      upper[j] <- upper[j] + step
-      lower[j] <- lower[j] - step
-      numerical[i, j] <- (orm_test_row_loglik(weighted, rows[i], upper) -
-        orm_test_row_loglik(weighted, rows[i], lower)) /
-        (2 * step)
-    }
-  }
 
   expect_equal(scores[rows, ], numerical, tolerance = 1e-7)
 

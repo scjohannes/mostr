@@ -2,8 +2,13 @@
 # whether the formula holds with weights has not been checked, so no engine
 # reports it. Conditional variance stays available.
 
+# Made once per test run.
 make_weighted_case <- function() {
   case <- make_comparisons_case()
+  grid_fixture("weighted comparisons case", function() build_weighted_case(case))
+}
+
+build_weighted_case <- function(case) {
   data <- case$data
   ids <- unique(data$id)
   patient_weight <- (ids %% 3) + 1

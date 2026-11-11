@@ -57,8 +57,6 @@ library(rms)
 library(VGAM)
 
 # Fit models
-dd <- datadist(mydata)
-options(datadist = "dd")
 m_orm <- orm(y ~ x1 + x2, data = mydata, x = TRUE, y = TRUE)
 m_vglm <- vglm(y ~ x1 + x2,
                family = cumulative(parallel = TRUE, reverse = TRUE),

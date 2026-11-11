@@ -37,44 +37,19 @@ vglm_candidate_at <- function(fit, beta) {
 }
 
 finite_difference_loglik_scores <- function(fit) {
-  beta <- stats::coef(fit)
-  steps <- 1e-5 * pmax(1, abs(beta))
-  vapply(
-    seq_along(beta),
-    function(j) {
-      beta_plus <- beta_minus <- beta
-      beta_plus[j] <- beta_plus[j] + steps[j]
-      beta_minus[j] <- beta_minus[j] - steps[j]
-      ll_plus <- as.numeric(stats::logLik(
-        vglm_candidate_at(fit, beta_plus),
-        summation = FALSE
-      ))
-      ll_minus <- as.numeric(stats::logLik(
-        vglm_candidate_at(fit, beta_minus),
-        summation = FALSE
-      ))
-      (ll_plus - ll_minus) / (2 * steps[j])
+  central_difference_jacobian(
+    function(beta) {
+      candidate <- vglm_candidate_at(fit, beta)
+      as.numeric(stats::logLik(candidate, summation = FALSE))
     },
-    numeric(stats::nobs(fit, type = "lm"))
+    stats::coef(fit),
+    step = 1e-5
   )
 }
 
 finite_difference_score_jacobian <- function(fit) {
   evaluator <- mostr:::vglm_score_evaluator(fit)
-  beta <- stats::coef(fit)
-  steps <- 1e-5 * pmax(1, abs(beta))
-  vapply(
-    seq_along(beta),
-    function(j) {
-      beta_plus <- beta_minus <- beta
-      beta_plus[j] <- beta_plus[j] + steps[j]
-      beta_minus[j] <- beta_minus[j] - steps[j]
-      (evaluator$evaluate(beta_plus) -
-        evaluator$evaluate(beta_minus)) /
-        (2 * steps[j])
-    },
-    numeric(length(beta))
-  )
+  central_difference_jacobian(evaluator$evaluate, stats::coef(fit), step = 1e-5)
 }
 
 describe("robcov_vglm()", {
@@ -256,12 +231,6 @@ describe("robcov_vglm()", {
     test_data <- data.frame(y = y, x = x)
 
     # Fit orm
-    withr::local_options(datadist = "dd")
-    dd <- rms::datadist(test_data)
-    withr::local_environment(globalenv())
-    assign("dd", dd, envir = globalenv())
-    on.exit(rm("dd", envir = globalenv()), add = TRUE)
-
     m_orm <- rms::orm(y ~ x, data = test_data, x = TRUE, y = TRUE)
 
     # Fit vglm with binomialff (standard logistic)
@@ -298,12 +267,6 @@ describe("robcov_vglm()", {
     test_data <- data.frame(y = y, x = x, cluster = cluster)
 
     # Fit orm
-    withr::local_options(datadist = "dd")
-    dd <- rms::datadist(test_data)
-    withr::local_environment(globalenv())
-    assign("dd", dd, envir = globalenv())
-    on.exit(rm("dd", envir = globalenv()), add = TRUE)
-
     m_orm <- rms::orm(y ~ x, data = test_data, x = TRUE, y = TRUE)
 
     # Fit vglm
@@ -354,12 +317,6 @@ describe("robcov_vglm()", {
     test_data <- data.frame(y = ordered(y), x1 = x1, x2 = x2)
 
     # Fit orm
-    withr::local_options(datadist = "dd")
-    dd <- rms::datadist(test_data)
-    withr::local_environment(globalenv())
-    assign("dd", dd, envir = globalenv())
-    on.exit(rm("dd", envir = globalenv()), add = TRUE)
-
     m_orm <- rms::orm(y ~ x1 + x2, data = test_data, x = TRUE, y = TRUE)
 
     # Fit vglm
@@ -646,11 +603,6 @@ test_that("compare_se_orm_vglm compares model-based and robust SEs", {
     cluster = rep(seq_len(20), each = 4)
   )
 
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
-
   orm_fit <- rms::orm(y ~ x, data = data, x = TRUE, y = TRUE)
   vglm_fit <- VGAM::vglm(y ~ x, family = VGAM::binomialff, data = data)
 
@@ -689,11 +641,6 @@ test_that("compare_se_orm_vglm warns when model intercept structures differ", {
     y_bin = rep(0:1, length.out = n),
     x = rnorm(n)
   )
-
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
 
   orm_fit <- rms::orm(y_ord ~ x, data = data, x = TRUE, y = TRUE)
   vglm_fit <- VGAM::vglm(y_bin ~ x, family = VGAM::binomialff, data = data)

@@ -18,7 +18,6 @@
 #'   processing. If > 1, uses parallel processing.
 #' @param conf_level Confidence level.
 #' @param return_draws Store individual bootstrap draws?
-#' @param update_datadist Update datadist for rms models?
 #' @param use_coefstart Use original coefficients as starting values?
 #'
 #' @return The input object with added confidence intervals.
@@ -32,7 +31,6 @@ inferences_bootstrap <- function(
   conf_level,
   conf_type = "perc",
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   engine <- match.arg(engine, choices = c("standard", "fwb"))
@@ -53,7 +51,6 @@ inferences_bootstrap <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     ))
   }
@@ -115,7 +112,6 @@ inferences_bootstrap <- function(
       original_data = refit_data,
       y_levels = y_levels,
       absorb = absorb,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart,
       fit_weights = fit_weights
     )
@@ -337,7 +333,6 @@ inferences_bootstrap <- function(
         "time_covariates",
         "n_times",
         "n_states",
-        "update_datadist",
         "factor_cols",
         "use_coefstart",
         "engine",
@@ -376,7 +371,6 @@ inferences_bootstrap <- function(
         "time_covariates",
         "n_times",
         "n_states",
-        "update_datadist",
         "factor_cols",
         "use_coefstart",
         "engine",
@@ -465,7 +459,6 @@ inferences_bootstrap_sops_fwb <- function(
   conf_level,
   conf_type = "perc",
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   model <- attr(object, "model")
@@ -524,7 +517,6 @@ inferences_bootstrap_sops_fwb <- function(
       original_data = refit_data,
       y_levels = y_levels,
       absorb = absorb,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart,
       fit_weights = fit_weights
     )
@@ -615,7 +607,6 @@ inferences_bootstrap_sops_fwb <- function(
       "time_var",
       "gap_var",
       "time_covariates",
-      "update_datadist",
       "factor_cols",
       "use_coefstart",
       "id_var",

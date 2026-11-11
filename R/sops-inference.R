@@ -86,8 +86,6 @@
 #' @param return_draws Logical. If `TRUE`, stores individual simulation or
 #'   bootstrap draws as an attribute. Extract with [get_draws()]. Delta
 #'   inference never stores draws. Default is `TRUE`.
-#' @param update_datadist Logical. Whether to update datadist for rms models
-#'   during bootstrap. Default is TRUE.
 #' @param use_coefstart Logical. If `TRUE`, each refit of
 #'   `method = "bootstrap"` or `"fwb"` starts from the original fit's
 #'   coefficients, which can speed up convergence. Only models fitted with
@@ -247,6 +245,9 @@
 #' because a covariate level is absent from the sample, it is retried once
 #' without them.
 #'
+#' Refits do not use an rms `datadist`. A `datadist` you have set with
+#' `options(datadist = ...)` is ignored during the refits and left as it is.
+#'
 #' Choosing conditional or unconditional analytical variance changes the
 #' standard errors and confidence intervals, not the point estimates.
 #'
@@ -291,8 +292,6 @@
 #'   inferences(method = "mvn", n_draws = 1000)
 #'
 #' # The orm engine stores the package-owned full robust covariance matrix.
-#' dd <- rms::datadist(data)
-#' options(datadist = "dd")
 #' fit_orm <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
 #'
 #' avg_orm <- avg_sops(
@@ -361,7 +360,6 @@ inferences <- function(
   conf_type = "auto",
   null = "auto",
   return_draws = TRUE,
-  update_datadist = TRUE,
   use_coefstart = FALSE
 ) {
   if (identical(method, "score_bootstrap")) {
@@ -385,7 +383,6 @@ inferences <- function(
     conf_type = conf_type,
     null = null,
     return_draws = return_draws,
-    update_datadist = update_datadist,
     use_coefstart = use_coefstart
   )
 }
@@ -410,7 +407,6 @@ inferences_internal <- function(
   conf_type = "auto",
   null = "auto",
   return_draws = TRUE,
-  update_datadist = TRUE,
   use_coefstart = FALSE
 ) {
   with_sop_fallback_notification_scope({
@@ -426,7 +422,6 @@ inferences_internal <- function(
         conf_type = conf_type,
         null = null,
         return_draws = return_draws,
-        update_datadist = update_datadist,
         use_coefstart = use_coefstart
       )
     })
@@ -449,7 +444,6 @@ inferences_score_bootstrap <- function(
   conf_type = "auto",
   null = "auto",
   return_draws = TRUE,
-  update_datadist = TRUE,
   use_coefstart = FALSE
 ) {
   inferences_internal(
@@ -464,7 +458,6 @@ inferences_score_bootstrap <- function(
     conf_type = conf_type,
     null = null,
     return_draws = return_draws,
-    update_datadist = update_datadist,
     use_coefstart = use_coefstart
   )
 }
@@ -480,7 +473,6 @@ inferences_impl <- function(
   conf_type,
   null,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   # --- Input Validation ---
@@ -646,7 +638,6 @@ inferences_impl <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     )
   } else if (inherits(x, c("markov_comparisons", "markov_state_time"))) {
@@ -660,7 +651,6 @@ inferences_impl <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     )
   } else if (inherits(x, "markov_avg_comparisons")) {
@@ -676,7 +666,6 @@ inferences_impl <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     )
   } else if (internal_method == "simulation") {
@@ -701,7 +690,6 @@ inferences_impl <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     )
   }

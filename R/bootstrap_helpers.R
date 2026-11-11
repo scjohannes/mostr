@@ -282,8 +282,7 @@ fwb_baseline_weights <- function(fwb_weights, baseline_data, id_var) {
 #'
 #' If \code{workers} is NULL or 1, uses sequential processing with \code{lapply()}.
 #' If \code{workers > 1}, uses future.callr::callr strategy for parallel
-#' processing, which provides isolated R processes for each worker. This makes
-#' it safe to modify the global environment (e.g., for datadist).
+#' processing, which provides isolated R processes for each worker.
 #'
 #' @importFrom furrr future_map furrr_options
 #' @importFrom future plan
@@ -414,7 +413,7 @@ apply_to_fwb_bootstrap <- function(
 #' Bootstrap Analysis Wrapper
 #'
 #' Common bootstrap analysis steps used across multiple bootstrap functions.
-#' Handles releveling factors, updating datadist, and refitting models.
+#' Handles releveling factors and refitting models.
 #'
 #' @param boot_data Bootstrap sample data frame
 #' @param model Original fitted model to update with bootstrap data
@@ -423,8 +422,6 @@ apply_to_fwb_bootstrap <- function(
 #' @param original_data Original data frame before bootstrap sampling
 #' @param y_levels Original state levels (e.g., 1:6)
 #' @param absorb Absorbing state in original levels
-#' @param update_datadist Logical indicating whether to update datadist
-#'   (only needed for rms::orm models)
 #' @param use_coefstart Logical indicating whether to use starting coefficients
 #'   from the original model when refitting (only for vglm models). Starting
 #'   values (these or a `coefstart` stored with the fit) are used only when
@@ -444,9 +441,8 @@ apply_to_fwb_bootstrap <- function(
 #' @details
 #' This function wraps common bootstrap operations:
 #' 1. Relevel factors to consecutive integers if states are missing
-#' 2. Update datadist for rms models
-#' 3. Refit the model on the bootstrap data (see `use_coefstart` for
-#'    starting values)
+#' 2. Refit the model on the bootstrap data, with the rms `datadist` option
+#'    unset (see `use_coefstart` for starting values)
 #'
 #' @seealso `relevel_factors_consecutive()`, `fast_group_bootstrap()`,
 #'   `apply_to_bootstrap()`
@@ -459,7 +455,6 @@ bootstrap_analysis_wrapper <- function(
   original_data,
   y_levels = NULL,
   absorb = NULL,
-  update_datadist = TRUE,
   use_coefstart = FALSE,
   fit_weights = NULL
 ) {
@@ -499,28 +494,11 @@ bootstrap_analysis_wrapper <- function(
   boot_absorb <- releveled$absorb
   missing_states <- releveled$missing_levels
 
-  # Update datadist if needed (only for orm models)
-  if (update_datadist && inherits(fit_model, "orm")) {
-    dd_env <- globalenv()
-    old_datadist <- getOption("datadist")
-    old_dd_exists <- exists("dd", envir = dd_env, inherits = FALSE)
-    old_dd <- if (old_dd_exists) get("dd", envir = dd_env) else NULL
-    on.exit(
-      {
-        options(datadist = old_datadist)
-        if (old_dd_exists) {
-          assign("dd", old_dd, envir = dd_env)
-        } else if (exists("dd", envir = dd_env, inherits = FALSE)) {
-          remove(list = "dd", envir = dd_env)
-        }
-      },
-      add = TRUE
-    )
-
-    dd <- rms::datadist(bootstrap_datadist_data(boot_data))
-    assign("dd", dd, envir = dd_env)
-    options(datadist = "dd")
-  }
+  # rms fitting functions read the user's `datadist` option, and stop when it
+  # names an object that does not exist. The coefficients do not depend on it,
+  # so refits run with the option unset; it is restored on exit.
+  old_options <- options(datadist = NULL)
+  on.exit(options(old_options), add = TRUE)
 
   # Starting coefficients, whether the original fit's (`use_coefstart`) or a
   # `coefstart` stored with the fit, only match a sample with every state:
@@ -602,17 +580,6 @@ check_use_coefstart <- function(use_coefstart, model, method = NULL) {
     )
   }
   invisible(NULL)
-}
-
-bootstrap_datadist_data <- function(data) {
-  metadata_cols <- c(
-    "boot_id",
-    "new_id",
-    "fwb_weight",
-    ".mostr_fit_weight",
-    markov_prior_weight_column()
-  )
-  data[, setdiff(names(data), metadata_cols), drop = FALSE]
 }
 
 bootstrap_refit_model <- function(model) {

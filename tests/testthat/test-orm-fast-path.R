@@ -1,16 +1,3 @@
-local_orm_datadist <- function(data) {
-  env <- parent.frame()
-  dd_name <- "dd_orm_test"
-  assign(dd_name, rms::datadist(data), envir = globalenv())
-  withr::defer(
-    if (exists(dd_name, envir = globalenv())) {
-      rm(list = dd_name, envir = globalenv())
-    },
-    envir = env
-  )
-  withr::local_options(list(datadist = dd_name), .local_envir = env)
-}
-
 add_test_age <- function(data) {
   data$age <- 45 + (data$id %% 25)
   data
@@ -21,7 +8,6 @@ test_that("orm fast path supports categorical previous state", {
 
   data <- make_test_data(n_patients = 60, follow_up_time = 7, seed = 6101)
   data <- add_test_age(data)
-  local_orm_datadist(data)
 
   fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
@@ -65,7 +51,6 @@ test_that("orm fast path validates state support and initial probabilities", {
 
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6111)
   data <- add_test_age(data)
-  local_orm_datadist(data)
   fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
     data = data,
@@ -100,7 +85,6 @@ test_that("execution-plan budgets bound all retained first-order designs", {
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6112)
   data <- add_test_age(data)
-  local_orm_datadist(data)
   fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
     data = data,
@@ -161,7 +145,6 @@ test_that("orm fast path agrees with predict.orm for numeric previous state", {
       absorbing_state = 6,
       factor_previous = FALSE
     )
-  local_orm_datadist(data)
 
   fit <- suppressWarnings(
     rms::orm(
@@ -185,7 +168,6 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
 
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6105)
   data <- add_test_age(data)
-  local_orm_datadist(data)
 
   fit_default <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
@@ -303,7 +285,6 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
     avg_scaled_full,
     method = "bootstrap",
     n_draws = 1,
-    update_datadist = FALSE,
     return_draws = TRUE
   )
   expect_equal(attr(boot_scaled, "method"), "bootstrap")
@@ -317,7 +298,6 @@ test_that("orm supports MVN and score-bootstrap inference", {
 
   data <- make_test_data(n_patients = 55, follow_up_time = 6, seed = 6103)
   data <- add_test_age(data)
-  local_orm_datadist(data)
 
   fit <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
@@ -382,7 +362,6 @@ test_that("orm supports refit bootstrap inference", {
 
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6104)
   data <- add_test_age(data)
-  local_orm_datadist(data)
 
   fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
@@ -405,7 +384,6 @@ test_that("orm supports refit bootstrap inference", {
     avg,
     method = "bootstrap",
     n_draws = 1,
-    update_datadist = FALSE,
     return_draws = TRUE
   )
 
@@ -419,7 +397,6 @@ test_that("sops() does not require the outcome column in orm newdata", {
 
   data <- sim_markov("actt2", n_patients = 200, seed = 1) |>
     prepare_markov_data(absorbing_state = 8, ordered_response = FALSE)
-  local_orm_datadist(data)
   fit <- mostm(
     y ~ tx + yprev + rms::rcs(time, 4),
     data = data,
@@ -457,7 +434,6 @@ test_that("orm design-matrix callers do not require the outcome column", {
 
   data <- sim_markov("actt2", n_patients = 200, seed = 1) |>
     prepare_markov_data(absorbing_state = 8, ordered_response = FALSE)
-  local_orm_datadist(data)
   fit <- mostm(
     y ~ tx + yprev + rms::rcs(time, 4),
     data = data,
@@ -513,7 +489,6 @@ test_that("second-order orm SOPs do not require the outcome column", {
     ordered_response = FALSE
   )
   data$ypprev <- factor(data$ypprev)
-  local_orm_datadist(data)
   fit <- mostm(
     y ~ tx + yprev + ypprev + rms::rcs(time, 4),
     data = data,

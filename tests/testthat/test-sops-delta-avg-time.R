@@ -28,23 +28,7 @@ delta_avg_time_case <- local({
 })
 
 avg_time_numerical_jacobian <- function(model, point) {
-  beta <- get_coef(model)
-  out <- matrix(
-    NA_real_,
-    nrow = nrow(point(model)),
-    ncol = length(beta),
-    dimnames = list(NULL, names(beta))
-  )
-  for (j in seq_along(beta)) {
-    step <- .Machine$double.eps^(1 / 3) * max(1, abs(beta[j]))
-    upper <- lower <- beta
-    upper[j] <- upper[j] + step
-    lower[j] <- lower[j] - step
-    out[, j] <- (point(set_coef(model, upper))$estimate -
-      point(set_coef(model, lower))$estimate) /
-      (2 * step)
-  }
-  out
+  numeric_jacobian(model, function(model) point(model)$estimate)
 }
 
 test_that("average-time conditional variance agrees with numerical derivatives", {

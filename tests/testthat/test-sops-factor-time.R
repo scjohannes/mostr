@@ -133,6 +133,25 @@ make_absorbing_factor_visit_data <- function(n_patients = 80, seed = 20260531) {
   )
 }
 
+# An orm fit to `make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)`,
+# made once per test run.
+absorbing_factor_visit_fit <- function() {
+  grid_fixture("absorbing factor visit fit", function() {
+    case <- make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)
+    case$fit <- mostm(
+      y ~ tx + time + yprev,
+      data = case$data,
+      id_var = "id",
+      first_followup_time = "1",
+      opt_method = "LM",
+      scale = TRUE,
+      penalty = 0.1,
+      maxit = 100
+    )
+    case
+  })
+}
+
 add_interpolation_draws <- function(x) {
   draws <- x[rep(seq_len(nrow(x)), each = 3L), , drop = FALSE]
   draws$draw_id <- rep(seq_len(3), times = nrow(x))
@@ -304,36 +323,8 @@ test_that("factor visit simulation and bootstrap inference smoke-test", {
 test_that("factor visit orm avg_sops requires absorbing state", {
   skip_if_not_installed("rms")
 
-  case <- make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)
-  data <- case$data
-
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  old_options <- options(datadist = "dd")
-  on.exit(
-    {
-      options(old_options)
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    add = TRUE
-  )
-
-  fit <- mostm(
-    y ~ tx + time + yprev,
-    data = data,
-    id_var = "id",
-    first_followup_time = "1",
-    opt_method = "LM",
-    scale = TRUE,
-    penalty = 0.1,
-    maxit = 100
-  )
+  case <- absorbing_factor_visit_fit()
+  fit <- case$fit
 
   expect_error(
     avg_sops(
@@ -349,36 +340,8 @@ test_that("factor visit orm avg_sops requires absorbing state", {
 test_that("factor visit orm SOP interpolation uses absorbing state", {
   skip_if_not_installed("rms")
 
-  case <- make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)
-  data <- case$data
-
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  old_options <- options(datadist = "dd")
-  on.exit(
-    {
-      options(old_options)
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    add = TRUE
-  )
-
-  fit <- mostm(
-    y ~ tx + time + yprev,
-    data = data,
-    id_var = "id",
-    first_followup_time = "1",
-    opt_method = "LM",
-    scale = TRUE,
-    penalty = 0.1,
-    maxit = 100
-  )
+  case <- absorbing_factor_visit_fit()
+  fit <- case$fit
 
   sop_visit <- avg_sops(
     fit,

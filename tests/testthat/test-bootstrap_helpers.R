@@ -354,8 +354,7 @@ test_that("bootstrap_analysis_wrapper relevels data and refits models", {
     factor_cols = "y",
     original_data = original_data,
     y_levels = 1:3,
-    absorb = 3,
-    update_datadist = FALSE
+    absorb = 3
   )
 
   expect_s3_class(result$model, "lm")
@@ -400,8 +399,7 @@ test_that("bootstrap_analysis_wrapper reports model fitting failures", {
       boot_data = boot_data,
       model = model,
       factor_cols = "y",
-      original_data = boot_data,
-      update_datadist = FALSE
+      original_data = boot_data
     ),
     "Bootstrap model fitting failed"
   )
@@ -410,10 +408,13 @@ test_that("bootstrap_analysis_wrapper reports model fitting failures", {
   expect_equal(result$missing_states, character(0))
 })
 
-test_that("bootstrap_analysis_wrapper scopes orm datadist updates", {
+test_that("bootstrap_analysis_wrapper refits with the datadist option unset", {
   skip_if_not_installed("rms")
 
+  # The user's `datadist` option as the refit sees it.
+  datadist_seen <- "not refitted"
   update.orm <- function(object, data, ...) {
+    datadist_seen <<- getOption("datadist")
     structure(list(data = data), class = "orm")
   }
   assign("update.orm", update.orm, envir = globalenv())
@@ -437,12 +438,12 @@ test_that("bootstrap_analysis_wrapper scopes orm datadist updates", {
       boot_data = boot_data,
       model = structure(list(), class = "orm"),
       factor_cols = "y",
-      original_data = boot_data,
-      update_datadist = TRUE
+      original_data = boot_data
     )
   )
 
   expect_s3_class(result$model, "orm")
+  expect_null(datadist_seen)
   expect_equal(getOption("datadist"), "existing_dd")
   expect_identical(get("dd", envir = globalenv()), old_dd)
 })
@@ -509,7 +510,6 @@ test_that("bootstrap_analysis_wrapper falls back when coefstart update fails", {
     model = model,
     factor_cols = "y",
     original_data = boot_data,
-    update_datadist = FALSE,
     use_coefstart = TRUE
   )
 
@@ -547,7 +547,6 @@ test_that("bootstrap_analysis_wrapper multiplies original and fractional weights
     model = model,
     factor_cols = "y",
     original_data = original_data,
-    update_datadist = FALSE,
     fit_weights = c(0.5, 1, 1.5)
   )
 
@@ -582,7 +581,6 @@ test_that("bootstrap_analysis_wrapper recovers stored fit weights", {
       model = weighted_fit$model,
       factor_cols = character(0),
       original_data = weighted_fit$data,
-      update_datadist = FALSE,
       fit_weights = c(0.5, 1, 1.5, 2)
     )
   )
@@ -623,8 +621,7 @@ test_that("bootstrap_analysis_wrapper decides when refits use starting values", 
         boot_data = boot_data,
         model = model,
         factor_cols = "y",
-        original_data = original_data,
-        update_datadist = FALSE
+        original_data = original_data
       )
     )
   }

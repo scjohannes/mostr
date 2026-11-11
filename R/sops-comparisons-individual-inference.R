@@ -31,7 +31,6 @@ inferences_profile_results <- function(
   conf_level,
   conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   if (identical(method, "bootstrap")) {
@@ -62,7 +61,6 @@ inferences_profile_results <- function(
       reduce_draw = reduce_draw,
       n_boot = n_draws,
       workers = workers,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart,
       return_draws = return_draws
     )
@@ -409,7 +407,6 @@ comparison_fwb_draws <- function(
   reduce_draw,
   n_boot,
   workers,
-  update_datadist,
   use_coefstart,
   return_draws
 ) {
@@ -444,7 +441,6 @@ comparison_fwb_draws <- function(
       original_data = refit_data,
       y_levels = setup$y_levels,
       absorb = setup$absorb,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart,
       fit_weights = boot_data$fwb_weight
     )
@@ -506,7 +502,6 @@ comparison_fwb_draws <- function(
       "setup",
       "refit_data",
       "factor_cols",
-      "update_datadist",
       "use_coefstart",
       "reduce_draw",
       "weight_col"

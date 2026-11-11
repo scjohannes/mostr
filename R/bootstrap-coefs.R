@@ -44,8 +44,6 @@
 #'     when a state is absent from the resample. States are matched by their
 #'     labels, so numbers and text labels such as \code{"home"} work alike.
 #'     Other factor columns are covariates and are left as they are.
-#'   \item Updates the `rms` datadist for `orm` models (safe with
-#'     future.callr workers)
 #'   \item Refits the model by calling [mostm()] again with the original
 #'     engine and arguments, and extracts its coefficients
 #' }
@@ -54,9 +52,11 @@
 #' the original model, so the intercept columns of that row refer to renumbered
 #' states.
 #'
-#' Parallelization is handled via future.callr::callr strategy, which provides
-#' isolated R processes for each worker, making it safe to modify the global
-#' environment (for datadist) without conflicts.
+#' The refits do not use an rms `datadist`: a `datadist` you have set with
+#' `options(datadist = ...)` is ignored during the refits and left as it is.
+#'
+#' With `workers > 1`, the refits run in separate R processes started by
+#' the `future.callr` package.
 #'
 #' \strong{Previous-state type:} \code{yprev} may be a factor for categorical
 #' previous-state effects or numeric for linear/spline effects. Bootstrap
@@ -158,7 +158,6 @@ bootstrap_model_coefs <- function(
       original_data = data,
       y_levels = NULL,
       absorb = NULL,
-      update_datadist = inherits(model, "orm"),
       use_coefstart = use_coefstart
     )
 

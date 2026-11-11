@@ -688,11 +688,6 @@ test_that("low-level SOP helpers reject orm offsets", {
     x = rep(c(0, 1, 2), length.out = 45),
     off = seq(-0.2, 0.2, length.out = 45)
   )
-  dd <- rms::datadist(offset_data)
-  assign("dd_offset_test", dd, envir = globalenv())
-  withr::defer(rm("dd_offset_test", envir = globalenv()))
-  withr::local_options(datadist = "dd_offset_test")
-
   offset_model <- rms::orm(
     y ~ x + offset(off),
     data = offset_data,

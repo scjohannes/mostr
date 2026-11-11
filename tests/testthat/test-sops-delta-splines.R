@@ -1,27 +1,3 @@
-local_spline_delta_datadist <- function(data, env = parent.frame()) {
-  name <- "spline_delta_test_dd"
-  old_exists <- exists(name, envir = globalenv(), inherits = FALSE)
-  old_value <- if (old_exists) {
-    get(name, envir = globalenv(), inherits = FALSE)
-  } else {
-    NULL
-  }
-  assign(name, rms::datadist(data), envir = globalenv())
-  old_options <- options(datadist = name)
-  withr::defer(
-    {
-      options(old_options)
-      if (old_exists) {
-        assign(name, old_value, envir = globalenv())
-      } else if (exists(name, envir = globalenv(), inherits = FALSE)) {
-        rm(list = name, envir = globalenv())
-      }
-    },
-    envir = env
-  )
-  invisible(NULL)
-}
-
 local_spline_delta_orm_case <- local({
   value <- NULL
   function() {
@@ -44,7 +20,6 @@ local_spline_delta_orm_case <- local({
       )
       data$y <- ordered(data$y, levels = state_levels)
 
-      local_spline_delta_datadist(data)
       model <- mostm(
         y ~ rms::rcs(time, 3) + tx + rms::rcs(yprev, 4),
         data = data,
@@ -79,44 +54,17 @@ replay_spline_avg_sops <- function(object, model) {
 }
 
 central_spline_avg_jacobian <- function(object, model) {
-  coefficient <- get_coef(model)
   avg_args <- attr(object, "avg_args")
   key_columns <- c("time", "state", names(avg_args$variables), avg_args$by)
   object_key <- sop_draw_cell_key(object, key_columns)
-  jacobian <- matrix(
-    NA_real_,
-    nrow = nrow(object),
-    ncol = length(coefficient),
-    dimnames = list(NULL, names(coefficient))
-  )
-
-  for (column in seq_along(coefficient)) {
-    step <- .Machine$double.eps^(1 / 3) *
-      max(1, abs(coefficient[column]))
-    upper <- coefficient
-    lower <- coefficient
-    upper[column] <- upper[column] + step
-    lower[column] <- lower[column] - step
-    upper_result <- replay_spline_avg_sops(object, set_coef(model, upper))
-    lower_result <- replay_spline_avg_sops(object, set_coef(model, lower))
-    upper_index <- match(
-      object_key,
-      sop_draw_cell_key(upper_result, key_columns)
-    )
-    lower_index <- match(
-      object_key,
-      sop_draw_cell_key(lower_result, key_columns)
-    )
-    if (anyNA(upper_index) || anyNA(lower_index)) {
+  numeric_jacobian(model, function(model) {
+    result <- replay_spline_avg_sops(object, model)
+    index <- match(object_key, sop_draw_cell_key(result, key_columns))
+    if (anyNA(index)) {
       stop("Finite-difference spline SOP cells did not align.")
     }
-    jacobian[, column] <-
-      (upper_result$estimate[upper_index] -
-        lower_result$estimate[lower_index]) /
-      (2 * step)
-  }
-
-  jacobian
+    result$estimate[index]
+  })
 }
 
 test_that("backend orm spline covariance labels preserve coefficient order", {
@@ -164,7 +112,6 @@ test_that("backend orm spline covariance labels preserve coefficient order", {
 test_that("unnamed orm bread preserves transformed and interaction coefficient order", {
   data <- local_spline_delta_orm_case()$data
   data$yprev_factor <- factor(data$yprev)
-  local_spline_delta_datadist(data)
   formulas <- list(
     y ~ rms::rcs(time, 3) * tx + rms::rcs(yprev, 4),
     y ~ log(time + 1) * tx + yprev_factor
@@ -252,7 +199,6 @@ test_that("penalized orm previous-state splines support delta inference", {
 test_that("unconditional delta rejects weighted orm score construction", {
   case <- local_spline_delta_orm_case()
   data <- case$data
-  local_spline_delta_datadist(data)
   weighted <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) + tx + rms::rcs(yprev, 4),
     data = data,

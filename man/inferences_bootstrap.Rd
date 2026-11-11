@@ -12,7 +12,6 @@ inferences_bootstrap(
   conf_level,
   conf_type = "perc",
   return_draws,
-  update_datadist,
   use_coefstart
 )
 }
@@ -30,8 +29,6 @@ processing. If > 1, uses parallel processing.}
 \item{conf_level}{Confidence level.}
 
 \item{return_draws}{Store individual bootstrap draws?}
-
-\item{update_datadist}{Update datadist for rms models?}
 
 \item{use_coefstart}{Use original coefficients as starting values?}
 }

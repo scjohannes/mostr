@@ -566,7 +566,6 @@ test_that("comparison inference reduces paired draw-level SOPs", {
         conf_level = 0.95,
         conf_type = "perc",
         return_draws = TRUE,
-        update_datadist = TRUE,
         use_coefstart = FALSE
       )
     }
@@ -626,7 +625,6 @@ test_that("comparison inference centers Wald intervals on point comparisons", {
           conf_level = 0.95,
           conf_type = "wald",
           return_draws = FALSE,
-          update_datadist = TRUE,
           use_coefstart = FALSE
         )
       }

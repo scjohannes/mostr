@@ -132,6 +132,18 @@
   with a warning. A negative value between -1e-10 and zero comes from rounding
   and is still set to zero.
 
+* `inferences()` no longer has an `update_datadist` argument; passing it is an
+  error. mostr does not need an rms `datadist`, and bootstrap refits
+  (`inferences()` with `method = "bootstrap"` or `"fwb"`, and
+  `bootstrap_model_coefs()`) no longer create a `dd` object in the global
+  environment or set `options(datadist = "dd")` while they run. Instead, each
+  refit runs with the `datadist` option unset and restores it afterwards, so a
+  `datadist` you have set is ignored by the refits and left as it is.
+  Previously, `update_datadist = FALSE` together with a `datadist` option
+  naming an object that does not exist made every refit fail. Remove
+  `update_datadist` from your calls; the estimates and standard errors are the
+  same as before.
+
 ## Documentation
 
 * The help pages of `avg_sops()`, `avg_state_time()`, `avg_comparisons()`,

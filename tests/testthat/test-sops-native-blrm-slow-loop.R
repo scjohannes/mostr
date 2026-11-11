@@ -12,39 +12,20 @@ markov_fake_blrm <- function(partial_odds = FALSE) {
     c(1.1, 0.0, -1.2, 0.25, 0.05, -0.55, -0.30)
   )
   colnames(draws) <- c("y>=2", "y>=3", "y>=4", "tx", "time", "yprev", "ypprev")
-  if (partial_odds) {
-    draws <- cbind(draws, tau_time = c(0.05, -0.10, 0.15, 0.02))
+  if (!partial_odds) {
+    return(fake_blrm(draws))
   }
-
-  structure(
-    list(
-      draws = draws,
-      non.slopes = 3L,
-      pppo = as.integer(partial_odds),
-      tauInfo = data.frame(name = if (partial_odds) "tau_time" else character()),
-      cppo = if (partial_odds) function(y) as.numeric(y) - 1,
-      ylevels = 1:4,
-      yname = "y",
-      clusterInfo = list(name = "id", cluster = c("a", "b"))
-    ),
-    class = c("blrm", "orm"),
-    markov_engine = "blrm",
-    markov_id_var = "id"
+  fake_blrm(
+    cbind(draws, tau_time = c(0.05, -0.10, 0.15, 0.02)),
+    tau = "tau_time",
+    cppo = function(y) as.numeric(y) - 1
   )
 }
 
-markov_fake_design <- function(model, newdata, second = FALSE) {
-  time <- as.numeric(as.character(newdata$time))
-  if (second) {
-    return(matrix(time, ncol = 1, dimnames = list(NULL, "tau_time")))
-  }
-  cbind(
-    tx = newdata$tx,
-    time = time,
-    yprev = as.numeric(as.character(newdata$yprev)),
-    ypprev = as.numeric(as.character(newdata$ypprev))
-  )
-}
+markov_fake_design <- fake_blrm_design(
+  c("tx", "time", "yprev", "ypprev"),
+  tau_var = "time"
+)
 
 # One draw's transition probabilities for one row, written from the model:
 # P(Y >= k) = plogis(alpha_k + x * beta + time * tau * cppo(k)).

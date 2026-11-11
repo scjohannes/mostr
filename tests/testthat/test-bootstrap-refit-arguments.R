@@ -1,21 +1,3 @@
-local_orm_datadist <- function(data, env = parent.frame()) {
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  withr::local_options(datadist = "dd", .local_envir = env)
-  withr::defer(
-    {
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    envir = env
-  )
-}
-
 # The mostm() arguments below are expressions over variables that exist only
 # in the fitting function's frame, so a refit must not re-evaluate them.
 fit_vglm_in_closure <- function(data, parallel_flag, first_time) {
@@ -73,7 +55,6 @@ test_that("orm bootstrap refits use the fit-time argument values", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5201)
-  local_orm_datadist(data)
   fit <- fit_orm_in_closure(data, use_logistic = TRUE, first_time = 1)
 
   withr::local_seed(5202)
@@ -99,8 +80,7 @@ test_that("refits ignore later changes to variables used by the original call", 
     boot_data = data,
     model = fit,
     factor_cols = character(0),
-    original_data = data,
-    update_datadist = FALSE
+    original_data = data
   )
 
   expect_equal(length(stats::coef(boot$model)), length(stats::coef(fit)))
@@ -157,7 +137,6 @@ expect_refit_weights_follow_rows <- function(backend) {
   data <- make_weighted_refit_data(5501)
   if (backend == "orm") {
     skip_if_not_installed("rms")
-    local_orm_datadist(data, env = parent.frame())
   }
   fit <- suppressWarnings(fit_weighted_in_closure(data, backend))
   ids <- unique(data$id)
@@ -173,8 +152,7 @@ expect_refit_weights_follow_rows <- function(backend) {
     boot_data = boot_data,
     model = fit,
     factor_cols = character(0),
-    original_data = data,
-    update_datadist = FALSE
+    original_data = data
   ))
 
   expect_false(is.null(boot$model))
@@ -189,7 +167,6 @@ expect_refit_weights_follow_rows <- function(backend) {
     model = fit,
     factor_cols = character(0),
     original_data = data,
-    update_datadist = FALSE,
     fit_weights = rep(2, nrow(boot_data))
   ))
   expect_equal(fwb$data$.mostr_fit_weight, 2 * boot_data$w_copy)
@@ -280,7 +257,6 @@ test_that("refits of mostm() fits with an outside subset vector succeed", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5901)
-  local_orm_datadist(data)
   for (backend in c("vglm", "orm")) {
     fit <- fit_subset_in_closure(data, backend)
     refit_data <- mostr:::markov_model_refit_data(fit)
@@ -321,8 +297,7 @@ test_that("refits reuse a fit-time coefstart given as a local variable", {
     boot_data = mostr:::markov_model_refit_data(fit),
     model = fit,
     factor_cols = character(0),
-    original_data = data,
-    update_datadist = FALSE
+    original_data = data
   )
   expect_false(is.null(boot$model))
 
@@ -360,8 +335,7 @@ test_that("refits on samples with every state reuse the fit-time coefstart", {
     factor_cols = intersect(c("y", "yprev"), names(refit_data)),
     original_data = refit_data,
     y_levels = 1:6,
-    absorb = 6,
-    update_datadist = FALSE
+    absorb = 6
   )
 
   expect_length(boot$missing_states, 0L)
@@ -392,7 +366,6 @@ test_that("refits on samples missing a state are fit without coefstart", {
       original_data = refit_data,
       y_levels = 1:6,
       absorb = 6,
-      update_datadist = FALSE,
       use_coefstart = use_coefstart
     ))
 

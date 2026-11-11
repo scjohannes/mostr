@@ -45,8 +45,6 @@ delta_comparison_factor_case <- local({
     if (is.null(value)) {
       data <- make_delta_comparison_factor_data()
       visits <- levels(data$time)
-      old_options <- options(datadist = NULL)
-      on.exit(options(old_options), add = TRUE)
       fit <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
         data = data,
@@ -87,24 +85,7 @@ delta_factor_time_point <- function(model, case) {
 }
 
 central_delta_comparison_jacobian <- function(model, point_function) {
-  coefficient <- get_coef(model)
-  point <- point_function(model)$estimate
-  jacobian <- matrix(
-    NA_real_,
-    nrow = length(point),
-    ncol = length(coefficient),
-    dimnames = list(NULL, names(coefficient))
-  )
-  for (j in seq_along(coefficient)) {
-    step <- .Machine$double.eps^(1 / 3) * max(1, abs(coefficient[j]))
-    upper <- lower <- coefficient
-    upper[j] <- upper[j] + step
-    lower[j] <- lower[j] - step
-    jacobian[, j] <- (point_function(set_coef(model, upper))$estimate -
-      point_function(set_coef(model, lower))$estimate) /
-      (2 * step)
-  }
-  jacobian
+  numeric_jacobian(model, function(model) point_function(model)$estimate)
 }
 
 manual_factor_time_auc <- function(avg, case, states, level) {

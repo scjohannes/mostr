@@ -72,29 +72,13 @@ delta_orm_case <- local({
 })
 
 central_sop_jacobian <- function(plan, model) {
-  coef <- get_coef(model)
   point <- run_sop_execution_plan(plan, get_effective_coefs(model))
-  out <- array(0, dim = c(dim(point), length(coef)))
-  for (coefficient in seq_along(coef)) {
-    step <- .Machine$double.eps^(1 / 3) * max(1, abs(coef[coefficient]))
-    upper <- coef
-    lower <- coef
-    upper[coefficient] <- upper[coefficient] + step
-    lower[coefficient] <- lower[coefficient] - step
-    upper_model <- set_coef(model, upper)
-    lower_model <- set_coef(model, lower)
-    upper_probability <- run_sop_execution_plan(
-      plan,
-      get_effective_coefs(upper_model)
-    )
-    lower_probability <- run_sop_execution_plan(
-      plan,
-      get_effective_coefs(lower_model)
-    )
-    out[,,, coefficient] <-
-      (upper_probability - lower_probability) / (2 * step)
-  }
-  dimnames(out) <- list(NULL, NULL, dimnames(point)[[3L]], names(coef))
+  out <- numeric_jacobian(
+    model,
+    function(model) run_sop_execution_plan(plan, get_effective_coefs(model))
+  )
+  states <- dimnames(point)[[3L]]
+  dimnames(out) <- list(NULL, NULL, states, names(get_coef(model)))
   out
 }
 

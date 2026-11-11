@@ -202,6 +202,19 @@ grid_refit <- function(cell, change_name, change) {
   grid_cache$fits[[key]]
 }
 
+# A fixture that several tests build with the same arguments, made once by
+# `make()` and kept under `key` for the rest of the test run. Test files share
+# it, so the result must not depend on anything a test changes.
+grid_fixture <- function(key, make) {
+  if (is.null(grid_cache$fixtures)) {
+    grid_cache$fixtures <- list()
+  }
+  if (is.null(grid_cache$fixtures[[key]])) {
+    grid_cache$fixtures[[key]] <- make()
+  }
+  grid_cache$fixtures[[key]]
+}
+
 grid_fit_to <- function(cell, data) {
   time_term <- switch(
     cell$time,

@@ -8,40 +8,14 @@ make_fake_blrm <- function(draws = NULL, gamma_draws = NULL, pppo = 0L) {
     colnames(draws) <- c("y>=2", "y>=3", "tx")
   }
 
-  tau_info <- if (pppo > 0) {
-    data.frame(name = "tau_tx")
-  } else {
-    data.frame(name = character())
-  }
-
-  structure(
-    list(
-      draws = draws,
-      non.slopes = 2L,
-      pppo = pppo,
-      tauInfo = tau_info,
-      ylevels = 1:3,
-      yname = "y",
-      clusterInfo = list(name = "id", cluster = c("a", "b")),
-      gamma_draws = gamma_draws
-    ),
-    class = c("blrm", "orm"),
-    markov_engine = "blrm",
-    markov_id_var = "id"
+  fake_blrm(
+    draws,
+    tau = if (pppo > 0) "tau_tx" else character(),
+    gamma_draws = gamma_draws
   )
 }
 
-fake_blrm_design <- function(model, newdata, second = FALSE) {
-  if (second) {
-    out <- matrix(newdata$tx, ncol = 1)
-    colnames(out) <- "tau_tx"
-    return(out)
-  }
-
-  out <- matrix(newdata$tx, ncol = 1)
-  colnames(out) <- "tx"
-  out
-}
+tx_blrm_design <- fake_blrm_design("tx", tau_var = "tx")
 
 test_that("Markov workflows reject raw blrm fits", {
   model <- make_fake_blrm()
@@ -296,7 +270,9 @@ test_that("compiled second-order ORM plans match the reference recursion", {
 })
 
 test_that("blrm posterior draw sampling is random, capped, and reproducible", {
-  model <- make_fake_blrm(draws = matrix(0, nrow = 150, ncol = 3))
+  draws <- matrix(0, nrow = 150, ncol = 3)
+  colnames(draws) <- c("y>=2", "y>=3", "tx")
+  model <- make_fake_blrm(draws = draws)
 
   draw_ids_a <- mostr:::select_posterior_draws(
     model,
@@ -334,7 +310,7 @@ test_that("manual blrm prediction supports PO, constrained PPO, and random effec
   )
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       no_re <- mostr:::predict_blrm_response_markov(
         model,
@@ -418,7 +394,7 @@ test_that("sops() summarizes blrm posterior SOP draws and stores optional draws"
   )
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       result <- sops(
         model,
@@ -475,7 +451,7 @@ test_that("avg_sops() streams and summarizes blrm posterior draws", {
 
   gamma_calls <- 0L
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     get_blrm_gamma_draws = function(model, draw_indices) {
       gamma_calls <<- gamma_calls + 1L
       model$gamma_draws[draw_indices, , drop = FALSE]
@@ -522,7 +498,7 @@ test_that("observed blrm averages reduce individual posterior draws", {
     yprev = factor(c(1, 2), levels = 1:3),
     time = 1
   )
-  local_mocked_bindings(blrm_design_matrix = fake_blrm_design)
+  local_mocked_bindings(blrm_design_matrix = tx_blrm_design)
   individual <- sops(
     model,
     newdata = newdata,
@@ -583,7 +559,7 @@ test_that("second-order blrm posterior results are invariant to outer draw chunk
   }
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       one <- run_chunked(1L)
       two <- run_chunked(2L)
@@ -611,7 +587,7 @@ test_that("grouped blrm summaries refuse a missing grouping value", {
   complete <- newdata[!is.na(newdata$grp), , drop = FALSE]
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       expect_error(
         sops(model, newdata = newdata, times = 1:2, by = "grp", n_draws = 3),
@@ -656,7 +632,7 @@ test_that("grouped blrm summaries reject entirely incomplete grouping rows", {
   )
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       expect_snapshot(
         sops(

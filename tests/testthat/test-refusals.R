@@ -109,9 +109,9 @@ refusal_refit <- function(name, make) {
   grid_cache$fits[[key]]
 }
 
-# A hand-made blrm fit, as in test-sops-native-blrm-slow-loop.R: the draws are
-# real numbers and only the design matrix is mocked, because sampling from
-# Stan is too slow here. `cppo = NULL` with `pppo = 1` is an unconstrained
+# A hand-made blrm fit (`fake_blrm()` in helper-mocks.R), as in
+# test-sops-native-blrm-slow-loop.R: the draws are real numbers and only the
+# design matrix is mocked. `cppo = NULL` with `pppo = 1` is an unconstrained
 # partial proportional-odds fit; `cluster = FALSE` is a fit without random
 # effects.
 refusal_fake_blrm <- function(pppo = 0L, cppo = NULL, cluster = TRUE) {
@@ -120,39 +120,21 @@ refusal_fake_blrm <- function(pppo = 0L, cppo = NULL, cluster = TRUE) {
     c(0.9, -0.2, -1.1, 0.10, 0.03, -0.45)
   )
   colnames(draws) <- c("y>=2", "y>=3", "y>=4", "tx", "time", "yprev")
+  tau <- character()
   if (pppo > 0L) {
     draws <- cbind(draws, tau_time = c(0.05, -0.10))
+    tau <- "tau_time"
   }
-  structure(
-    list(
-      draws = draws,
-      non.slopes = 3L,
-      pppo = pppo,
-      tauInfo = data.frame(name = if (pppo > 0L) "tau_time" else character()),
-      cppo = cppo,
-      ylevels = 1:4,
-      yname = "y",
-      clusterInfo = if (cluster) list(name = "id", cluster = c("a", "b")),
-      # Random-effect draws, so that no Stan fit is needed to read them.
-      gamma_draws = matrix(0, nrow = 2, ncol = 2)
-    ),
-    class = c("blrm", "orm"),
-    markov_engine = "blrm",
-    markov_id_var = "id"
+  fake_blrm(
+    draws,
+    tau = tau,
+    cppo = cppo,
+    cluster = cluster,
+    gamma_draws = matrix(0, nrow = 2, ncol = 2)
   )
 }
 
-refusal_fake_design <- function(model, newdata, second = FALSE) {
-  time <- as.numeric(as.character(newdata$time))
-  if (second) {
-    return(matrix(time, ncol = 1, dimnames = list(NULL, "tau_time")))
-  }
-  cbind(
-    tx = newdata$tx,
-    time = time,
-    yprev = as.numeric(as.character(newdata$yprev))
-  )
-}
+refusal_fake_design <- fake_blrm_design(c("tx", "time", "yprev"), tau_var = "time")
 
 refusal_fake_profiles <- function() {
   data.frame(

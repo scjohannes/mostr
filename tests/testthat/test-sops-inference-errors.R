@@ -610,24 +610,10 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
 
   draws <- matrix(stats::qlogis(0.4), nrow = 2, ncol = 1)
   colnames(draws) <- "y>=2"
-  blrm <- structure(
-    list(
-      draws = draws,
-      non.slopes = 1L,
-      pppo = 0L,
-      tauInfo = data.frame(name = character()),
-      ylevels = 1:2,
-      yname = "y"
-    ),
-    class = "blrm",
-    markov_engine = "blrm",
-    markov_id_var = "id"
-  )
+  blrm <- fake_blrm(draws, cluster = FALSE, class = "blrm")
 
   with_mocked_bindings(
-    blrm_design_matrix = function(model, newdata, second = FALSE) {
-      matrix(numeric(0), nrow = nrow(newdata), ncol = 0)
-    },
+    blrm_design_matrix = fake_blrm_design(character()),
     {
       out <- soprob_markov(
         model = blrm,
@@ -695,7 +681,6 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       workers = NULL,
       conf_level = 0.95,
       return_draws = FALSE,
-      update_datadist = TRUE,
       use_coefstart = FALSE
     ),
     "Standard refit bootstrap is not supported",
@@ -712,7 +697,6 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       workers = NULL,
       conf_level = 0.95,
       return_draws = FALSE,
-      update_datadist = TRUE,
       use_coefstart = FALSE
     ),
     "this model has no stored data",
@@ -729,7 +713,6 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       workers = NULL,
       conf_level = 0.95,
       return_draws = FALSE,
-      update_datadist = TRUE,
       use_coefstart = FALSE
     ),
     "ID variable 'id' not found",
@@ -746,7 +729,6 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       workers = NULL,
       conf_level = 0.95,
       return_draws = FALSE,
-      update_datadist = TRUE,
       use_coefstart = FALSE
     ),
     "requires full longitudinal data",
@@ -829,7 +811,6 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
           workers = NULL,
           conf_level = 0.8,
           return_draws = TRUE,
-          update_datadist = FALSE,
           use_coefstart = TRUE
         ),
         "soprob_markov failed"
@@ -866,7 +847,6 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
           workers = NULL,
           conf_level = 0.95,
           return_draws = FALSE,
-          update_datadist = FALSE,
           use_coefstart = FALSE
         ),
         "All bootstrap iterations failed",
@@ -903,7 +883,6 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
       original_data,
       y_levels,
       absorb,
-      update_datadist,
       use_coefstart,
       fit_weights
     ) {
@@ -947,7 +926,6 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
         workers = NULL,
         conf_level = 0.95,
         return_draws = TRUE,
-        update_datadist = FALSE,
         use_coefstart = FALSE
       )
     }
@@ -1021,7 +999,6 @@ test_that("inferences_bootstrap() applies FWB by weights", {
       original_data,
       y_levels,
       absorb,
-      update_datadist,
       use_coefstart,
       fit_weights
     ) {
@@ -1044,7 +1021,6 @@ test_that("inferences_bootstrap() applies FWB by weights", {
         workers = NULL,
         conf_level = 0.95,
         return_draws = TRUE,
-        update_datadist = FALSE,
         use_coefstart = FALSE
       )
     }
@@ -1087,7 +1063,6 @@ test_that("inferences_bootstrap_sops_fwb() attaches stored-data draw weights", {
       original_data,
       y_levels,
       absorb,
-      update_datadist,
       use_coefstart,
       fit_weights
     ) {
@@ -1121,7 +1096,6 @@ test_that("inferences_bootstrap_sops_fwb() attaches stored-data draw weights", {
         workers = NULL,
         conf_level = 0.95,
         return_draws = TRUE,
-        update_datadist = FALSE,
         use_coefstart = FALSE
       )
     }
@@ -1164,7 +1138,6 @@ test_that("inferences_bootstrap_sops_fwb() rejects reserved draw weight columns"
       workers = NULL,
       conf_level = 0.95,
       return_draws = TRUE,
-      update_datadist = FALSE,
       use_coefstart = FALSE
     ),
     "reserved for bootstrap draw weights",

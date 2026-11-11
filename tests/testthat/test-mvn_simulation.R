@@ -8,6 +8,14 @@
 # 5. get_draws() extracts simulation draws correctly
 # 6. score-bootstrap simulation works for robcov_vglm avg_sops pipelines
 
+# A vglm fit for the cluster-robust covariance checks, made once per test run.
+mvn_cluster_case <- function() {
+  grid_fixture("mvn cluster case", function() {
+    data <- make_test_data(n_patients = 30, seed = 444, follow_up_time = 15)
+    list(data = data, model = make_test_model(data))
+  })
+}
+
 describe("MVN Simulation-Based Inference for SOPs", {
   describe("set_coef()", {
     it("validates default model coefficient replacement", {
@@ -79,15 +87,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
 
       data <- make_test_data(n_patients = 50, seed = 222)
 
-      # Fit orm model - datadist must be defined for rms
-      dd <- rms::datadist(data)
-      withr::local_options(datadist = "dd")
-      # assign to global for rms to find it, then defer removal
-      assign("dd", dd, envir = globalenv())
-      withr::defer(
-        if (exists("dd", envir = globalenv())) rm("dd", envir = globalenv())
-      )
-
+      # Fit orm model
       m_orm <- rms::orm(
         y ~ time_lin + time_nlin_1 + tx + yprev,
         data = data,
@@ -218,8 +218,8 @@ describe("MVN Simulation-Based Inference for SOPs", {
     it("computes cluster-robust vcov with formula", {
       skip_if_not_installed("VGAM")
 
-      data <- make_test_data(n_patients = 30, seed = 444, follow_up_time = 15)
-      m_vglm <- make_test_model(data)
+      data <- mvn_cluster_case()$data
+      m_vglm <- mvn_cluster_case()$model
 
       # Get cluster-robust vcov using formula
       V_robust <- get_vcov_robust(m_vglm, cluster = ~id, data = data)
@@ -256,12 +256,8 @@ describe("MVN Simulation-Based Inference for SOPs", {
     it("uses explicit formula cluster data before evaluating model call data", {
       skip_if_not_installed("VGAM")
 
-      source_data <- make_test_data(
-        n_patients = 30,
-        seed = 444,
-        follow_up_time = 15
-      )
-      m_vglm <- make_test_model(source_data)
+      source_data <- mvn_cluster_case()$data
+      m_vglm <- mvn_cluster_case()$model
 
       with_shadowed_call_data <- function(model, source_data) {
         data <- source_data[seq_len(2), , drop = FALSE]

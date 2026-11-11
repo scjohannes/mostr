@@ -222,11 +222,6 @@ test_that("orm prediction helpers validate metadata and categorical levels", {
     y = ordered(c(1, 2, 3, 1, 2, 3)),
     z = factor(c("a", "b", "a", "b", "a", "b"))
   )
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
-
   fit <- rms::orm(y ~ z, data = data, x = TRUE, y = TRUE)
   X <- mostr:::orm_model_matrix(
     fit,
@@ -307,11 +302,6 @@ test_that("orm score-bootstrap helpers cover validation and alignment branches",
     y = ordered(c(1, 2, 3, 1, 2, 3, 1, 2, 3)),
     x = c(-1, 0, 1, -0.5, 0.5, 1.5, -1.5, 0.2, 1.2)
   )
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
-
   fit <- rms::orm(y ~ x, data = data, x = TRUE, y = TRUE)
   scores <- mostr:::compute_scores_orm(fit)
   expect_equal(nrow(scores), nrow(data))
@@ -548,10 +538,6 @@ test_that("get_vcov_robust validates clusters before dispatching by model class"
     x = seq_len(12),
     id = rep(1:4, each = 3)
   )
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
   orm_fit <- rms::orm(y ~ x, data = data, x = TRUE, y = TRUE)
   expect_true(is.matrix(mostr:::get_vcov_robust(
     orm_fit,

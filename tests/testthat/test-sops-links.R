@@ -39,16 +39,6 @@ test_that("Markov workflows reject non-logistic orm families", {
   data <- suppressWarnings(
     make_test_data(n_patients = 80, seed = 842, follow_up_time = 5)
   )
-  dd_name <- ".mostr_link_test_dd"
-  assign(dd_name, rms::datadist(data), envir = globalenv())
-  old <- options(datadist = dd_name)
-  on.exit(
-    {
-      options(old)
-      rm(list = dd_name, envir = globalenv())
-    },
-    add = TRUE
-  )
   # `mostm()` stops before computing the patient-clustered covariance.
   error <- tryCatch(
     suppressWarnings(
@@ -80,16 +70,6 @@ test_that("Markov workflows accept logit vglm and orm models", {
       id_var = "id",
       engine = "vglm"
     )
-  )
-  dd_name <- ".mostr_link_accept_dd"
-  assign(dd_name, rms::datadist(data), envir = globalenv())
-  old <- options(datadist = dd_name)
-  on.exit(
-    {
-      options(old)
-      rm(list = dd_name, envir = globalenv())
-    },
-    add = TRUE
   )
   orm_fit <- suppressWarnings(
     mostm(

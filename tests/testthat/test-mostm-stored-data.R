@@ -191,23 +191,6 @@ test_that("the orm engine stores fitting data and applies robust covariance", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1002)
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  old_options <- options(datadist = "dd")
-  on.exit(
-    {
-      options(old_options)
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    add = TRUE
-  )
-
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -241,23 +224,6 @@ test_that("the blrm engine stores fitting data without sampling when requested",
   skip_if_not_installed("rmsb")
 
   data <- make_test_data(n_patients = 12, follow_up_time = 6, seed = 1005)
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  old_options <- options(datadist = "dd")
-  on.exit(
-    {
-      options(old_options)
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    add = TRUE
-  )
-
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -721,23 +687,6 @@ test_that("the orm engine supports FWB for grouped and ungrouped sops", {
   )
   data$sex <- factor(sex_by_id[as.character(data$id)])
 
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  old_options <- options(datadist = "dd")
-  on.exit(
-    {
-      options(old_options)
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    add = TRUE
-  )
-
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -757,8 +706,7 @@ test_that("the orm engine supports FWB for grouped and ungrouped sops", {
     grouped,
     method = "fwb",
     n_draws = 2,
-    return_draws = TRUE,
-    update_datadist = FALSE
+    return_draws = TRUE
   )
 
   expect_equal(attr(grouped_ci, "n_successful"), 2L)
@@ -780,8 +728,7 @@ test_that("the orm engine supports FWB for grouped and ungrouped sops", {
     individual,
     method = "fwb",
     n_draws = 2,
-    return_draws = TRUE,
-    update_datadist = FALSE
+    return_draws = TRUE
   )
   draws <- get_draws(individual_ci)
 

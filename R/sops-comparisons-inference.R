@@ -12,7 +12,6 @@ inferences_avg_comparisons <- function(
   conf_level,
   conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   args <- attr(object, "comparison_args")
@@ -31,7 +30,6 @@ inferences_avg_comparisons <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     ))
   }
@@ -60,7 +58,6 @@ inferences_avg_comparisons <- function(
     conf_level = conf_level,
     conf_type = conf_type,
     return_draws = return_draws,
-    update_datadist = update_datadist,
     use_coefstart = use_coefstart
   )
 }
@@ -77,7 +74,6 @@ inferences_avg_comparisons_linear <- function(
   conf_level,
   conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   args <- attr(object, "comparison_args")
@@ -126,7 +122,6 @@ inferences_avg_comparisons_linear <- function(
     conf_level = conf_level,
     conf_type = conf_type,
     return_draws = TRUE,
-    update_datadist = update_datadist,
     use_coefstart = use_coefstart
   )
 
@@ -317,7 +312,6 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   conf_level,
   conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   engine <- match.arg(engine, choices = c("standard", "fwb"))
@@ -348,7 +342,6 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       original_data = refit_data,
       y_levels = setup$y_levels,
       absorb = setup$absorb,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart,
       fit_weights = fit_weights
     )
@@ -469,7 +462,6 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
         "newdata_supplied",
         "factor_cols",
         "engine",
-        "update_datadist",
         "use_coefstart",
         "complete_comparison_sops_array_states",
         "reduce_time_benefit_array_for_setup",
@@ -497,7 +489,6 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
         "newdata_supplied",
         "factor_cols",
         "engine",
-        "update_datadist",
         "use_coefstart",
         "complete_comparison_sops_array_states",
         "reduce_time_benefit_array_for_setup",

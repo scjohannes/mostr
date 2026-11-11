@@ -16,7 +16,6 @@ inferences(
   conf_type = "auto",
   null = "auto",
   return_draws = TRUE,
-  update_datadist = TRUE,
   use_coefstart = FALSE
 )
 }
@@ -108,9 +107,6 @@ them gives a warning.}
 \item{return_draws}{Logical. If \code{TRUE}, stores individual simulation or
 bootstrap draws as an attribute. Extract with \code{\link[=get_draws]{get_draws()}}. Delta
 inference never stores draws. Default is \code{TRUE}.}
-
-\item{update_datadist}{Logical. Whether to update datadist for rms models
-during bootstrap. Default is TRUE.}
 
 \item{use_coefstart}{Logical. If \code{TRUE}, each refit of
 \code{method = "bootstrap"} or \code{"fwb"} starts from the original fit's
@@ -287,6 +283,9 @@ is refitted without any. If a refit with starting values fails, for example
 because a covariate level is absent from the sample, it is retried once
 without them.
 
+Refits do not use an rms \code{datadist}. A \code{datadist} you have set with
+\code{options(datadist = ...)} is ignored during the refits and left as it is.
+
 Choosing conditional or unconditional analytical variance changes the
 standard errors and confidence intervals, not the point estimates.
 }
@@ -330,8 +329,6 @@ result_sim <- avg_sops(
   inferences(method = "mvn", n_draws = 1000)
 
 # The orm engine stores the package-owned full robust covariance matrix.
-dd <- rms::datadist(data)
-options(datadist = "dd")
 fit_orm <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
 
 avg_orm <- avg_sops(

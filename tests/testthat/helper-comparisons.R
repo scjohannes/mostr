@@ -1,7 +1,12 @@
 # Shared fixture for `comparisons()` tests: a first-order full
-# proportional-odds `vglm` fit with three states, state 3 absorbing.
+# proportional-odds `vglm` fit with three states, state 3 absorbing. Made once
+# per test run.
 make_comparisons_case <- function() {
   skip_if_not_installed("VGAM")
+  grid_fixture("comparisons case", build_comparisons_case)
+}
+
+build_comparisons_case <- function() {
   withr::local_seed(4417)
   data <- make_markov_trajectories(
     n_patients = 60,
@@ -45,6 +50,12 @@ sops_with_value <- function(case, var, value, times = 1:4, ...) {
 # coefficient per visit and `first_followup_time` must be given explicitly.
 make_factor_comparisons_case <- function() {
   case <- make_comparisons_case()
+  grid_fixture("factor comparisons case", function() {
+    build_factor_comparisons_case(case)
+  })
+}
+
+build_factor_comparisons_case <- function(case) {
   data <- case$data
   data$time <- factor(data$time, levels = sort(unique(data$time)))
   model <- mostm(
@@ -68,6 +79,12 @@ make_factor_comparisons_case <- function() {
 # `ypprev` repeats `yprev` there.
 make_second_order_comparisons_case <- function() {
   case <- make_comparisons_case()
+  grid_fixture("second-order comparisons case", function() {
+    build_second_order_comparisons_case(case)
+  })
+}
+
+build_second_order_comparisons_case <- function(case) {
   data <- case$data[order(case$data$id, case$data$time), , drop = FALSE]
   data$ypprev <- stats::ave(
     as.integer(as.character(data$yprev)),

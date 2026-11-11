@@ -149,16 +149,6 @@ test_that("orm lsp terms use the optimized execution plan", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 100, seed = 2472, follow_up_time = 12)
-  dd_name <- ".mostr_lsp_dd"
-  assign(dd_name, rms::datadist(data), envir = globalenv())
-  old <- options(datadist = dd_name)
-  on.exit(
-    {
-      options(old)
-      rm(list = dd_name, envir = globalenv())
-    },
-    add = TRUE
-  )
   fit <- suppressWarnings(mostm(
     ordered(y) ~ rms::lsp(time, c(3, 7)) + tx + yprev,
     data = data,

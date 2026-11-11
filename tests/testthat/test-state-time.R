@@ -148,31 +148,14 @@ test_that("posterior state_time() summarizes each profile's total per draw", {
     c(-0.4, -2, 1.5, 0.2)
   )
   colnames(coefficients) <- c("y>=2", "y>=3", "tx", "time")
-  model <- structure(
-    list(
-      draws = coefficients,
-      non.slopes = 2L,
-      pppo = 0L,
-      tauInfo = data.frame(name = character()),
-      ylevels = 1:3,
-      yname = "y",
-      clusterInfo = list(name = "id", cluster = c("a", "b"))
-    ),
-    class = c("blrm", "orm"),
-    markov_engine = "blrm",
-    markov_id_var = "id"
-  )
+  model <- fake_blrm(coefficients)
   profiles <- data.frame(
     id = c("a", "b"),
     tx = c(0, 1),
     yprev = factor(c(1, 2), levels = 1:3),
     time = 1
   )
-  local_mocked_bindings(
-    blrm_design_matrix = function(model, newdata, second = FALSE) {
-      cbind(tx = newdata$tx, time = newdata$time)
-    }
-  )
+  local_mocked_bindings(blrm_design_matrix = fake_blrm_design(c("tx", "time")))
   out <- state_time(
     model,
     newdata = profiles,

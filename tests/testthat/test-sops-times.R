@@ -2,8 +2,16 @@
 # value. Requests that skip fitted visits silently change what each result
 # means, so the user-facing SOP functions warn about them.
 
+# Made once per test run for each `time_as_factor`.
 make_daily_visit_case <- function(time_as_factor = FALSE) {
   skip_if_not_installed("rms")
+  grid_fixture(
+    paste("daily visit case, factor time", time_as_factor),
+    function() build_daily_visit_case(time_as_factor)
+  )
+}
+
+build_daily_visit_case <- function(time_as_factor) {
   data <- make_test_data(n_patients = 80, follow_up_time = 8, seed = 2612)
   if (time_as_factor) {
     data$time <- factor(data$time, levels = as.character(1:8))

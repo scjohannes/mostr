@@ -268,8 +268,7 @@ test_that("bootstrap refits call mostm() with the original engine", {
       boot_data = mostr:::markov_model_refit_data(fit),
       model = fit,
       factor_cols = character(0),
-      original_data = data,
-      update_datadist = FALSE
+      original_data = data
     )
     refit_call <- mostr:::bootstrap_model_call(boot$model)
 
@@ -292,8 +291,7 @@ test_that("bootstrap refits call mostm() with the original engine", {
       boot_data = mostr:::markov_model_refit_data(fits$vglm),
       model = fits$vglm,
       factor_cols = character(0),
-      original_data = data,
-      update_datadist = FALSE
+      original_data = data
     )$model,
     "vglm"
   )
@@ -524,8 +522,7 @@ test_that("orm refits keep the fit's na.action and penalty", {
     boot_data = mostr:::markov_model_refit_data(fit),
     model = fit,
     factor_cols = character(0),
-    original_data = data,
-    update_datadist = FALSE
+    original_data = data
   )
   expect_identical(mostr:::bootstrap_model_call(boot$model)$penalty, 2)
   expect_equal(stats::coef(boot$model), stats::coef(fit), tolerance = 1e-6)
