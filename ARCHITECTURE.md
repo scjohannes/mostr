@@ -1113,6 +1113,27 @@ check a refusal only where the table cannot: an error-text snapshot whose wordin
 is longer than the table's phrase, a warning or state after the error, or an
 internal validator called directly.
 
+Unconditional variance has an exact check that needs no draws.
+`tests/testthat/test-sops-delta-unconditional-identity.R` rebuilds it from
+three parts on the first-order orm and vglm grid fits, for `avg_sops()`, an
+`avg_comparisons()` contrast and `avg_state_time()` in real time: the
+conditional variance, the sample covariance of the patients' own predictions
+divided by `n`, and twice their covariance with the coefficient influence
+`n B s_i` carried through the Jacobian. The per-patient predictions come from
+public `sops()` and `state_time()`, the scores and bread from
+`compute_scores_orm()`, `compute_scores_vglm()`, `orm_model_bread()` and
+`compute_observed_bread_vglm()`, and the Jacobian from the conditional result,
+not from the code that adds the parts. At the maximum of the likelihood, with
+the default `type = "HC0"` and `cadjust = TRUE`, the sum matches to rounding
+(about 1e-12 relative), so the test asks for 1e-8; a part off by 1% fails it.
+`tests/testthat/test-slow-mvn-delta.R` (`MOSTR_RUN_SLOW=true`) gives MVN and
+conditional delta the same scaled covariance `1e-3 V`, so that the recursion
+is linear over the draws, and asks MVN standard deviations from 20,000 draws to
+match delta standard errors within 2%. Bootstrap against unconditional
+variance and the coverage of the intervals are not tests: they are a one-off
+validation study in the ignored `benchmarks/local/validation-unconditional/`,
+whose scenarios and acceptance bands are in its README.
+
 Results built by the streamed design builder (`markov_msm_build()` and
 `markov_msm_run()`, which MVN draws and delta inference use) are compared with
 public `sops()` on every first-order grid set-up, plus spline, numeric
