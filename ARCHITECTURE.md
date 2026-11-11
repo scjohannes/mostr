@@ -214,6 +214,26 @@ replays that call `inferences()` on intermediate SOP objects therefore never
 add tests, and the warnings for Bayesian outputs or missing standard errors
 fire only when the user supplied a numeric null.
 
+A comparison whose `variables` column is not used by the model is 0 (1 for a
+ratio) by construction. As in marginaleffects 1.0.0, such calls run without a
+message, and `drop_unused_comparison_uncertainty()` in
+`R/sops-result-helpers.R` sets `std.error`, `statistic`, `p.value`, `s.value`,
+`conf.low`, and `conf.high` to `NA`. `inferences_impl()` applies it after
+every method, including the null test, and `set_avg_comparison_attrs()` in
+`R/sops-comparisons-setup.R` applies it to the posterior summaries of blrm
+comparisons. It acts only on `markov_comparisons` and `markov_avg_comparisons`
+objects, so SOPs and times predicted under the same `variables` keep their
+standard errors. `comparison_variable_unused()` decides from the model's
+columns, `markov_model_variables()` in `R/markov-model-data.R`: the variables
+of the right-hand side of the stored formula (`sformula` for orm and blrm, plus
+blrm's partial proportional-odds `zsformula` and its `cluster()` column from
+`clusterInfo`; `formula()` of the inner vglm fit for `robcov_vglm`), together
+with the result's `p_var` and `p2_var`. Because `all.vars()` reads names inside
+calls, `rms::rcs(age, 3)`, `poly()`, and interactions count. Coefficients are
+never inspected. When no formula can be read, or it contains `.`, the result
+is left alone. A column absent from the data is still an error ("Variables not
+in data: ...").
+
 Ordinary and fractional weighted bootstrap refits (`update_bootstrap_model()` in
 `R/bootstrap_helpers.R`) are restricted to `mostm()` fits. They always resample
 the refit data stored on the fit (`markov_model_refit_data()`); the public API
@@ -232,6 +252,22 @@ each copy of a patient drawn more than once its own character `new_id`
 (`"<id>_1"`, `"<id>_2"`), numbered by sampled position so that factor,
 character, and integer IDs give the same resamples; refits and the averaged
 cohort use `new_id` as the patient ID.
+
+A resample can lack a state. `relevel_factors_consecutive()` (in
+`R/markov-data.R`) then maps the present states to `1, 2, ...` in every state
+column, keeping each column's type, and returns the renumbered `y_levels` and
+`absorb` with the missing labels. States are matched by label
+(`as_state_labels()`), never converted to numbers, so text labels on factor
+columns work as numbers do. The state order is `y_levels`, then any other
+labels of the original data (`state_column_labels()`: factor level order, or
+sorted values; numeric columns are sorted together). The state columns come
+from `bootstrap_state_columns()` in `R/bootstrap_helpers.R`: the response
+column read from the model formula (`bootstrap_response_column()`, so
+`ordered(state) ~ ...` relabels `state`), plus `p_var` and `p2_var` in the SOP,
+comparison, and time-benefit bootstrap paths, or `yprev` in
+`bootstrap_model_coefs()`, which has no `p_var`. Factor covariates are never
+treated as states. The SOP paths then map the refit's states back to the
+original labels and give the missing states probability 0.
 
 The ordinary bootstrap refits each resample on all of its patients, so a state
 missing from one `by` group but present elsewhere still has its coefficients.
@@ -266,11 +302,16 @@ those values. A fit-time `coefstart` is inlined the same way unless the refit
 supplies its own starting coefficients or drops starting values
 (`drop_coefstart = TRUE`). `bootstrap_analysis_wrapper()` decides on starting
 values in one place: when the sample contains every state, it refits with the
-original coefficients (`use_coefstart = TRUE`, `vglm` only) or the stored
+original coefficients (`use_coefstart = TRUE`) or the stored
 `coefstart`, and retries once without any starting values if that refit errors
 (for example, VGAM's non-conformable arguments after a covariate level drops
 out). When states are missing, the relevelled refit has fewer intercepts, so it
-is fitted without any `coefstart`, including the stored one. Row-aligned
+is fitted without any `coefstart`, including the stored one. Only `vglm`
+refits take starting coefficients, so `check_use_coefstart()` (called once by
+`inferences()` and `bootstrap_model_coefs()`, before any work) refuses
+`use_coefstart = TRUE` for any other model and for `inferences()` methods that
+do not refit (`"mvn"`, `"delta"`); internal callers such as
+`inferences_internal()` pass the already checked value on. Row-aligned
 arguments are not stored as values:
 
 - Row `weights` are evaluated once at fit time (in `data`, enclosed by the
@@ -961,7 +1002,8 @@ checks that a change which should not matter leaves the result alone.
 `tests/testthat/test-grid-consistency.R` covers probability limits, averages as
 means of per-profile results, contrasts as differences of averages, state sets,
 interpolation, analytical covariances, restarting the recursion part-way,
-swapped comparison values, unused variables, later visits, and orm against vglm
+swapped comparison values, unused variables (zero contrasts whose analytical
+standard errors are `NA`), later visits, and orm against vglm
 on the same proportional-odds model. `tests/testthat/test-grid-consistency-time.R`
 covers time in state, comparisons and time benefit, on the visit scale and in
 real time, overall and within `by` groups. On CRAN only one set-up per engine
@@ -971,6 +1013,23 @@ coding, covariate units, an unused column with missing values, case weights
 against duplicated patients) using the checks in
 `tests/testthat/helper-grid-changes.R`; `tests/testthat/test-slow-grid-data-changes.R`
 runs them on the remaining set-ups with `MOSTR_RUN_SLOW=true`.
+
+Inference is checked the same way, with few draws (MVN 20, refit bootstraps 3)
+and the checks in `tests/testthat/helper-grid-inference.R`: non-negative
+standard errors, ordered and nested limits, Wald centring and its agreement with
+the null test, logit limits within [0, 1], percentile limits of an absorbing
+state that never fall, zero variance for the sum over all states, standard
+errors and contrast variances from the joint covariance or the draws, same seed
+same draws with the caller's random state restored, swapped comparison values,
+and bootstrap bookkeeping. `tests/testthat/test-grid-inference.R` crosses engine,
+time coding and method in full on `avg_sops()` and checks that weighted
+fractional-bootstrap profile draws reproduce the averaged draws;
+`tests/testthat/test-grid-inference-array.R` covers result type, method,
+engine, order, odds, weights, profiles, `by`, time scale and comparison type
+pairwise in a 27-row covering array whose coverage a test re-checks; pairs the
+package refuses are left to the refusal table. Every refusal is one row of the
+table in `tests/testthat/test-refusals.R`, grouped into fitting, prediction and
+inference: a call, and the phrase or condition class its error must have.
 
 `soprob_markov_reference()` in `R/sops-engine.R` is not one of these test-only
 references, despite its name. It is a production engine: the only one for `blrm`,

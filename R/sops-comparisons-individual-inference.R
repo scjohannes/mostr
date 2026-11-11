@@ -415,7 +415,12 @@ comparison_fwb_draws <- function(
 ) {
   refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, setup$id_var, setup$time_var)
-  factor_cols <- intersect(c("y", setup$p_var, setup$p2_var), names(refit_data))
+  factor_cols <- bootstrap_state_columns(
+    model,
+    refit_data,
+    setup$p_var,
+    setup$p2_var
+  )
 
   # The patient weights enter the comparisons only through the refits, but,
   # as for `sops()`, the stored patients' weights are returned with the draws

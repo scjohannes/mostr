@@ -125,6 +125,41 @@ order_estimate_columns <- function(x) {
   out
 }
 
+# TRUE for a result of `comparisons()` or `avg_comparisons()` whose compared
+# variable is not among the columns the fitted model uses: those in its formula
+# and the previous-state columns. Setting such a column can't change any
+# prediction, so the comparison is exactly 0 (or 1 for a ratio) by
+# construction. FALSE whenever the model's columns can't be read.
+comparison_variable_unused <- function(x) {
+  if (!inherits(x, c("markov_comparisons", "markov_avg_comparisons"))) {
+    return(FALSE)
+  }
+  variable <- names(attr(x, "avg_args")$variables)
+  if (length(variable) != 1L) {
+    return(FALSE)
+  }
+  used <- markov_model_variables(attr(x, "model"))
+  if (is.null(used)) {
+    return(FALSE)
+  }
+  !variable %in% c(used, attr(x, "p_var"), attr(x, "p2_var"))
+}
+
+# A comparison that is exactly 0 by construction has no sampling uncertainty
+# to report. As marginaleffects does, its standard error, test and interval
+# are NA, rather than an SE of 0 with a NaN statistic or a zero-width
+# interval. Results of other functions, such as predictions under the same
+# `variables`, are returned unchanged.
+drop_unused_comparison_uncertainty <- function(x) {
+  if (!comparison_variable_unused(x)) {
+    return(x)
+  }
+  for (column in intersect(setdiff(inference_columns(), "estimate"), names(x))) {
+    x[[column]] <- rep(NA_real_, nrow(x))
+  }
+  x
+}
+
 add_null_test <- function(x, null, warn = TRUE) {
   if (is.null(null)) {
     return(order_estimate_columns(x))

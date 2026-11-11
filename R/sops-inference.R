@@ -88,9 +88,12 @@
 #'   inference never stores draws. Default is `TRUE`.
 #' @param update_datadist Logical. Whether to update datadist for rms models
 #'   during bootstrap. Default is TRUE.
-#' @param use_coefstart Logical. If `TRUE`, `vglm` refits start from the
-#'   original fit's coefficients, which can speed up convergence. Default is
-#'   `FALSE`. See "Starting values in refits" in Details.
+#' @param use_coefstart Logical. If `TRUE`, each refit of
+#'   `method = "bootstrap"` or `"fwb"` starts from the original fit's
+#'   coefficients, which can speed up convergence. Only models fitted with
+#'   `engine = "vglm"` accept starting coefficients, so `TRUE` is an error for
+#'   other models and for `method = "mvn"` or `"delta"`, which do not refit.
+#'   Default is `FALSE`. See "Starting values in refits" in Details.
 #'
 #' @return The input object with added columns:
 #'   \item{conf.low}{Lower confidence bound}
@@ -102,6 +105,14 @@
 #'   [avg_comparisons()] results),
 #'   the object also has `statistic`, `p.value`, and `s.value` columns; see
 #'   `null`.
+#'
+#'   A comparison of a variable that the model doesn't use (see `variables`
+#'   in [avg_comparisons()]) is 0 for a difference, or 1 for a ratio, whatever
+#'   the coefficients are, so it has no uncertainty. For such results every
+#'   method returns `NA` in all of these columns except `estimate`, as the
+#'   marginaleffects package does. Predictions under such a variable, from
+#'   [sops()], [avg_sops()], [state_time()], or [avg_state_time()], are
+#'   ordinary predictions and keep their standard errors.
 #'
 #'   For simulation and bootstrap methods, `return_draws = TRUE` also stores a
 #'   `"draws"` attribute containing all individual draws. Delta results instead
@@ -228,7 +239,7 @@
 #' Starting values are the coefficient values from which the fitting algorithm
 #' begins its search. They can come from `use_coefstart = TRUE` (the original
 #' fit's coefficients) or from a `coefstart` argument you passed to
-#' [mostm()] with `engine = "vglm"`. A refit uses them only when its bootstrap
+#' [mostm()]; both need `engine = "vglm"`. A refit uses them only when its bootstrap
 #' sample contains
 #' every outcome state. When a state is missing, the refit has fewer intercepts
 #' than the original model, so the starting values no longer fit and the model
@@ -361,6 +372,7 @@ inferences <- function(
     )
   }
   method <- match.arg(method, choices = inferences_public_methods())
+  check_use_coefstart(use_coefstart, attr(x, "model"), method)
   inferences_internal(
     x = x,
     method = method,
@@ -588,7 +600,9 @@ inferences_impl <- function(
         conf_type = conf_type
       )
     }
-    return(add_null_test(result, null, warn = null_requested))
+    return(drop_unused_comparison_uncertainty(
+      add_null_test(result, null, warn = null_requested)
+    ))
   }
 
   if (inherits(attr(x, "model"), "blrm")) {
@@ -700,7 +714,9 @@ inferences_impl <- function(
     conf_type = conf_type,
     return_draws = return_draws
   )
-  add_null_test(result, null, warn = null_requested)
+  drop_unused_comparison_uncertainty(
+    add_null_test(result, null, warn = null_requested)
+  )
 }
 
 # `"auto"` tests comparisons against "no effect": 0 for differences, 1 for

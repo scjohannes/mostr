@@ -489,5 +489,6 @@ set_avg_comparison_attrs <- function(
 
   result <- order_estimate_columns(result)
   class(result) <- c(class_name, "data.frame")
-  result
+  # Posterior intervals of blrm comparisons are returned here.
+  drop_unused_comparison_uncertainty(result)
 }

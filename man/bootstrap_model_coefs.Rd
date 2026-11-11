@@ -25,11 +25,13 @@ or 1, sequential processing is used. If > 1, uses parallel processing.}
 \item{parallel}{(Deprecated) Logical indicating whether to use parallel
 processing. Use the \code{workers} parameter instead.}
 
-\item{use_coefstart}{Logical. If \code{TRUE}, \code{vglm} refits start from the
-original model coefficients, which can speed up convergence. Starting
-values, including a \code{coefstart} passed to \code{\link[=mostm]{mostm()}}, are used only
-when a resample contains every outcome state; a refit with starting values
-that fails is retried once without them. Default is \code{FALSE}.}
+\item{use_coefstart}{Logical. If \code{TRUE}, each refit starts from the
+original model coefficients, which can speed up convergence. Only models
+fitted with \code{engine = "vglm"} accept starting coefficients, so \code{TRUE} with
+an \code{orm} model is an error. Starting values, including a \code{coefstart}
+passed to \code{\link[=mostm]{mostm()}}, are used only when a resample contains every outcome
+state; a refit with starting values that fails is retried once without
+them. Default is \code{FALSE}.}
 }
 \value{
 A data frame with one row per bootstrap sample:
@@ -54,8 +56,11 @@ excluded, and fitting weights stay attached to their rows.
 For each bootstrap iteration:
 \enumerate{
 \item Draws patients with replacement from the stored data
-\item Renumbers outcome and previous-state levels to consecutive integers
-when a state is absent from the resample
+\item Renumbers the states of the response column (the variable on the
+left of the model formula) and of \code{yprev} to consecutive integers
+when a state is absent from the resample. States are matched by their
+labels, so numbers and text labels such as \code{"home"} work alike.
+Other factor columns are covariates and are left as they are.
 \item Updates the \code{rms} datadist for \code{orm} models (safe with
 future.callr workers)
 \item Refits the model by calling \code{\link[=mostm]{mostm()}} again with the original

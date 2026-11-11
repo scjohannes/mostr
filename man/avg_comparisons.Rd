@@ -47,7 +47,15 @@ the first, as in the marginaleffects package: factor levels in level
 order, character values in sorted order, \code{FALSE} then \code{TRUE}, or \code{0} then
 \code{1} for a numeric variable coded 0/1. Other numeric variables need their
 values listed. The values are read from the data stored with the model,
-or from \code{newdata} for a model without stored data.}
+or from \code{newdata} for a model without stored data. The variable must be
+a column of the data. It may be a column that the model doesn't use, that
+is, one that appears nowhere in the model formula (not even inside a term
+such as \code{rms::rcs(age, 3)}) and is not the previous state. Setting such a
+column can't change any prediction, so the comparison is 0 for a
+difference and 1 for a ratio, with no uncertainty to report: its standard
+error, test and confidence interval from \code{\link[=inferences]{inferences()}}, and the
+posterior interval of a \code{blrm} fit, are \code{NA}, as in the marginaleffects
+package. Check the spelling if this happens unexpectedly.}
 
 \item{estimand}{Character scalar. One of \code{"sop"}, \code{"time_in_state"}, or
 \code{"time_benefit"}.}

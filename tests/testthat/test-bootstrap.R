@@ -188,8 +188,7 @@ test_that("bootstrap_model_coefs records coefficients and failed refits", {
       result <- bootstrap_model_coefs(
         model,
         n_boot = 2,
-        workers = 1,
-        use_coefstart = TRUE
+        workers = 1
       )
     }
   )

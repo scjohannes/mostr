@@ -45,7 +45,9 @@ one per fitted patient.}
 \item{variables}{The variable to compare: a bare name such as \code{"tx"}, or a
 named list giving its values, such as \code{list(tx = c(0, 1))}. Each profile
 is predicted with the variable set to each value, and the first value is
-the reference. See \code{\link[=avg_comparisons]{avg_comparisons()}} for the values a bare name selects.}
+the reference. See \code{\link[=avg_comparisons]{avg_comparisons()}} for the values a bare name selects
+and for a variable that the model doesn't use, whose comparisons are 0
+(1 for a ratio) with \code{NA} standard errors, tests and intervals.}
 
 \item{estimand}{Character scalar. One of \code{"sop"}, \code{"time_in_state"}, or
 \code{"time_benefit"}.}

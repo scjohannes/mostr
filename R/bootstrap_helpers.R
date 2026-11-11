@@ -565,6 +565,45 @@ bootstrap_analysis_wrapper <- function(
   ))
 }
 
+# `use_coefstart = TRUE` starts each refit from the original coefficients.
+# Only `vglm` refits take starting coefficients, and only the refit methods
+# refit, so anywhere else the argument would silently do nothing; it is an
+# error instead. `method = NULL` skips the method check (for
+# `bootstrap_model_coefs()`, which always refits).
+check_use_coefstart <- function(use_coefstart, model, method = NULL) {
+  if (
+    !is.logical(use_coefstart) ||
+      length(use_coefstart) != 1L ||
+      is.na(use_coefstart)
+  ) {
+    stop("`use_coefstart` must be `TRUE` or `FALSE`.", call. = FALSE)
+  }
+  if (!use_coefstart) {
+    return(invisible(NULL))
+  }
+  if (!is.null(method) && !method %in% c("bootstrap", "fwb")) {
+    stop(
+      "`use_coefstart` applies only to `method = \"bootstrap\"` and ",
+      "`method = \"fwb\"`, which refit the model; `method = \"",
+      method,
+      "\"` does not refit it. Use `use_coefstart = FALSE`, the default.",
+      call. = FALSE
+    )
+  }
+  if (!is.null(model) && !inherits(model, c("vglm", "robcov_vglm"))) {
+    engine <- markov_model_engine(model) %||% class(model)[1L]
+    stop(
+      "`use_coefstart` can be `TRUE` only for models fitted with ",
+      "`engine = \"vglm\"`, because only vglm refits start from the ",
+      "original coefficients; this model was fitted with `engine = \"",
+      engine,
+      "\"`. Use `use_coefstart = FALSE`, the default.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
 bootstrap_datadist_data <- function(data) {
   metadata_cols <- c(
     "boot_id",
@@ -587,6 +626,40 @@ bootstrap_refit_model <- function(model) {
   }
 
   model
+}
+
+# The data column holding the fitted model's response, for example `state` in
+# `ordered(state) ~ yprev + time`. A bootstrap refit relabels this column,
+# together with the previous-state columns, when its resample lacks a state.
+# Every `mostm()` fit has a readable formula; `"y"` is used only for objects
+# without one, such as the stand-in models of the package tests.
+bootstrap_response_column <- function(model) {
+  model_chk <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
+  formula <- tryCatch(
+    if (isS4(model_chk)) {
+      stats::formula(model_chk)
+    } else {
+      model_chk$sformula %||% stats::formula(model_chk)
+    },
+    error = function(e) NULL
+  )
+  if (!inherits(formula, "formula") || length(formula) != 3L) {
+    return("y")
+  }
+  response <- all.vars(formula[[2L]])
+  if (length(response) != 1L) {
+    return("y")
+  }
+  response
+}
+
+# The state columns of a bootstrap refit: the response and the previous-state
+# columns that are present in the refit data.
+bootstrap_state_columns <- function(model, refit_data, p_var, p2_var = NULL) {
+  intersect(
+    c(bootstrap_response_column(model), p_var, p2_var),
+    names(refit_data)
+  )
 }
 
 bootstrap_original_fit_weights <- function(model, data) {

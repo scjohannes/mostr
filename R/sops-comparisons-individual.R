@@ -16,7 +16,9 @@
 #' @param variables The variable to compare: a bare name such as `"tx"`, or a
 #'   named list giving its values, such as `list(tx = c(0, 1))`. Each profile
 #'   is predicted with the variable set to each value, and the first value is
-#'   the reference. See [avg_comparisons()] for the values a bare name selects.
+#'   the reference. See [avg_comparisons()] for the values a bare name selects
+#'   and for a variable that the model doesn't use, whose comparisons are 0
+#'   (1 for a ratio) with `NA` standard errors, tests and intervals.
 #' @param by `FALSE` (the default) or `NULL` returns one comparison per
 #'   profile. `TRUE` averages the comparisons over all profiles, and a
 #'   character vector of column names averages them within the groups those

@@ -102,30 +102,36 @@ prepare_markov_data <- function(
 #' missing certain levels, which can cause model fitting failures.
 #'
 #' @param data A data frame containing the data to relevel.
-#' @param factor_cols Character vector of column names to relevel. Despite the
-#'   historical name, these may be factor or numeric state columns. Numeric
-#'   columns stay numeric after releveling.
+#' @param factor_cols Character vector of column names to relevel: the
+#'   response and the previous-state columns. Despite the historical name,
+#'   these may be factor, character or numeric state columns. Each column keeps
+#'   its type after releveling.
 #' @param original_data Optional data frame containing the original data before
 #'   subsetting. Used to determine which levels are present in the full dataset.
-#' @param y_levels Optional integer vector of original state levels (e.g., 1:6).
-#'   If provided along with absorb, these will be updated to match the new levels.
-#' @param absorb Optional integer specifying the absorbing state in the original
-#'   levels. Will be updated to the new position if provided.
+#' @param y_levels Optional vector of original state labels in state order
+#'   (e.g., 1:6 or `c("home", "ward", "dead")`). If provided, the updated
+#'   labels are returned.
+#' @param absorb Optional label(s) of the absorbing state(s) in the original
+#'   labels. Will be updated to the new labels if provided.
 #'
 #' @return A list with components:
 #'   - data: The data frame with releveled factors
-#'   - y_levels: Updated y_levels (if provided as input), or NULL
+#'   - ylevels: Updated y_levels (if provided as input), or NULL
 #'   - absorb: Updated absorb (if provided as input), or NULL
 #'   - missing_levels: Character vector of levels that were missing
 #'
 #' @details
-#' When certain state levels are absent from a dataset (e.g., in bootstrap
-#' samples), this function:
-#' 1. Identifies which levels are present
-#' 2. Creates a mapping from old to new consecutive integers
-#' 3. Relevels the specified state columns while preserving factor vs numeric
-#'    type
-#' 4. Updates y_levels and absorb parameters if provided
+#' States are matched by their labels (`as.character()` of the values), never
+#' by converting labels to numbers, so letter labels such as `"a"`, `"b"`,
+#' `"c"` work as numbers do. The state order is that of `y_levels`, followed
+#' by any further labels of the original data in their own order (factor
+#' level order; sorted values for numeric and character columns). When
+#' certain states are absent from `data` (e.g., in bootstrap samples), this
+#' function:
+#' 1. Identifies which states are present
+#' 2. Maps the present states, in state order, to consecutive integers
+#' 3. Relevels the specified state columns while preserving their type
+#' 4. Updates y_levels and absorb if provided
 #'
 #' This is particularly useful for ordered factors representing health states
 #' in Markov models, where missing states would otherwise cause model fitting
@@ -139,47 +145,27 @@ relevel_factors_consecutive <- function(
   y_levels = NULL,
   absorb = NULL
 ) {
-  # Determine original levels
-  if (!is.null(original_data)) {
-    original_levels <- sort(unique(unlist(lapply(
-      factor_cols,
-      function(col) {
-        if (col %in% names(original_data)) {
-          if (is.factor(original_data[[col]])) {
-            as.numeric(levels(original_data[[col]]))
-          } else {
-            unique(original_data[[col]])
-          }
-        }
-      }
-    ))))
-  } else if (!is.null(y_levels)) {
-    original_levels <- y_levels
-  } else {
-    # Infer from data
-    original_levels <- sort(unique(unlist(lapply(
-      factor_cols,
-      function(col) {
-        if (col %in% names(data)) {
-          unique(data[[col]])
-        }
-      }
-    ))))
-  }
+  # All state labels in state order: `y_levels` first, then any other labels
+  # of the original data (or, without either, of `data` itself).
+  label_source <- original_data %||% (if (is.null(y_levels)) data)
+  original_levels <- union(
+    as_state_labels(y_levels),
+    state_column_labels(label_source, factor_cols)
+  )
 
-  # Get levels present in current data
-  states_present <- sort(unique(unlist(lapply(
-    factor_cols,
+  # Labels present in current data, kept in state order. A label unknown to
+  # the original data is kept after the known ones.
+  present <- unique(unlist(lapply(
+    intersect(factor_cols, names(data)),
     function(col) {
-      if (col %in% names(data)) {
-        if (is.factor(data[[col]])) {
-          as.numeric(as.character(data[[col]]))
-        } else {
-          unique(data[[col]])
-        }
-      }
+      values <- data[[col]]
+      as_state_labels(unique(values[!is.na(values)]))
     }
-  ))))
+  )))
+  states_present <- c(
+    original_levels[original_levels %in% present],
+    setdiff(present, original_levels)
+  )
 
   missing_levels <- setdiff(original_levels, states_present)
 
@@ -208,7 +194,7 @@ relevel_factors_consecutive <- function(
         data[[col]]
       }
 
-      mapped <- unname(state_mapping[as.character(data[[col]])])
+      mapped <- unname(state_mapping[as_state_labels(data[[col]])])
 
       if (is.factor(prototype) || is.factor(data[[col]])) {
         data[[col]] <- factor(
@@ -235,8 +221,9 @@ relevel_factors_consecutive <- function(
 
   # Update absorbing state if provided and present
   new_absorb <- if (!is.null(absorb)) {
-    absorb_present <- absorb[absorb %in% states_present]
-    absorb_missing <- setdiff(absorb, states_present)
+    absorb_labels <- as_state_labels(absorb)
+    absorb_present <- absorb_labels[absorb_labels %in% states_present]
+    absorb_missing <- setdiff(absorb_labels, states_present)
     if (length(absorb_present) > 0) {
       if (length(absorb_missing) > 0) {
         warning(
@@ -245,7 +232,7 @@ relevel_factors_consecutive <- function(
           " not present in data and were dropped."
         )
       }
-      unname(state_mapping[as.character(absorb_present)])
+      unname(state_mapping[absorb_present])
     } else {
       warning(
         "Absorbing state(s) ",
@@ -264,4 +251,23 @@ relevel_factors_consecutive <- function(
     absorb = new_absorb,
     missing_levels = as.character(missing_levels)
   ))
+}
+
+# The state labels of the columns `cols` of `data`, in state order: factor
+# levels in level order, and the sorted values of numeric or character
+# columns. Numeric columns are sorted together, so that `y` and `yprev`
+# holding different numbers still give the numbers in order.
+state_column_labels <- function(data, cols) {
+  cols <- intersect(cols, names(data))
+  if (is.null(data) || length(cols) == 0L) {
+    return(character(0))
+  }
+  columns <- lapply(cols, function(col) data[[col]])
+  observed <- function(x) unique(x[!is.na(x)])
+  if (all(vapply(columns, is.numeric, logical(1)))) {
+    return(as_state_labels(sort(unique(unlist(lapply(columns, observed))))))
+  }
+  unique(unlist(lapply(columns, function(x) {
+    if (is.factor(x)) levels(x) else as_state_labels(sort(observed(x)))
+  })))
 }

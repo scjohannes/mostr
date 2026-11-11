@@ -112,9 +112,12 @@ inference never stores draws. Default is \code{TRUE}.}
 \item{update_datadist}{Logical. Whether to update datadist for rms models
 during bootstrap. Default is TRUE.}
 
-\item{use_coefstart}{Logical. If \code{TRUE}, \code{vglm} refits start from the
-original fit's coefficients, which can speed up convergence. Default is
-\code{FALSE}. See "Starting values in refits" in Details.}
+\item{use_coefstart}{Logical. If \code{TRUE}, each refit of
+\code{method = "bootstrap"} or \code{"fwb"} starts from the original fit's
+coefficients, which can speed up convergence. Only models fitted with
+\code{engine = "vglm"} accept starting coefficients, so \code{TRUE} is an error for
+other models and for \code{method = "mvn"} or \code{"delta"}, which do not refit.
+Default is \code{FALSE}. See "Starting values in refits" in Details.}
 }
 \value{
 The input object with added columns:
@@ -127,6 +130,14 @@ When a null value is tested (by default, for \code{\link[=comparisons]{compariso
 \code{\link[=avg_comparisons]{avg_comparisons()}} results),
 the object also has \code{statistic}, \code{p.value}, and \code{s.value} columns; see
 \code{null}.
+
+A comparison of a variable that the model doesn't use (see \code{variables}
+in \code{\link[=avg_comparisons]{avg_comparisons()}}) is 0 for a difference, or 1 for a ratio, whatever
+the coefficients are, so it has no uncertainty. For such results every
+method returns \code{NA} in all of these columns except \code{estimate}, as the
+marginaleffects package does. Predictions under such a variable, from
+\code{\link[=sops]{sops()}}, \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=state_time]{state_time()}}, or \code{\link[=avg_state_time]{avg_state_time()}}, are
+ordinary predictions and keep their standard errors.
 
 For simulation and bootstrap methods, \code{return_draws = TRUE} also stores a
 \code{"draws"} attribute containing all individual draws. Delta results instead
@@ -268,7 +279,7 @@ those rows cannot be assumed to align with the bootstrap patients.
 Starting values are the coefficient values from which the fitting algorithm
 begins its search. They can come from \code{use_coefstart = TRUE} (the original
 fit's coefficients) or from a \code{coefstart} argument you passed to
-\code{\link[=mostm]{mostm()}} with \code{engine = "vglm"}. A refit uses them only when its bootstrap
+\code{\link[=mostm]{mostm()}}; both need \code{engine = "vglm"}. A refit uses them only when its bootstrap
 sample contains
 every outcome state. When a state is missing, the refit has fewer intercepts
 than the original model, so the starting values no longer fit and the model

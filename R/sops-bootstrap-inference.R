@@ -89,9 +89,8 @@ inferences_bootstrap <- function(
   n_times <- length(times)
   n_states <- length(y_levels)
 
-  # --- 2. Identify Factor Columns ---
-  factor_cols <- c("y", p_var, p2_var)
-  factor_cols <- intersect(factor_cols, names(refit_data))
+  # --- 2. Identify State Columns ---
+  factor_cols <- bootstrap_state_columns(model, refit_data, p_var, p2_var)
 
   # --- 4. Define Analysis Function ---
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
@@ -513,8 +512,7 @@ inferences_bootstrap_sops_fwb <- function(
     NULL
   }
 
-  factor_cols <- c("y", p_var, p2_var)
-  factor_cols <- intersect(factor_cols, names(refit_data))
+  factor_cols <- bootstrap_state_columns(model, refit_data, p_var, p2_var)
 
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
     fit_weights <- boot_data$fwb_weight

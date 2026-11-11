@@ -428,6 +428,19 @@ test_that("a variable that is not in the model changes nothing (N24)", {
         estimand = estimand
       )
       expect_lt(max(abs(contrast$estimate)), 1e-14, label = paste(label, estimand))
+      # Such a comparison is 0 by construction, so its uncertainty is not
+      # reported, as in marginaleffects.
+      if (grid_has_delta(cell) && estimand != "time_benefit") {
+        for (vcov in grid_vcov_types(cell)) {
+          inferred <- grid_delta(contrast, vcov)
+          for (column in c("std.error", "statistic", "p.value", "conf.low", "conf.high")) {
+            expect_true(
+              all(is.na(inferred[[column]])),
+              label = paste(label, estimand, vcov, column)
+            )
+          }
+        }
+      }
     }
   }
 })

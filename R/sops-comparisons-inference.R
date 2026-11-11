@@ -332,8 +332,12 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
     warn_fixed_profile_bootstrap_weights("FWB")
   }
 
-  factor_cols <- c("y", setup$p_var, setup$p2_var)
-  factor_cols <- intersect(factor_cols, names(refit_data))
+  factor_cols <- bootstrap_state_columns(
+    model,
+    refit_data,
+    setup$p_var,
+    setup$p2_var
+  )
 
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
     fit_weights <- if (engine == "fwb") boot_data$fwb_weight else NULL

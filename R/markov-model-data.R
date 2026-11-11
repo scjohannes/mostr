@@ -215,6 +215,45 @@ markov_model_engine <- function(model) {
   engine
 }
 
+# Names of the data columns on the right-hand side of the fitted model's
+# formula, including those inside terms such as `rms::rcs(age, 3)`, `poly()`,
+# interactions and a blrm `cluster(id)`, and those of a blrm partial proportional
+# odds formula (`ppo`). They come from the stored formula, never from the
+# coefficients. `NULL` when the variables cannot be read from the object, for
+# example a formula with `.`, so that callers can leave such models alone.
+markov_model_variables <- function(model) {
+  model_chk <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
+  formulas <- tryCatch(
+    if (isS4(model_chk)) {
+      list(stats::formula(model_chk))
+    } else {
+      list(
+        model_chk$sformula %||% stats::formula(model_chk),
+        model_chk$zsformula
+      )
+    },
+    error = function(e) NULL
+  )
+  formulas <- Filter(Negate(is.null), formulas)
+  if (
+    length(formulas) == 0L ||
+      !inherits(formulas[[1L]], "formula") ||
+      !all(vapply(formulas, inherits, logical(1), "formula"))
+  ) {
+    return(NULL)
+  }
+  variables <- unique(unlist(lapply(formulas, function(formula) {
+    all.vars(formula[[length(formula)]])
+  })))
+  if ("." %in% variables) {
+    return(NULL)
+  }
+  # rmsb::blrm() keeps `cluster(id)` out of its stored formula. The random
+  # effect of each patient is looked up by that column.
+  cluster <- if (inherits(model_chk, "blrm")) model_chk$clusterInfo$name
+  unique(c(variables, if (is.character(cluster)) cluster))
+}
+
 markov_inherit_engine <- function(model, source) {
   engine <- markov_model_engine(source)
   if (is.null(engine)) {

@@ -106,6 +106,14 @@
   effects; previously the argument was silently ignored for `"orm"` and
   `"vglm"` fits.
 
+* `use_coefstart = TRUE` in `inferences()` and `bootstrap_model_coefs()` is an
+  error unless the model was fitted with `engine = "vglm"`. It is meant to
+  start each bootstrap refit from the original coefficients, but only `vglm`
+  refits take starting coefficients, so for `"orm"` fits the argument was
+  silently ignored. `inferences()` also refuses it with `method = "mvn"` or
+  `"delta"`, which do not refit the model. Leave `use_coefstart` at its
+  default, `FALSE`; the results are the same as before.
+
 * State occupancy probabilities from partial proportional-odds models now stop
   with an error where the model's thresholds (cut-points) cross. For some
   covariate values, often outside the range of the data, a predictor with a
@@ -133,6 +141,19 @@
   weight.
 
 ## Bug fixes
+
+* A comparison of a variable that the model doesn't use, for example
+  `avg_comparisons(fit, variables = list(note = c(0, 1)))` where `note` is a
+  column of the data but not of the model formula, is 0 (1 for a ratio)
+  whatever the coefficients are. `inferences()` now reports its standard
+  error, test statistic, p-value, s-value, and confidence interval as `NA`
+  with every method, and so do the posterior intervals of `blrm` fits, as the
+  marginaleffects package does. Previously the standard error was 0, the
+  `statistic` `NaN`, and the interval of zero width. Such calls still run without a message, and
+  predictions under such a variable from `sops()`, `avg_sops()`,
+  `state_time()`, and `avg_state_time()` keep their standard errors. A column
+  counts as used when it appears anywhere in the model formula, including
+  inside terms such as `rms::rcs(age, 3)`, or is the previous state.
 
 * `avg_comparisons()` and `comparisons()` with `by` naming the compared
   variable, for example `variables = list(tx = c(0, 1))` with `by = "tx"`,
@@ -201,6 +222,23 @@
   not fit the model, which rms 8.2 and later report by returning a fit without
   coefficients. Previously it stopped with an error about unsupported model
   families.
+
+* Bootstrap refits (`inferences()` with `method = "bootstrap"` or `"fwb"`,
+  and `bootstrap_model_coefs()`) now treat state labels as labels. When a
+  resample lacks a state, the refit renumbers the remaining states; this
+  converted the labels to numbers, so text labels on factor columns, such as
+  `"home"`, `"ward"`, `"dead"`, gave an "NAs introduced by coercion" warning
+  for every refit and a missing state went unnoticed. States are now matched
+  by label, in the model's state order, for numbers and text alike.
+
+* Bootstrap refits now renumber the response column whatever it is called,
+  for example `state` in `ordered(state) ~ yprev + time`. Previously only a
+  column called `y` was renumbered, so with another name a resample that
+  lacked a state was not noticed and that refit's state occupancy
+  probabilities failed and were dropped. `bootstrap_model_coefs()` now
+  renumbers only the response and `yprev`; previously it also renumbered
+  every factor covariate, such as a factor `tx`, together with the states,
+  which gave wrong labels or failed refits when a resample lacked a state.
 
 # mostr 0.2.0
 
