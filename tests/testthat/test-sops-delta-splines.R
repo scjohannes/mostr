@@ -195,34 +195,3 @@ test_that("penalized orm previous-state splines support delta inference", {
     fixed = TRUE
   )
 })
-
-test_that("unconditional delta rejects weighted orm score construction", {
-  case <- local_spline_delta_orm_case()
-  data <- case$data
-  weighted <- suppressWarnings(mostm(
-    y ~ rms::rcs(time, 3) + tx + rms::rcs(yprev, 4),
-    data = data,
-    weights = rep(c(1, 2), length.out = nrow(data)),
-    id_var = "id",
-    opt_method = "LM",
-    scale = TRUE
-  ))
-  avg <- avg_sops(
-    weighted,
-    variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = weighted$yunique,
-    p_var = "yprev"
-  )
-
-  condition <- tryCatch(
-    inferences(avg, method = "delta", vcov = "unconditional"),
-    error = identity
-  )
-  expect_s3_class(condition, "error")
-  expect_match(
-    conditionMessage(condition),
-    "Models fitted with case weights (`weights` in `mostm()`) do not support unconditional variance",
-    fixed = TRUE
-  )
-})

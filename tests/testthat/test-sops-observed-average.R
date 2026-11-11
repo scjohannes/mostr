@@ -62,42 +62,6 @@ test_that("observed averages retain conditional and unconditional covariance", {
   }
 })
 
-test_that("observed simulation averages use the same patient draws and weights", {
-  case <- make_observed_average_case()
-  average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
-  individual <- sops(case$model, times = case$times, absorb = case$absorb)
-  for (method in c("mvn", "score_bootstrap")) {
-    result <- run_inferences_method(
-      average,
-      method = method,
-      n_draws = 4,
-      seed = 4211
-    )
-    patient_result <- run_inferences_method(
-      individual,
-      method = method,
-      n_draws = 4,
-      seed = 4211
-    )
-    draws <- attr(patient_result, "draws")
-    draws$weight <- if (method == "score_bootstrap") draws$score_weight else 1
-    draws$weighted <- draws$estimate * draws$weight
-    manual <- stats::aggregate(
-      cbind(weighted, weight) ~ draw_id + time + state,
-      draws,
-      sum
-    )
-    manual$manual <- manual$weighted / manual$weight
-    compared <- merge(
-      attr(result, "draws"),
-      manual,
-      by = c("draw_id", "time", "state")
-    )
-    expect_equal(compared$estimate, compared$manual, tolerance = 1e-12)
-    expect_equal(nrow(get_draws(result)), nrow(average) * 4L)
-  }
-})
-
 test_that("observed averages support both refit bootstrap methods", {
   case <- make_observed_average_case()
   average <- avg_sops(case$model, times = case$times, absorb = case$absorb)

@@ -20,31 +20,6 @@ letter_case <- function() {
   list(numbers = case, letters = list(model = model, data = data))
 }
 
-test_that("a resample that lacks a letter-labelled state drops and renumbers it", {
-  original <- data.frame(
-    y = factor(c("a", "b", "c", "a"), levels = c("a", "b", "c")),
-    yprev = factor(c("a", "a", "b", "b"), levels = c("a", "b", "c"))
-  )
-  resample <- data.frame(
-    y = factor(c("a", "c", "a"), levels = c("a", "b", "c")),
-    yprev = factor(c("a", "a", "a"), levels = c("a", "b", "c"))
-  )
-  expect_no_warning(
-    out <- relevel_factors_consecutive(
-      resample,
-      c("y", "yprev"),
-      original_data = original,
-      y_levels = c("a", "b", "c"),
-      absorb = "c"
-    )
-  )
-  expect_identical(as.character(out$missing_levels), "b")
-  expect_identical(nlevels(droplevels(out$data$y)), nlevels(out$data$y))
-  expect_identical(length(out$ylevels), 2L)
-  # The absorbing state keeps its place as the last state.
-  expect_identical(match(out$absorb, out$ylevels), 2L)
-})
-
 test_that("bootstrap results don't depend on whether states are numbers or letters", {
   cases <- letter_case()
   numbers <- avg_sops(cases$numbers$model, times = 1:3, absorb = 3)

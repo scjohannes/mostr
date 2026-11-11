@@ -1,24 +1,64 @@
-test_that("plot_sops creates bar plots with optional faceting", {
-  data <- data.frame(
-    id = rep(1:4, each = 3),
-    time = rep(1:3, 4),
-    y = c(1, 1, 2, 1, 2, 2, 2, 2, 3, 1, 3, 3),
-    tx = rep(c(0, 1), each = 6)
+# The rows one layer of `plot` draws, with the data values its scales and
+# panels show. `keys` maps an aesthetic ("x", "colour", "fill", "linetype") or
+# a facet variable to the name of a new character column holding the decoded
+# value, so the rows can be matched to the data they should show.
+plot_layer_values <- function(plot, layer, keys) {
+  # ggplot2 4.0 reports legend titles set for aesthetics that no layer maps.
+  built <- suppressMessages(ggplot2::ggplot_build(plot))
+  values <- built$data[[layer]]
+  panels <- built$layout$layout
+  for (aesthetic in names(keys)) {
+    if (aesthetic %in% names(panels)) {
+      decoded <- panels[[aesthetic]][match(values$PANEL, panels$PANEL)]
+    } else if (aesthetic == "x") {
+      x_scale <- built$layout$panel_params[[1]]$x
+      decoded <- if (x_scale$is_discrete()) {
+        x_scale$get_limits()[round(values$x)]
+      } else {
+        values$x
+      }
+    } else {
+      scale <- built$plot$scales$get_scales(aesthetic)
+      limits <- scale$get_limits()
+      decoded <- limits[match(values[[aesthetic]], scale$map(limits))]
+    }
+    values[[keys[[aesthetic]]]] <- as.character(decoded)
+  }
+  if (all(c("ymin", "ymax") %in% names(values))) {
+    values$height <- values$ymax - values$ymin
+  }
+  values
+}
+
+# Every plotted row matches one row of `expected` on the key columns, and the
+# plotted columns (names of `columns`) equal the expected ones (its values).
+expect_plotted_values <- function(plotted, expected, keys, columns, info) {
+  keys <- unname(keys)
+  expected[keys] <- lapply(expected[keys], as.character)
+  joined <- merge(
+    plotted[c(keys, names(columns))],
+    expected[c(keys, unname(columns))],
+    by = keys,
+    suffixes = c(".plotted", ".expected")
   )
+  expect_equal(nrow(plotted), nrow(expected), info = info)
+  expect_equal(nrow(joined), nrow(expected), info = info)
+  for (column in names(columns)) {
+    plotted_column <- column
+    expected_column <- columns[[column]]
+    if (identical(plotted_column, expected_column)) {
+      plotted_column <- paste0(column, ".plotted")
+      expected_column <- paste0(column, ".expected")
+    }
+    expect_equal(
+      joined[[plotted_column]],
+      joined[[expected_column]],
+      info = info
+    )
+  }
+}
 
-  plot <- plot_sops(data, geom = "bar")
-  built <- ggplot2::ggplot_build(plot)
-
-  expect_s3_class(plot, "ggplot")
-  expect_equal(length(plot$layers), 1)
-  expect_equal(unique(built$data[[1]]$PANEL), factor(c(1, 2)))
-  expect_equal(
-    plot$labels$title,
-    "Empirical State Occupancy Probabilities Over Time"
-  )
-})
-
-test_that("plot_sops creates line plots with and without linetype groups", {
+test_that("plot_sops plots empirical state proportions within each group", {
   data <- data.frame(
     id = rep(1:4, each = 3),
     time = rep(1:3, 4),
@@ -26,36 +66,92 @@ test_that("plot_sops creates line plots with and without linetype groups", {
     tx = rep(c(0, 1), each = 6),
     site = rep(c("a", "b"), times = 6)
   )
+  # Share of the rows in each group and time that are in each observed state,
+  # counted directly from `data`.
+  proportions <- function(by) {
+    cells <- unique(data[c(by, "time", "y")])
+    cells$prob <- vapply(
+      seq_len(nrow(cells)),
+      function(i) {
+        same <- data$time == cells$time[i]
+        for (column in by) {
+          same <- same & data[[column]] == cells[[column]][i]
+        }
+        mean(data$y[same] == cells$y[i])
+      },
+      numeric(1)
+    )
+    names(cells)[names(cells) == "y"] <- "state"
+    cells
+  }
 
-  default_plot <- plot_sops(data, facet_var = NULL)
-  expect_s3_class(default_plot$layers[[1]]$geom, "GeomLine")
-  expect_true(default_plot$scales$has_scale("colour"))
-  expect_true(default_plot$scales$has_scale("fill"))
-
-  plot <- plot_sops(
-    data,
-    facet_var = NULL,
-    linetype_var = "tx",
-    geom = "line"
+  cases <- list(
+    list(
+      label = "bars faceted by tx (default)",
+      args = list(geom = "bar"),
+      geom = "GeomBar",
+      by = "tx",
+      keys = c(x = "time", fill = "state", tx = "tx"),
+      value = "height",
+      n_panels = 2L,
+      linetype = NULL
+    ),
+    list(
+      label = "lines without facets (default geom)",
+      args = list(facet_var = NULL),
+      geom = "GeomLine",
+      by = character(),
+      keys = c(x = "time", colour = "state"),
+      value = "y",
+      n_panels = 1L,
+      linetype = NULL
+    ),
+    list(
+      label = "lines with tx as linetype",
+      args = list(facet_var = NULL, linetype_var = "tx", geom = "line"),
+      geom = "GeomLine",
+      by = "tx",
+      keys = c(x = "time", colour = "state", linetype = "tx"),
+      value = "y",
+      n_panels = 1L,
+      linetype = "tx"
+    ),
+    list(
+      label = "lines faceted by tx with site as linetype",
+      args = list(facet_var = "tx", linetype_var = "site", geom = "line"),
+      geom = "GeomLine",
+      by = c("tx", "site"),
+      keys = c(x = "time", colour = "state", linetype = "site", tx = "tx"),
+      value = "y",
+      n_panels = 2L,
+      linetype = "site"
+    )
   )
-  built <- ggplot2::ggplot_build(plot)
 
-  expect_s3_class(plot, "ggplot")
-  expect_equal(length(plot$layers), 1)
-  expect_equal(plot$labels$linetype, "tx")
-  expect_true(all(built$data[[1]]$y >= 0 & built$data[[1]]$y <= 1))
+  for (case in cases) {
+    label <- case$label
+    plot <- do.call(plot_sops, c(list(data), case$args))
+    plotted <- plot_layer_values(plot, 1L, case$keys)
 
-  no_linetype <- plot_sops(data, facet_var = NULL, geom = "line")
-  expect_null(no_linetype$labels$linetype)
-
-  override <- suppressMessages(
-    default_plot +
-      ggplot2::scale_color_brewer(palette = "Dark2") +
-      ggplot2::scale_fill_brewer(palette = "Dark2")
-  )
-  expect_s3_class(override, "ggplot")
-  expect_true(override$scales$has_scale("colour"))
-  expect_true(override$scales$has_scale("fill"))
+    expect_length(plot$layers, 1L)
+    expect_true(inherits(plot$layers[[1]]$geom, case$geom), info = label)
+    expect_length(unique(plotted$PANEL), case$n_panels)
+    expect_identical(
+      plot$labels$title,
+      "Empirical State Occupancy Probabilities Over Time",
+      info = label
+    )
+    expect_identical(plot$labels$linetype, case$linetype, info = label)
+    expect_true(plot$scales$has_scale("colour"), info = label)
+    expect_true(plot$scales$has_scale("fill"), info = label)
+    expect_plotted_values(
+      plotted,
+      proportions(case$by),
+      case$keys,
+      stats::setNames("prob", case$value),
+      info = label
+    )
+  }
 })
 
 make_avg_sops_plot_data <- function(with_draws = TRUE) {
@@ -89,16 +185,92 @@ make_avg_sops_plot_data <- function(with_draws = TRUE) {
   data
 }
 
-test_that("plot_sops creates model-derived line plots with ribbons", {
-  data <- make_avg_sops_plot_data()
+test_that("plot_sops draws model-derived estimates and confidence limits", {
+  # Distinct estimates, so a value drawn at the wrong time, state or arm shows.
+  distinct <- function(data) {
+    data$estimate <- seq_len(nrow(data)) / 100
+    data$conf.low <- data$estimate - 0.005
+    data$conf.high <- data$estimate + 0.01
+    data
+  }
+  with_draws <- distinct(make_avg_sops_plot_data())
+  without_draws <- distinct(make_avg_sops_plot_data(with_draws = FALSE))
+  plain <- without_draws
+  class(plain) <- "data.frame"
+  plain$source <- rep(c("a", "b"), length.out = nrow(plain))
 
-  plot <- plot_sops(data, geom = "line", facet_var = "tx")
-  built <- ggplot2::ggplot_build(plot)
+  line_keys <- c(x = "time", colour = "state", tx = "tx")
+  fill_keys <- c(x = "time", fill = "state", tx = "tx")
+  cases <- list(
+    list(
+      label = "avg_sops lines with ribbons",
+      data = with_draws,
+      args = list(geom = "line", facet_var = "tx"),
+      warning = NULL,
+      n_layers = 2L,
+      facet = "FacetWrap",
+      checks = list(
+        list(layer = 1L, keys = fill_keys, columns = c(ymin = "conf.low", ymax = "conf.high")),
+        list(layer = 2L, keys = line_keys, columns = c(y = "estimate"))
+      )
+    ),
+    list(
+      label = "avg_sops bars without stored draws",
+      data = without_draws,
+      args = list(geom = "bar", facet_var = "tx"),
+      warning = "No stored draws found",
+      n_layers = 1L,
+      facet = "FacetWrap",
+      checks = list(
+        list(layer = 1L, keys = fill_keys, columns = c(height = "estimate"))
+      )
+    ),
+    list(
+      label = "plain data frame lines in a facet grid",
+      data = plain,
+      args = list(geom = "line", facet_var = c("tx", "source")),
+      warning = NULL,
+      n_layers = 2L,
+      facet = "FacetGrid",
+      checks = list(
+        list(
+          layer = 2L,
+          keys = c(line_keys, source = "source"),
+          columns = c(y = "estimate")
+        )
+      )
+    )
+  )
 
-  expect_s3_class(plot, "ggplot")
-  expect_equal(length(plot$layers), 2)
-  expect_equal(plot$labels$title, "State Occupancy Probabilities Over Time")
-  expect_equal(nrow(built$data[[1]]), nrow(data))
+  for (case in cases) {
+    label <- case$label
+    if (is.null(case$warning)) {
+      plot <- do.call(plot_sops, c(list(case$data), case$args))
+    } else {
+      expect_warning(
+        plot <- do.call(plot_sops, c(list(case$data), case$args)),
+        case$warning,
+        fixed = TRUE
+      )
+    }
+
+    expect_length(plot$layers, case$n_layers)
+    expect_identical(class(plot$facet)[1], case$facet, info = label)
+    expect_identical(
+      plot$labels$title,
+      "State Occupancy Probabilities Over Time",
+      info = label
+    )
+    for (check in case$checks) {
+      expect_plotted_values(
+        plot_layer_values(plot, check$layer, check$keys),
+        as.data.frame(case$data),
+        check$keys,
+        check$columns,
+        info = paste(label, "layer", check$layer)
+      )
+    }
+  }
 })
 
 test_that("plot_sops respects stored y_levels for model-derived state order", {
@@ -117,19 +289,6 @@ test_that("plot_sops respects stored y_levels for model-derived state order", {
   fill_scale <- built$plot$scales$get_scales("fill")
 
   expect_equal(fill_scale$get_limits(), state_levels)
-})
-
-test_that("plot_sops warns but plots avg_sops bars without stored draws", {
-  data <- make_avg_sops_plot_data(with_draws = FALSE)
-
-  expect_warning(
-    plot <- plot_sops(data, geom = "bar", facet_var = "tx"),
-    "No stored draws found",
-    fixed = TRUE
-  )
-
-  expect_s3_class(plot, "ggplot")
-  expect_equal(length(plot$layers), 1)
 })
 
 test_that("plot_sops overlays a deterministic subset of avg_sops draws", {
@@ -164,23 +323,6 @@ test_that("plot_sops overlays a deterministic subset of avg_sops draws", {
   expect_equal(layer_max_y, rep(1, 4))
 })
 
-test_that("plot_sops validates uncertainty controls", {
-  data <- make_avg_sops_plot_data()
-
-  expect_error(
-    plot_sops(data, geom = "bar", n_draws = Inf),
-    "`n_draws`"
-  )
-  expect_error(
-    plot_sops(data, geom = "bar", draw_alpha = NA),
-    "`draw_alpha`"
-  )
-  expect_error(
-    plot_sops(data, geom = "bar", show_uncertainty = NA),
-    "`show_uncertainty`"
-  )
-})
-
 test_that("plot_sops rejects ambiguous summary groups", {
   data <- make_avg_sops_plot_data(with_draws = FALSE)
   class(data) <- "data.frame"
@@ -204,18 +346,6 @@ test_that("plot_sops rejects ambiguous summary groups", {
 
   plot <- plot_sops(data, geom = "line", facet_var = c("tx", "scenario"))
   expect_s3_class(plot, "ggplot")
-})
-
-test_that("plot_sops supports summary data frames and grid facets", {
-  data <- make_avg_sops_plot_data()
-  attr(data, "draws") <- NULL
-  class(data) <- "data.frame"
-  data$source <- rep(c("a", "b"), length.out = nrow(data))
-
-  plot <- plot_sops(data, geom = "line", facet_var = c("tx", "source"))
-
-  expect_s3_class(plot, "ggplot")
-  expect_equal(class(plot$facet)[1], "FacetGrid")
 })
 
 make_comparison_plot_data <- function(
@@ -251,33 +381,83 @@ make_comparison_plot_data <- function(
   data
 }
 
-test_that("plot_comparisons plots time-varying differences on contrast scale", {
-  data <- make_comparison_plot_data()
+test_that("plot_comparisons draws estimates on the difference and ratio scales", {
+  custom_colour <- make_comparison_plot_data(
+    comparison = "ratio",
+    with_time = FALSE
+  )
+  custom_colour$initial_y <- c("1", "2")
 
-  plot <- plot_comparisons(data)
-  built <- ggplot2::ggplot_build(plot)
+  cases <- list(
+    list(
+      label = "differences over time",
+      data = make_comparison_plot_data(),
+      args = list(),
+      geom = "GeomLine",
+      reference = 0,
+      keys = c(x = "time", colour = "state_set", linetype = "contrast"),
+      labels = list(
+        y = "Difference",
+        colour = "State set",
+        linetype = "Contrast"
+      ),
+      colour_var = "state_set"
+    ),
+    list(
+      label = "ratios by state set",
+      data = make_comparison_plot_data(comparison = "ratio", with_time = FALSE),
+      args = list(),
+      geom = "GeomPoint",
+      reference = 1,
+      keys = c(x = "state_set"),
+      labels = list(x = "State set", y = "Ratio"),
+      colour_var = NULL
+    ),
+    list(
+      label = "ratios coloured by a custom variable",
+      data = custom_colour,
+      args = list(color_var = "initial_y"),
+      geom = "GeomPoint",
+      reference = 1,
+      keys = c(x = "state_set", colour = "initial_y"),
+      labels = list(colour = "initial_y", fill = "initial_y"),
+      colour_var = "initial_y"
+    )
+  )
 
-  expect_s3_class(plot, "ggplot")
-  expect_equal(length(plot$layers), 3)
-  expect_s3_class(plot$layers[[3]]$geom, "GeomLine")
-  expect_equal(unique(built$data[[1]]$yintercept), 0)
-  expect_equal(plot$labels$y, "Difference")
-  expect_equal(plot$labels$colour, "State set")
-  expect_equal(plot$labels$linetype, "Contrast")
-})
+  for (case in cases) {
+    label <- case$label
+    plot <- do.call(plot_comparisons, c(list(case$data), case$args))
+    estimates <- plot_layer_values(plot, 3L, case$keys)
 
-test_that("plot_comparisons plots ratios with point intervals and ratio reference", {
-  data <- make_comparison_plot_data(comparison = "ratio", with_time = FALSE)
-
-  plot <- plot_comparisons(data)
-  built <- ggplot2::ggplot_build(plot)
-
-  expect_s3_class(plot, "ggplot")
-  expect_equal(length(plot$layers), 3)
-  expect_s3_class(plot$layers[[3]]$geom, "GeomPoint")
-  expect_equal(unique(built$data[[1]]$yintercept), 1)
-  expect_equal(plot$labels$x, "State set")
-  expect_equal(plot$labels$y, "Ratio")
+    expect_length(plot$layers, 3L)
+    expect_true(inherits(plot$layers[[3]]$geom, case$geom), info = label)
+    expect_equal(
+      unique(plot_layer_values(plot, 1L, character())$yintercept),
+      case$reference,
+      info = label
+    )
+    for (name in names(case$labels)) {
+      expect_identical(
+        plot$labels[[name]],
+        case$labels[[name]],
+        info = paste(label, name)
+      )
+    }
+    if (!is.null(case$colour_var)) {
+      expect_length(
+        unique(estimates$colour),
+        length(unique(case$data[[case$colour_var]]))
+      )
+    }
+    expect_plotted_values(
+      estimates,
+      as.data.frame(case$data),
+      case$keys,
+      c(y = "estimate"),
+      info = label
+    )
+  }
 })
 
 test_that("plot_comparisons draws one profile and rejects several", {
@@ -299,17 +479,6 @@ test_that("plot_comparisons draws one profile and rejects several", {
   )
   chosen <- plot_comparisons(several[several$rowid == 2, ])
   expect_equal(nrow(chosen$data), nrow(data))
-})
-
-test_that("plot_comparisons accepts custom grouping labels", {
-  data <- make_comparison_plot_data(comparison = "ratio", with_time = FALSE)
-  data$initial_y <- c("1", "2")
-
-  plot <- plot_comparisons(data, color_var = "initial_y")
-
-  expect_s3_class(plot, "ggplot")
-  expect_equal(plot$labels$colour, "initial_y")
-  expect_equal(plot$labels$fill, "initial_y")
 })
 
 test_that("plot_comparisons orders numeric state sets naturally", {
@@ -337,19 +506,40 @@ test_that("plot_comparisons orders numeric state sets naturally", {
   )
 })
 
-test_that("plot_comparisons validates comparison data", {
-  expect_error(
-    plot_comparisons(data.frame(estimate = 1)),
-    "missing required comparison column",
-    fixed = TRUE
+test_that("plot_sops and plot_comparisons reject invalid inputs", {
+  sops <- make_avg_sops_plot_data()
+  mixed_scales <- make_comparison_plot_data()
+  mixed_scales$comparison[1] <- "ratio"
+
+  cases <- list(
+    list(
+      label = "infinite n_draws",
+      call = function() plot_sops(sops, geom = "bar", n_draws = Inf),
+      error = "`n_draws`"
+    ),
+    list(
+      label = "missing draw_alpha",
+      call = function() plot_sops(sops, geom = "bar", draw_alpha = NA),
+      error = "`draw_alpha`"
+    ),
+    list(
+      label = "missing show_uncertainty",
+      call = function() plot_sops(sops, geom = "bar", show_uncertainty = NA),
+      error = "`show_uncertainty`"
+    ),
+    list(
+      label = "comparison data without required columns",
+      call = function() plot_comparisons(data.frame(estimate = 1)),
+      error = "missing required comparison column"
+    ),
+    list(
+      label = "comparison data on two scales",
+      call = function() plot_comparisons(mixed_scales),
+      error = "requires one comparison scale"
+    )
   )
 
-  data <- make_comparison_plot_data()
-  data$comparison[1] <- "ratio"
-
-  expect_error(
-    plot_comparisons(data),
-    "requires one comparison scale",
-    fixed = TRUE
-  )
+  for (case in cases) {
+    expect_error(case$call(), case$error, fixed = TRUE, info = case$label)
+  }
 })

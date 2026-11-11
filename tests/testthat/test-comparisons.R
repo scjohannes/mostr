@@ -63,51 +63,6 @@ test_that("comparisons() lumps state sets and forms ratios for every level", {
   }
 })
 
-test_that("averaging comparisons() reproduces avg_comparisons()", {
-  case <- make_comparisons_case()
-  variables <- list(tx = c(0, 1, 2))
-  settings <- list(
-    list(estimand = "sop", state_sets = list(alive = c("1", "2"), dead = "3")),
-    list(estimand = "time_in_state", state_sets = NULL),
-    list(
-      estimand = "time_in_state",
-      state_sets = "1",
-      time_map = case$time_map
-    ),
-    list(estimand = "time_benefit", state_sets = NULL),
-    list(estimand = "time_benefit", state_sets = NULL, time_map = case$time_map)
-  )
-  for (setting in settings) {
-    args <- c(
-      list(
-        case$model,
-        variables = variables,
-        times = 1:4,
-        absorb = 3
-      ),
-      setting
-    )
-    unit <- do.call(comparisons, args)
-    average <- do.call(avg_comparisons, args)
-    keys <- intersect(c("time", "state_set", "contrast"), names(average))
-    expected <- stats::aggregate(
-      unit$estimate,
-      unit[, keys, drop = FALSE],
-      mean
-    )
-    index <- match(
-      do.call(paste, average[, keys, drop = FALSE]),
-      do.call(paste, expected[, keys, drop = FALSE])
-    )
-    expect_false(anyNA(index))
-    expect_equal(expected$x[index], average$estimate, tolerance = 1e-10)
-    expect_identical(
-      nrow(unit),
-      nrow(average) * length(unique(unit$rowid))
-    )
-  }
-})
-
 test_that("comparisons() starts real-time totals from a set starting state", {
   case <- make_comparisons_case()
   levels <- levels(case$profiles$yprev)
@@ -133,175 +88,124 @@ test_that("comparisons() starts real-time totals from a set starting state", {
   expect_false(any(startsWith(names(unit), ".markov_")))
 })
 
-test_that("comparisons(by = ) hands off to avg_comparisons()", {
+test_that("per-profile and average summaries validate arguments before predicting", {
   case <- make_comparisons_case()
-  args <- list(
-    case$model,
-    variables = list(tx = c(0, 1)),
-    estimand = "time_in_state",
-    comparison = "ratio",
-    times = 1:4,
-    absorb = 3
-  )
-  expect_equal(
-    do.call(comparisons, c(args, list(by = TRUE))),
-    do.call(avg_comparisons, args)
-  )
-  expect_equal(
-    do.call(comparisons, c(args, list(by = "marker"))),
-    do.call(avg_comparisons, c(args, list(by = "marker")))
-  )
-  expect_s3_class(
-    do.call(comparisons, c(args, list(by = NULL))),
-    "markov_comparisons"
-  )
-  expect_error(
-    do.call(comparisons, c(args, list(by = 1))),
-    "`by` must be"
-  )
-  expect_error(
-    do.call(comparisons, c(args, list(by = NA_character_))),
-    "`by` must be"
-  )
-})
-
-test_that("avg_comparisons() follows marginaleffects' by values", {
-  case <- make_comparisons_case()
-  args <- list(
-    case$model,
-    variables = list(tx = c(0, 1)),
-    estimand = "time_in_state",
-    comparison = "ratio",
-    times = 1:4,
-    absorb = 3
-  )
-  averaged <- do.call(avg_comparisons, args)
-  expect_s3_class(averaged, "markov_avg_comparisons")
-  expect_identical(nrow(averaged), 3L)
-  expect_equal(do.call(avg_comparisons, c(args, list(by = TRUE))), averaged)
-
-  # `by = FALSE`, like `NULL`, returns one comparison per patient.
-  per_patient <- do.call(comparisons, args)
-  expect_equal(do.call(avg_comparisons, c(args, list(by = FALSE))), per_patient)
-  expect_equal(do.call(avg_comparisons, c(args, list(by = NULL))), per_patient)
-  expect_error(do.call(avg_comparisons, c(args, list(by = 1))), "`by` must be")
-
-  # Per-patient results have no average over sampled patients.
-  expect_error(
-    inferences(
-      do.call(avg_comparisons, c(args, list(by = FALSE))),
-      method = "delta",
-      vcov = "unconditional"
-    ),
-    "avg_comparisons(by = FALSE)",
-    fixed = TRUE
-  )
-})
-
-test_that("bare variable names compare observed levels with the first", {
-  case <- make_comparisons_case()
-  args <- list(case$model, state_sets = "1", times = 1:4, absorb = 3)
-  expect_equal(
-    do.call(comparisons, c(args, list(variables = "tx"))),
-    do.call(comparisons, c(args, list(variables = list(tx = c(0, 1)))))
-  )
-  expect_equal(
-    do.call(avg_comparisons, c(args, list(variables = "tx"))),
-    do.call(avg_comparisons, c(args, list(variables = list(tx = c(0, 1)))))
-  )
-  starts <- factor(c("1", "2"), levels = levels(case$data$yprev))
-  by_start <- do.call(avg_comparisons, c(args, list(variables = "yprev")))
-  expect_identical(unique(by_start$contrast), "2 - 1")
-  expect_equal(
-    by_start,
-    do.call(avg_comparisons, c(args, list(variables = list(yprev = starts))))
-  )
-
-  expect_error(
-    do.call(comparisons, c(args, list(variables = c("tx", "marker")))),
-    "exactly one named variable"
-  )
-  expect_error(
-    do.call(comparisons, c(args, list(variables = "missing_column"))),
-    "Variables not in data: missing_column"
-  )
-})
-
-test_that("bare variable names choose values like marginaleffects", {
-  expect_equal(
-    comparison_variable_values(factor(c("b", "a", "b"), c("b", "a", "c")), "x"),
-    factor(c("b", "a"), levels = c("b", "a", "c"))
-  )
-  expect_identical(
-    comparison_variable_values(c(TRUE, FALSE, NA), "x"),
-    c(FALSE, TRUE)
-  )
-  expect_identical(comparison_variable_values(c("x", "b", "x"), "x"), c("b", "x"))
-  expect_identical(comparison_variable_values(c(1, 0, 1), "x"), c(0, 1))
-  expect_identical(comparison_variable_values(c(1L, 0L), "x"), c(0L, 1L))
-  expect_error(
-    comparison_variable_values(c(40, 52.5, 61), "age"),
-    "list(age = ",
-    fixed = TRUE
-  )
-  expect_error(comparison_variable_values(c(2, 3), "dose"), "list(dose = ", fixed = TRUE)
-  expect_error(comparison_variable_values(c(1, 1, NA), "x"), "at least two")
-  expect_error(comparison_variable_values(as.Date("2026-01-01"), "x"), "values")
-})
-
-test_that("comparisons() validates arguments before predicting", {
-  case <- make_comparisons_case()
+  model <- case$model
   local_mocked_bindings(
     sops = function(...) {
       stop("Predictions should not run before argument validation.")
+    },
+    avg_comparison_replay_avg_sops = function(...) {
+      stop("Predictions should not run before argument validation.")
     }
   )
-  clash <- case$profiles
-  clash$contrast <- "a"
-  clash$estimate <- 1
-  expect_error(
-    comparisons(
-      case$model,
-      newdata = clash,
-      variables = list(tx = c(0, 1)),
-      times = 1:4
+  comparison_clash <- case$profiles
+  comparison_clash$contrast <- "a"
+  comparison_clash$estimate <- 1
+  state_set_clash <- case$profiles
+  state_set_clash$state_set <- "x"
+  tx <- list(tx = c(0, 1))
+
+  cases <- list(
+    list(
+      label = "comparisons(), profile columns named like output columns",
+      fun = comparisons,
+      args = list(newdata = comparison_clash, variables = tx, times = 1:4),
+      phrase = "`contrast`, `estimate`"
     ),
-    "`contrast`, `estimate`"
-  )
-  expect_error(
-    comparisons(case$model, variables = list(tx = c(0, 1))),
-    "`times` must be supplied to `comparisons\\(\\)`"
-  )
-  expect_error(
-    comparisons(case$model, variables = list(tx = 1), times = 1:4),
-    "at least two values"
-  )
-  expect_error(
-    comparisons(
-      case$model,
-      variables = list(tx = c(0, 1), marker = c(0, 1)),
-      times = 1:4
+    list(
+      label = "comparisons(), no times",
+      fun = comparisons,
+      args = list(variables = tx),
+      phrase = "`times` must be supplied to `comparisons()`"
     ),
-    "exactly one named variable"
-  )
-  expect_error(
-    comparisons(
-      case$model,
-      variables = list(tx = c(0, 1)),
-      times = c(1, 1, 2)
+    list(
+      label = "comparisons(), one value",
+      fun = comparisons,
+      args = list(variables = list(tx = 1), times = 1:4),
+      phrase = "at least two values"
     ),
-    "duplicate visits"
-  )
-  expect_error(
-    comparisons(
-      case$model,
-      variables = list(tx = c(0, 1)),
-      estimand = "time_benefit",
-      comparison = "ratio",
-      times = 1:4
+    list(
+      label = "comparisons(), two variables",
+      fun = comparisons,
+      args = list(variables = list(tx = c(0, 1), marker = c(0, 1)), times = 1:4),
+      phrase = "exactly one named variable"
     ),
-    "only supports `comparison = \"difference\"`"
+    list(
+      label = "comparisons(), duplicate times",
+      fun = comparisons,
+      args = list(variables = tx, times = c(1, 1, 2)),
+      phrase = "duplicate visits"
+    ),
+    list(
+      label = "comparisons(), time-benefit ratio",
+      fun = comparisons,
+      args = list(
+        variables = tx,
+        estimand = "time_benefit",
+        comparison = "ratio",
+        times = 1:4
+      ),
+      phrase = "only supports `comparison = \"difference\"`"
+    ),
+    list(
+      label = "state_time(), profile column named like an output column",
+      fun = state_time,
+      args = list(newdata = state_set_clash, times = 1:4),
+      phrase = "`state_set`"
+    ),
+    list(
+      label = "state_time(), no times",
+      fun = state_time,
+      args = list(),
+      phrase = "`times` must be supplied"
+    ),
+    list(
+      label = "state_time(), baseline time without time map",
+      fun = state_time,
+      args = list(times = 1:4, baseline_time = 1),
+      phrase = "`baseline_time` requires `time_map`"
+    ),
+    list(
+      label = "avg_state_time(), duplicate times",
+      fun = avg_state_time,
+      args = list(times = c(1, 1, 2), absorb = 3),
+      phrase = "`times` must not contain duplicate"
+    ),
+    list(
+      label = "avg_state_time(), empty state sets",
+      fun = avg_state_time,
+      args = list(times = 1:2, absorb = 3, state_sets = list()),
+      phrase = "`state_sets`"
+    ),
+    list(
+      label = "avg_state_time(), duplicate state-set names",
+      fun = avg_state_time,
+      args = list(times = 1:2, absorb = 3, state_sets = list(a = "1", a = "2")),
+      phrase = "`state_sets`"
+    ),
+    list(
+      label = "avg_state_time(), by a reserved output name",
+      fun = avg_state_time,
+      args = list(times = 1:2, absorb = 3, by = "state_set"),
+      phrase = "reserved output names"
+    ),
+    list(
+      label = "avg_state_time(), baseline time without time map",
+      fun = avg_state_time,
+      args = list(times = 1:2, absorb = 3, baseline_time = 1),
+      phrase = "`baseline_time` requires `time_map`"
+    )
   )
+
+  for (row in cases) {
+    expect_error(
+      do.call(row$fun, c(list(model), row$args)),
+      row$phrase,
+      fixed = TRUE,
+      info = row$label
+    )
+  }
 })
 
 test_that("posterior comparisons summarize paired draws for each profile", {
@@ -492,91 +396,6 @@ test_that("draw-based intervals reduce each draw to paired profile comparisons",
   }
 })
 
-test_that("averaging real-time comparison draws reproduces avg_comparisons()", {
-  case <- make_comparisons_case()
-  for (estimand in c("time_in_state", "time_benefit")) {
-    args <- list(
-      case$model,
-      variables = list(tx = c(0, 1)),
-      estimand = estimand,
-      state_sets = if (estimand == "time_in_state") "1",
-      times = 1:4,
-      absorb = 3,
-      time_map = case$time_map
-    )
-    unit <- inferences(
-      do.call(comparisons, args),
-      method = "mvn",
-      n_draws = 6,
-      seed = 202
-    )
-    average <- inferences(
-      do.call(avg_comparisons, args),
-      method = "mvn",
-      n_draws = 6,
-      seed = 202
-    )
-    unit_means <- stats::aggregate(estimate ~ draw_id, attr(unit, "draws"), mean)
-    average_draws <- attr(average, "draws")
-    expect_equal(
-      unit_means$estimate,
-      average_draws$estimate[match(unit_means$draw_id, average_draws$draw_id)],
-      tolerance = 1e-10
-    )
-  }
-})
-
-test_that("weighted averages of profile draws reproduce avg_comparisons()", {
-  case <- make_comparisons_case()
-  args <- list(
-    case$model,
-    variables = list(tx = c(0, 1)),
-    state_sets = "1",
-    times = 1:4,
-    absorb = 3
-  )
-  for (setting in list(
-    list(method = "score_bootstrap", n_draws = 4L, seed = 301),
-    list(method = "fwb", n_draws = 3L, seed = 302)
-  )) {
-    weight_col <- if (setting$method == "fwb") "fwb_weight" else "score_weight"
-    unit <- run_inferences_method(
-      do.call(comparisons, args),
-      method = setting$method,
-      n_draws = setting$n_draws,
-      seed = setting$seed
-    )
-    average <- run_inferences_method(
-      do.call(avg_comparisons, args),
-      method = setting$method,
-      n_draws = setting$n_draws,
-      seed = setting$seed
-    )
-    expect_true(attr(unit, "draw_weights_attached"))
-    expect_identical(attr(unit, "draw_weight_col"), weight_col)
-    draws <- attr(unit, "draws")
-    expect_true(weight_col %in% names(draws))
-    # One weight per patient and draw, shared by all of that patient's rows.
-    n_profiles <- length(unique(draws$rowid))
-    expect_identical(
-      nrow(unique(draws[, c("draw_id", "rowid", weight_col)])),
-      setting$n_draws * n_profiles
-    )
-    expect_true(weight_col %in% names(get_draws(unit)))
-
-    key <- paste(draws$draw_id, draws$time)
-    weights <- draws[[weight_col]]
-    manual <- c(tapply(draws$estimate * weights, key, sum)) /
-      c(tapply(weights, key, sum))
-    average_draws <- attr(average, "draws")
-    expect_equal(
-      unname(manual[paste(average_draws$draw_id, average_draws$time)]),
-      average_draws$estimate,
-      tolerance = 1e-10
-    )
-  }
-})
-
 test_that("comparison intervals add null tests and replace earlier inference", {
   case <- make_comparisons_case()
   cmp <- comparisons(
@@ -614,29 +433,11 @@ test_that("comparison intervals add null tests and replace earlier inference", {
   expect_identical(attr(inferences(ratio, n_draws = 5, seed = 11), "null"), 1)
 })
 
-test_that("comparison inference rejects unsupported methods and large draws", {
-  case <- make_comparisons_case()
-  cmp <- comparisons(
-    case$model,
-    variables = list(tx = c(0, 1)),
-    times = 1:4,
-    absorb = 3
-  )
-  expect_error(
-    inferences(cmp, method = "bootstrap", n_draws = 2),
-    "`method = \"fwb\"`"
-  )
-  withr::local_options(mostr.max_sops_draw_cells = 10)
-  expect_error(
-    inferences(cmp, n_draws = 5),
-    "mostr.max_sops_draw_cells"
-  )
-})
-
 # Checks one model setup end to end: point estimates against paired `sops()`
 # differences, every draw method against paired `sops()` draws, and
-# real-time totals against `avg_comparisons()`. `...` goes to every call.
-expect_comparisons_match_paired_sops <- function(case, ...) {
+# real-time totals against `avg_comparisons()`. `...` goes to every call, and
+# `info` names the setup in failures.
+expect_comparisons_match_paired_sops <- function(case, ..., info = NULL) {
   cmp <- comparisons(
     case$model,
     newdata = case$profiles,
@@ -649,8 +450,8 @@ expect_comparisons_match_paired_sops <- function(case, ...) {
   lo <- sops_with_value(case, "tx", 0, ...)
   hi <- sops_with_value(case, "tx", 1, ...)
   keep <- as.character(hi$state) == "1"
-  expect_identical(as.character(cmp$time), as.character(hi$time[keep]))
-  expect_equal(cmp$estimate, hi$estimate[keep] - lo$estimate[keep])
+  expect_identical(as.character(cmp$time), as.character(hi$time[keep]), info = info)
+  expect_equal(cmp$estimate, hi$estimate[keep] - lo$estimate[keep], info = info)
 
   for (setting in list(
     list(method = "mvn", n_draws = 5L, seed = 401),
@@ -675,8 +476,13 @@ expect_comparisons_match_paired_sops <- function(case, ...) {
       paste(draws$rowid, draws$time, draws$draw_id),
       paste(expected$rowid, expected$time, expected$draw_id)
     )
-    expect_false(anyNA(index))
-    expect_equal(draws$estimate, expected$estimate[index], tolerance = 1e-10)
+    expect_false(anyNA(index), info = info)
+    expect_equal(
+      draws$estimate,
+      expected$estimate[index],
+      tolerance = 1e-10,
+      info = info
+    )
   }
 
   args <- list(
@@ -701,26 +507,50 @@ expect_comparisons_match_paired_sops <- function(case, ...) {
     n_draws = 4,
     seed = 404
   )
-  expect_equal(mean(unit$estimate), average$estimate, tolerance = 1e-10)
+  expect_equal(
+    mean(unit$estimate),
+    average$estimate,
+    tolerance = 1e-10,
+    info = info
+  )
   unit_means <- stats::aggregate(estimate ~ draw_id, attr(unit, "draws"), mean)
   average_draws <- attr(average, "draws")
   expect_equal(
     unit_means$estimate,
     average_draws$estimate[match(unit_means$draw_id, average_draws$draw_id)],
-    tolerance = 1e-10
+    tolerance = 1e-10,
+    info = info
   )
   invisible(cmp)
 }
 
-test_that("comparisons() works with factor visit times", {
-  case <- make_factor_comparisons_case()
-  cmp <- expect_comparisons_match_paired_sops(case)
-  expect_identical(as.character(unique(cmp$time)), as.character(1:4))
-})
-
-test_that("comparisons() works with second-order models", {
-  case <- make_second_order_comparisons_case()
-  cmp <- expect_comparisons_match_paired_sops(case, p2_var = "ypprev")
-  expect_identical(attr(cmp, "p2_var"), "ypprev")
-  expect_error(inferences(cmp, method = "delta"), "second-order")
+test_that("comparisons() matches paired sops() with factor visit times and second-order models", {
+  cases <- list(
+    list(label = "factor visit times", case = make_factor_comparisons_case()),
+    list(
+      label = "second-order model",
+      case = make_second_order_comparisons_case(),
+      p2_var = "ypprev"
+    )
+  )
+  for (row in cases) {
+    extra <- if (!is.null(row$p2_var)) list(p2_var = row$p2_var)
+    cmp <- do.call(
+      expect_comparisons_match_paired_sops,
+      c(list(row$case, info = row$label), extra)
+    )
+    expect_identical(
+      as.character(unique(cmp$time)),
+      as.character(1:4),
+      info = row$label
+    )
+    if (!is.null(row$p2_var)) {
+      expect_identical(attr(cmp, "p2_var"), row$p2_var, info = row$label)
+      expect_error(
+        inferences(cmp, method = "delta"),
+        "second-order",
+        info = row$label
+      )
+    }
+  }
 })

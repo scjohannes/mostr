@@ -55,80 +55,108 @@ test_that("analytical inference clears bootstrap and previous null metadata", {
   expect_equal(tested$statistic, (tested$estimate - 1) / tested$std.error)
 })
 
-test_that("avg_state_time returns observed-cohort totals and named state sets", {
-  case <- make_avg_time_case()
-  avg <- avg_sops(case$model, absorb = 3, times = 1:4)
-  result <- avg_state_time(case$model, absorb = 3, times = 1:4)
-  expect_s3_class(result, "markov_avg_state_time")
-  expect_identical(inherits(result, "markov_avg_sops"), FALSE)
-  expect_setequal(names(result), c("state_set", "estimate"))
-  expect_setequal(result$state_set, as.character(1:3))
-  for (state in as.character(1:3)) {
-    expect_equal(
-      result$estimate[result$state_set == state],
-      time_in_state(avg, target_states = state)$total_time
-    )
-  }
-  sets <- avg_state_time(
-    case$model,
-    absorb = 3,
-    times = 1:4,
-    state_sets = list(home = "1", alive = c("1", "2"), all = 1:3)
-  )
-  expect_equal(sets$estimate[sets$state_set == "all"], 4)
-  expect_equal(
-    sets$estimate[sets$state_set == "alive"],
-    time_in_state(avg, target_states = 1:2)$total_time
-  )
-  pooled <- avg_state_time(case$model, absorb = 3, times = 1:4, state_sets = 1:2)
-  expect_equal(pooled$estimate, sets$estimate[sets$state_set == "alive"])
-})
-
-test_that("avg_state_time preserves multiple scenarios and subgroup averaging", {
+test_that("avg_state_time() totals equal time_in_state() of the matching avg_sops()", {
   case <- make_avg_time_case()
   profiles <- case$data[!duplicated(case$data$id), , drop = FALSE][1:15, ]
-  variables <- list(tx = c(0, 1), marker = c(0, 1))
-  avg <- avg_sops(
-    case$model,
-    absorb = 3,
-    newdata = profiles,
-    variables = variables,
-    by = "subgroup",
-    times = 1:3
-  )
-  result <- avg_state_time(
-    case$model,
-    absorb = 3,
-    newdata = profiles,
-    variables = variables,
-    by = "subgroup",
-    times = 1:3,
-    state_sets = 1:2
-  )
-  expected <- time_in_state(avg, target_states = 1:2)
-  joined <- merge(result, expected, by = c("tx", "marker", "subgroup"))
-  expect_equal(nrow(result), 8L)
-  expect_equal(nrow(joined), nrow(result))
-  expect_equal(joined$estimate, joined$total_time)
-  observed <- avg_state_time(
-    case$model,
-    absorb = 3,
-    newdata = profiles,
-    by = "subgroup",
-    times = 1:3,
-    state_sets = 1:2
-  )
-  observed_sops <- avg_sops(
+  observed <- list(case$model, absorb = 3, times = 1:4)
+  subgroups <- list(
     case$model,
     absorb = 3,
     newdata = profiles,
     by = "subgroup",
     times = 1:3
   )
-  expected <- time_in_state(observed_sops, target_states = 1:2)
-  joined <- merge(observed, expected, by = "subgroup")
-  expect_equal(nrow(observed), 2L)
-  expect_equal(joined$estimate, joined$total_time)
+
+  # `args` go to both avg_sops() and avg_state_time(). Each named entry of
+  # `sets` is a state set of the result and the states it totals; `pooled`
+  # gives the states of a result with one pooled set. `keys` are the columns
+  # that match result rows with time_in_state() rows, and `totals` holds
+  # totals known by hand.
+  cases <- list(
+    list(
+      label = "observed profiles, one set per state",
+      args = observed,
+      state_sets = NULL,
+      sets = list("1" = "1", "2" = "2", "3" = "3"),
+      keys = character(),
+      rows = 3L,
+      columns = c("state_set", "estimate")
+    ),
+    list(
+      label = "observed profiles, named state sets",
+      args = observed,
+      state_sets = list(home = "1", alive = c("1", "2"), all = 1:3),
+      sets = list(home = "1", alive = 1:2, all = 1:3),
+      keys = character(),
+      rows = 3L,
+      # Every patient is in some state at each of the 4 visits.
+      totals = list(all = 4)
+    ),
+    list(
+      label = "observed profiles, pooled states",
+      args = observed,
+      state_sets = 1:2,
+      pooled = 1:2,
+      keys = character(),
+      rows = 1L
+    ),
+    list(
+      label = "two variables within subgroups",
+      args = c(subgroups, list(variables = list(tx = c(0, 1), marker = c(0, 1)))),
+      state_sets = 1:2,
+      pooled = 1:2,
+      keys = c("tx", "marker", "subgroup"),
+      rows = 8L
+    ),
+    list(
+      label = "observed profiles within subgroups",
+      args = subgroups,
+      state_sets = 1:2,
+      pooled = 1:2,
+      keys = "subgroup",
+      rows = 2L
+    )
+  )
+
+  for (row in cases) {
+    avg <- do.call(avg_sops, row$args)
+    result <- do.call(
+      avg_state_time,
+      c(row$args, if (!is.null(row$state_sets)) list(state_sets = row$state_sets))
+    )
+    expect_true(inherits(result, "markov_avg_state_time"), info = row$label)
+    expect_false(inherits(result, "markov_avg_sops"), info = row$label)
+    expect_identical(nrow(result), row$rows, info = row$label)
+    if (!is.null(row$columns)) {
+      expect_setequal(names(result), row$columns)
+    }
+    if (is.null(row$pooled)) {
+      expect_setequal(result$state_set, names(row$sets))
+      targets <- row$sets
+    } else {
+      expect_length(unique(result$state_set), 1L)
+      targets <- list(pooled = row$pooled)
+    }
+    for (name in names(targets)) {
+      actual <- if (is.null(row$pooled)) {
+        result[result$state_set == name, , drop = FALSE]
+      } else {
+        result
+      }
+      expected <- time_in_state(avg, target_states = targets[[name]])
+      joined <- merge(actual, expected, by = row$keys)
+      label <- paste(row$label, name, sep = ": ")
+      expect_identical(nrow(joined), nrow(actual), info = label)
+      expect_equal(joined$estimate, joined$total_time, info = label)
+    }
+    for (name in names(row$totals)) {
+      expect_equal(
+        result$estimate[result$state_set == name],
+        row$totals[[name]],
+        info = row$label
+      )
+    }
+  }
 })
 
 test_that("avg_state_time integrates irregular factor visits with optional baseline", {
@@ -446,54 +474,6 @@ test_that("posterior medians and intervals are calculated after time reduction",
   expect_equal(joined$estimate.x, joined$estimate.y)
 })
 
-test_that("avg_state_time validates arguments before predicting", {
-  case <- make_avg_time_case()
-  local_mocked_bindings(
-    avg_comparison_replay_avg_sops = function(...) {
-      stop("Predictions should not run before argument validation.")
-    }
-  )
-  expect_error(
-    avg_state_time(case$model, times = c(1, 1, 2), absorb = 3),
-    "`times` must not contain duplicate"
-  )
-  expect_error(
-    avg_state_time(case$model, times = 1:2, absorb = 3, state_sets = list()),
-    "`state_sets`"
-  )
-  expect_error(
-    avg_state_time(
-      case$model,
-      times = 1:2,
-      absorb = 3,
-      state_sets = list(a = "1", a = "2")
-    ),
-    "`state_sets`"
-  )
-  expect_error(
-    avg_state_time(case$model, times = 1:2, absorb = 3, by = "state_set"),
-    "reserved output names"
-  )
-  expect_error(
-    avg_state_time(case$model, times = 1:2, absorb = 3, baseline_time = 1),
-    "`baseline_time` requires `time_map`"
-  )
-})
-
-test_that("avg_comparisons rejects duplicate times", {
-  case <- make_avg_time_case()
-  expect_error(
-    avg_comparisons(
-      case$model,
-      variables = list(tx = c(0, 1)),
-      estimand = "time_in_state",
-      times = c(1, 1, 2),
-      absorb = 3
-    ),
-    "`times` must not contain duplicate"
-  )
-})
-
 test_that("posterior average times keep the requested state-set order", {
   coefficients <- rbind(
     c(0.5, -0.5, 0, 1.2),
@@ -531,37 +511,4 @@ test_that("posterior average times keep the requested state-set order", {
     state_sets = list(zeta = "3", alpha = "1")
   )
   expect_identical(comparison$state_set, c("zeta", "alpha"))
-})
-
-test_that("time_in_state() default grid matches avg_state_time()", {
-  case <- make_avg_time_case(factor_time = TRUE)
-  time_map <- c("1" = 2, "2" = 7, "3" = 9)
-  avg <- avg_sops(case$model, absorb = 3, times = 1:3)
-  for (baseline_time in list(0, NULL)) {
-    expected <- avg_state_time(
-      case$model,
-      absorb = 3,
-      times = 1:3,
-      state_sets = list(alive = 1:2, all = 1:3),
-      time_map = time_map,
-      baseline_time = baseline_time
-    )
-    alive <- time_in_state(
-      avg,
-      target_states = 1:2,
-      time_map = time_map,
-      baseline_time = baseline_time
-    )
-    all <- time_in_state(
-      avg,
-      target_states = 1:3,
-      time_map = time_map,
-      baseline_time = baseline_time
-    )
-    expect_equal(
-      c(alive$total_time, all$total_time),
-      expected$estimate[match(c("alive", "all"), expected$state_set)]
-    )
-    expect_equal(all$total_time, if (is.null(baseline_time)) 7 else 9)
-  }
 })

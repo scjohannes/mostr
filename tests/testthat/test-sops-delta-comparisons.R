@@ -84,10 +84,6 @@ delta_factor_time_point <- function(model, case) {
   )
 }
 
-central_delta_comparison_jacobian <- function(model, point_function) {
-  numeric_jacobian(model, function(model) point_function(model)$estimate)
-}
-
 manual_factor_time_auc <- function(avg, case, states, level) {
   baseline <- attr(avg, "newdata_orig")
   baseline <- baseline[!duplicated(baseline$id), , drop = FALSE]
@@ -216,12 +212,12 @@ test_that("factor-time ORM differences match public finite differences", {
     vcov = case$covariance
   )
 
-  numeric_jacobian <- central_delta_comparison_jacobian(
+  numerical_jacobian <- numeric_jacobian(
     case$fit,
-    function(model) delta_factor_time_point(model, case)
+    function(model) delta_factor_time_point(model, case)$estimate
   )
   analytical_jacobian <- get_jacobian(inferred)
-  discrepancy <- max(abs(analytical_jacobian - numeric_jacobian))
+  discrepancy <- max(abs(analytical_jacobian - numerical_jacobian))
   expect_lt(discrepancy, 1e-7)
 
   avg <- avg_sops(
@@ -318,72 +314,108 @@ test_that("factor-time ORM differences match public finite differences", {
 })
 
 test_that("delta real-time weights include the baseline interval by default", {
-  case <- delta_comparison_factor_case()
-  avg <- avg_sops(
-    case$fit,
-    variables = list(tx = c(0, 1)),
-    times = case$visits,
-    y_levels = case$y_levels
+  # The weight of each visit in the area under the interpolated SOP curve.
+  visits <- paste0("v", 1:4)
+  time_map <- stats::setNames(c(3, 7, 14, 21), visits)
+  nodes <- sort(unique(unname(time_map)))
+  # Visits listed out of time order, two of them at the same time.
+  duplicate_map <- c(late = 7, early = 3, duplicate = 3)
+  duplicate_targets <- c(0, 1, 3, 5, 7)
+  duplicate_basis <- vapply(
+    seq_len(3),
+    function(j) {
+      values <- numeric(3)
+      values[j] <- 1
+      stats::approx(
+        c(0, 7, 3, 3),
+        c(0, values),
+        xout = duplicate_targets,
+        ties = mean
+      )$y
+    },
+    numeric(length(duplicate_targets))
   )
+  cases <- list(
+    list(
+      # The default grid starts at `baseline_time`, so the first visit also
+      # receives half of the baseline-to-first-visit interval.
+      label = "anchored at baseline_time = 0",
+      avg = data.frame(time = visits),
+      args = list(time_map = time_map, baseline_time = 0, target_times = NULL),
+      expected = delta_trapezoid_weights(c(0, nodes))[-1L]
+    ),
+    list(
+      label = "without baseline_time",
+      avg = data.frame(time = visits),
+      args = list(
+        time_map = time_map,
+        baseline_time = NULL,
+        target_times = NULL
+      ),
+      expected = delta_trapezoid_weights(nodes)
+    ),
+    list(
+      label = "unused time-map entry",
+      avg = data.frame(time = visits),
+      args = list(
+        time_map = c(unused = -10, time_map),
+        baseline_time = 0,
+        target_times = NULL
+      ),
+      expected = delta_real_time_weights(
+        data.frame(time = visits),
+        list(time_map = time_map, baseline_time = 0, target_times = NULL)
+      )$visit,
+      keep_names = TRUE
+    ),
+    list(
+      label = "duplicate visit times",
+      avg = data.frame(time = names(duplicate_map)),
+      args = list(
+        time_map = duplicate_map,
+        baseline_time = 0,
+        target_times = duplicate_targets
+      ),
+      expected = drop(
+        delta_trapezoid_weights(duplicate_targets) %*% duplicate_basis
+      )
+    ),
+    list(
+      label = "a single target time",
+      avg = data.frame(time = names(duplicate_map)),
+      args = list(
+        time_map = duplicate_map,
+        baseline_time = 0,
+        target_times = 5
+      ),
+      expected = numeric(3)
+    ),
+    list(
+      label = "a single visit without baseline_time",
+      avg = data.frame(time = "v1"),
+      args = list(time_map = c(v1 = 3), baseline_time = NULL),
+      expected = c(v1 = 0),
+      keep_names = TRUE
+    )
+  )
+  for (case in cases) {
+    weights <- delta_real_time_weights(case$avg, case$args)$visit
+    if (!isTRUE(case$keep_names)) {
+      weights <- unname(weights)
+    }
+    expect_equal(weights, case$expected, tolerance = 1e-12, info = case$label)
+  }
+
+  avg <- data.frame(time = visits)
   args <- list(
-    time_map = case$time_map,
-    baseline_time = 0,
+    time_map = time_map,
+    baseline_time = min(time_map),
     target_times = NULL
   )
-
-  anchored <- mostr:::delta_real_time_weights(avg, args)$visit
-  args$baseline_time <- NULL
-  unanchored <- mostr:::delta_real_time_weights(avg, args)$visit
-  nodes <- sort(unique(unname(case$time_map)))
-  expected <- mostr:::delta_trapezoid_weights(nodes)
-  # The default grid starts at `baseline_time`, so the first visit also
-  # receives half of the baseline-to-first-visit interval.
-  expected_anchored <- mostr:::delta_trapezoid_weights(c(0, nodes))[-1L]
-
-  expect_equal(unname(anchored), expected_anchored)
-  expect_equal(unname(unanchored), expected)
-
-  args$baseline_time <- min(case$time_map)
   expect_snapshot(
     delta_real_time_weights(avg, args)$visit,
     error = TRUE
   )
-})
-
-test_that("delta real-time weights ignore unused time-map entries", {
-  case <- delta_comparison_factor_case()
-  avg <- avg_sops(
-    case$fit,
-    variables = list(tx = c(0, 1)),
-    times = case$visits,
-    y_levels = case$y_levels
-  )
-  args <- list(
-    time_map = c(unused = -10, case$time_map),
-    baseline_time = 0,
-    target_times = NULL
-  )
-  expected_args <- args
-  expected_args$time_map <- case$time_map
-
-  expect_equal(
-    mostr:::delta_real_time_weights(avg, args)$visit,
-    mostr:::delta_real_time_weights(avg, expected_args)$visit
-  )
-})
-
-test_that("factor-time unconditional differences use the replayed grid", {
-  case <- delta_comparison_factor_case()
-  point <- delta_factor_time_point(case$fit, case)
-  inferred <- inferences(
-    point,
-    method = "delta",
-    vcov = "unconditional"
-  )
-
-  expect_identical(attr(inferred, "target"), "unconditional")
-  expect_equal(inferred$estimate, point$estimate, tolerance = 1e-12)
-  expect_equal(sum(is.finite(inferred$std.error)), nrow(inferred))
 })
 
 test_that("unconditional comparisons retain transformed stacked influence", {
@@ -455,12 +487,6 @@ test_that("analytical comparison scope rejects deferred estimands", {
   time_benefit_args$estimand <- "time_benefit"
   attr(time_benefit, "comparison_args") <- time_benefit_args
   expect_snapshot(inferences(time_benefit, method = "delta"), error = TRUE)
-
-  stratified <- base
-  stratified_args <- attr(stratified, "avg_args")
-  stratified_args$by <- "sex"
-  attr(stratified, "avg_args") <- stratified_args
-  expect_snapshot(inferences(stratified, method = "delta"), error = TRUE)
 
   second_order <- base
   attr(second_order, "p2_var") <- "yprev2"
@@ -590,39 +616,4 @@ test_that("large SOP comparison grids avoid the dense operator allocation", {
   )
   condition <- tryCatch(stats::vcov(object), error = identity)
   expect_s3_class(condition, "mostr_delta_too_large")
-})
-
-test_that("real-time weights collapse duplicate visits and handle a single node", {
-  avg <- data.frame(time = c("late", "early", "duplicate"))
-  args <- list(
-    time_map = c(late = 7, early = 3, duplicate = 3),
-    baseline_time = 0,
-    target_times = c(0, 1, 3, 5, 7)
-  )
-  weights <- delta_real_time_weights(avg, args)$visit
-  basis <- vapply(
-    seq_len(3),
-    function(j) {
-      values <- numeric(3)
-      values[j] <- 1
-      stats::approx(
-        c(0, 7, 3, 3),
-        c(0, values),
-        xout = args$target_times,
-        ties = mean
-      )$y
-    },
-    numeric(length(args$target_times))
-  )
-  expected <- drop(delta_trapezoid_weights(args$target_times) %*% basis)
-  expect_equal(unname(weights), expected, tolerance = 1e-12)
-  args$target_times <- 5
-  expect_equal(unname(delta_real_time_weights(avg, args)$visit), numeric(3))
-  expect_equal(
-    delta_real_time_weights(
-      data.frame(time = "v1"),
-      list(time_map = c(v1 = 3), baseline_time = NULL)
-    )$visit,
-    c(v1 = 0)
-  )
 })

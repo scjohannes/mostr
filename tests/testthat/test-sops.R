@@ -38,191 +38,7 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
   expect_equal(actual[1, , ], expected, tolerance = 1e-10)
 })
 
-test_that("soprob_markov gives the same predictions for inline and precomputed spline bases", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  follow_up <- 16L
-  data <- make_test_data(
-    n_patients = 60,
-    seed = 234,
-    follow_up_time = follow_up
-  )
-  time_spline <- rms::rcs(data$time, 4)
-  data$time_lin <- as.vector(time_spline[, 1])
-  data$time_nlin_1 <- as.vector(time_spline[, 2])
-  data$time_nlin_2 <- as.vector(time_spline[, 3])
-  time_covariates <- make_time_covariates(
-    data,
-    "time",
-    "time_lin",
-    "time_nlin_1",
-    "time_nlin_2"
-  )
-
-  inline_model <- suppressWarnings(
-    mostm(
-      ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    )
-  )
-  precomputed_model <- suppressWarnings(
-    mostm(
-      ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    )
-  )
-
-  baseline <- data[data$time == 1, , drop = FALSE][seq_len(6), , drop = FALSE]
-  inline_sops <- soprob_markov(
-    inline_model,
-    newdata = baseline,
-    times = seq_len(follow_up),
-    y_levels = factor(1:6),
-    absorb = "6"
-  )
-  precomputed_sops <- soprob_markov(
-    precomputed_model,
-    newdata = baseline,
-    times = seq_len(follow_up),
-    y_levels = factor(1:6),
-    absorb = "6",
-    time_covariates = time_covariates
-  )
-
-  expect_probability_array(inline_sops, expected_dim = c(6L, follow_up, 6L))
-  expect_probability_array(
-    precomputed_sops,
-    expected_dim = c(6L, follow_up, 6L)
-  )
-  expect_equal(inline_sops, precomputed_sops, tolerance = 1e-10)
-})
-
-test_that("soprob_markov supports inline splines of numeric previous state", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  raw_data <- make_markov_trajectories(
-    n_patients = 100,
-    follow_up_time = 7,
-    n_states = 10,
-    thresholds = seq(-3, 3, length.out = 9),
-    allowed_start_state = as.integer(2:9),
-    absorbing_state = 10,
-    seed = 4242
-  )
-  data <- prepare_markov_data(
-    raw_data,
-    absorbing_state = 10,
-    factor_previous = FALSE
-  )
-  baseline <- data[data$time == 1, , drop = FALSE][seq_len(8), , drop = FALSE]
-  model <- mostm(
-    ordered(y) ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 6),
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    id_var = "id",
-    engine = "vglm"
-  )$vglm_fit
-
-  slow <- soprob_markov(
-    model = model,
-    newdata = baseline,
-    times = 1:7,
-    y_levels = 1:10,
-    absorb = "10",
-    p_var = "yprev"
-  )
-  components <- mostr:::markov_msm_build(
-    model = model,
-    newdata = baseline,
-    times = 1:7,
-    y_levels = 1:10,
-    p_var = "yprev"
-  )
-  gamma <- mostr:::compute_Gamma(
-    stats::coef(model),
-    VGAM::constraints(model)
-  )
-  fast <- mostr:::markov_msm_run(
-    components = components,
-    Gamma = gamma,
-    times = 1:7,
-    absorb = "10"
-  )
-
-  expect_type(data$yprev, "double")
-  expect_probability_array(slow, expected_dim = c(8L, 7L, 10L))
-  expect_probability_array(fast, expected_dim = c(8L, 7L, 10L))
-  expect_equal(unname(fast), unname(slow), tolerance = 1e-10)
-})
-
-test_that("soprob_markov handles partial proportional-odds constraints", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  follow_up <- 18L
-  data <- make_test_data(
-    n_patients = 70,
-    seed = 456,
-    follow_up_time = follow_up
-  )
-  time_spline <- rms::rcs(data$time, 4)
-  data$time_lin <- as.vector(time_spline[, 1])
-  data$time_nlin_1 <- as.vector(time_spline[, 2])
-  data$time_nlin_2 <- as.vector(time_spline[, 3])
-  time_covariates <- make_time_covariates(
-    data,
-    "time",
-    "time_lin",
-    "time_nlin_1",
-    "time_nlin_2"
-  )
-
-  n_thresholds <- 5L
-  constraints <- list(
-    "(Intercept)" = diag(n_thresholds),
-    "yprev" = cbind(PO_effect = 1),
-    "tx" = cbind(PO_effect = 1),
-    "time_lin" = cbind(
-      time_lin_1 = 1,
-      time_lin_5 = 0:(n_thresholds - 1)
-    ),
-    "time_nlin_1" = cbind(PO_effect = 1),
-    "time_nlin_2" = cbind(PO_effect = 1)
-  )
-  model <- suppressWarnings(
-    mostm(
-      ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
-      data = data,
-      id_var = "id",
-      constraints = constraints,
-      engine = "vglm"
-    )
-  )$vglm_fit
-  model@call$constraints <- constraints
-
-  result <- soprob_markov(
-    model,
-    newdata = data[1, ],
-    times = seq_len(follow_up),
-    y_levels = factor(1:6),
-    absorb = "6",
-    time_covariates = time_covariates
-  )
-
-  expect_probability_array(result, expected_dim = c(1L, follow_up, 6L))
-  expect_absorbing_probability_monotone(result, absorbing_state = 6)
-})
-
-test_that("soprob_markov incorporates treatment interactions into predictions", {
+test_that("soprob_markov follows custom partial proportional-odds constraints and treatment interactions", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -244,8 +60,11 @@ test_that("soprob_markov incorporates treatment interactions into predictions", 
     "time_nlin_2"
   )
 
+  # The linear time term gets its own effect on each cut-point through a
+  # constraint column 0:4, rather than the identity matrix that
+  # `parallel = FALSE` would give.
   n_thresholds <- 5L
-  constraints <- list(
+  main_constraints <- list(
     "(Intercept)" = diag(n_thresholds),
     "yprev" = cbind(PO_effect = 1),
     "tx" = cbind(PO_effect = 1),
@@ -254,85 +73,76 @@ test_that("soprob_markov incorporates treatment interactions into predictions", 
       time_lin_5 = 0:(n_thresholds - 1)
     ),
     "time_nlin_1" = cbind(PO_effect = 1),
-    "time_nlin_2" = cbind(PO_effect = 1),
-    "time_lin:tx" = cbind(PO_effect = 1),
-    "time_nlin_1:tx" = cbind(PO_effect = 1),
-    "time_nlin_2:tx" = cbind(PO_effect = 1),
-    "time_lin:yprev" = cbind(PO_effect = 1)
+    "time_nlin_2" = cbind(PO_effect = 1)
   )
-  model <- suppressWarnings(
-    mostm(
-      ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) *
+  cases <- list(
+    list(
+      label = "main effects",
+      formula = ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
+      constraints = main_constraints
+    ),
+    list(
+      label = "treatment-by-time and previous-state-by-time interactions",
+      formula = ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) *
         tx +
         yprev +
         yprev:time_lin,
-      family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
-      data = data,
-      id_var = "id",
-      constraints = constraints,
-      engine = "vglm"
+      constraints = c(
+        main_constraints,
+        list(
+          "time_lin:tx" = cbind(PO_effect = 1),
+          "time_nlin_1:tx" = cbind(PO_effect = 1),
+          "time_nlin_2:tx" = cbind(PO_effect = 1),
+          "time_lin:yprev" = cbind(PO_effect = 1)
+        )
+      )
     )
-  )$vglm_fit
-  model@call$constraints <- constraints
+  )
 
   baseline <- data[data$time == 1, , drop = FALSE][1, , drop = FALSE]
-  control <- baseline
-  treated <- baseline
-  control$tx <- 0
-  treated$tx <- 1
+  # The readable loop sets the time covariates of each visit itself.
+  visit_columns <- time_covariates[, c("time_lin", "time_nlin_1", "time_nlin_2")]
 
-  treated_sops <- soprob_markov(
-    model,
-    newdata = treated,
-    times = seq_len(follow_up),
-    y_levels = factor(1:6),
-    absorb = "6",
-    time_covariates = time_covariates
-  )
-  control_sops <- soprob_markov(
-    model,
-    newdata = control,
-    times = seq_len(follow_up),
-    y_levels = factor(1:6),
-    absorb = "6",
-    time_covariates = time_covariates
-  )
+  for (case in cases) {
+    model <- suppressWarnings(
+      mostm(
+        case$formula,
+        family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
+        data = data,
+        id_var = "id",
+        constraints = case$constraints,
+        engine = "vglm"
+      )
+    )$vglm_fit
+    model@call$constraints <- case$constraints
 
-  expect_probability_array(treated_sops, expected_dim = c(1L, follow_up, 6L))
-  expect_probability_array(control_sops, expected_dim = c(1L, follow_up, 6L))
-  expect_gt(max(abs(treated_sops - control_sops)), 1e-6)
-})
-
-test_that("soprob_markov carries absorbing-state mass forward", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  follow_up <- 12L
-  data <- make_test_data(
-    n_patients = 40,
-    seed = 999,
-    follow_up_time = follow_up
-  )
-  model <- suppressWarnings(
-    mostm(
-      ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    )
-  )
-
-  result <- soprob_markov(
-    model,
-    newdata = data[seq_len(8), ],
-    times = seq_len(follow_up),
-    y_levels = factor(1:6),
-    absorb = "6"
-  )
-
-  expect_probability_array(result, expected_dim = c(8L, follow_up, 6L))
-  expect_absorbing_probability_monotone(result, absorbing_state = 6)
+    # Treated and control SOPs both follow the model, so the treatment and
+    # interaction coefficients enter every transition.
+    for (tx in c(0, 1)) {
+      profile <- baseline
+      profile$tx <- tx
+      label <- paste0(case$label, ", tx = ", tx)
+      result <- soprob_markov(
+        model,
+        newdata = profile,
+        times = seq_len(follow_up),
+        y_levels = factor(1:6),
+        absorb = "6",
+        time_covariates = time_covariates
+      )
+      expect_probability_array(result, expected_dim = c(1L, follow_up, 6L))
+      expect_absorbing_probability_monotone(result, absorbing_state = 6)
+      loop <- slow_first_order_sops(
+        slow_predictor(model),
+        profile,
+        times = seq_len(follow_up),
+        states = 1:6,
+        absorb = 6,
+        visit_columns = visit_columns
+      )
+      expect_equal(unname(result[1, , ]), loop, tolerance = 1e-10, info = label)
+    }
+  }
 })
 
 test_that("soprob_markov normalizes transitions when no state is absorbing", {

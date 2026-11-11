@@ -1,86 +1,66 @@
-test_that("Markov workflows reject non-logit vglm links", {
+test_that("Markov workflows reject links other than the logit", {
   skip_if_not_installed("VGAM")
+  skip_if_not_installed("rms")
 
-  data <- suppressWarnings(
-    make_test_data(n_patients = 80, seed = 841, follow_up_time = 5)
-  )
-  fit <- suppressWarnings(
-    mostm(
-      ordered(y) ~ time + tx + yprev,
-      family = VGAM::cumulative(
-        reverse = TRUE,
-        parallel = TRUE,
-        link = "probitlink"
+  cases <- list(
+    list(
+      label = "vglm with a probit link",
+      link = "probitlink",
+      message = paste0(
+        "Only cumulative-logit models are supported; ",
+        "refit the model with a logit link."
       ),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    )
-  )
-
-  error <- tryCatch(
-    mostr:::validate_markov_model(fit),
-    error = identity
-  )
-  expect_s3_class(error, "mostr_unsupported_link")
-  expect_equal(
-    conditionMessage(error),
-    paste0(
-      "Only cumulative-logit models are supported; ",
-      "refit the model with a logit link."
-    )
-  )
-  expect_equal(error$link, "probitlink")
-})
-
-test_that("Markov workflows reject non-logistic orm families", {
-  skip_if_not_installed("rms")
-
-  data <- suppressWarnings(
-    make_test_data(n_patients = 80, seed = 842, follow_up_time = 5)
-  )
-  # `mostm()` stops before computing the patient-clustered covariance.
-  error <- tryCatch(
-    suppressWarnings(
-      mostm(
-        ordered(y) ~ time + tx + yprev,
-        family = "probit",
-        data = data,
-        id_var = "id"
-      )
+      error = function() {
+        data <- suppressWarnings(
+          make_test_data(n_patients = 80, seed = 841, follow_up_time = 5)
+        )
+        fit <- suppressWarnings(
+          mostm(
+            ordered(y) ~ time + tx + yprev,
+            family = VGAM::cumulative(
+              reverse = TRUE,
+              parallel = TRUE,
+              link = "probitlink"
+            ),
+            data = data,
+            id_var = "id",
+            engine = "vglm"
+          )
+        )
+        tryCatch(mostr:::validate_markov_model(fit), error = identity)
+      }
     ),
-    error = identity
-  )
-  expect_s3_class(error, "mostr_unsupported_link")
-  expect_equal(error$link, "probit")
-})
-
-test_that("Markov workflows accept logit vglm and orm models", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  data <- suppressWarnings(
-    make_test_data(n_patients = 80, seed = 843, follow_up_time = 5)
-  )
-  vglm_fit <- suppressWarnings(
-    mostm(
-      ordered(y) ~ time + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    )
-  )
-  orm_fit <- suppressWarnings(
-    mostm(
-      ordered(y) ~ time + tx + yprev,
-      data = data,
-      id_var = "id"
+    list(
+      label = "orm with the probit family",
+      link = "probit",
+      error = function() {
+        data <- suppressWarnings(
+          make_test_data(n_patients = 80, seed = 842, follow_up_time = 5)
+        )
+        # `mostm()` stops before computing the patient-clustered covariance.
+        tryCatch(
+          suppressWarnings(
+            mostm(
+              ordered(y) ~ time + tx + yprev,
+              family = "probit",
+              data = data,
+              id_var = "id"
+            )
+          ),
+          error = identity
+        )
+      }
     )
   )
 
-  expect_null(mostr:::validate_markov_model(vglm_fit))
-  expect_null(mostr:::validate_markov_model(orm_fit))
+  for (case in cases) {
+    error <- case$error()
+    expect_true(inherits(error, "mostr_unsupported_link"), info = case$label)
+    expect_equal(error$link, case$link, info = case$label)
+    if (!is.null(case$message)) {
+      expect_equal(conditionMessage(error), case$message, info = case$label)
+    }
+  }
 })
 
 test_that("Markov workflows reject raw and manually robust backend fits", {

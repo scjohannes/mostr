@@ -296,6 +296,8 @@ test_that("blrm posterior draw sampling is random, capped, and reproducible", {
 
 
 test_that("manual blrm prediction supports PO, constrained PPO, and random effects", {
+  local_mocked_bindings(blrm_design_matrix = tx_blrm_design)
+
   gamma <- rbind(
     c(0.50, -0.50),
     c(1.00, -1.00),
@@ -309,60 +311,36 @@ test_that("manual blrm prediction supports PO, constrained PPO, and random effec
     yprev = factor(c(1, 1), levels = 1:3)
   )
 
-  with_mocked_bindings(
-    blrm_design_matrix = tx_blrm_design,
-    {
-      no_re <- mostr:::predict_blrm_response_markov(
-        model,
-        newdata,
-        draw_indices = 1:2
-      )
-      with_re <- mostr:::predict_blrm_response_markov(
-        model,
-        newdata,
-        include_re = TRUE,
-        draw_indices = 1:2
-      )
-
-      ppo_draws <- cbind(model$draws, tau_tx = c(0.10, -0.20, 0.15))
-      ppo_model <- make_fake_blrm(draws = ppo_draws, pppo = 1L)
-      ppo_model$cppo <- function(y) as.numeric(y) - 1
-      ppo <- mostr:::predict_blrm_response_markov(
-        ppo_model,
-        newdata[1, , drop = FALSE],
-        draw_indices = 1
-      )
-
-      cppo_string_test <- function(y) as.numeric(y) - 1
-      ppo_model$cppo <- "cppo_string_test"
-      ppo_string <- mostr:::predict_blrm_response_markov(
-        ppo_model,
-        newdata[1, , drop = FALSE],
-        draw_indices = 1
-      )
-
-      ppo_model$cppo <- "function(y) as.numeric(y) - 1"
-      cppo_error <- try(
-        mostr:::predict_blrm_response_markov(
-          ppo_model,
-          newdata[1, , drop = FALSE],
-          draw_indices = 1
-        ),
-        silent = TRUE
-      )
-
-      unknown <- newdata[1, , drop = FALSE]
-      unknown$id <- "z"
-      re_error <- try(
-        mostr:::predict_blrm_response_markov(
-          model,
-          unknown,
-          include_re = TRUE,
-          draw_indices = 1
-        ),
-        silent = TRUE
-      )
+  # Hand calculation: with linear predictors eta_k = alpha_k + tx * beta +
+  # u_id + tau * tx * cppo(k + 1) for the two cut-points, the state
+  # probabilities are 1 - P(y >= 2), P(y >= 2) - P(y >= 3) and P(y >= 3).
+  state_probabilities <- function(eta) {
+    p <- stats::plogis(eta)
+    c(1 - p[1], p[1] - p[2], p[2])
+  }
+  expected_array <- function(draw_indices, random_effects) {
+    out <- array(0, dim = c(length(draw_indices), nrow(newdata), 3L))
+    for (d in seq_along(draw_indices)) {
+      draw <- model$draws[draw_indices[d], ]
+      for (i in seq_len(nrow(newdata))) {
+        u <- if (random_effects) gamma[draw_indices[d], newdata$id[i]] else 0
+        eta <- draw[c("y>=2", "y>=3")] + newdata$tx[i] * draw[["tx"]] + u
+        out[d, i, ] <- state_probabilities(eta)
+      }
     }
+    out
+  }
+
+  no_re <- mostr:::predict_blrm_response_markov(
+    model,
+    newdata,
+    draw_indices = 1:2
+  )
+  with_re <- mostr:::predict_blrm_response_markov(
+    model,
+    newdata,
+    include_re = TRUE,
+    draw_indices = 1:2
   )
 
   expected_p1 <- 1 - stats::plogis(0.50 + 0.25)
@@ -375,13 +353,57 @@ test_that("manual blrm prediction supports PO, constrained PPO, and random effec
     c(expected_p1, expected_p2, expected_p3),
     tolerance = 1e-12
   )
-  expect_false(isTRUE(all.equal(no_re, with_re)))
-  expect_equal(sum(ppo[1, 1, ]), 1, tolerance = 1e-12)
+  expect_equal(unname(no_re), expected_array(1:2, FALSE), tolerance = 1e-12)
+  expect_equal(unname(with_re), expected_array(1:2, TRUE), tolerance = 1e-12)
+
+  # Constrained partial proportional odds: cppo(y) = y - 1 scales the tau
+  # effect by 1 at the first cut-point and 2 at the second.
+  ppo_draws <- cbind(model$draws, tau_tx = c(0.10, -0.20, 0.15))
+  ppo_model <- make_fake_blrm(draws = ppo_draws, pppo = 1L)
+  ppo_model$cppo <- function(y) as.numeric(y) - 1
+  ppo <- mostr:::predict_blrm_response_markov(
+    ppo_model,
+    newdata[1, , drop = FALSE],
+    draw_indices = 1
+  )
+  expect_equal(
+    unname(ppo[1, 1, ]),
+    state_probabilities(c(0.50, -0.50) + 0.25 + 0.10 * c(1, 2)),
+    tolerance = 1e-12
+  )
+
+  cppo_string_test <- function(y) as.numeric(y) - 1
+  ppo_model$cppo <- "cppo_string_test"
+  ppo_string <- mostr:::predict_blrm_response_markov(
+    ppo_model,
+    newdata[1, , drop = FALSE],
+    draw_indices = 1
+  )
   expect_equal(ppo_string, ppo, tolerance = 1e-12)
-  expect_s3_class(cppo_error, "try-error")
-  expect_match(as.character(cppo_error), "Inline expressions are not supported")
-  expect_s3_class(re_error, "try-error")
-  expect_match(as.character(re_error), "not present")
+
+  ppo_model$cppo <- "function(y) as.numeric(y) - 1"
+  expect_error(
+    mostr:::predict_blrm_response_markov(
+      ppo_model,
+      newdata[1, , drop = FALSE],
+      draw_indices = 1
+    ),
+    "Inline expressions are not supported",
+    fixed = TRUE
+  )
+
+  unknown <- newdata[1, , drop = FALSE]
+  unknown$id <- "z"
+  expect_error(
+    mostr:::predict_blrm_response_markov(
+      model,
+      unknown,
+      include_re = TRUE,
+      draw_indices = 1
+    ),
+    "not present",
+    fixed = TRUE
+  )
 })
 
 test_that("sops() summarizes blrm posterior SOP draws and stores optional draws", {

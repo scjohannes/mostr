@@ -1,70 +1,148 @@
 make_plot_time_model <- function() {
   skip_if_not_installed("VGAM")
-  withr::local_seed(5521)
-  data <- make_markov_trajectories(
-    n_patients = 80,
-    follow_up_time = 4,
-    n_states = 3,
-    thresholds = c(-1, 1),
-    allowed_start_state = 1:2,
-    absorbing_state = 3,
-    treatment_effect = 0.3,
-    seed = 5521
-  ) |>
-    prepare_markov_data(absorbing_state = 3)
-  mostm(
-    ordered(y) ~ time + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    first_followup_time = 1,
-    id_var = "id",
-    engine = "vglm"
-  )
+  grid_fixture("plot_time_vglm", function() {
+    withr::local_seed(5521)
+    data <- make_markov_trajectories(
+      n_patients = 80,
+      follow_up_time = 4,
+      n_states = 3,
+      thresholds = c(-1, 1),
+      allowed_start_state = 1:2,
+      absorbing_state = 3,
+      treatment_effect = 0.3,
+      seed = 5521
+    ) |>
+      prepare_markov_data(absorbing_state = 3)
+    mostm(
+      ordered(y) ~ time + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      first_followup_time = 1,
+      id_var = "id",
+      engine = "vglm"
+    )
+  })
 }
 
 test_that("plot_time stacks every state into bars spanning follow-up", {
   model <- make_plot_time_model()
-  total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3)
-
-  plot <- plot_time(total)
-  built <- ggplot2::ggplot_build(plot)
-  bars <- built$data[[1]]
-
-  expect_s3_class(plot, "ggplot")
-  expect_length(built$data, 2L)
-  # Three visits, each spent in exactly one state.
-  expect_equal(as.vector(tapply(bars$xmax, bars$y, max)), c(3, 3))
-  expect_equal(sort(bars$x - bars$xmin), sort(total$estimate))
-  expect_identical(plot$labels$y, "tx")
-  expect_identical(plot$labels$x, "Average time in state")
-  expect_identical(
-    levels(plot$data$state_set),
-    c("1", "2", "3")
+  by_arm <- avg_state_time(
+    model,
+    variables = list(tx = c(0, 1)),
+    times = 1:3,
+    absorb = 3
   )
-  # The first treatment level is drawn at the top.
-  expect_identical(levels(plot$data$.group), c("1", "0"))
-})
-
-test_that("plot_time proportions divide each bar by its follow-up", {
-  model <- make_plot_time_model()
-  total <- avg_state_time(
+  by_arm_days <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
     absorb = 3,
     time_unit = "days"
   )
-
-  plot <- plot_time(total, scale = "proportion", show_labels = FALSE)
-  bars <- ggplot2::ggplot_build(plot)$data[[1]]
-
-  expect_length(plot$layers, 1L)
-  expect_equal(as.vector(tapply(bars$xmax, bars$y, max)), c(1, 1))
-  expect_identical(plot$labels$x, "Proportion of follow-up")
-  expect_identical(
-    plot_time(total)$labels$x,
-    "Average time in state (days)"
+  cohort <- avg_state_time(model, times = 1:3, absorb = 3)
+  by_sex_estimate <- c(1, 3, 2, 2, 3, 5, 4, 4)
+  by_sex <- structure(
+    data.frame(
+      state_set = rep(c("1", "2"), 4),
+      tx = rep(c(0, 0, 1, 1), 2),
+      sex = rep(c("f", "m"), each = 4),
+      estimate = by_sex_estimate
+    ),
+    class = c("markov_avg_state_time", "data.frame"),
+    y_levels = c("1", "2"),
+    time_args = list(state_sets = list("1" = "1", "2" = "2"))
   )
+
+  # Three visits, each spent in exactly one state, so time-scale bars end at 3
+  # and proportion bars at 1. The first treatment level is drawn at the top.
+  cases <- list(
+    list(
+      label = "two arms on the time scale",
+      x = by_arm,
+      args = list(),
+      n_layers = 2L,
+      n_bars = 2L,
+      bar_end = 3,
+      segments = by_arm$estimate,
+      x_label = "Average time in state",
+      y_label = "tx",
+      groups = c("1", "0"),
+      states = c("1", "2", "3")
+    ),
+    list(
+      label = "two arms on the time scale with a time unit",
+      x = by_arm_days,
+      args = list(),
+      n_layers = 2L,
+      n_bars = 2L,
+      bar_end = 3,
+      segments = by_arm_days$estimate,
+      x_label = "Average time in state (days)",
+      y_label = "tx",
+      groups = c("1", "0"),
+      states = c("1", "2", "3")
+    ),
+    list(
+      label = "two arms as proportions without labels",
+      x = by_arm_days,
+      args = list(scale = "proportion", show_labels = FALSE),
+      n_layers = 1L,
+      n_bars = 2L,
+      bar_end = 1,
+      segments = by_arm_days$estimate / 3,
+      x_label = "Proportion of follow-up",
+      y_label = "tx",
+      groups = c("1", "0"),
+      states = c("1", "2", "3")
+    ),
+    list(
+      label = "one bar per arm within each facet",
+      x = by_sex,
+      args = list(facet_var = "sex", scale = "proportion"),
+      n_layers = 2L,
+      n_bars = 4L,
+      bar_end = 1,
+      segments = by_sex_estimate / rep(c(4, 8), each = 4),
+      x_label = "Proportion of follow-up",
+      y_label = "tx",
+      groups = c("1", "0"),
+      states = c("1", "2")
+    ),
+    list(
+      label = "single observed-cohort bar",
+      x = cohort,
+      args = list(),
+      n_layers = 2L,
+      n_bars = 1L,
+      bar_end = 3,
+      segments = cohort$estimate,
+      x_label = "Average time in state",
+      y_label = NULL,
+      groups = "All patients",
+      states = c("1", "2", "3")
+    )
+  )
+
+  for (case in cases) {
+    label <- case$label
+    plot <- do.call(plot_time, c(list(case$x), case$args))
+    bars <- ggplot2::layer_data(plot, 1L)
+    bar_ends <- tapply(bars$xmax, list(bars$PANEL, bars$y), max)
+    bar_ends <- as.vector(bar_ends[!is.na(bar_ends)])
+
+    expect_length(plot$layers, case$n_layers)
+    expect_length(bar_ends, case$n_bars)
+    expect_equal(bar_ends, rep(case$bar_end, case$n_bars), info = label)
+    expect_equal(
+      sort(bars$x - bars$xmin),
+      sort(case$segments),
+      info = label
+    )
+    expect_identical(plot$labels$x, case$x_label, info = label)
+    expect_identical(plot$labels$y, case$y_label, info = label)
+    expect_identical(levels(plot$data$.group), case$groups, info = label)
+    expect_identical(levels(plot$data$state_set), case$states, info = label)
+  }
 })
 
 test_that("plot_time pointrange draws confidence intervals per state", {
@@ -130,39 +208,14 @@ test_that("plot_time skips labels on narrow segments", {
   expect_identical(sum(labels$label == ""), 1L)
 })
 
-test_that("plot_time draws one bar per scenario within each facet", {
-  total <- structure(
-    data.frame(
-      state_set = rep(c("1", "2"), 4),
-      tx = rep(c(0, 0, 1, 1), 2),
-      sex = rep(c("f", "m"), each = 4),
-      estimate = c(1, 3, 2, 2, 3, 5, 4, 4)
-    ),
-    class = c("markov_avg_state_time", "data.frame"),
-    y_levels = c("1", "2"),
-    time_args = list(state_sets = list("1" = "1", "2" = "2"))
+test_that("plot_time accepts or rejects its inputs", {
+  model <- make_plot_time_model()
+  total <- avg_state_time(
+    model,
+    variables = list(tx = c(0, 1)),
+    times = 1:3,
+    absorb = 3
   )
-
-  plot <- plot_time(total, facet_var = "sex", scale = "proportion")
-  bars <- ggplot2::ggplot_build(plot)$data[[1]]
-
-  expect_identical(plot$labels$y, "tx")
-  expect_equal(as.vector(tapply(bars$xmax, list(bars$PANEL, bars$y), max)), rep(1, 4))
-  expect_equal(sort(bars$x - bars$xmin), sort(c(1, 3, 2, 2, 3, 5, 4, 4) / rep(c(4, 8), each = 4)))
-})
-
-test_that("plot_time labels a single observed-cohort bar", {
-  model <- make_plot_time_model()
-  total <- avg_state_time(model, times = 1:3, absorb = 3)
-
-  plot <- plot_time(total)
-
-  expect_identical(levels(plot$data$.group), "All patients")
-  expect_null(plot$labels$y)
-})
-
-test_that("plot_time rejects bars that would count a state twice", {
-  model <- make_plot_time_model()
   overlapping <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
@@ -178,32 +231,50 @@ test_that("plot_time rejects bars that would count a state twice", {
     state_sets = list(well = "1", ill = "2")
   )
 
-  expect_error(plot_time(overlapping), "do not overlap", fixed = TRUE)
-  expect_s3_class(plot_time(overlapping, type = "pointrange"), "ggplot")
-  expect_s3_class(plot_time(partial), "ggplot")
-  expect_error(
-    plot_time(partial, scale = "proportion"),
-    "missing state(s): 3",
-    fixed = TRUE
+  # `error = NULL` marks a call that must draw a plot.
+  cases <- list(
+    list(
+      label = "bars that would count a state twice",
+      call = function() plot_time(overlapping),
+      error = "do not overlap"
+    ),
+    list(
+      label = "overlapping state sets as point ranges",
+      call = function() plot_time(overlapping, type = "pointrange"),
+      error = NULL
+    ),
+    list(
+      label = "bars that leave out a state, on the time scale",
+      call = function() plot_time(partial),
+      error = NULL
+    ),
+    list(
+      label = "proportions that leave out a state",
+      call = function() plot_time(partial, scale = "proportion"),
+      error = "missing state(s): 3"
+    ),
+    list(
+      label = "not a state-time summary",
+      call = function() plot_time(data.frame(state_set = "1", estimate = 1)),
+      error = "`x` must be a `markov_avg_state_time` object"
+    ),
+    list(
+      label = "unknown group_var",
+      call = function() plot_time(total, group_var = "arm"),
+      error = "`group_var` column not found in `data`: arm"
+    ),
+    list(
+      label = "missing show_labels",
+      call = function() plot_time(total, show_labels = NA),
+      error = "`show_labels` must be TRUE or FALSE."
+    )
   )
-})
 
-test_that("plot_time validates its inputs", {
-  expect_error(
-    plot_time(data.frame(state_set = "1", estimate = 1)),
-    "`x` must be a `markov_avg_state_time` object",
-    fixed = TRUE
-  )
-  model <- make_plot_time_model()
-  total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3)
-  expect_error(
-    plot_time(total, group_var = "arm"),
-    "`group_var` column not found in `data`: arm",
-    fixed = TRUE
-  )
-  expect_error(
-    plot_time(total, show_labels = NA),
-    "`show_labels` must be TRUE or FALSE.",
-    fixed = TRUE
-  )
+  for (case in cases) {
+    if (is.null(case$error)) {
+      expect_true(ggplot2::is_ggplot(case$call()), info = case$label)
+    } else {
+      expect_error(case$call(), case$error, fixed = TRUE, info = case$label)
+    }
+  }
 })

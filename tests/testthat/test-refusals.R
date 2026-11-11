@@ -4,12 +4,14 @@
 # The rows reuse the shared fits of helper-grid.R, so the table costs few fits.
 #
 # Rows are grouped by the stage that refuses: fitting with `mostm()`,
-# prediction (`sops()`, `avg_sops()`, the time and comparison functions) and
-# inference (`inferences()` and its accessors). Within a stage, rows that need
-# only cheap calls run everywhere, CRAN included; rows that need a weighted,
+# prediction (`sops()`, `avg_sops()`, the time and comparison functions),
+# inference (`inferences()` and its accessors), simulation (`sim_markov()`)
+# and robust variance (`robcov_vglm()`). Within a stage, rows that need only
+# cheap calls run everywhere, CRAN included; rows that need a weighted,
 # penalized, second-order or partial proportional-odds fit, bootstrap refits,
-# or rmsb loaded, are skipped on CRAN. IDs are F (fitting), P (prediction)
-# and I (inference); the F07 and F10 rows are in the blrm group.
+# or rmsb loaded, are skipped on CRAN. IDs are F (fitting), P (prediction),
+# I (inference), S (simulation) and V (robust variance); the F07 and F10 rows
+# are in the blrm group.
 #
 # Error-text snapshots elsewhere (`_snaps/`) keep the full wording where it
 # matters; this table checks that each refusal still happens. Rows marked
@@ -1223,4 +1225,209 @@ test_that("a covariance matrix selects conditional variance rather than being re
   )
   conditional <- inferences(average, method = "delta", vcov = "conditional")
   expect_equal(with_matrix$std.error, conditional$std.error, tolerance = 1e-10)
+})
+
+# ---- Simulation ----
+
+# Patients and a linear predictor for `sim_markov(NULL, ...)`, where the user
+# supplies the model.
+refusal_sim_patients <- data.frame(id = 1:2, yprev = c(1, 1), tx = c(0, 1))
+refusal_sim_lp <- function(yprev, t, tx, treatment_effect, extra_params) 0
+
+# One visit of one patient under a user model whose linear predictor `lp`
+# returns the given value.
+refusal_sim_threshold_lp <- function(intercepts, value) {
+  sim_markov(
+    NULL,
+    baseline_data = data.frame(id = 1, yprev = 1, tx = 1),
+    follow_up_time = 1,
+    intercepts = intercepts,
+    lp_function = function(yprev, t, tx, treatment_effect, extra_params) value,
+    absorbing_states = integer(),
+    covariate_names = "tx",
+    seed = 1
+  )
+}
+
+simulation_refusals <- list(
+  refusal(
+    "S01", "no `preset`",
+    function() sim_markov(n_patients = 10),
+    "`preset` is required"
+  ),
+  refusal(
+    "S02", "a preset name that doesn't exist",
+    function() sim_markov("actt3", n_patients = 10),
+    "`preset` must be one of \"actt1\", \"actt2\", \"violet\", or NULL"
+  ),
+  refusal(
+    "S03", "two preset names",
+    function() sim_markov(c("actt1", "actt2")),
+    "`preset` must be one of"
+  ),
+  refusal(
+    "S04", "a preset with both `baseline_data` and `n_patients`",
+    function() {
+      sim_markov(
+        "actt2",
+        n_patients = 2,
+        baseline_data = data.frame(id = 1:2, yprev = c(5L, 6L), tx = c(0L, 1L))
+      )
+    },
+    "Supply either `baseline_data` or `n_patients` and `treatment_prob`"
+  ),
+  refusal(
+    "S05", "a preset with both `baseline_data` and `treatment_prob`",
+    function() {
+      sim_markov(
+        "actt2",
+        treatment_prob = 1,
+        baseline_data = data.frame(id = 1:2, yprev = c(5L, 6L), tx = c(0L, 1L))
+      )
+    },
+    "Supply either `baseline_data` or `n_patients` and `treatment_prob`"
+  ),
+  refusal(
+    "S06", "a user model without `baseline_data`",
+    function() sim_markov(NULL, intercepts = 0, lp_function = refusal_sim_lp),
+    "With `preset = NULL`, supply `baseline_data`."
+  ),
+  refusal(
+    "S07", "a user model without `intercepts` and `lp_function`",
+    function() sim_markov(NULL, baseline_data = refusal_sim_patients),
+    "With `preset = NULL`, supply `intercepts`, `lp_function`."
+  ),
+  refusal(
+    "S08", "a user model with both `baseline_data` and `n_patients`",
+    function() {
+      sim_markov(
+        NULL,
+        n_patients = 2,
+        baseline_data = refusal_sim_patients,
+        intercepts = 0,
+        lp_function = refusal_sim_lp
+      )
+    },
+    "Supply either `baseline_data` or `n_patients`"
+  ),
+  refusal(
+    "S09", "a user model with `n_patients` instead of `baseline_data`",
+    function() {
+      sim_markov(NULL, n_patients = 2, intercepts = 0, lp_function = refusal_sim_lp)
+    },
+    "`n_patients` and `treatment_prob` sample patients from a preset"
+  ),
+  refusal(
+    "S10", "`baseline_data` that is not a data frame",
+    function() {
+      sim_markov(NULL, baseline_data = list(), intercepts = 0, lp_function = refusal_sim_lp)
+    },
+    "baseline_data must be a data frame"
+  ),
+  refusal(
+    "S11", "`baseline_data` without a `yprev` column",
+    function() {
+      sim_markov(
+        NULL,
+        baseline_data = data.frame(id = 1),
+        intercepts = 0,
+        lp_function = refusal_sim_lp
+      )
+    },
+    "baseline_data must contain columns: yprev"
+  ),
+  refusal(
+    "S12", "`intercepts` that are not numeric",
+    function() {
+      sim_markov(
+        NULL,
+        baseline_data = refusal_sim_patients,
+        intercepts = character(),
+        lp_function = refusal_sim_lp
+      )
+    },
+    "intercepts must be a numeric vector"
+  ),
+  refusal(
+    "S13", "an `lp_function` that is not a function",
+    function() {
+      sim_markov(
+        NULL,
+        baseline_data = refusal_sim_patients,
+        intercepts = 0,
+        lp_function = "nope"
+      )
+    },
+    "lp_function must be a function"
+  ),
+  refusal(
+    "S14", "a linear predictor with neither one value nor one per threshold",
+    function() refusal_sim_threshold_lp(c(-1, 0, 1), c(0, 0)),
+    "lp_function must return either length 1 or length(intercepts)"
+  ),
+  refusal(
+    "S15", "a linear predictor that is not finite",
+    function() refusal_sim_threshold_lp(c(-1, 0, 1), NA_real_),
+    "lp_function must return finite numeric values"
+  ),
+  refusal(
+    "S16", "threshold-specific linear predictors that give negative state probabilities",
+    function() refusal_sim_threshold_lp(c(0, 1), c(5, -5)),
+    "create decreasing cumulative probabilities"
+  )
+)
+
+test_that("sim_markov() refuses what it cannot simulate", {
+  check_refusals(simulation_refusals)
+})
+
+# ---- Robust variance ----
+
+# A small logistic vglm fit with eight clusters of ten rows.
+refusal_robcov_data <- function() {
+  withr::with_seed(90011, {
+    data.frame(
+      y = stats::rbinom(80, 1, 0.5),
+      x = stats::rnorm(80),
+      id = rep(1:8, each = 10)
+    )
+  })
+}
+
+refusal_robcov_fit <- function() {
+  refusal_refit("robcov_vglm logistic", function() {
+    VGAM::vglm(y ~ x, family = VGAM::binomialff, data = refusal_robcov_data())
+  })
+}
+
+robcov_refusals <- list(
+  refusal(
+    "V01", "a fit that is not a vglm fit",
+    function() robcov_vglm(stats::lm(y ~ x, data = refusal_robcov_data())),
+    "'fit' must be a vglm object"
+  ),
+  refusal(
+    "V02", "a `cluster` of the wrong length",
+    function() robcov_vglm(refusal_robcov_fit(), cluster = 1:10),
+    "Length of 'cluster' must equal"
+  ),
+  refusal(
+    "V03", "a `cluster` with a missing value",
+    function() {
+      cluster <- refusal_robcov_data()$id
+      cluster[1] <- NA
+      robcov_vglm(refusal_robcov_fit(), cluster = cluster)
+    },
+    "'cluster' contains missing values"
+  ),
+  refusal(
+    "V04", "a single cluster",
+    function() robcov_vglm(refusal_robcov_fit(), cluster = rep(1, 80)),
+    "Cluster-robust covariance requires at least two clusters."
+  )
+)
+
+test_that("robcov_vglm() refuses what it cannot compute", {
+  skip_if_not_installed("VGAM")
+  check_refusals(robcov_refusals)
 })

@@ -21,124 +21,110 @@ test_that("plot_transitions creates empirical joint-proportion heatmaps", {
     as.numeric(tapply(plot$data$estimate, plot$data$.time_key, sum)),
     c(1, 1)
   )
+  # One of the four patients goes from state 1 to state 1 at week 1.
+  stay_in_1 <- plot$data$.time_key == "1" &
+    plot$data$previous_state == "1" &
+    plot$data$state == "1"
+  expect_equal(plot$data$estimate[stay_in_1], 0.25)
 })
 
-test_that("plot_transitions orders numeric-looking time facets numerically", {
-  data <- data.frame(
+test_that("plot_transitions orders time facets chronologically", {
+  # Numeric-looking character and factor weeks sort as numbers, and sparse
+  # unsorted numeric times sort chronologically.
+  twelve_weeks <- data.frame(
     id = rep(1:2, each = 12),
     week = rep(1:12, times = 2),
     yprev = rep(1, 24),
     y = rep(1, 24)
   )
-
-  data$week <- as.character(data$week)
-  character_plot <- plot_transitions(
-    data,
-    time_var = "week",
-    y_var = "y",
-    p_var = "yprev"
-  )
-
-  data$week <- factor(data$week)
-  factor_plot <- plot_transitions(
-    data,
-    time_var = "week",
-    y_var = "y",
-    p_var = "yprev"
-  )
-
-  expected <- paste0("Time ", 1:12)
-  expect_equal(levels(character_plot$data$.panel), expected)
-  expect_equal(levels(factor_plot$data$.panel), expected)
-})
-
-test_that("plot_transitions orders sparse time facets chronologically", {
-  data <- data.frame(
+  sparse <- data.frame(
     id = rep(1:2, each = 3),
     week = rep(c(7, 14, 1), times = 2),
     yprev = rep(1, 6),
     y = rep(1, 6)
   )
-
-  plot <- plot_transitions(
-    data,
-    times = c(1, 7, 14),
-    time_var = "week",
-    y_var = "y",
-    p_var = "yprev"
+  cases <- list(
+    list(
+      label = "character weeks",
+      data = transform(twelve_weeks, week = as.character(week)),
+      times = NULL,
+      expected = paste0("Time ", 1:12)
+    ),
+    list(
+      label = "factor weeks",
+      data = transform(twelve_weeks, week = factor(as.character(week))),
+      times = NULL,
+      expected = paste0("Time ", 1:12)
+    ),
+    list(
+      label = "sparse numeric weeks",
+      data = sparse,
+      times = c(1, 7, 14),
+      expected = paste0("Time ", c(1, 7, 14))
+    )
   )
 
-  expect_equal(levels(plot$data$.panel), paste0("Time ", c(1, 7, 14)))
+  for (case in cases) {
+    plot <- plot_transitions(
+      case$data,
+      times = case$times,
+      time_var = "week",
+      y_var = "y",
+      p_var = "yprev"
+    )
+    expect_equal(levels(plot$data$.panel), case$expected, info = case$label)
+  }
 })
 
-test_that("model transition diagnostics evaluate full sparse numeric grids", {
+test_that("model transition diagnostics evaluate full sparse numeric grids for both Markov orders", {
   model <- structure(list(), class = "vglm", markov_id_var = "id")
-  newdata <- data.frame(
-    id = 1,
-    time = 0,
-    yprev = factor(1, levels = 1:2)
-  )
-  predicted_times <- numeric()
-
-  with_mocked_bindings(
-    validate_markov_model = function(object) NULL,
-    predict_vglm_response_markov = function(object, newdata) {
-      predicted_times <<- c(predicted_times, unique(newdata$time))
-      out <- matrix(c(1, 0), nrow = nrow(newdata), ncol = 2, byrow = TRUE)
-      colnames(out) <- c("1", "2")
-      out
-    },
-    {
-      plot <- plot_transitions(
-        model,
-        newdata = newdata,
-        times = c(1, 7, 14),
-        y_levels = 1:2,
-        seed = 1,
-        show_values = FALSE
-      )
-    }
+  orders <- list(
+    first = list(
+      newdata = data.frame(id = 1, time = 0, yprev = factor(1, levels = 1:2)),
+      p2_var = NULL
+    ),
+    second = list(
+      newdata = data.frame(
+        id = 1,
+        time = 0,
+        ypprev = factor(1, levels = 1:2),
+        yprev = factor(1, levels = 1:2)
+      ),
+      p2_var = "ypprev"
+    )
   )
 
-  expect_equal(predicted_times, 1:14)
-  expect_equal(levels(plot$data$.panel), paste0("Time ", c(1, 7, 14)))
-  expect_setequal(as.character(plot$data$.time_key), c("1", "7", "14"))
-})
+  for (order in names(orders)) {
+    predicted_times <- numeric()
+    with_mocked_bindings(
+      validate_markov_model = function(object) NULL,
+      predict_vglm_response_markov = function(object, newdata) {
+        predicted_times <<- c(predicted_times, unique(newdata$time))
+        out <- matrix(c(1, 0), nrow = nrow(newdata), ncol = 2, byrow = TRUE)
+        colnames(out) <- c("1", "2")
+        out
+      },
+      {
+        plot <- plot_transitions(
+          model,
+          newdata = orders[[order]]$newdata,
+          times = c(1, 7, 14),
+          y_levels = 1:2,
+          p2_var = orders[[order]]$p2_var,
+          seed = 1,
+          show_values = FALSE
+        )
+      }
+    )
 
-test_that("second-order model diagnostics evaluate full sparse numeric grids", {
-  model <- structure(list(), class = "vglm", markov_id_var = "id")
-  newdata <- data.frame(
-    id = 1,
-    time = 0,
-    ypprev = factor(1, levels = 1:2),
-    yprev = factor(1, levels = 1:2)
-  )
-  predicted_times <- numeric()
-
-  with_mocked_bindings(
-    validate_markov_model = function(object) NULL,
-    predict_vglm_response_markov = function(object, newdata) {
-      predicted_times <<- c(predicted_times, unique(newdata$time))
-      out <- matrix(c(1, 0), nrow = nrow(newdata), ncol = 2, byrow = TRUE)
-      colnames(out) <- c("1", "2")
-      out
-    },
-    {
-      plot <- plot_transitions(
-        model,
-        newdata = newdata,
-        times = c(1, 7, 14),
-        y_levels = 1:2,
-        p2_var = "ypprev",
-        seed = 1,
-        show_values = FALSE
-      )
-    }
-  )
-
-  expect_equal(predicted_times, 1:14)
-  expect_equal(levels(plot$data$.panel), paste0("Time ", c(1, 7, 14)))
-  expect_setequal(as.character(plot$data$.time_key), c("1", "7", "14"))
+    expect_equal(predicted_times, 1:14, info = order)
+    expect_equal(
+      levels(plot$data$.panel),
+      paste0("Time ", c(1, 7, 14)),
+      info = order
+    )
+    expect_setequal(as.character(plot$data$.time_key), c("1", "7", "14"))
+  }
 })
 
 test_that("model diagnostics expand sparse factor visit grids", {
@@ -300,6 +286,18 @@ test_that("plot_transitions carries absorbing states absent from yprev levels", 
 
   expect_s3_class(plot, "ggplot")
   expect_equal(sum(plot$data$n), 2)
+  # The patient moves from state 1 to state 2 at visit 1 and stays in the
+  # absorbing state 2 at visit 2, although 2 is not a level of `yprev`.
+  transition <- function(visit, from, to) {
+    plot$data$estimate[
+      plot$data$.time_key == visit &
+        plot$data$previous_state == from &
+        plot$data$state == to
+    ]
+  }
+  expect_equal(transition("1", "1", "2"), 1)
+  expect_equal(transition("2", "2", "2"), 1)
+  expect_false(anyNA(plot$data$estimate))
 })
 
 test_that("plot_transitions summarizes blrm transition draws without sampling", {
@@ -539,35 +537,6 @@ test_that("plot_correlation uses first-order model-implied moments", {
     expected,
     tolerance = 1e-6
   )
-})
-
-test_that("plot_correlation uses second-order model-implied moments", {
-  model <- structure(list(), class = "vglm", markov_id_var = "id")
-  newdata <- data.frame(
-    time = 0,
-    ypprev = factor(1, levels = 1:2),
-    yprev = factor(1, levels = 1:2)
-  )
-
-  with_mocked_bindings(
-    validate_markov_model = function(object) NULL,
-    predict_vglm_response_markov = function(object, newdata) {
-      p2 <- ifelse(newdata$time == 1, 0.5, as.character(newdata$yprev) == "2")
-      cbind("1" = 1 - p2, "2" = p2)
-    },
-    {
-      plot <- plot_correlation(
-        model,
-        newdata = newdata,
-        times = 1:3,
-        y_levels = 1:2,
-        p2_var = "ypprev",
-        show_values = FALSE
-      )
-    }
-  )
-
-  expect_equal(as.numeric(plot$data$correlation), rep(1, 3), tolerance = 1e-6)
 })
 
 test_that("plot_correlation summarizes blrm correlations by draw", {

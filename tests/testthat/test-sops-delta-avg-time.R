@@ -27,10 +27,6 @@ delta_avg_time_case <- local({
   }
 })
 
-avg_time_numerical_jacobian <- function(model, point) {
-  numeric_jacobian(model, function(model) point(model)$estimate)
-}
-
 test_that("average-time conditional variance agrees with numerical derivatives", {
   case <- delta_avg_time_case(factor_time = TRUE)
   for (real_time in c(FALSE, TRUE)) {
@@ -47,7 +43,10 @@ test_that("average-time conditional variance agrees with numerical derivatives",
     }
     raw <- point(case$fit)
     inferred <- inferences(raw, method = "delta", vcov = case$fit$var)
-    numerical <- avg_time_numerical_jacobian(case$fit, point)
+    numerical <- numeric_jacobian(
+      case$fit,
+      function(model) point(model)$estimate
+    )
     covariance <- case$fit$var[colnames(numerical), colnames(numerical)]
     expected <- numerical %*% covariance %*% t(numerical)
 
@@ -168,39 +167,6 @@ test_that("unconditional average time includes baseline sampling and joint covar
   )
 })
 
-test_that("average-time contrasts agree with analytical average comparisons", {
-  case <- delta_avg_time_case()
-  args <- list(
-    model = case$fit,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    state_sets = list(lower = c("1", "2")),
-    absorb = 6,
-    time_map = case$time_map,
-    target_times = 0:14
-  )
-  point <- do.call(avg_state_time, args)
-  comparison <- do.call(
-    avg_comparisons,
-    c(args, list(estimand = "time_in_state"))
-  )
-  for (variance in c("conditional", "unconditional")) {
-    inferred <- inferences(point, method = "delta", vcov = variance)
-    contrasted <- inferences(comparison, method = "delta", vcov = variance)
-    contrast <- as.numeric(inferred$tx == 1) - as.numeric(inferred$tx == 0)
-    expect_equal(
-      drop(contrast %*% inferred$estimate),
-      contrasted$estimate,
-      tolerance = 1e-12
-    )
-    expect_equal(
-      drop(contrast %*% stats::vcov(inferred) %*% contrast),
-      contrasted$std.error^2,
-      tolerance = 1e-12
-    )
-  }
-})
-
 test_that("real-time covariance respects omitted anchors and zero-length intervals", {
   case <- delta_avg_time_case()
   # A grid of mapped visit times only never reaches the starting-state time, so
@@ -319,10 +285,6 @@ test_that("average-time analytical inference preserves restrictions and row alig
   )
   expect_snapshot(inferences(supplied, method = "delta"), error = TRUE)
   expect_no_error(inferences(supplied, method = "delta", vcov = "conditional"))
-  expect_snapshot(
-    inferences(point, method = "delta", conf_type = "logit"),
-    error = TRUE
-  )
   grouped <- avg_state_time(case$fit, times = case$times, absorb = 6, by = "tx")
   expect_snapshot(inferences(grouped, method = "delta"), error = TRUE)
 })
@@ -411,7 +373,10 @@ test_that("counterfactual starting states allow only conditional variance", {
   }
   point <- point_fun(case$fit)
   inferred <- inferences(point, method = "delta", vcov = "conditional")
-  numerical <- avg_time_numerical_jacobian(case$fit, point_fun)
+  numerical <- numeric_jacobian(
+    case$fit,
+    function(model) point_fun(model)$estimate
+  )
   covariance <- stats::vcov(case$fit)[colnames(numerical), colnames(numerical)]
   expect_equal(inferred$estimate, point$estimate, tolerance = 1e-12)
   expect_equal(
@@ -421,26 +386,17 @@ test_that("counterfactual starting states allow only conditional variance", {
   )
   expect_no_error(inferences(point, method = "mvn", n_draws = 3, seed = 1))
 
+  # The default variance of an average is unconditional, which is refused
+  # here. Explicit unconditional variance and the bootstrap methods are rows
+  # I04 to I07 of test-refusals.R.
   unconditional <- "starting state.*conditional"
   expect_error(inferences(point, method = "delta"), unconditional)
-  expect_error(
-    inferences(point, method = "delta", vcov = "unconditional"),
-    unconditional
-  )
-  for (method in c("score_bootstrap", "bootstrap", "fwb")) {
-    expect_error(
-      run_inferences_method(point, method = method, n_draws = 3, seed = 1),
-      unconditional,
-      info = method
-    )
-  }
   sop_average <- avg_sops(
     case$fit,
     variables = variables,
     times = case$times,
     absorb = 6
   )
-  expect_error(inferences(sop_average, method = "delta"), unconditional)
   expect_no_error(
     inferences(sop_average, method = "delta", vcov = "conditional")
   )
@@ -489,58 +445,4 @@ test_that("interpolated SOP estimates and draws start at the set starting state"
       as.character(start_draws$state) == as.character(start_draws$yprev)
     )
   )
-})
-
-test_that("mapped totals include the baseline interval by default", {
-  case <- delta_avg_time_case()
-  default <- avg_state_time(
-    case$fit,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    state_sets = list(lower = c("1", "2"), all = as.character(1:6)),
-    absorb = 6,
-    time_map = case$time_map
-  )
-  explicit <- avg_state_time(
-    case$fit,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    state_sets = list(lower = c("1", "2"), all = as.character(1:6)),
-    absorb = 6,
-    time_map = case$time_map,
-    target_times = c(0, 3, 7, 14)
-  )
-  expect_equal(default$estimate, explicit$estimate, tolerance = 1e-12)
-  expect_equal(default$estimate[default$state_set == "all"], c(14, 14))
-  expect_equal(
-    inferences(default, method = "delta")$std.error,
-    inferences(explicit, method = "delta")$std.error,
-    tolerance = 1e-12
-  )
-  comparison_args <- list(
-    model = case$fit,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    state_sets = "1",
-    absorb = 6,
-    estimand = "time_in_state",
-    time_map = case$time_map
-  )
-  expect_equal(
-    do.call(avg_comparisons, comparison_args)$estimate,
-    do.call(
-      avg_comparisons,
-      c(comparison_args, list(target_times = c(0, 3, 7, 14)))
-    )$estimate,
-    tolerance = 1e-12
-  )
-  unanchored <- avg_state_time(
-    case$fit,
-    times = case$times,
-    state_sets = list(all = as.character(1:6)),
-    absorb = 6,
-    time_map = case$time_map,
-    baseline_time = NULL
-  )
-  expect_equal(unanchored$estimate, 11)
 })

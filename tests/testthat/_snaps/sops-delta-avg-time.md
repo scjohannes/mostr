@@ -9,14 +9,6 @@
 ---
 
     Code
-      inferences(point, method = "delta", conf_type = "logit")
-    Condition
-      Error:
-      ! Analytical average time requires `conf_type = "wald"`.
-
----
-
-    Code
       inferences(grouped, method = "delta")
     Condition
       Error:

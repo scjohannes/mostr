@@ -80,33 +80,58 @@ test_that("RMS basis registry recognizes fitted Design metadata", {
   expect_null(mostr:::rms_basis_handler_for_design("polynomial", 2L))
 })
 
-test_that("formula helper injection includes every registered RMS basis", {
+test_that("formula helper injection includes every registered RMS basis and leaves non-formulas alone", {
   skip_if_not_installed("rms")
 
-  form <- stats::as.formula(
+  stripped <- stats::as.formula(
     "y ~ rcs(time, 4) + lsp(age, c(30, 60))",
     env = baseenv()
   )
-  out <- mostr:::add_rms_formula_helpers(form)
-  out_env <- environment(out)
+  no_environment <- y ~ x
+  environment(no_environment) <- NULL
 
-  expect_equal(exists("rcs", envir = out_env, inherits = TRUE), TRUE)
-  expect_equal(exists("lsp", envir = out_env, inherits = TRUE), TRUE)
-  expect_equal(exists("%ia%", envir = out_env, inherits = TRUE), TRUE)
+  cases <- list(
+    list(
+      label = "a formula whose environment lacks rms",
+      input = stripped,
+      helpers = c("rcs", "lsp", "%ia%")
+    ),
+    list(
+      label = "a formula without an environment",
+      input = no_environment,
+      helpers = c("rcs", "lsp")
+    ),
+    list(label = "a number", input = 1, helpers = NULL)
+  )
+
+  for (case in cases) {
+    out <- mostr:::add_rms_formula_helpers(case$input)
+    if (is.null(case$helpers)) {
+      expect_equal(out, case$input, info = case$label)
+      next
+    }
+    expect_s3_class(out, "formula")
+    for (helper in case$helpers) {
+      expect_true(
+        exists(helper, envir = environment(out), inherits = TRUE),
+        info = paste(case$label, helper)
+      )
+    }
+  }
 })
 
-test_that("the vglm engine splits lsp basis columns and records metadata", {
+test_that("lsp time bases give the same SOPs through the compiled plan and the R engine", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 140, seed = 2471, follow_up_time = 12)
-  form <- stats::as.formula(
-    "ordered(y) ~ lsp(time, c(3, 7)) + tx + yprev",
-    env = baseenv()
-  )
-  fit <- suppressWarnings(
+  baseline <- data[data$time == 1, , drop = FALSE][1:8, , drop = FALSE]
+  vglm_fit <- suppressWarnings(
     mostr::mostm(
-      form,
+      stats::as.formula(
+        "ordered(y) ~ lsp(time, c(3, 7)) + tx + yprev",
+        env = baseenv()
+      ),
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
@@ -114,68 +139,56 @@ test_that("the vglm engine splits lsp basis columns and records metadata", {
     )
   )
 
-  basis_terms <- attr(fit, "markov_basis_terms", exact = TRUE)
+  # The vglm engine splits the lsp basis into one column per piece and records
+  # them, so prediction can rebuild the basis.
+  basis_terms <- attr(vglm_fit, "markov_basis_terms", exact = TRUE)
   expect_length(basis_terms, 1L)
   expect_equal(basis_terms[[1L]]$handlers, "lsp")
   expect_length(basis_terms[[1L]]$columns, 3L)
-  expect_equal(attr(fit, "markov_split_assign", exact = TRUE), TRUE)
-
-  lsp_constraints <- grep(
-    "lsp\\(",
-    names(fit$vglm_fit@constraints),
-    value = TRUE
+  expect_equal(attr(vglm_fit, "markov_split_assign", exact = TRUE), TRUE)
+  expect_length(
+    grep("lsp\\(", names(vglm_fit$vglm_fit@constraints), value = TRUE),
+    3L
   )
-  expect_length(lsp_constraints, 3L)
 
-  baseline <- data[data$time == 1, , drop = FALSE][1:8, , drop = FALSE]
-  fast <- mostr::soprob_markov(
-    fit,
-    newdata = baseline,
-    times = 1:8,
-    y_levels = 1:6,
-    absorb = 6
-  )
-  reference <- mostr:::soprob_markov_reference(
-    fit,
-    newdata = baseline,
-    times = 1:8,
-    y_levels = 1:6,
-    absorb = 6
-  )
-  expect_equal(fast, reference, tolerance = 1e-11)
-})
-
-test_that("orm lsp terms use the optimized execution plan", {
-  skip_if_not_installed("rms")
-
-  data <- make_test_data(n_patients = 100, seed = 2472, follow_up_time = 12)
-  fit <- suppressWarnings(mostm(
+  orm_fit <- suppressWarnings(mostm(
     ordered(y) ~ rms::lsp(time, c(3, 7)) + tx + yprev,
     data = data,
     id_var = "id"
   ))
-  baseline <- data[data$time == 1, , drop = FALSE][1:8, , drop = FALSE]
+  # The plan compiler takes the fitted model inside the vglm engine's wrapper.
+  cases <- list(
+    list(label = "vglm", fit = vglm_fit, plan_model = vglm_fit$vglm_fit),
+    list(label = "orm", fit = orm_fit, plan_model = orm_fit)
+  )
+  args <- list(newdata = baseline, times = 1:8, y_levels = 1:6, absorb = 6)
 
-  plan <- mostr:::compile_sop_execution_plan(
-    fit,
-    newdata = baseline,
-    times = 1:8,
-    y_levels = 1:6,
-    absorb = 6,
-    builder = "batched"
-  )
-  fast <- mostr:::run_sop_execution_plan(
-    plan,
-    mostr:::get_effective_coefs(fit)
-  )
-  reference <- mostr:::soprob_markov_reference(
-    fit,
-    newdata = baseline,
-    times = 1:8,
-    y_levels = 1:6,
-    absorb = 6
-  )
+  for (case in cases) {
+    reference <- do.call(
+      mostr:::soprob_markov_reference,
+      c(list(case$fit), args)
+    )
+    expect_equal(
+      do.call(mostr::soprob_markov, c(list(case$fit), args)),
+      reference,
+      tolerance = 1e-11,
+      info = case$label
+    )
 
-  expect_s3_class(plan, "markov_sop_exec_plan")
-  expect_equal(unname(fast), unname(reference), tolerance = 1e-11)
+    plan <- do.call(
+      mostr:::compile_sop_execution_plan,
+      c(list(case$plan_model), args, list(builder = "batched"))
+    )
+    expect_s3_class(plan, "markov_sop_exec_plan")
+    planned <- mostr:::run_sop_execution_plan(
+      plan,
+      mostr:::get_effective_coefs(case$plan_model)
+    )
+    expect_equal(
+      unname(planned),
+      unname(reference),
+      tolerance = 1e-11,
+      info = case$label
+    )
+  }
 })

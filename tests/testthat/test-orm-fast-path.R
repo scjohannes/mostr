@@ -3,50 +3,258 @@ add_test_age <- function(data) {
   data
 }
 
-test_that("orm fast path supports categorical previous state", {
-  skip_if_not_installed("rms")
-
-  data <- make_test_data(n_patients = 60, follow_up_time = 7, seed = 6101)
-  data <- add_test_age(data)
-
-  fit <- suppressWarnings(mostm(
-    y ~ rms::rcs(time, 3) * tx + yprev + age,
-    data = data,
-    id_var = "id"
-  ))
-  baseline <- data[!duplicated(data$id), ][1:12, , drop = FALSE]
-
-  direct <- mostr:::predict_orm_response_markov(fit, baseline)
-  expect_equal(dim(direct), c(nrow(baseline), length(fit$yunique)))
-  expect_equal(rowSums(direct), rep(1, nrow(baseline)), tolerance = 1e-12)
-
-  slow <- mostr::soprob_markov(
-    fit,
-    baseline,
-    times = 1:5,
-    y_levels = fit$yunique,
-    absorb = "6",
-    p_var = "yprev"
+# SOPs from the streamed design builder, markov_msm_build() followed by
+# markov_msm_run(), which MVN draws and analytical inference use. The builder
+# takes the same arguments as sops() and ignores the ones it does not use.
+streamed_builder_sops <- function(fit, profiles, args) {
+  components <- do.call(
+    mostr:::markov_msm_build,
+    c(list(model = fit, newdata = profiles), args)
   )
-  components <- mostr:::markov_msm_build(
-    model = fit,
-    data = baseline,
-    times = 1:5,
-    y_levels = fit$yunique,
-    absorb = "6",
-    p_var = "yprev"
-  )
-  fast <- mostr:::markov_msm_run(
+  mostr:::markov_msm_run(
     components,
     mostr::get_effective_coefs(fit),
-    times = 1:5,
-    absorb = "6"
+    times = args$times,
+    absorb = args$absorb
+  )
+}
+
+# Public sops() uses the batched design builder and is checked against the
+# readable loop on every grid set-up in test-sops-native-slow-loop.R, so
+# agreeing with sops() checks the streamed builder against that loop too.
+test_that("the streamed design builder matches sops() on every model set-up", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+
+  # The streamed builder handles first-order recursion only, so the
+  # second-order cells (orm and vglm with linear, rcs and factor time, and vglm
+  # with partial odds) are left out.
+  grid_cells <- Filter(
+    function(cell) cell$order == 1L,
+    grid_consistency_cells()
+  )
+  cases <- lapply(grid_cells, function(cell) {
+    args <- grid_public_args(cell)
+    args$y_levels <- seq_len(grid_n_states)
+    list(
+      label = grid_label(cell),
+      fit = grid_fit(cell),
+      profiles = grid_profiles(cell),
+      args = args
+    )
+  })
+
+  # orm with a spline-by-treatment interaction.
+  orm_data <- add_test_age(
+    make_test_data(n_patients = 60, follow_up_time = 7, seed = 6101)
+  )
+  orm_fit <- suppressWarnings(mostm(
+    y ~ rms::rcs(time, 3) * tx + yprev + age,
+    data = orm_data,
+    id_var = "id"
+  ))
+  cases[[length(cases) + 1L]] <- list(
+    label = "orm, rcs(time) * tx",
+    fit = orm_fit,
+    profiles = orm_data[!duplicated(orm_data$id), ][1:12, , drop = FALSE],
+    args = list(
+      times = 1:5,
+      y_levels = orm_fit$yunique,
+      absorb = "6",
+      p_var = "yprev"
+    )
   )
 
-  expect_equal(unname(fast), unname(slow), tolerance = 1e-12)
+  # vglm with a spline of a numeric previous state.
+  numeric_data <- make_markov_trajectories(
+    n_patients = 100,
+    follow_up_time = 7,
+    n_states = 10,
+    thresholds = seq(-3, 3, length.out = 9),
+    allowed_start_state = as.integer(2:9),
+    absorbing_state = 10,
+    seed = 4242
+  ) |>
+    prepare_markov_data(absorbing_state = 10, factor_previous = FALSE)
+  expect_type(numeric_data$yprev, "double")
+  cases[[length(cases) + 1L]] <- list(
+    label = "vglm, rcs(yprev) of a numeric previous state",
+    fit = suppressWarnings(mostm(
+      ordered(y) ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 6),
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = numeric_data,
+      id_var = "id",
+      engine = "vglm"
+    )),
+    profiles = numeric_data[numeric_data$time == 1, , drop = FALSE][1:8, ],
+    args = list(times = 1:7, y_levels = 1:10, absorb = "10", p_var = "yprev")
+  )
+
+  # vglm with an inline rcs(time) spline, and the same spline as an explicit
+  # basis supplied to prediction through `time_covariates`.
+  spline_data <- make_markov_trajectories(
+    n_patients = 70,
+    follow_up_time = 8,
+    treatment_prob = 0.5,
+    absorbing_state = 6,
+    seed = 4041,
+    treatment_effect = 0.18
+  ) |>
+    prepare_markov_data()
+  spline_data$age <- 45 + ((spline_data$id * 11) %% 31)
+  basis <- rms::rcs(spline_data$time, 4)
+  spline_data$time_lin <- as.vector(basis[, 1])
+  spline_data$time_nlin_1 <- as.vector(basis[, 2])
+  spline_data$time_nlin_2 <- as.vector(basis[, 3])
+  basis_columns <- c("time_lin", "time_nlin_1", "time_nlin_2")
+  time_covariates <- spline_data[
+    match(1:8, spline_data$time),
+    basis_columns,
+    drop = FALSE
+  ]
+  rownames(time_covariates) <- NULL
+  spline_profiles <- spline_data[spline_data$time == 1, , drop = FALSE][1:12, ]
+  cases[[length(cases) + 1L]] <- list(
+    label = "vglm, inline rcs(time) * tx",
+    fit = suppressWarnings(mostm(
+      ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = spline_data,
+      id_var = "id",
+      engine = "vglm"
+    )),
+    profiles = spline_profiles,
+    args = list(times = 1:8, y_levels = 1:6, absorb = "6", p_var = "yprev")
+  )
+  cases[[length(cases) + 1L]] <- list(
+    label = "vglm, explicit time basis * tx with time_covariates",
+    fit = suppressWarnings(mostm(
+      ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = spline_data,
+      id_var = "id",
+      engine = "vglm"
+    )),
+    profiles = spline_profiles,
+    args = list(
+      times = 1:8,
+      y_levels = 1:6,
+      absorb = "6",
+      time_var = "time_lin",
+      p_var = "yprev",
+      time_covariates = time_covariates
+    )
+  )
+
+  # vglm with factor visit time, no absorbing state, and numeric `times` that
+  # name the visit levels.
+  factor_data <- withr::with_seed(2026, {
+    visits <- as.character(1:4)
+    data <- expand.grid(id = 1:80, time = visits, KEEP.OUT.ATTRS = FALSE)
+    data <- data[order(data$id, data$time), , drop = FALSE]
+    data$time <- factor(data$time, levels = visits)
+    data$tx <- stats::rbinom(80, 1, 0.5)[data$id]
+    data$yprev <- factor(
+      sample(1:4, nrow(data), replace = TRUE),
+      levels = as.character(1:4)
+    )
+    eta <- -0.35 * data$tx + 0.25 * as.integer(data$time) +
+      0.2 * as.integer(as.character(data$yprev))
+    worse <- stats::plogis(eta - mean(eta))
+    data$y <- ordered(
+      pmin(4L, pmax(1L, 1L + stats::rbinom(nrow(data), 3L, worse))),
+      levels = as.character(1:4)
+    )
+    data
+  })
+  factor_fit <- suppressWarnings(mostm(
+    y ~ time + tx + yprev,
+    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+    data = factor_data,
+    id_var = "id",
+    first_followup_time = "1",
+    engine = "vglm"
+  ))
+  factor_baseline <- factor_data[!duplicated(factor_data$id), , drop = FALSE]
+  factor_args <- list(times = 1:4, y_levels = factor(1:4), p_var = "yprev")
+  cases[[length(cases) + 1L]] <- list(
+    label = "vglm, factor visit time",
+    fit = factor_fit,
+    profiles = factor_baseline,
+    args = factor_args
+  )
+
+  for (case in cases) {
+    result <- suppressWarnings(do.call(
+      sops,
+      c(list(case$fit, newdata = case$profiles), case$args)
+    ))
+    streamed <- streamed_builder_sops(case$fit, case$profiles, case$args)
+
+    n_states <- length(case$args$y_levels)
+    expect_probability_array(
+      streamed,
+      expected_dim = c(nrow(case$profiles), length(case$args$times), n_states)
+    )
+    matrices <- lapply(
+      seq_len(nrow(case$profiles)),
+      function(i) matrix(streamed[i, , ], ncol = n_states)
+    )
+    expect_identical(
+      nrow(result),
+      nrow(case$profiles) * length(case$args$times) * n_states,
+      label = case$label
+    )
+    # Both builders feed the same recursion, so only rounding separates them.
+    expect_lt(
+      grid_largest_gap(result, matrices, result$rowid, case$args$times),
+      1e-12,
+      label = case$label
+    )
+  }
+
+  # Numeric `times` on a factor-time fit come back as the visit labels.
+  direct <- do.call(
+    soprob_markov,
+    c(list(factor_fit, newdata = factor_baseline), factor_args)
+  )
+  expect_equal(dim(direct), c(nrow(factor_baseline), 4L, 4L))
+  expect_equal(dimnames(direct)[[2]], as.character(1:4))
+  individual <- do.call(
+    sops,
+    c(list(factor_fit, newdata = factor_baseline), factor_args)
+  )
+  expect_equal(sort(unique(as.character(individual$time))), as.character(1:4))
+  averaged <- do.call(
+    avg_sops,
+    c(
+      list(
+        factor_fit,
+        newdata = factor_baseline,
+        variables = list(tx = c(0, 1))
+      ),
+      factor_args
+    )
+  )
+  expect_equal(
+    as.character(attr(averaged, "avg_args")$times),
+    as.character(1:4)
+  )
+  expect_equal(
+    unname(streamed_builder_sops(
+      factor_fit,
+      factor_baseline,
+      utils::modifyList(
+        factor_args,
+        list(times = attr(averaged, "avg_args")$times)
+      )
+    )),
+    unname(direct),
+    tolerance = 1e-10
+  )
 })
 
-test_that("orm fast path validates state support and initial probabilities", {
+test_that("orm SOPs report a state count that differs from the fit and a missing absorbing state", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6111)
@@ -68,7 +276,6 @@ test_that("orm fast path validates state support and initial probabilities", {
     error = TRUE
   )
 
-  baseline$age[1L] <- NA_real_
   expect_snapshot(
     mostr::soprob_markov(
       fit,
@@ -98,7 +305,8 @@ test_that("execution-plan budgets bound all retained first-order designs", {
     y_levels = fit$yunique,
     absorb = "6"
   )
-  expected <- do.call(mostr:::soprob_markov_reference, args)
+  # The compiled result, before the budget forces the R fallback.
+  expect_no_message(expected <- do.call(mostr::soprob_markov, args))
 
   withr::local_options(mostr.execution_plan_max_bytes = 1)
   for (builder in c("batched", "streamed")) {
@@ -271,28 +479,33 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
     tolerance = 1e-8
   )
 
-  avg_scaled_full <- mostr::avg_sops(
-    fit_scaled,
-    newdata = data,
-    variables = "tx",
-    times = 1:4,
-    y_levels = fit_scaled$yunique,
-    absorb = "6",
-    id_var = "id"
-  )
-  withr::local_seed(61053)
-  boot_scaled <- mostr::inferences(
-    avg_scaled_full,
-    method = "bootstrap",
-    n_draws = 1,
-    return_draws = TRUE
-  )
+  bootstrap_full <- function(fit) {
+    full <- mostr::avg_sops(
+      fit,
+      newdata = data,
+      variables = "tx",
+      times = 1:4,
+      y_levels = fit$yunique,
+      absorb = "6",
+      id_var = "id"
+    )
+    withr::with_seed(61053, mostr::inferences(
+      full,
+      method = "bootstrap",
+      n_draws = 1,
+      return_draws = TRUE
+    ))
+  }
+  boot_default <- bootstrap_full(fit_default)
+  boot_scaled <- bootstrap_full(fit_scaled)
   expect_equal(attr(boot_scaled, "method"), "bootstrap")
   expect_equal(attr(boot_scaled, "n_successful"), 1L)
   expect_false(anyNA(boot_scaled$conf.low))
+  expect_equal(boot_scaled$conf.low, boot_default$conf.low, tolerance = 1e-6)
+  expect_equal(boot_scaled$conf.high, boot_default$conf.high, tolerance = 1e-6)
 })
 
-test_that("orm supports MVN and score-bootstrap inference", {
+test_that("orm checks the size of an MVN covariance matrix and supports score-bootstrap inference", {
   skip_if_not_installed("rms")
   skip_if_not_installed("mvtnorm")
 
@@ -326,25 +539,6 @@ test_that("orm supports MVN and score-bootstrap inference", {
     "Dimension mismatch"
   )
 
-  withr::local_seed(61031)
-  mvn <- mostr::inferences(
-    avg,
-    method = "mvn",
-    n_draws = 2,
-    return_draws = TRUE
-  )
-  expect_equal(attr(mvn, "n_successful"), 2L)
-  expect_false(anyNA(mvn$conf.low))
-  expect_s3_class(mostr::get_draws(mvn), "data.frame")
-
-  expect_error(
-    mostr:::inferences_score_bootstrap(
-      avg,
-      n_draws = 2
-    ),
-    "`cluster` is required"
-  )
-
   withr::local_seed(61032)
   score <- mostr:::inferences_score_bootstrap(
     avg,
@@ -357,169 +551,123 @@ test_that("orm supports MVN and score-bootstrap inference", {
   expect_true(any(score$std.error > 0))
 })
 
-test_that("orm supports refit bootstrap inference", {
+
+test_that("orm SOPs and design matrices do not require the outcome column in newdata", {
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6104)
-  data <- add_test_age(data)
-
-  fit <- suppressWarnings(mostm(
-    y ~ rms::rcs(time, 3) * tx + yprev + age,
-    data = data,
-    id_var = "id"
-  ))
-
-  avg <- mostr::avg_sops(
-    fit,
-    newdata = data,
-    variables = "tx",
-    times = 1:4,
-    y_levels = fit$yunique,
-    absorb = "6",
-    id_var = "id"
+  data <- sim_markov("actt2", n_patients = 200, seed = 1)
+  first_data <- prepare_markov_data(
+    data,
+    absorbing_state = 8,
+    ordered_response = FALSE
   )
-
-  withr::local_seed(61041)
-  boot <- mostr::inferences(
-    avg,
-    method = "bootstrap",
-    n_draws = 1,
-    return_draws = TRUE
-  )
-
-  expect_equal(attr(boot, "method"), "bootstrap")
-  expect_equal(attr(boot, "n_successful"), 1L)
-  expect_false(anyNA(boot$conf.low))
-})
-
-test_that("sops() does not require the outcome column in orm newdata", {
-  skip_if_not_installed("rms")
-
-  data <- sim_markov("actt2", n_patients = 200, seed = 1) |>
-    prepare_markov_data(absorbing_state = 8, ordered_response = FALSE)
-  fit <- mostm(
+  first_fit <- mostm(
     y ~ tx + yprev + rms::rcs(time, 4),
-    data = data,
+    data = first_data,
     id_var = "id"
   )
-  profile <- data.frame(
-    id = 1,
-    tx = 0,
-    time = 1,
-    yprev = factor(5, levels = levels(data$yprev))
+  data$ypprev <- stats::ave(data$yprev, data$id, FUN = function(value) {
+    c(value[1L], value[-length(value)])
+  })
+  second_data <- prepare_markov_data(
+    data,
+    absorbing_state = 8,
+    ordered_response = FALSE
   )
-  profile_with_y <- profile
-  profile_with_y$y <- NA_real_
-
-  result <- sops(
-    fit,
-    newdata = profile,
-    times = 1:3,
-    y_levels = 1:8,
-    absorb = 8
-  )
-  expected <- sops(
-    fit,
-    newdata = profile_with_y,
-    times = 1:3,
-    y_levels = 1:8,
-    absorb = 8
-  )
-
-  expect_equal(result$estimate, expected$estimate, tolerance = 1e-12)
-})
-
-test_that("orm design-matrix callers do not require the outcome column", {
-  skip_if_not_installed("rms")
-
-  data <- sim_markov("actt2", n_patients = 200, seed = 1) |>
-    prepare_markov_data(absorbing_state = 8, ordered_response = FALSE)
-  fit <- mostm(
-    y ~ tx + yprev + rms::rcs(time, 4),
-    data = data,
+  second_data$ypprev <- factor(second_data$ypprev)
+  second_fit <- mostm(
+    y ~ tx + yprev + ypprev + rms::rcs(time, 4),
+    data = second_data,
     id_var = "id"
   )
-  profile <- data.frame(
-    id = 1:2,
-    tx = 0:1,
-    time = 1,
-    yprev = factor(c(5, 4), levels = levels(data$yprev))
-  )
-  profile_with_y <- profile
-  profile_with_y$y <- NA_real_
-
-  expect_equal(
-    mostr:::predict_orm_response_markov(fit, profile),
-    mostr:::predict_orm_response_markov(fit, profile_with_y)
-  )
-  expect_equal(
-    mostr:::markov_linear_predictor_matrix(fit, profile),
-    mostr:::markov_linear_predictor_matrix(fit, profile_with_y)
-  )
+  states <- function(values, data, column = "yprev") {
+    factor(values, levels = levels(data[[column]]))
+  }
 
   run_plan <- function(newdata, builder) {
     plan <- mostr:::compile_sop_execution_plan(
-      fit,
+      first_fit,
       newdata,
       times = 1:3,
       y_levels = 1:8,
       absorb = 8,
       builder = builder
     )
-    mostr:::run_sop_execution_plan(plan, mostr::get_effective_coefs(fit))
+    mostr:::run_sop_execution_plan(plan, mostr::get_effective_coefs(first_fit))
   }
-  for (builder in c("batched", "streamed")) {
-    expect_equal(
-      run_plan(profile, builder),
-      run_plan(profile_with_y, builder)
+
+  cases <- list(
+    list(
+      label = "first-order sops()",
+      profile = data.frame(
+        id = 1,
+        tx = 0,
+        time = 1,
+        yprev = states(5, first_data)
+      ),
+      outputs = function(newdata) {
+        list(sops = sops(
+          first_fit,
+          newdata = newdata,
+          times = 1:3,
+          y_levels = 1:8,
+          absorb = 8
+        )$estimate)
+      }
+    ),
+    list(
+      label = "design-matrix callers",
+      profile = data.frame(
+        id = 1:2,
+        tx = 0:1,
+        time = 1,
+        yprev = states(c(5, 4), first_data)
+      ),
+      outputs = function(newdata) {
+        list(
+          predict_orm_response_markov =
+            mostr:::predict_orm_response_markov(first_fit, newdata),
+          markov_linear_predictor_matrix =
+            mostr:::markov_linear_predictor_matrix(first_fit, newdata),
+          batched = run_plan(newdata, "batched"),
+          streamed = run_plan(newdata, "streamed")
+        )
+      }
+    ),
+    list(
+      label = "second-order sops()",
+      profile = data.frame(
+        id = 1,
+        tx = 0,
+        time = 1,
+        yprev = states(5, second_data),
+        ypprev = states(5, second_data, "ypprev")
+      ),
+      outputs = function(newdata) {
+        list(sops = sops(
+          second_fit,
+          newdata = newdata,
+          times = 1:3,
+          y_levels = 1:8,
+          absorb = 8,
+          p2_var = "ypprev"
+        )$estimate)
+      }
     )
+  )
+
+  for (case in cases) {
+    profile_with_y <- case$profile
+    profile_with_y$y <- NA_real_
+    without_y <- case$outputs(case$profile)
+    with_y <- case$outputs(profile_with_y)
+    for (output in names(without_y)) {
+      expect_equal(
+        without_y[[output]],
+        with_y[[output]],
+        tolerance = 1e-12,
+        info = paste(case$label, output)
+      )
+    }
   }
-})
-
-test_that("second-order orm SOPs do not require the outcome column", {
-  skip_if_not_installed("rms")
-
-  data <- sim_markov("actt2", n_patients = 200, seed = 1)
-  data$ypprev <- stats::ave(data$yprev, data$id, FUN = function(value) {
-    c(value[1L], value[-length(value)])
-  })
-  data <- prepare_markov_data(
-    data,
-    absorbing_state = 8,
-    ordered_response = FALSE
-  )
-  data$ypprev <- factor(data$ypprev)
-  fit <- mostm(
-    y ~ tx + yprev + ypprev + rms::rcs(time, 4),
-    data = data,
-    id_var = "id"
-  )
-  profile <- data.frame(
-    id = 1,
-    tx = 0,
-    time = 1,
-    yprev = factor(5, levels = levels(data$yprev)),
-    ypprev = factor(5, levels = levels(data$ypprev))
-  )
-  profile_with_y <- profile
-  profile_with_y$y <- NA_real_
-
-  result <- sops(
-    fit,
-    newdata = profile,
-    times = 1:3,
-    y_levels = 1:8,
-    absorb = 8,
-    p2_var = "ypprev"
-  )
-  expected <- sops(
-    fit,
-    newdata = profile_with_y,
-    times = 1:3,
-    y_levels = 1:8,
-    absorb = 8,
-    p2_var = "ypprev"
-  )
-
-  expect_equal(result$estimate, expected$estimate, tolerance = 1e-12)
 })

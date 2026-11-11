@@ -14,31 +14,6 @@
       Error:
       ! `vcov` must be "conditional", "unconditional", NULL, or a coefficient covariance matrix.
 
----
-
-    Code
-      inferences(avg, method = "delta", vcov = "population")
-    Condition
-      Error:
-      ! `vcov` must be "conditional", "unconditional", NULL, or a coefficient covariance matrix.
-
----
-
-    Code
-      inferences(supplied, method = "delta", vcov = "unconditional")
-    Condition
-      Error:
-      ! `vcov = "unconditional"` requires the stored fitted-patient cohort. For user-supplied `newdata`, use `vcov = "conditional"`.
-
-# logit delta intervals distinguish structural boundaries
-
-    Code
-      nonstructural <- delta_interval_bounds(estimate = c(0, 1), standard_error = c(
-        0.1, 0.1), conf_level = 0.95, conf_type = "logit")
-    Condition
-      Warning:
-      Logit-delta limits are undefined for nonstructural boundary SOP estimates; their confidence limits were set to NA.
-
 # delta vcov validates strings and does not silently change targets
 
     Code
@@ -78,28 +53,4 @@
     Condition
       Error in `inferences()`:
       ! unused argument (target = "empirical")
-
----
-
-    Code
-      inferences(object, method = method, vcov = "conditional")
-    Condition
-      Error in `inferences_impl()`:
-      ! Character `vcov` choices are only available with `method = "delta"`.
-
----
-
-    Code
-      inferences(object, method = method, vcov = "conditional")
-    Condition
-      Error in `inferences_impl()`:
-      ! Character `vcov` choices are only available with `method = "delta"`.
-
----
-
-    Code
-      inferences(object, method = method, vcov = "conditional")
-    Condition
-      Error in `inferences_impl()`:
-      ! Character `vcov` choices are only available with `method = "delta"`.
 

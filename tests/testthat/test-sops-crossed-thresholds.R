@@ -65,19 +65,6 @@ test_that("SOP calls stop when the fitted thresholds cross", {
   }
 })
 
-test_that("profiles whose thresholds don't cross still work", {
-  case <- make_crossed_threshold_case()
-  out <- sops(
-    case$model,
-    newdata = case$profiles[1:2, , drop = FALSE],
-    times = 1:3,
-    absorb = 3
-  )
-  expect_true(all(out$estimate >= 0))
-  totals <- stats::aggregate(estimate ~ rowid + time, data = out, FUN = sum)
-  expect_equal(totals$estimate, rep(1, nrow(totals)), tolerance = 1e-10)
-})
-
 test_that("the error says how many profiles cross, and when", {
   case <- make_crossed_threshold_case()
   err <- tryCatch(
@@ -164,46 +151,54 @@ test_that("rounding negatives are set to zero instead of stopping", {
 })
 
 # At score = -6 the estimated cut-points don't cross, but they do for some
-# coefficient draws around the estimate.
-test_that("simulation inference stops when cut-points cross in some draws", {
+# coefficient draws around the estimate and for some bootstrap refits.
+test_that("inference stops when cut-points cross in some draws or refits", {
   case <- make_crossed_threshold_case()
   profiles <- case$profiles[1:2, , drop = FALSE]
   profiles$score[2L] <- -6
-  estimates <- sops(case$model, newdata = profiles, times = 1:3, absorb = 3)
-  withr::local_seed(1)
-  expect_error(
-    inferences(estimates, method = "mvn", n_draws = 20),
-    "cross in [0-9]+ of the 20 simulation draws",
-    class = "mostr_crossed_thresholds"
+  cases <- list(
+    list(
+      label = "sops(), simulation draws",
+      result = sops(case$model, newdata = profiles, times = 1:3, absorb = 3),
+      method = "mvn",
+      n_draws = 20,
+      seed = 1,
+      phrase = "cross in [0-9]+ of the 20 simulation draws"
+    ),
+    list(
+      label = "avg_comparisons(), simulation draws",
+      result = avg_comparisons(
+        case$model,
+        newdata = profiles,
+        times = 1:3,
+        absorb = 3,
+        variables = list(tx = c(0, 1)),
+        state_sets = "1"
+      ),
+      method = "mvn",
+      n_draws = 20,
+      seed = 2,
+      phrase = "simulation draws"
+    ),
+    list(
+      label = "avg_sops(), bootstrap refits",
+      result = avg_sops(case$model, newdata = profiles, times = 1:3, absorb = 3),
+      method = "bootstrap",
+      n_draws = 10,
+      seed = 3,
+      phrase = "cross in [0-9]+ of the 10 bootstrap samples"
+    )
   )
-
-  differences <- avg_comparisons(
-    case$model,
-    newdata = profiles,
-    times = 1:3,
-    absorb = 3,
-    variables = list(tx = c(0, 1)),
-    state_sets = "1"
-  )
-  withr::local_seed(2)
-  expect_error(
-    inferences(differences, method = "mvn", n_draws = 20),
-    "simulation draws",
-    class = "mostr_crossed_thresholds"
-  )
-})
-
-test_that("bootstrap inference stops when cut-points cross in some refits", {
-  case <- make_crossed_threshold_case()
-  profiles <- case$profiles[1:2, , drop = FALSE]
-  profiles$score[2L] <- -6
-  estimates <- avg_sops(case$model, newdata = profiles, times = 1:3, absorb = 3)
-  withr::local_seed(3)
-  expect_error(
-    inferences(estimates, method = "bootstrap", n_draws = 10),
-    "cross in [0-9]+ of the 10 bootstrap samples",
-    class = "mostr_crossed_thresholds"
-  )
+  for (row in cases) {
+    withr::with_seed(row$seed, {
+      expect_error(
+        inferences(row$result, method = row$method, n_draws = row$n_draws),
+        row$phrase,
+        class = "mostr_crossed_thresholds",
+        info = row$label
+      )
+    })
+  }
 })
 
 # A hand-made blrm fit with a partial proportional-odds effect of time,

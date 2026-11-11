@@ -31,7 +31,7 @@ make_delta_average_fixture <- function() {
   out
 }
 
-test_that("Jacobian inspection remains internal", {
+test_that("get_jacobian() stays unexported", {
   expect_equal("get_jacobian" %in% getNamespaceExports("mostr"), FALSE)
   expect_type(getFromNamespace("get_jacobian", "mostr"), "closure")
 })
@@ -175,17 +175,6 @@ central_public_sops_jacobian <- function(object, model) {
   })
 }
 
-`[.delta_subset_trap` <- function(x, ...) {
-  stop(
-    "Analytical state was subset before its allocation guard.",
-    call. = FALSE
-  )
-}
-
-as.data.frame.delta_finalize_trap <- function(x, ...) {
-  stop("The result was copied before its retained-state guard.", call. = FALSE)
-}
-
 test_that("analytical comparison operators reproduce existing reductions", {
   avg <- make_delta_average_fixture()
   avg_args <- attr(avg, "avg_args")
@@ -295,90 +284,6 @@ test_that("low-rank analytical accessors select rows without dense storage", {
   expect_null(attr(result, "draws"))
   expect_identical(attr(result, "method"), "delta")
   expect_identical(attr(result, "conf_type"), "logit")
-})
-
-test_that("analytical allocation guards retain a typed condition", {
-  object <- data.frame(time = 1, state = "1", estimate = 0.5)
-  class(object) <- c("markov_avg_sops", "data.frame")
-  jacobian <- matrix(1, nrow = 1, dimnames = list(NULL, "beta"))
-  covariance <- matrix(1, dimnames = list("beta", "beta"))
-  result <- delta_finalize_result(
-    object,
-    standard_error = 1,
-    conf_level = 0.95,
-    conf_type = "logit",
-    target = "empirical",
-    analytical = list(
-      representation = "coefficient",
-      jacobian = jacobian,
-      coefficient_vcov = covariance,
-      coefficient_names = "beta",
-      covariance_metadata = list(source = "test")
-    )
-  )
-
-  old_options <- options(mostr.delta_max_bytes = 1)
-  on.exit(options(old_options), add = TRUE)
-
-  analytical <- attr(result, "analytical")
-  class(analytical$jacobian) <- c(
-    "delta_subset_trap",
-    class(analytical$jacobian)
-  )
-  attr(result, "analytical") <- analytical
-  condition <- tryCatch(get_jacobian(result), error = identity)
-  expect_s3_class(condition, "mostr_delta_too_large")
-  expect_equal(condition$required_bytes, 8)
-
-  covariance_condition <- tryCatch(
-    stats::vcov(result, rows = 1L),
-    error = identity
-  )
-  expect_s3_class(covariance_condition, "mostr_delta_too_large")
-  expect_equal(covariance_condition$required_bytes, 16)
-
-  influence_result <- result
-  influence_state <- attr(influence_result, "analytical")
-  influence_state$representation <- "influence"
-  influence_state$jacobian <- NULL
-  influence_state$coefficient_vcov <- NULL
-  influence_state$influence <- matrix(1, nrow = 2, ncol = 1)
-  class(influence_state$influence) <- c(
-    "delta_subset_trap",
-    class(influence_state$influence)
-  )
-  attr(influence_result, "analytical") <- influence_state
-  influence_condition <- tryCatch(
-    stats::vcov(influence_result, rows = 1L),
-    error = identity
-  )
-  expect_s3_class(influence_condition, "mostr_delta_too_large")
-  expect_equal(influence_condition$required_bytes, 24)
-
-  guarded_object <- object
-  class(guarded_object) <- c(
-    "delta_finalize_trap",
-    class(guarded_object)
-  )
-  retained_condition <- tryCatch(
-    delta_finalize_result(
-      guarded_object,
-      standard_error = 1,
-      conf_level = 0.95,
-      conf_type = "logit",
-      target = "empirical",
-      analytical = list(
-        representation = "coefficient",
-        jacobian = jacobian,
-        coefficient_vcov = covariance,
-        coefficient_names = "beta",
-        covariance_metadata = list(source = "test")
-      )
-    ),
-    error = identity
-  )
-  expect_s3_class(retained_condition, "mostr_delta_too_large")
-  expect_equal(retained_condition$required_bytes, 16)
 })
 
 test_that("delta replay rejects stale estimates even when cell keys align", {
@@ -819,43 +724,7 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
     ),
     error = TRUE
   )
-  expect_snapshot(
-    inferences(avg, method = "delta", vcov = "population"),
-    error = TRUE
-  )
-
-  supplied <- avg_sops(
-    unconditional_case$model,
-    newdata = markov_validate_starting_profiles(unconditional_case$model)[
-      seq_len(5L),
-      ,
-      drop = FALSE
-    ],
-    variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = unconditional_case$y_levels,
-    absorb = max(unconditional_case$y_levels)
-  )
-  expect_snapshot(
-    inferences(supplied, method = "delta", vcov = "unconditional"),
-    error = TRUE
-  )
 })
-
-test_that("logit delta intervals distinguish structural boundaries", {
-  local_reproducible_output(width = 80)
-  expect_snapshot(
-    nonstructural <- delta_interval_bounds(
-      estimate = c(0, 1),
-      standard_error = c(0.1, 0.1),
-      conf_level = 0.95,
-      conf_type = "logit"
-    )
-  )
-  expect_true(all(is.na(nonstructural$conf.low)))
-  expect_true(all(is.na(nonstructural$conf.high)))
-})
-
 
 test_that("delta vcov choices preserve calculations and select class defaults", {
   case <- delta_public_unconditional_case()
@@ -924,12 +793,6 @@ test_that("delta vcov validates strings and does not silently change targets", {
     inferences(object, method = "delta", target = "empirical"),
     error = TRUE
   )
-  for (method in c("mvn", "bootstrap", "fwb")) {
-    expect_snapshot(
-      inferences(object, method = method, vcov = "conditional"),
-      error = TRUE
-    )
-  }
   expect_error(
     mostr:::inferences_score_bootstrap(object, vcov = "conditional"),
     "Character `vcov` choices are only available with `method = \"delta\"`.",
@@ -937,23 +800,97 @@ test_that("delta vcov validates strings and does not silently change targets", {
   )
 })
 
-
-test_that("negative variance checks respect covariance units", {
+test_that("variance and covariance-matrix checks respect covariance units", {
+  # The same checks must hold whatever the units of the coefficients, so
+  # every tolerance has to scale with the covariance.
   for (scale in c(1e-20, 1, 1e20)) {
-    expect_equal(delta_jacobian_variance(matrix(1), matrix(scale)) / scale, 1)
+    label <- paste("covariance scale", scale)
+
+    # Variances from a Jacobian and a covariance matrix.
+    expect_equal(
+      delta_jacobian_variance(matrix(1), matrix(scale)) / scale,
+      1,
+      info = label
+    )
     expect_match(
       tryCatch(
         delta_jacobian_variance(matrix(1), matrix(-scale)),
         error = conditionMessage
       ),
-      "negative variance"
+      "negative variance",
+      info = label
     )
     cancellation <- diag(c(1, -1 - .Machine$double.eps)) * scale
     expect_equal(
       delta_jacobian_variance(matrix(c(1, 1), nrow = 1), cancellation),
-      0
+      0,
+      info = label
+    )
+
+    # Validation of a named covariance matrix.
+    covariance <- diag(c(1, 2)) * scale
+    dimnames(covariance) <- list(c("a", "b"), c("a", "b"))
+    expect_equal(
+      delta_validate_named_matrix(
+        covariance,
+        c("a", "b"),
+        "vcov",
+        positive_definite = TRUE
+      ) /
+        scale,
+      covariance / scale,
+      info = label
+    )
+    invalid <- covariance
+    invalid[1, 1] <- -scale
+    expect_match(
+      tryCatch(
+        delta_validate_named_matrix(
+          invalid,
+          c("a", "b"),
+          "vcov",
+          positive_semidefinite = TRUE
+        ),
+        error = conditionMessage
+      ),
+      "not numerically positive semidefinite",
+      info = label
+    )
+    invalid <- covariance
+    invalid[1, 2] <- scale / 10
+    expect_match(
+      tryCatch(
+        delta_validate_named_matrix(invalid, c("a", "b"), "vcov"),
+        error = conditionMessage
+      ),
+      "not numerically symmetric",
+      info = label
     )
   }
+
+  # A zero matrix is positive semidefinite but not positive definite.
+  zero <- covariance * 0
+  expect_equal(
+    delta_validate_named_matrix(
+      zero,
+      c("a", "b"),
+      "vcov",
+      positive_semidefinite = TRUE
+    ),
+    zero
+  )
+  expect_match(
+    tryCatch(
+      delta_validate_named_matrix(
+        zero,
+        c("a", "b"),
+        "bread",
+        positive_definite = TRUE
+      ),
+      error = conditionMessage
+    ),
+    "not numerically positive definite"
+  )
 })
 
 test_that("SOP replay allows roundoff while detecting changed estimates", {

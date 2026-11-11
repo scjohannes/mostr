@@ -68,16 +68,6 @@ test_that("avg_comparisons(by = compared variable) averages within observed grou
     )
     expected <- comparisons_within_observed_tx(case, args)
     expect_matches_observed_groups(out, expected, "estimate", estimand)
-
-    # The same as the mean of the per-profile comparisons in each group.
-    each <- do.call(comparisons, c(list(case$model, newdata = case$profiles), args))
-    keys <- intersect(c("time", "state_set"), names(each))
-    means <- stats::aggregate(
-      each["estimate"],
-      c(each[keys], list(tx = each$tx)),
-      mean
-    )
-    expect_matches_observed_groups(out, means, "estimate", paste(estimand, "mean"))
   }
 })
 
@@ -127,29 +117,11 @@ test_that("draw-based intervals by the compared variable match each group's own 
   }
 })
 
-test_that("the delta method still refuses `by`, including the compared variable", {
-  case <- make_comparisons_case()
-  averaged <- do.call(
-    avg_comparisons,
-    c(list(case$model, newdata = case$profiles, by = "tx"), comparison_estimand_args("sop"))
-  )
-  expect_error(
-    inferences(averaged, method = "delta", vcov = "conditional"),
-    "Analytical delta inference with `by` is not yet supported.",
-    fixed = TRUE
-  )
-})
-
-test_that("avg_sops() refuses `by` on the variable it sets, and a copied column works", {
+test_that("avg_sops() grouped by a copy of the variable it sets uses the observed values", {
   case <- make_comparisons_case()
   args <- list(times = 1:4, absorb = 3, variables = list(tx = c(0, 1)))
-  expect_error(
-    do.call(avg_sops, c(list(case$model, newdata = case$profiles, by = "tx"), args)),
-    "copy",
-    info = "the message explains the copied-column workaround"
-  )
-
-  # The workaround: group by a copy of the observed treatment.
+  # `by = "tx"` itself is refused (row P25 of test-refusals.R), and the message
+  # suggests this workaround: group by a copy of the observed treatment.
   profiles <- case$profiles
   profiles$observed_tx <- profiles$tx
   out <- do.call(

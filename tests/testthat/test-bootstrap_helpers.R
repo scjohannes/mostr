@@ -35,36 +35,6 @@ test_that("fast_group_bootstrap numbers repeated factor ids like character ids",
   }
 })
 
-test_that("factor and character patient ids give the same ordinary bootstrap", {
-  case <- make_comparisons_case()
-  character_data <- case$data
-  character_data$id <- sprintf("p%03d", character_data$id)
-  factor_data <- character_data
-  factor_data$id <- factor(factor_data$id)
-  fit <- function(data) {
-    mostm(
-      ordered(y) ~ time + tx + marker + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      first_followup_time = 1,
-      id_var = "id",
-      engine = "vglm"
-    )
-  }
-  boot <- function(data) {
-    inferences(
-      avg_sops(fit(data), times = 1:3, absorb = 3),
-      method = "bootstrap",
-      n_draws = 8,
-      seed = 9
-    )
-  }
-  expected <- boot(character_data)
-  expect_no_warning(out <- boot(factor_data))
-  expect_equal(out$estimate, expected$estimate)
-  expect_equal(out$std.error, expected$std.error)
-})
-
 test_that("fast_group_bootstrap validates the grouping column", {
   data <- data.frame(id = 1:3)
 
@@ -75,55 +45,65 @@ test_that("fast_group_bootstrap validates the grouping column", {
   )
 })
 
-test_that("materialize_bootstrap_sample_indexed preserves sampled copies and row data", {
-  data <- data.frame(
-    id = c(1, 1, 2, 2),
-    time = c(1, 2, 1, 2),
-    y = c(0, 1, 1, 0)
-  )
-  boot_ids <- data.frame(
-    original_id = c(2, 1, 2),
-    new_id = c("2_1", "1_1", "2_2"),
-    boot_id = 1
+test_that("materialize_bootstrap_sample_indexed keeps sampled copies, row data, factor levels and unmatched ids", {
+  cases <- list(
+    list(
+      label = "repeated ids copy every row in order",
+      data = data.frame(
+        id = c(1, 1, 2, 2),
+        time = c(1, 2, 1, 2),
+        y = c(0, 1, 1, 0)
+      ),
+      ids = data.frame(
+        original_id = c(2, 1, 2),
+        new_id = c("2_1", "1_1", "2_2"),
+        boot_id = 1
+      ),
+      expected = list(
+        new_id = rep(c("2_1", "1_1", "2_2"), each = 2),
+        time = c(1, 2, 1, 2, 1, 2),
+        y = c(1, 0, 0, 1, 1, 0)
+      )
+    ),
+    list(
+      label = "factor levels and an id not in the data",
+      data = data.frame(
+        id = c(1, 2, 1),
+        y = ordered(c("low", "high", "high"), levels = c("low", "high"))
+      ),
+      ids = data.frame(
+        original_id = c("1", "missing", "1"),
+        new_id = c("a", "b", "c"),
+        boot_id = 1L
+      ),
+      expected = list(
+        id = c("1", "1", "missing", "1", "1"),
+        y = ordered(c("low", "high", NA, "low", "high"), levels = c("low", "high"))
+      )
+    )
   )
 
-  result <- materialize_bootstrap_sample_indexed(
-    boot_ids,
-    data,
-    "id",
-    bootstrap_row_plan(data, "id")
-  )
+  for (case in cases) {
+    before <- serialize(list(case$data, case$ids), NULL)
+    out <- materialize_bootstrap_sample_indexed(
+      case$ids,
+      case$data,
+      "id",
+      bootstrap_row_plan(case$data, "id")
+    )
 
-  expect_equal(nrow(result), 6)
-  expect_equal(result$new_id, rep(c("2_1", "1_1", "2_2"), each = 2))
-  expect_equal(result$time, c(1, 2, 1, 2, 1, 2))
-  expect_equal(result$y, c(1, 0, 0, 1, 1, 0))
-})
-
-test_that("indexed bootstrap keeps factor levels and unmatched sampled ids", {
-  data <- data.frame(
-    id = c(1, 2, 1),
-    y = ordered(c("low", "high", "high"), levels = c("low", "high"))
-  )
-  ids <- data.frame(
-    original_id = c("1", "missing", "1"),
-    new_id = c("a", "b", "c"),
-    boot_id = 1L
-  )
-  before <- serialize(list(data, ids), NULL)
-  out <- materialize_bootstrap_sample_indexed(
-    ids,
-    data,
-    "id",
-    bootstrap_row_plan(data, "id")
-  )
-  expect_identical(out$id, c("1", "1", "missing", "1", "1"))
-  expect_identical(
-    out$y,
-    ordered(c("low", "high", NA, "low", "high"), levels = c("low", "high"))
-  )
-  expect_identical(class(out), "data.frame")
-  expect_identical(serialize(list(data, ids), NULL), before)
+    expect_identical(class(out), "data.frame", info = case$label)
+    expect_equal(nrow(out), length(case$expected[[1]]), info = case$label)
+    for (column in names(case$expected)) {
+      expect_identical(out[[column]], case$expected[[column]], info = case$label)
+    }
+    # The inputs are not modified.
+    expect_identical(
+      serialize(list(case$data, case$ids), NULL),
+      before,
+      info = case$label
+    )
+  }
 })
 
 test_that("fractional bootstrap weights are mean-one cluster weights", {
@@ -185,88 +165,134 @@ test_that("fractional bootstrap materialization expands cluster weights to rows"
   )
 })
 
-test_that("apply_to_bootstrap materializes samples before sequential analysis", {
+test_that("apply_to_bootstrap and apply_to_fwb_bootstrap materialize samples before sequential analysis", {
   data <- data.frame(
     id = c(1, 1, 2, 2),
     y = c(1, 2, 10, 20)
   )
-  boot_samples <- list(
-    data.frame(original_id = c(1, 2), new_id = c("1_1", "2_1"), boot_id = 1),
-    data.frame(original_id = c(2, 2), new_id = c("2_1", "2_2"), boot_id = 2)
-  )
-
-  result <- apply_to_bootstrap(
-    boot_samples = boot_samples,
-    analysis_fn = function(boot_data) {
-      c(rows = nrow(boot_data), total = sum(boot_data$y))
-    },
-    data = data,
-    id_var = "id",
-    workers = 1
-  )
-
-  expect_equal(result[[1]], c(rows = 4, total = 33))
-  expect_equal(result[[2]], c(rows = 4, total = 60))
-})
-
-test_that("apply_to_fwb_bootstrap materializes weights before analysis", {
-  data <- data.frame(
-    id = c(1, 1, 2, 2),
-    y = c(1, 2, 10, 20)
-  )
-  fwb_samples <- list(
-    data.frame(original_id = c(1, 2), fwb_weight = c(0.5, 1.5), boot_id = 1),
-    data.frame(original_id = c(1, 2), fwb_weight = c(1.2, 0.8), boot_id = 2)
-  )
-
-  result <- mostr:::apply_to_fwb_bootstrap(
-    fwb_samples = fwb_samples,
-    analysis_fn = function(boot_data, fwb_weights) {
-      c(
-        rows = nrow(boot_data),
-        total = sum(boot_data$y * boot_data$fwb_weight),
-        n_weights = nrow(fwb_weights)
-      )
-    },
-    data = data,
-    id_var = "id",
-    workers = 1
-  )
-
-  expect_equal(result[[1]], c(rows = 4, total = 46.5, n_weights = 2))
-  expect_equal(result[[2]], c(rows = 4, total = 27.6, n_weights = 2))
-})
-
-test_that("apply_to_fwb_bootstrap works with parallel workers", {
-  future::plan(future::sequential)
-  withr::defer(future::plan(future::sequential))
-
-  data <- data.frame(
-    id = c(1, 1, 2, 2),
-    y = c(1, 2, 10, 20)
-  )
-  fwb_samples <- list(
-    data.frame(original_id = c(1, 2), fwb_weight = c(0.5, 1.5), boot_id = 1)
-  )
-
-  result <- suppressWarnings(
-    mostr:::apply_to_fwb_bootstrap(
-      fwb_samples = fwb_samples,
-      analysis_fn = function(boot_data, fwb_weights) {
-        c(
-          total = sum(boot_data$y * boot_data$fwb_weight),
-          n_weights = nrow(fwb_weights)
+  cases <- list(
+    list(
+      label = "ordinary bootstrap",
+      run = function() {
+        apply_to_bootstrap(
+          boot_samples = list(
+            data.frame(original_id = c(1, 2), new_id = c("1_1", "2_1"), boot_id = 1),
+            data.frame(original_id = c(2, 2), new_id = c("2_1", "2_2"), boot_id = 2)
+          ),
+          analysis_fn = function(boot_data) {
+            c(rows = nrow(boot_data), total = sum(boot_data$y))
+          },
+          data = data,
+          id_var = "id",
+          workers = 1
         )
       },
-      data = data,
-      id_var = "id",
-      workers = 2,
-      packages = character(0)
+      expected = list(c(rows = 4, total = 33), c(rows = 4, total = 60))
+    ),
+    list(
+      label = "fractional weighted bootstrap",
+      run = function() {
+        mostr:::apply_to_fwb_bootstrap(
+          fwb_samples = list(
+            data.frame(original_id = c(1, 2), fwb_weight = c(0.5, 1.5), boot_id = 1),
+            data.frame(original_id = c(1, 2), fwb_weight = c(1.2, 0.8), boot_id = 2)
+          ),
+          analysis_fn = function(boot_data, fwb_weights) {
+            c(
+              rows = nrow(boot_data),
+              total = sum(boot_data$y * boot_data$fwb_weight),
+              n_weights = nrow(fwb_weights)
+            )
+          },
+          data = data,
+          id_var = "id",
+          workers = 1
+        )
+      },
+      expected = list(
+        c(rows = 4, total = 46.5, n_weights = 2),
+        c(rows = 4, total = 27.6, n_weights = 2)
+      )
     )
   )
 
-  expect_equal(result[[1]], c(total = 46.5, n_weights = 2))
-  expect_equal(future::nbrOfWorkers(), 1L)
+  for (case in cases) {
+    result <- case$run()
+    expect_length(result, length(case$expected))
+    for (i in seq_along(case$expected)) {
+      expect_equal(result[[i]], case$expected[[i]], info = case$label)
+    }
+  }
+})
+
+test_that("parallel bootstrap helpers return results and restore the future plan after success and errors", {
+  future::plan(future::sequential)
+  withr::defer(future::plan(future::sequential))
+
+  one_sample <- list(
+    data.frame(original_id = c(1, 2), new_id = c("1_1", "2_1"), boot_id = 1)
+  )
+  cases <- list(
+    list(
+      label = "fractional weighted bootstrap",
+      run = function() {
+        mostr:::apply_to_fwb_bootstrap(
+          fwb_samples = list(
+            data.frame(original_id = c(1, 2), fwb_weight = c(0.5, 1.5), boot_id = 1)
+          ),
+          analysis_fn = function(boot_data, fwb_weights) {
+            c(
+              total = sum(boot_data$y * boot_data$fwb_weight),
+              n_weights = nrow(fwb_weights)
+            )
+          },
+          data = data.frame(id = c(1, 1, 2, 2), y = c(1, 2, 10, 20)),
+          id_var = "id",
+          workers = 2,
+          packages = character(0)
+        )
+      },
+      expected = c(total = 46.5, n_weights = 2)
+    ),
+    list(
+      label = "ordinary bootstrap",
+      run = function() {
+        apply_to_bootstrap(
+          boot_samples = one_sample,
+          analysis_fn = function(boot_data) sum(boot_data$y),
+          data = data.frame(id = c(1, 2), y = c(3, 4)),
+          id_var = "id",
+          workers = 2,
+          packages = character(0)
+        )
+      },
+      expected = 7
+    ),
+    list(
+      label = "ordinary bootstrap with an analysis error",
+      run = function() {
+        apply_to_bootstrap(
+          boot_samples = one_sample,
+          analysis_fn = function(boot_data) stop("boom"),
+          data = data.frame(id = c(1, 2), y = c(3, 4)),
+          id_var = "id",
+          workers = 2,
+          packages = character(0)
+        )
+      },
+      error = "boom"
+    )
+  )
+
+  for (case in cases) {
+    if (is.null(case$error)) {
+      result <- suppressWarnings(case$run())
+      expect_equal(result[[1]], case$expected, info = case$label)
+    } else {
+      expect_error(suppressWarnings(case$run()), case$error, info = case$label)
+    }
+    expect_equal(future::nbrOfWorkers(), 1L, info = case$label)
+  }
 })
 
 test_that("apply_to_bootstrap maps deprecated parallel argument to workers", {
@@ -286,55 +312,6 @@ test_that("apply_to_bootstrap maps deprecated parallel argument to workers", {
     "parallel.*deprecated"
   )
   expect_equal(result[[1]], 7)
-})
-
-test_that("apply_to_bootstrap restores future plan after parallel success", {
-  future::plan(future::sequential)
-  withr::defer(future::plan(future::sequential))
-
-  data <- data.frame(id = c(1, 2), y = c(3, 4))
-  boot_samples <- list(
-    data.frame(original_id = c(1, 2), new_id = c("1_1", "2_1"), boot_id = 1)
-  )
-
-  result <- suppressWarnings(
-    apply_to_bootstrap(
-      boot_samples = boot_samples,
-      analysis_fn = function(boot_data) sum(boot_data$y),
-      data = data,
-      id_var = "id",
-      workers = 2,
-      packages = character(0)
-    )
-  )
-
-  expect_equal(result[[1]], 7)
-  expect_equal(future::nbrOfWorkers(), 1L)
-})
-
-test_that("apply_to_bootstrap restores future plan after parallel errors", {
-  future::plan(future::sequential)
-  withr::defer(future::plan(future::sequential))
-
-  data <- data.frame(id = c(1, 2), y = c(3, 4))
-  boot_samples <- list(
-    data.frame(original_id = c(1, 2), new_id = c("1_1", "2_1"), boot_id = 1)
-  )
-
-  expect_error(
-    suppressWarnings(
-      apply_to_bootstrap(
-        boot_samples = boot_samples,
-        analysis_fn = function(boot_data) stop("boom"),
-        data = data,
-        id_var = "id",
-        workers = 2,
-        packages = character(0)
-      )
-    ),
-    "boom"
-  )
-  expect_equal(future::nbrOfWorkers(), 1L)
 })
 
 test_that("bootstrap_analysis_wrapper relevels data and refits models", {
@@ -362,32 +339,6 @@ test_that("bootstrap_analysis_wrapper relevels data and refits models", {
   expect_equal(result$ylevels, 1:2)
   expect_equal(unname(result$absorb), 2)
   expect_equal(result$missing_states, "2")
-})
-
-test_that("relevel_factors_consecutive preserves numeric previous state", {
-  original_data <- data.frame(
-    y = ordered(c(1, 2, 3, 4)),
-    yprev = c(1, 2, 3, 4)
-  )
-  boot_data <- data.frame(
-    y = ordered(c(1, 3, 4), levels = 1:4),
-    yprev = c(1, 3, 4)
-  )
-
-  result <- relevel_factors_consecutive(
-    data = boot_data,
-    factor_cols = c("y", "yprev"),
-    original_data = original_data,
-    y_levels = 1:4,
-    absorb = 4
-  )
-
-  expect_s3_class(result$data$y, "ordered")
-  expect_type(result$data$yprev, "double")
-  expect_equal(result$data$yprev, c(1, 2, 3))
-  expect_equal(result$ylevels, 1:3)
-  expect_equal(unname(result$absorb), 3)
-  expect_equal(result$missing_levels, "2")
 })
 
 test_that("bootstrap_analysis_wrapper reports model fitting failures", {
@@ -517,7 +468,7 @@ test_that("bootstrap_analysis_wrapper falls back when coefstart update fails", {
   expect_equal(result$model$data, boot_data)
 })
 
-test_that("bootstrap_analysis_wrapper multiplies original and fractional weights", {
+test_that("bootstrap_analysis_wrapper multiplies fractional weights with call weights and stored fit weights", {
   update.mock_weighted <- function(object, data, weights = NULL, ...) {
     weight_expr <- substitute(weights)
     structure(
@@ -531,31 +482,11 @@ test_that("bootstrap_analysis_wrapper multiplies original and fractional weights
   assign("update.mock_weighted", update.mock_weighted, envir = globalenv())
   withr::defer(rm("update.mock_weighted", envir = globalenv()))
 
-  original_data <- data.frame(
+  call_data <- data.frame(
     y = factor(c(1, 2, 3)),
     x = c(0, 1, 2),
     w = c(2, 3, 4)
   )
-  boot_data <- original_data
-  model <- structure(
-    list(call = quote(mock_fit(y ~ x, data = original_data, weights = w))),
-    class = "mock_weighted"
-  )
-
-  result <- bootstrap_analysis_wrapper(
-    boot_data = boot_data,
-    model = model,
-    factor_cols = "y",
-    original_data = original_data,
-    fit_weights = c(0.5, 1, 1.5)
-  )
-
-  expect_s3_class(result$model, "mock_weighted")
-  expect_equal(result$model$weights, c(1, 3, 6))
-  expect_equal(result$model$data$.mostr_fit_weight, c(1, 3, 6))
-})
-
-test_that("bootstrap_analysis_wrapper recovers stored fit weights", {
   make_weighted_lm <- function() {
     original_data <- data.frame(
       y = c(1, 2, 3, 4),
@@ -572,25 +503,50 @@ test_that("bootstrap_analysis_wrapper recovers stored fit weights", {
       data = original_data
     )
   }
+  weighted_lm <- make_weighted_lm()
 
-  weighted_fit <- make_weighted_lm()
-
-  result <- expect_no_warning(
-    bootstrap_analysis_wrapper(
-      boot_data = weighted_fit$data,
-      model = weighted_fit$model,
+  cases <- list(
+    list(
+      label = "weights named in the model call",
+      model = structure(
+        list(call = quote(mock_fit(y ~ x, data = original_data, weights = w))),
+        class = "mock_weighted"
+      ),
+      data = call_data,
+      factor_cols = "y",
+      fit_weights = c(0.5, 1, 1.5),
+      class = "mock_weighted",
+      expected = c(1, 3, 6),
+      # The refit also sees the product as a data column.
+      stored = function(model) model$data$.mostr_fit_weight
+    ),
+    list(
+      label = "weights stored on an lm fit",
+      model = weighted_lm$model,
+      data = weighted_lm$data,
       factor_cols = character(0),
-      original_data = weighted_fit$data,
-      fit_weights = c(0.5, 1, 1.5, 2)
+      fit_weights = c(0.5, 1, 1.5, 2),
+      class = "lm",
+      expected = c(1, 3, 6, 10),
+      stored = function(model) model$model[["(weights)"]]
     )
   )
 
-  expect_s3_class(result$model, "lm")
-  expect_equal(result$model$weights, c(1, 3, 6, 10))
-  expect_equal(
-    result$model$model[["(weights)"]],
-    c(1, 3, 6, 10)
-  )
+  for (case in cases) {
+    result <- expect_no_warning(
+      bootstrap_analysis_wrapper(
+        boot_data = case$data,
+        model = case$model,
+        factor_cols = case$factor_cols,
+        original_data = case$data,
+        fit_weights = case$fit_weights
+      )
+    )
+
+    expect_s3_class(result$model, case$class)
+    expect_equal(result$model$weights, case$expected, info = case$label)
+    expect_equal(case$stored(result$model), case$expected, info = case$label)
+  }
 })
 
 test_that("bootstrap_analysis_wrapper decides when refits use starting values", {

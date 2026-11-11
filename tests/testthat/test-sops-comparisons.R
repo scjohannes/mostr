@@ -45,76 +45,81 @@ make_mock_avg_sops <- function(by = NULL, tx_levels = c(0, 1, 2)) {
   out
 }
 
-test_that("avg_comparisons() computes SOP differences and multiple levels", {
-  avg <- make_mock_avg_sops()
-
-  with_mocked_bindings(
-    avg_sops = function(...) avg,
-    {
-      out <- avg_comparisons(
-        structure(list(), class = "mock_model", markov_id_var = "id"),
+test_that("avg_comparisons() forms differences, ratios and by strata from averaged SOPs", {
+  model <- structure(list(), class = "mock_model", markov_id_var = "id")
+  # `order` sorts the result before it is compared with `expected`, column by
+  # column.
+  cases <- list(
+    list(
+      label = "SOP differences for two comparison levels",
+      avg = make_mock_avg_sops(),
+      args = list(
         variables = list(tx = c(0, 1, 2)),
         estimand = "sop",
         state_sets = "1",
         times = 1:2,
         comparison = "difference"
+      ),
+      order = c("comparison_level", "time"),
+      expected = list(
+        estimate = c(0.3, 0.3, -0.1, -0.2),
+        reference_level = c(0, 0, 0, 0),
+        comparison_level = c(1, 1, 2, 2)
       )
-    }
-  )
-
-  out <- out[order(out$comparison_level, out$time), ]
-  rownames(out) <- NULL
-
-  expect_s3_class(out, "markov_avg_comparisons")
-  expect_equal(out$estimate, c(0.3, 0.3, -0.1, -0.2))
-  expect_equal(out$reference_level, c(0, 0, 0, 0))
-  expect_equal(out$comparison_level, c(1, 1, 2, 2))
-})
-
-test_that("avg_comparisons() computes time-in-state ratios for lumped states", {
-  avg <- make_mock_avg_sops(tx_levels = c(0, 1))
-
-  with_mocked_bindings(
-    avg_sops = function(...) avg,
-    {
-      out <- avg_comparisons(
-        structure(list(), class = "mock_model", markov_id_var = "id"),
+    ),
+    list(
+      label = "time-in-state ratio",
+      avg = make_mock_avg_sops(tx_levels = c(0, 1)),
+      args = list(
         variables = list(tx = c(0, 1)),
         estimand = "time_in_state",
         state_sets = "1",
         times = 1:2,
         comparison = "ratio"
+      ),
+      order = character(),
+      expected = list(
+        estimate = (0.5 + 0.7) / (0.2 + 0.4),
+        state_set = "1",
+        contrast = "1 / 0"
       )
-    }
-  )
-
-  expect_equal(out$estimate, (0.5 + 0.7) / (0.2 + 0.4))
-  expect_equal(out$state_set, "1")
-  expect_equal(out$contrast, "1 / 0")
-})
-
-test_that("avg_comparisons() preserves by strata", {
-  avg <- make_mock_avg_sops(by = "sex", tx_levels = c(0, 1))
-
-  with_mocked_bindings(
-    avg_sops = function(...) avg,
-    {
-      out <- avg_comparisons(
-        structure(list(), class = "mock_model", markov_id_var = "id"),
+    ),
+    list(
+      label = "SOP differences within by strata",
+      avg = make_mock_avg_sops(by = "sex", tx_levels = c(0, 1)),
+      args = list(
         variables = list(tx = c(0, 1)),
         estimand = "sop",
         state_sets = "1",
         times = 1,
         by = "sex"
-      )
-    }
+      ),
+      order = "sex",
+      expected = list(sex = c("f", "m"), estimate = c(0.4, 0.6))
+    )
   )
 
-  out <- out[order(out$sex), ]
-  rownames(out) <- NULL
-
-  expect_equal(as.character(out$sex), c("f", "m"))
-  expect_equal(out$estimate, c(0.4, 0.6))
+  for (case in cases) {
+    out <- with_mocked_bindings(
+      avg_sops = function(...) case$avg,
+      do.call(avg_comparisons, c(list(model), case$args))
+    )
+    expect_true(inherits(out, "markov_avg_comparisons"), info = case$label)
+    if (length(case$order) > 0L) {
+      out <- out[do.call(order, unname(as.list(out[case$order]))), ]
+    }
+    for (column in names(case$expected)) {
+      values <- out[[column]]
+      if (is.factor(values)) {
+        values <- as.character(values)
+      }
+      expect_equal(
+        values,
+        case$expected[[column]],
+        info = paste(case$label, column, sep = ": ")
+      )
+    }
+  }
 })
 
 test_that("avg_comparisons() uses real-time AUC for time-in-state", {
@@ -179,128 +184,204 @@ test_that("real-time comparisons use baseline support without integrating it", {
   expect_equal(disabled$estimate, 2.1)
 })
 
-test_that("avg_comparisons() forwards model-structure args for marginal metrics", {
-  avg <- make_mock_avg_sops(tx_levels = c(0, 1))
-  time_covariates <- data.frame(visit = 1:2, spline = c(0, 1))
-  captured <- new.env(parent = emptyenv())
+test_that("avg_comparisons() forwards model-structure arguments to the SOP call", {
+  model <- structure(list(), class = "mock_model", markov_id_var = "id")
+  structure_args <- list(
+    time_var = "visit",
+    p_var = "prev",
+    p2_var = "preprev",
+    gap_var = "gap"
+  )
 
-  with_mocked_bindings(
-    avg_sops = function(...) {
-      captured$args <- list(...)
-      avg
-    },
-    {
-      out <- avg_comparisons(
-        structure(list(), class = "mock_model", markov_id_var = "id"),
-        variables = list(tx = c(0, 1)),
-        estimand = "time_in_state",
-        state_sets = "1",
-        times = 1:2,
-        y_levels = c("1", "2"),
-        absorb = "2",
-        time_var = "visit",
-        p_var = "prev",
-        p2_var = "preprev",
-        gap_var = "gap",
-        time_covariates = time_covariates
+  # The time-benefit estimand pairs the profiles itself, so it calls `sops()`;
+  # the other estimands call `avg_sops()`. `forwarded` lists the arguments the
+  # mocked call must receive under exactly these names.
+  cases <- list(
+    list(
+      label = "time in state, through avg_sops()",
+      time_covariates = data.frame(visit = 1:2, spline = c(0, 1)),
+      run = function(captured, time_covariates) {
+        avg <- make_mock_avg_sops(tx_levels = c(0, 1))
+        with_mocked_bindings(
+          avg_sops = function(...) {
+            captured$args <- list(...)
+            avg
+          },
+          do.call(
+            avg_comparisons,
+            c(
+              list(
+                model,
+                variables = list(tx = c(0, 1)),
+                estimand = "time_in_state",
+                state_sets = "1",
+                times = 1:2,
+                y_levels = c("1", "2"),
+                absorb = "2",
+                time_covariates = time_covariates
+              ),
+              structure_args
+            )
+          )
+        )
+      },
+      forwarded = c(structure_args, list(y_levels = c("1", "2"), absorb = "2")),
+      expected = list()
+    ),
+    list(
+      label = "time benefit from paired profiles, through sops()",
+      time_covariates = data.frame(visit = 1, spline = 0),
+      run = function(captured, time_covariates) {
+        newdata <- data.frame(
+          id = 1:2,
+          tx = c(0, 1),
+          yprev = c(2, 2),
+          prev = c(2, 2),
+          preprev = c(1, 1)
+        )
+        with_mocked_bindings(
+          validate_markov_model = function(object) NULL,
+          sops = function(model, newdata, times, ...) {
+            captured$args <- list(...)
+            out <- expand.grid(
+              rowid = seq_len(nrow(newdata)),
+              time = 1,
+              state = c("1", "2"),
+              KEEP.OUT.ATTRS = FALSE
+            )
+            out$tx <- rep(newdata$tx, times = 2)
+            out$yprev <- rep(newdata$yprev, times = 2)
+            out$prev <- rep(newdata$prev, times = 2)
+            out$estimate <- c(0, 0, 1, 0, 1, 1, 0, 1)
+            class(out) <- c("markov_sops", class(out))
+            attr(out, "call_args") <- list(times = 1)
+            attr(out, "y_levels") <- c("1", "2")
+            attr(out, "time_var") <- captured$args[["time_var"]]
+            attr(out, "p_var") <- captured$args[["p_var"]]
+            attr(out, "p2_var") <- captured$args[["p2_var"]]
+            out
+          },
+          do.call(
+            avg_comparisons,
+            c(
+              list(
+                model,
+                newdata = newdata,
+                variables = list(tx = c(0, 1)),
+                estimand = "time_benefit",
+                times = 1,
+                y_levels = c("1", "2"),
+                time_covariates = time_covariates
+              ),
+              structure_args
+            )
+          )
+        )
+      },
+      forwarded = structure_args,
+      expected = list(estimate = 0.5, estimand = "time_benefit")
+    )
+  )
+
+  for (case in cases) {
+    captured <- new.env(parent = emptyenv())
+    out <- case$run(captured, case$time_covariates)
+    expect_true(inherits(out, "markov_avg_comparisons"), info = case$label)
+    for (name in names(case$expected)) {
+      expect_equal(out[[name]], case$expected[[name]], info = case$label)
+    }
+    forwarded <- c(case$forwarded, list(time_covariates = case$time_covariates))
+    for (name in names(forwarded)) {
+      # `[[` matches names exactly, so a misnamed argument cannot pass by
+      # partial matching.
+      expect_equal(
+        captured$args[[name]],
+        forwarded[[name]],
+        info = paste(case$label, name, sep = ": ")
       )
     }
-  )
-
-  expect_s3_class(out, "markov_avg_comparisons")
-  expect_equal(captured$args$y_levels, c("1", "2"))
-  expect_equal(captured$args$absorb, "2")
-  expect_equal(captured$args$time_var, "visit")
-  expect_equal(captured$args$p_var, "prev")
-  expect_equal(captured$args$p2_var, "preprev")
-  expect_equal(captured$args$gap, "gap")
-  expect_equal(captured$args$time_covariates, time_covariates)
+  }
 })
 
-test_that("avg_comparisons() computes time benefit from paired profiles", {
-  newdata <- data.frame(
-    id = 1:2,
-    tx = c(0, 1),
-    yprev = c(2, 2),
-    prev = c(2, 2),
-    preprev = c(1, 1)
-  )
-  time_covariates <- data.frame(visit = 1, spline = 0)
-  captured <- new.env(parent = emptyenv())
-
-  with_mocked_bindings(
-    validate_markov_model = function(object) NULL,
-    sops = function(model, newdata, times, ...) {
-      captured$args <- list(...)
-      out <- expand.grid(
-        rowid = seq_len(nrow(newdata)),
-        time = 1,
-        state = c("1", "2"),
-        KEEP.OUT.ATTRS = FALSE
-      )
-      out$tx <- rep(newdata$tx, times = 2)
-      out$yprev <- rep(newdata$yprev, times = 2)
-      out$prev <- rep(newdata$prev, times = 2)
-      out$estimate <- c(0, 0, 1, 0, 1, 1, 0, 1)
-      class(out) <- c("markov_sops", class(out))
-      attr(out, "call_args") <- list(times = 1)
-      attr(out, "y_levels") <- c("1", "2")
-      attr(out, "time_var") <- captured$args$time_var
-      attr(out, "p_var") <- captured$args$p_var
-      attr(out, "p2_var") <- captured$args$p2_var
-      out
-    },
-    {
-      out <- avg_comparisons(
-        structure(list(), class = "mock_model", markov_id_var = "id"),
-        newdata = newdata,
+test_that("time-benefit array reducer keeps scenario blocks on visit and real-time scales", {
+  mapped_baseline <- data.frame(id = 1, tx = 0, yprev = 2, rowid = 1)
+  mapped_grid <- data.frame(tx = c(0, 1))
+  # `sops_array` holds SOPs by prediction row, visit and state; the rows come
+  # in one block of `n_each` profiles per scenario.
+  cases <- list(
+    list(
+      label = "visit scale, two profiles per scenario",
+      setup = list(
+        n_cf = 2,
+        n_each = 2,
         variables = list(tx = c(0, 1)),
-        estimand = "time_benefit",
+        y_levels = c("1", "2"),
         times = 1,
+        by = NULL,
+        baseline_data = data.frame(id = 1:2)
+      ),
+      sops_array = local({
+        a <- array(NA_real_, dim = c(4, 1, 2))
+        a[1, 1, ] <- c(0, 1)
+        a[2, 1, ] <- c(0, 1)
+        a[3, 1, ] <- c(1, 0)
+        a[4, 1, ] <- c(0, 1)
+        a
+      }),
+      time_args = list(),
+      expected = 0.5
+    ),
+    list(
+      label = "real-time scale through time_map",
+      setup = list(
+        n_cf = 2,
+        n_each = 1,
+        variables = list(tx = c(0, 1)),
         y_levels = c("1", "2"),
-        time_var = "visit",
-        p_var = "prev",
-        p2_var = "preprev",
-        gap_var = "gap",
-        time_covariates = time_covariates
+        times = 1:2,
+        by = NULL,
+        baseline_data = mapped_baseline,
+        newdata_orig = mapped_baseline,
+        newdata_pred = mostr:::create_counterfactual_data(
+          mapped_baseline,
+          mapped_grid,
+          list(tx = c(0, 1))
+        ),
+        grid = mapped_grid,
+        id_var = "id",
+        time_var = "time",
+        p_var = "yprev",
+        newdata_supplied = TRUE
+      ),
+      sops_array = local({
+        a <- array(NA_real_, dim = c(2, 2, 2))
+        a[1, 1, ] <- c(0, 1)
+        a[1, 2, ] <- c(0, 1)
+        a[2, 1, ] <- c(0, 1)
+        a[2, 2, ] <- c(1, 0)
+        a
+      }),
+      time_args = list(time_map = c("1" = 0, "2" = 4), baseline_time = NULL),
+      expected = 2
+    )
+  )
+
+  for (case in cases) {
+    out <- do.call(
+      mostr:::reduce_time_benefit_array_for_setup,
+      c(
+        list(
+          sops_array = case$sops_array,
+          setup = case$setup,
+          comparison = "difference",
+          weights = NULL,
+          time_unit = NULL
+        ),
+        case$time_args
       )
-    }
-  )
-
-  expect_equal(out$estimate, 0.5)
-  expect_equal(out$estimand, "time_benefit")
-  expect_equal(captured$args$time_var, "visit")
-  expect_equal(captured$args$p_var, "prev")
-  expect_equal(captured$args$p2_var, "preprev")
-  expect_equal(captured$args$gap, "gap")
-  expect_equal(captured$args$time_covariates, time_covariates)
-})
-
-test_that("time-benefit array reducer preserves scenario blocks", {
-  setup <- list(
-    n_cf = 2,
-    n_each = 2,
-    variables = list(tx = c(0, 1)),
-    y_levels = c("1", "2"),
-    times = 1,
-    by = NULL,
-    baseline_data = data.frame(id = 1:2)
-  )
-  sops_array <- array(NA_real_, dim = c(4, 1, 2))
-  sops_array[1, 1, ] <- c(0, 1)
-  sops_array[2, 1, ] <- c(0, 1)
-  sops_array[3, 1, ] <- c(1, 0)
-  sops_array[4, 1, ] <- c(0, 1)
-
-  out <- mostr:::reduce_time_benefit_array_for_setup(
-    sops_array = sops_array,
-    setup = setup,
-    comparison = "difference",
-    weights = NULL,
-    time_unit = NULL
-  )
-
-  expect_equal(out$estimate, 0.5)
+    )
+    expect_equal(out$estimate, case$expected, info = case$label)
+  }
 })
 
 test_that("linear ordinal-benefit reducer matches the dense score definition", {
@@ -321,48 +402,6 @@ test_that("linear ordinal-benefit reducer matches the dense score definition", {
     expected,
     tolerance = 1e-15
   )
-})
-
-test_that("time-benefit array reducer uses real-time AUC when mapped", {
-  baseline <- data.frame(id = 1, tx = 0, yprev = 2, rowid = 1)
-  grid <- data.frame(tx = c(0, 1))
-  setup <- list(
-    n_cf = 2,
-    n_each = 1,
-    variables = list(tx = c(0, 1)),
-    y_levels = c("1", "2"),
-    times = 1:2,
-    by = NULL,
-    baseline_data = baseline,
-    newdata_orig = baseline,
-    newdata_pred = mostr:::create_counterfactual_data(
-      baseline,
-      grid,
-      list(tx = c(0, 1))
-    ),
-    grid = grid,
-    id_var = "id",
-    time_var = "time",
-    p_var = "yprev",
-    newdata_supplied = TRUE
-  )
-  sops_array <- array(NA_real_, dim = c(2, 2, 2))
-  sops_array[1, 1, ] <- c(0, 1)
-  sops_array[1, 2, ] <- c(0, 1)
-  sops_array[2, 1, ] <- c(0, 1)
-  sops_array[2, 2, ] <- c(1, 0)
-
-  out <- mostr:::reduce_time_benefit_array_for_setup(
-    sops_array = sops_array,
-    setup = setup,
-    comparison = "difference",
-    weights = NULL,
-    time_unit = NULL,
-    time_map = c("1" = 0, "2" = 4),
-    baseline_time = NULL
-  )
-
-  expect_equal(out$estimate, 2)
 })
 
 test_that("time-benefit simulation inference uses real-time comparison scale", {
@@ -457,47 +496,6 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
           variables = list(tx = c(0, 1))
         ),
         "`times` must be supplied to `avg_comparisons()`.",
-        fixed = TRUE
-      )
-      expect_error(
-        avg_comparisons(
-          structure(list(), class = "mock_model", markov_id_var = "id"),
-          variables = list(tx = c(0, 1), z = c(0, 1)),
-          times = 1
-        ),
-        "exactly one named variable",
-        fixed = TRUE
-      )
-      expect_error(
-        avg_comparisons(
-          structure(list(), class = "mock_model", markov_id_var = "id"),
-          variables = list(tx = c(0, 1)),
-          estimand = "time_benefit",
-          times = 1,
-          state_sets = "1"
-        ),
-        "`state_sets` is not used",
-        fixed = TRUE
-      )
-      expect_error(
-        avg_comparisons(
-          structure(list(), class = "mock_model", markov_id_var = "id"),
-          variables = list(tx = c(0, 1)),
-          estimand = "time_benefit",
-          times = 1,
-          comparison = "ratio"
-        ),
-        "only supports",
-        fixed = TRUE
-      )
-      expect_error(
-        avg_comparisons(
-          structure(list(), class = "mock_model", markov_id_var = "id"),
-          variables = list(tx = c(0, 1)),
-          times = 1,
-          origin_time = 0
-        ),
-        "`origin_time` is no longer supported; use `baseline_time` instead.",
         fixed = TRUE
       )
       expect_error(

@@ -1,4 +1,4 @@
-# orm fast path validates state support and initial probabilities
+# orm SOPs report a state count that differs from the fit and a missing absorbing state
 
     Code
       mostr::soprob_markov(fit, baseline, times = 1, y_levels = fit$yunique[-length(

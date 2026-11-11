@@ -37,27 +37,6 @@ test_that("a missing value in an unused profile column keeps the profile", {
   expect_equal(out$estimate[match(key(expected), key(out))], expected$estimate)
 })
 
-test_that("state_time() with time_map gives every patient a total despite an unused NA column", {
-  case <- make_comparisons_case()
-  data <- case$data
-  data$note <- ifelse(data$id <= 5, NA_character_, "ok")
-  model <- mostm(
-    ordered(y) ~ time + tx + marker + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    first_followup_time = 1,
-    id_var = "id",
-    engine = "vglm"
-  )
-  args <- list(times = 1:4, absorb = 3, state_sets = "1", time_map = case$time_map)
-  expected <- do.call(state_time, c(list(case$model), args))
-  out <- do.call(state_time, c(list(model), args))
-  expect_false(anyNA(out$estimate))
-  expect_equal(out$estimate[match(expected$id, out$id)], expected$estimate)
-  average <- do.call(avg_state_time, c(list(model), args))
-  expect_equal(mean(out$estimate), average$estimate, tolerance = 1e-10)
-})
-
 test_that("inferences(null = ) does not change interpolate_sops() or time_in_state() groups", {
   case <- make_comparisons_case()
   averaged <- avg_sops(

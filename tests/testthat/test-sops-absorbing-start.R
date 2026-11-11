@@ -61,76 +61,77 @@ absorbing_start_calls <- function(model, profiles, ...) {
   )
 }
 
-test_that("first-order SOPs refuse profiles starting in an absorbing state (factor yprev)", {
+test_that("every SOP call refuses profiles starting in an absorbing state", {
   case <- make_comparisons_case()
-  profiles <- absorbing_start_profiles(case$profiles, 2)
-  calls <- absorbing_start_calls(case$model, profiles)
-  for (name in names(calls)) {
-    expect_absorbing_start_error(calls[[name]](), "yprev", 2, name)
-  }
-})
+  second <- make_second_order_comparisons_case()
 
-test_that("first-order SOPs refuse profiles starting in an absorbing state (numeric yprev)", {
-  case <- make_comparisons_case()
-  data <- case$data
-  data$yprev <- as.numeric(as.character(data$yprev))
-  model <- mostm(
+  # A numeric previous state is compared with `absorb` as a label.
+  numeric_data <- case$data
+  numeric_data$yprev <- as.numeric(as.character(numeric_data$yprev))
+  numeric_model <- mostm(
     ordered(y) ~ time + tx + marker + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
+    data = numeric_data,
     first_followup_time = 1,
     id_var = "id",
     engine = "vglm"
   )
-  profiles <- absorbing_start_profiles(data[data$time == 1, , drop = FALSE], 3)
-  calls <- absorbing_start_calls(model, profiles)
-  for (name in names(calls)) {
-    expect_absorbing_start_error(calls[[name]](), "yprev", 3, name)
-  }
-})
 
-test_that("second-order SOPs refuse an absorbing state in either previous state", {
-  case <- make_second_order_comparisons_case()
   # The most recent state is absorbing, as is the state two visits back.
-  both <- absorbing_start_profiles(case$profiles, 2)
+  both <- absorbing_start_profiles(second$profiles, 2)
   both <- absorbing_start_profiles(both, 2, column = "ypprev")
-  calls <- absorbing_start_calls(case$model, both, p2_var = "ypprev")
-  for (name in names(calls)) {
-    expect_absorbing_start_error(calls[[name]](), "yprev", 2, name)
-  }
-  # Only the state two visits back is absorbing: an impossible history, since
-  # the patient would have had to leave the absorbing state.
-  earlier <- absorbing_start_profiles(case$profiles, 1, column = "ypprev")
-  calls <- absorbing_start_calls(case$model, earlier, p2_var = "ypprev")
-  for (name in names(calls)) {
-    expect_absorbing_start_error(
-      calls[[name]](),
-      "ypprev",
-      1,
-      paste("ypprev only:", name)
-    )
-  }
-})
 
-test_that("starts outside the absorbing states still work", {
-  case <- make_comparisons_case()
-  expect_no_error(
-    avg_sops(case$model, newdata = case$profiles, times = 1:4, absorb = 3)
-  )
-  expect_no_error(avg_sops(case$model, times = 1:4, absorb = 3))
-  second <- make_second_order_comparisons_case()
-  expect_no_error(
-    avg_sops(
-      second$model,
-      newdata = second$profiles,
-      times = 1:4,
-      absorb = 3,
-      p2_var = "ypprev"
+  # `column` and `count` are the column and number of profiles the error names.
+  cases <- list(
+    list(
+      label = "first order, factor yprev",
+      model = case$model,
+      profiles = absorbing_start_profiles(case$profiles, 2),
+      column = "yprev",
+      count = 2
+    ),
+    list(
+      label = "first order, numeric yprev",
+      model = numeric_model,
+      profiles = absorbing_start_profiles(
+        numeric_data[numeric_data$time == 1, , drop = FALSE],
+        3
+      ),
+      column = "yprev",
+      count = 3
+    ),
+    list(
+      label = "second order, both previous states",
+      model = second$model,
+      profiles = both,
+      p2_var = "ypprev",
+      column = "yprev",
+      count = 2
+    ),
+    # Only the state two visits back is absorbing: an impossible history, since
+    # the patient would have had to leave the absorbing state.
+    list(
+      label = "second order, ypprev only",
+      model = second$model,
+      profiles = absorbing_start_profiles(second$profiles, 1, column = "ypprev"),
+      p2_var = "ypprev",
+      column = "ypprev",
+      count = 1
     )
   )
-  expect_no_error(
-    avg_sops(second$model, times = 1:4, absorb = 3, p2_var = "ypprev")
-  )
+
+  for (row in cases) {
+    extra <- if (!is.null(row$p2_var)) list(p2_var = row$p2_var)
+    calls <- do.call(absorbing_start_calls, c(list(row$model, row$profiles), extra))
+    for (name in names(calls)) {
+      expect_absorbing_start_error(
+        calls[[name]](),
+        row$column,
+        row$count,
+        paste0(row$label, ": ", name)
+      )
+    }
+  }
 })
 
 test_that("SOPs from the profiles stored by mostm() refuse an absorbing start", {

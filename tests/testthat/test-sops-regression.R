@@ -148,29 +148,6 @@ describe("SOP regression baselines", {
     )
   }
 
-  build_markov_alternative_case <- function() {
-    raw_data <- make_markov_trajectories(
-      n_patients = 80,
-      follow_up_time = 10,
-      treatment_prob = 0.5,
-      absorbing_state = 6,
-      seed = 1002,
-      treatment_effect = 0.15
-    )
-
-    data <- mostr::prepare_markov_data(raw_data)
-    data <- add_patient_age(data)
-    data <- add_explicit_time_basis(data, nk = 4)
-
-    list(
-      data = data,
-      baseline = subset(data, time == 1),
-      time_covariates = get_time_covariates(data),
-      y_levels = 1:6,
-      absorb = "6"
-    )
-  }
-
   build_markov_case <- function() {
     raw_data <- mostr::sim_markov(
       "violet",
@@ -237,46 +214,6 @@ describe("SOP regression baselines", {
         sops = sops_signature(sops_result),
         avg = avg_signature(avg_result),
         sim_draw = draw_signature(mostr::get_draws(sim_result))
-      ),
-      style = "json2",
-      cran = TRUE
-    )
-  })
-
-  test_that("alternative Markov SOP signatures remain stable", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_markov_alternative_case()
-    model <- suppressWarnings(fit_explicit_spline_model(case$data))
-
-    sops_result <- mostr::soprob_markov(
-      model = model,
-      newdata = case$baseline,
-      times = 1:10,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      time_var = "time_lin",
-      p_var = "yprev",
-      time_covariates = case$time_covariates
-    )
-
-    avg_result <- mostr::avg_sops(
-      model = model,
-      newdata = case$baseline,
-      variables = "tx",
-      times = 1:10,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      time_var = "time_lin",
-      p_var = "yprev",
-      time_covariates = case$time_covariates
-    )
-
-    expect_snapshot_value(
-      list(
-        sops = sops_signature(sops_result),
-        avg = avg_signature(avg_result)
       ),
       style = "json2",
       cran = TRUE

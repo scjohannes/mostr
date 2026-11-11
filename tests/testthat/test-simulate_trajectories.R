@@ -23,23 +23,7 @@ exact_actt_control_occupancy <- function(parameters, days) {
   occupancy
 }
 
-test_that("sim_markov requires a valid preset", {
-  expect_error(
-    sim_markov(n_patients = 10),
-    "`preset` is required",
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov("actt3", n_patients = 10),
-    '`preset` must be one of "actt1", "actt2", "violet", or NULL',
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov(c("actt1", "actt2")),
-    "`preset` must be one of",
-    fixed = TRUE
-  )
-})
+# The calls that sim_markov() refuses are rows S01 to S16 of test-refusals.R.
 
 test_that("sim_markov validates preset inputs", {
   expect_snapshot(error = TRUE, sim_markov("actt2", n_patients = 0))
@@ -52,155 +36,166 @@ test_that("sim_markov validates preset inputs", {
   expect_snapshot(error = TRUE, sim_markov("actt2", follow_up_time = 0))
 })
 
-test_that("sim_markov rejects patients from two sources", {
-  baseline <- data.frame(id = 1:2, yprev = c(5L, 6L), tx = c(0L, 1L))
-
-  expect_error(
-    sim_markov("actt2", n_patients = 2, baseline_data = baseline),
-    "Supply either `baseline_data` or `n_patients` and `treatment_prob`",
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov("actt2", treatment_prob = 1, baseline_data = baseline),
-    "Supply either `baseline_data` or `n_patients` and `treatment_prob`",
-    fixed = TRUE
-  )
-})
-
-test_that("sim_markov requires a complete model without a preset", {
-  baseline <- data.frame(id = 1:2, yprev = c(1, 1), tx = c(0, 1))
-  lp <- function(yprev, t, tx, treatment_effect, extra_params) 0
-
-  expect_error(
-    sim_markov(NULL, intercepts = 0, lp_function = lp),
-    "With `preset = NULL`, supply `baseline_data`.",
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov(NULL, baseline_data = baseline),
-    "With `preset = NULL`, supply `intercepts`, `lp_function`.",
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov(
-      NULL,
-      n_patients = 2,
-      baseline_data = baseline,
-      intercepts = 0,
-      lp_function = lp
+test_that("presets return reproducible trajectories with their default effect", {
+  actt_columns <- c("id", "time", "y", "yprev", "tx")
+  # `follow_up_time = NULL` leaves the argument out, so the default of 28
+  # days applies.
+  presets <- list(
+    list(
+      label = "ACTT-1",
+      preset = "actt1",
+      n_patients = 80,
+      follow_up_time = 6,
+      seed = 1987,
+      default_effect = -0.0730,
+      columns = actt_columns,
+      states = 1:8,
+      start_states = 4:7,
+      absorbing = 8
     ),
-    "Supply either `baseline_data` or `n_patients`",
-    fixed = TRUE
+    list(
+      label = "ACTT-2",
+      preset = "actt2",
+      n_patients = 80,
+      follow_up_time = 6,
+      seed = 1987,
+      default_effect = -0.0730,
+      columns = actt_columns,
+      states = 1:8,
+      start_states = 4:7,
+      absorbing = 8
+    ),
+    list(
+      label = "ACTT-2, 60 days",
+      preset = "actt2",
+      n_patients = 20,
+      follow_up_time = 60,
+      seed = 123,
+      default_effect = -0.0730,
+      columns = actt_columns,
+      states = 1:8,
+      start_states = NULL,
+      absorbing = 8
+    ),
+    list(
+      label = "VIOLET",
+      preset = "violet",
+      n_patients = 30,
+      follow_up_time = NULL,
+      seed = 1904,
+      default_effect = log(0.75),
+      columns = c("id", "time", "y", "yprev", "age", "sofa", "tx"),
+      states = 1:4,
+      start_states = NULL,
+      absorbing = NULL
+    )
   )
-  expect_error(
-    sim_markov(NULL, n_patients = 2, intercepts = 0, lp_function = lp),
-    "`n_patients` and `treatment_prob` sample patients from a preset",
-    fixed = TRUE
-  )
+
+  for (case in presets) {
+    simulate <- function(...) {
+      args <- list(case$preset, n_patients = case$n_patients, seed = case$seed, ...)
+      args$follow_up_time <- case$follow_up_time
+      do.call(sim_markov, args)
+    }
+    follow_up_time <- if (is.null(case$follow_up_time)) 28 else case$follow_up_time
+    traj <- simulate()
+
+    expect_trajectory_contract(
+      traj,
+      expected_cols = case$columns,
+      n_patients = case$n_patients,
+      follow_up_time = follow_up_time,
+      states = case$states
+    )
+    expect_identical(traj, simulate(), info = case$label)
+    expect_identical(
+      traj,
+      simulate(treatment_effect = case$default_effect),
+      info = case$label
+    )
+    if (!is.null(case$start_states)) {
+      expect_setequal(unique(traj$yprev[traj$time == 1]), case$start_states)
+    }
+    if (!is.null(case$absorbing)) {
+      expect_absorbing_state_sticky(traj, absorbing_state = case$absorbing)
+      absorbed <- traj$yprev == case$absorbing
+      expect_equal(
+        traj$y[absorbed],
+        rep(as.integer(case$absorbing), sum(absorbed)),
+        info = case$label
+      )
+    }
+  }
+  expect_equal(sum(violet_baseline$n), 1351)
 })
 
-test_that("ACTT-1 preset returns reproducible trajectories", {
-  traj <- sim_markov("actt1", n_patients = 80, follow_up_time = 6, seed = 1987)
-  repeated <- sim_markov(
-    "actt1",
-    n_patients = 80,
-    follow_up_time = 6,
-    treatment_effect = -0.0730,
-    seed = 1987
-  )
-
-  expect_trajectory_contract(
-    traj,
-    expected_cols = c("id", "time", "y", "yprev", "tx"),
-    n_patients = 80,
-    follow_up_time = 6,
-    states = 1:8
-  )
-  expect_identical(traj, repeated)
-  expect_setequal(unique(traj$yprev[traj$time == 1]), 4:7)
-  expect_absorbing_state_sticky(traj, absorbing_state = 8)
-})
-
-test_that("ACTT-1 preset is the ACTT-2 model with ACTT-1 starting states", {
+test_that("ACTT-1 and ACTT-2 presets share their slopes and sample their own starting states", {
   actt1 <- mostr:::actt1_markov_parameters()
   actt2 <- mostr:::actt2_markov_parameters()
 
+  # ACTT-1 is the ACTT-2 model with ACTT-1 starting states and death threshold.
   expect_equal(actt1$baseline_states, 4:7)
   expect_equal(actt1$baseline_probabilities, c(138, 435, 193, 285) / 1051)
   expect_identical(actt1$extra_params, actt2$extra_params)
   expect_identical(actt1$orm_intercepts[-7], actt2$orm_intercepts[-7])
   expect_equal(actt1$orm_intercepts[[7]], -21.4071)
 
-  traj <- sim_markov("actt1", n_patients = 10000, follow_up_time = 1, seed = 4815)
-  initial <- traj[traj$time == 1, , drop = FALSE]
-  observed <- prop.table(table(factor(initial$yprev, levels = 4:7)))
-  expect_equal(
-    as.numeric(observed),
-    actt1$baseline_probabilities,
-    tolerance = 0.02
-  )
+  parameters <- list(actt1 = actt1, actt2 = actt2)
+  for (preset in names(parameters)) {
+    traj <- sim_markov(preset, n_patients = 10000, follow_up_time = 1, seed = 4815)
+    initial <- traj[traj$time == 1, , drop = FALSE]
+    observed <- prop.table(table(factor(initial$yprev, levels = 4:7)))
+    expect_equal(
+      as.numeric(observed),
+      parameters[[preset]]$baseline_probabilities,
+      tolerance = 0.02,
+      info = preset
+    )
+    expect_equal(mean(initial$tx), 0.5, tolerance = 0.03, info = preset)
+  }
 })
 
-test_that("ACTT-1 preset kills 18% of the control arm by day 28", {
+test_that("ACTT presets match their control-arm calibration targets", {
   actt1 <- mostr:::actt1_markov_parameters()
-  occupancy <- exact_actt_control_occupancy(actt1, days = 28)
+  actt2 <- mostr:::actt2_markov_parameters()
+  targets <- list(
+    list(
+      label = "ACTT-1 kills 18% of the control arm by day 28",
+      parameters = actt1,
+      days = 28,
+      state = 8,
+      target = 0.18,
+      tolerance = 1e-4
+    ),
+    list(
+      label = "ACTT-2 places 9.3% of the control arm in state 2 on day 14",
+      parameters = actt2,
+      days = 14,
+      state = 2,
+      target = 0.093,
+      tolerance = 1e-2
+    )
+  )
 
-  expect_equal(sum(occupancy), 1)
-  expect_equal(occupancy[[8]], 0.18, tolerance = 1e-4)
+  for (case in targets) {
+    occupancy <- exact_actt_control_occupancy(case$parameters, days = case$days)
+    expect_equal(sum(occupancy), 1, info = case$label)
+    expect_equal(
+      occupancy[[case$state]],
+      case$target,
+      tolerance = case$tolerance,
+      info = case$label
+    )
+  }
 
-  # The unchanged ACTT-2 death threshold gives about 11% with these patients.
+  # The unchanged ACTT-2 death threshold gives about 11% with ACTT-1 patients.
   unchanged <- actt1
-  unchanged$orm_intercepts <- mostr:::actt2_markov_parameters()$orm_intercepts
+  unchanged$orm_intercepts <- actt2$orm_intercepts
   expect_equal(
     exact_actt_control_occupancy(unchanged, days = 28)[[8]],
     0.1107,
     tolerance = 1e-3
   )
-})
-
-test_that("ACTT-2 preset places 9.3% of the control arm in state 2 on day 14", {
-  occupancy <- exact_actt_control_occupancy(
-    mostr:::actt2_markov_parameters(),
-    days = 14
-  )
-
-  expect_equal(occupancy[[2]], 0.093, tolerance = 1e-2)
-})
-
-test_that("ACTT-2 preset returns reproducible trajectories", {
-  traj <- sim_markov("actt2", n_patients = 80, follow_up_time = 6, seed = 1987)
-  repeated <- sim_markov(
-    "actt2",
-    n_patients = 80,
-    follow_up_time = 6,
-    treatment_effect = -0.0730,
-    seed = 1987
-  )
-
-  expect_trajectory_contract(
-    traj,
-    expected_cols = c("id", "time", "y", "yprev", "tx"),
-    n_patients = 80,
-    follow_up_time = 6,
-    states = 1:8
-  )
-  expect_identical(traj, repeated)
-  expect_setequal(unique(traj$yprev[traj$time == 1]), 4:7)
-  expect_absorbing_state_sticky(traj, absorbing_state = 8)
-})
-
-test_that("ACTT-2 preset samples its starting-state distribution", {
-  traj <- sim_markov("actt2", n_patients = 10000, follow_up_time = 1, seed = 4815)
-  initial <- traj[traj$time == 1, , drop = FALSE]
-  observed <- prop.table(table(factor(initial$yprev, levels = 4:7)))
-  expected <- mostr:::actt2_markov_parameters()
-
-  expect_equal(
-    as.numeric(observed),
-    expected$baseline_probabilities,
-    tolerance = 0.02
-  )
-  expect_equal(mean(initial$tx), 0.5, tolerance = 0.03)
 })
 
 test_that("ACTT presets code treatment as one", {
@@ -255,7 +250,7 @@ test_that("ACTT spline basis agrees with Hmisc", {
   expect_equal(as.numeric(actual), as.numeric(expected), tolerance = 1e-12)
 })
 
-test_that("ACTT-2 linear predictor preserves shared orm slopes", {
+test_that("ACTT-2 linear predictor preserves shared orm slopes and merges states 1 and 2", {
   parameters <- mostr:::actt2_markov_parameters()
   lp <- function(yprev, day, tx, treatment_effect = -0.0730) {
     mostr:::actt2_markov_lp(
@@ -277,6 +272,14 @@ test_that("ACTT-2 linear predictor preserves shared orm slopes", {
     unname(lp(4, 7, 0) - parameters$extra_params["yprev=4"]),
     drop(basis %*% parameters$extra_params[day_names])
   )
+
+  # Transitions from states 1 and 2 are identical, also for a numeric `yprev`.
+  numeric_lp <- function(yprev, day) {
+    mostr:::actt2_markov_lp(yprev, day, 1, -0.0730, parameters$extra_params)
+  }
+  for (day in c(1, 14, 28)) {
+    expect_equal(numeric_lp(1, day), numeric_lp(2, day), info = paste("day", day))
+  }
 })
 
 test_that("ACTT-2 reversed thresholds reproduce orm state probabilities", {
@@ -310,17 +313,6 @@ test_that("ACTT-2 reversed thresholds reproduce orm state probabilities", {
   expect_equal(simulator_probabilities, orm_probabilities, tolerance = 1e-15)
   expect_gte(min(simulator_probabilities), 0)
   expect_equal(sum(simulator_probabilities), 1)
-})
-
-test_that("ACTT-2 transitions from states 1 and 2 are identical", {
-  parameters <- mostr:::actt2_markov_parameters()
-  lp <- function(yprev, day) {
-    mostr:::actt2_markov_lp(yprev, day, 1, -0.0730, parameters$extra_params)
-  }
-
-  for (day in c(1, 14, 28)) {
-    expect_equal(lp(1, day), lp(2, day))
-  }
 })
 
 test_that("ACTT presets match a per-patient call of their linear predictor", {
@@ -417,45 +409,9 @@ test_that("sim_markov passes the decayed treatment effect to lp_function", {
   expect_equal(get("1", envir = seen), 0)
 })
 
-test_that("sim_markov validates a user model and warns about absent covariates", {
+test_that("sim_markov warns about absent covariates and still simulates", {
   baseline <- data.frame(id = 1:2, yprev = c(1, 1))
   lp <- function(yprev, t, treatment_effect, extra_params) 0
-
-  expect_error(
-    sim_markov(NULL, baseline_data = list(), intercepts = 0, lp_function = lp),
-    "baseline_data must be a data frame",
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov(
-      NULL,
-      baseline_data = data.frame(id = 1),
-      intercepts = 0,
-      lp_function = lp
-    ),
-    "baseline_data must contain columns: yprev",
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov(
-      NULL,
-      baseline_data = baseline,
-      intercepts = character(),
-      lp_function = lp
-    ),
-    "intercepts must be a numeric vector",
-    fixed = TRUE
-  )
-  expect_error(
-    sim_markov(
-      NULL,
-      baseline_data = baseline,
-      intercepts = 0,
-      lp_function = "nope"
-    ),
-    "lp_function must be a function",
-    fixed = TRUE
-  )
 
   expect_warning(
     result <- sim_markov(
@@ -510,7 +466,10 @@ test_that("sim_markov passes tx even when not requested as a covariate", {
   )
 
   expect_equal(nrow(result), 4)
-  expect_true(all(result$tx %in% c(0, 1)))
+  # A linear predictor of +10 or -10 all but fixes the next state, so the
+  # states show that lp_function saw each patient's own tx.
+  expect_equal(result$y[result$tx == 1], c(2, 2))
+  expect_equal(result$y[result$tx == 0], c(1, 1))
 })
 
 test_that("sim_markov preserves character patient IDs", {
@@ -563,56 +522,4 @@ test_that("sim_markov supports threshold-specific linear predictors", {
   expect_named(ppo, c("id", "time", "y", "yprev", "tx"))
   expect_equal(nrow(ppo), 12)
   expect_true(all(ppo$y %in% 1:3))
-})
-
-test_that("sim_markov validates threshold-specific linear predictors", {
-  baseline <- data.frame(id = 1, yprev = 1, tx = 1)
-  simulate <- function(intercepts, lp_function) {
-    sim_markov(
-      NULL,
-      baseline_data = baseline,
-      follow_up_time = 1,
-      intercepts = intercepts,
-      lp_function = lp_function,
-      absorbing_states = integer(),
-      covariate_names = "tx",
-      seed = 1
-    )
-  }
-
-  expect_error(
-    simulate(
-      c(-1, 0, 1),
-      function(yprev, t, tx, treatment_effect, extra_params) c(0, 0)
-    ),
-    "lp_function must return either length 1 or length\\(intercepts\\)",
-    fixed = FALSE
-  )
-  expect_error(
-    simulate(
-      c(-1, 0, 1),
-      function(yprev, t, tx, treatment_effect, extra_params) NA_real_
-    ),
-    "lp_function must return finite numeric values",
-    fixed = TRUE
-  )
-  expect_error(
-    simulate(
-      c(0, 1),
-      function(yprev, t, tx, treatment_effect, extra_params) c(5, -5)
-    ),
-    "create decreasing cumulative probabilities",
-    fixed = TRUE
-  )
-})
-
-test_that("ACTT-2 Markov trajectories support 60-day follow-up", {
-  data <- sim_markov("actt2", n_patients = 20, follow_up_time = 60, seed = 123)
-  expect_equal(nrow(data), 1200)
-  expect_equal(sort(unique(data$time)), 1:60)
-  expect_equal(data$y[data$yprev == 8], rep(8L, sum(data$yprev == 8)))
-  expect_identical(
-    data,
-    sim_markov("actt2", n_patients = 20, follow_up_time = 60, seed = 123)
-  )
 })

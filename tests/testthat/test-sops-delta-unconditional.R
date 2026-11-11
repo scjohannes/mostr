@@ -232,33 +232,84 @@ delta_weighted_refit_oracle <- function(
   )
 }
 
+# Checks shared by the vglm and orm patient-weight refit tests: the refit
+# derivatives agree with the analytical influence, and the covariance built
+# from them agrees with the unconditional covariance of the averaged SOPs.
+expect_patient_weight_refits_match <- function(oracle, patient_ids) {
+  expect_equal(
+    oracle$numerical_coefficient,
+    oracle$expected_coefficient,
+    tolerance = 2e-3
+  )
+  expect_equal(
+    oracle$numerical_sop,
+    oracle$expected_sop,
+    tolerance = 2e-3
+  )
+  expect_gt(max(abs(oracle$numerical_sop - oracle$profile_only_sop)), 1e-3)
+  # Each derivative changes fitting and averaging weights together. Using every
+  # patient checks the joint contribution, including cross-covariances, without
+  # constructing scores, sensitivity, or coefficient derivatives in the oracle.
+  n <- length(patient_ids)
+  centered <- sweep(oracle$numerical_sop, 2L, colMeans(oracle$numerical_sop))
+  covariance <- crossprod(centered) / (n * (n - 1))
+  expect_lt(
+    max(abs(stats::vcov(oracle$inferred) - covariance)) / max(abs(covariance)),
+    2e-3
+  )
+  expect_equal(
+    oracle$inferred$std.error,
+    sqrt(diag(covariance)),
+    tolerance = 2e-3
+  )
+  without_cross_term <- (stats::cov(oracle$profile_only_sop) +
+    stats::cov(oracle$numerical_sop - oracle$profile_only_sop)) /
+    n
+  expect_gt(
+    max(abs(covariance - without_cross_term)) / max(abs(covariance)),
+    2e-3
+  )
+}
+
 test_that("patient clusters resolve explicitly or from stored fitting metadata", {
   fit <- local_delta_vglm_fit()
   fitted_data <- attr(fit, "markov_data")
-
+  explicit <- paste0("patient-", fitted_data$id)
+  cases <- list(
+    list(
+      label = "stored patient-ID column",
+      cluster = NULL,
+      expected = fitted_data$id,
+      source = "stored_id_var"
+    ),
+    list(
+      label = "explicit cluster vector",
+      cluster = explicit,
+      expected = explicit,
+      source = "explicit_vector"
+    ),
+    list(
+      label = "explicit cluster formula",
+      cluster = ~id,
+      expected = fitted_data$id,
+      source = "explicit_formula"
+    )
+  )
+  for (case in cases) {
+    resolved <- resolve_delta_cluster(fit, cluster = case$cluster)
+    expect_equal(resolved$cluster, case$expected, info = case$label)
+    expect_equal(resolved$metadata$source, case$source, info = case$label)
+  }
   stored <- resolve_delta_cluster(fit)
-  expect_equal(stored$cluster, fitted_data$id)
   expect_equal(stored$ids, unique(as.character(fitted_data$id)))
-  expect_equal(stored$metadata$source, "stored_id_var")
   expect_equal(stored$metadata$cluster_level, "patient")
 
-  explicit <- paste0("patient-", fitted_data$id)
-  resolved_explicit <- resolve_delta_cluster(fit, cluster = explicit)
-  expect_equal(resolved_explicit$cluster, explicit)
-  expect_equal(resolved_explicit$metadata$source, "explicit_vector")
-
-  resolved_formula <- resolve_delta_cluster(fit, cluster = ~id)
-  expect_equal(resolved_formula$cluster, fitted_data$id)
-  expect_equal(resolved_formula$metadata$source, "explicit_formula")
-})
-
-test_that("patient clusters never fall back to fitting rows", {
-  fit <- local_delta_vglm_fit()
+  # Without the stored fitting data and patient-ID column, the clusters never
+  # fall back to the fitting rows.
   attr(fit, "markov_data") <- NULL
   attr(fit, "markov_id_var") <- NULL
   attr(fit$vglm_fit, "markov_data") <- NULL
   attr(fit$vglm_fit, "markov_id_var") <- NULL
-
   expect_error(
     resolve_delta_cluster(fit),
     "the model does not record its fitting data and patient-ID column",
@@ -319,17 +370,6 @@ test_that("explicit coefficient covariance has precedence and strict validation"
 test_that("vglm covariance and score components preserve backend conventions", {
   fit <- local_delta_vglm_fit()
   fitted_data <- attr(fit, "markov_data")
-  covariance <- get_delta_cluster_vcov(fit)
-
-  expect_equal(covariance$vcov, fit$var)
-  expect_equal(covariance$metadata$type, fit$type)
-  expect_identical(covariance$metadata$cadjust, fit$cadjust)
-  expect_equal(
-    covariance$metadata$adjustment_factor,
-    fit$adjustment_factor
-  )
-
-  components <- get_delta_score_components(fit)
   cluster_ids <- unique(as.character(fitted_data$id))
   expected_scores <- rowsum(
     fit$scores,
@@ -338,39 +378,75 @@ test_that("vglm covariance and score components preserve backend conventions", {
   )
   rownames(expected_scores) <- cluster_ids
 
-  expect_equal(components$ids, cluster_ids)
-  expect_equal(components$scores, expected_scores)
-  expect_equal(components$n, length(cluster_ids))
-  expect_equal(components$Ainv, length(cluster_ids) * fit$bread)
-  expect_false(isTRUE(all.equal(components$Ainv, fit$var)))
-  expect_equal(components$metadata$bread_source, "robcov_vglm_observed")
-  expect_equal(components$metadata$backend_hc_type_ignored, fit$type)
+  # The robust fit that `mostm()` stores, and the raw `vglm` fit inside it with
+  # the patient clusters given explicitly. Both give the stored patient
+  # covariance and the same patient scores.
+  cases <- list(
+    list(
+      label = "robcov_vglm fit from mostm()",
+      model = fit,
+      cluster = NULL,
+      vcov_tolerance = testthat_tolerance(),
+      bread_source = "robcov_vglm_observed"
+    ),
+    list(
+      label = "raw vglm fit with explicit clusters",
+      model = fit$vglm_fit,
+      cluster = fitted_data$id,
+      vcov_tolerance = 1e-10,
+      bread_source = "vglm_observed_information"
+    )
+  )
+  for (case in cases) {
+    covariance <- get_delta_cluster_vcov(case$model, cluster = case$cluster)
+    components <- get_delta_score_components(
+      case$model,
+      cluster = case$cluster
+    )
+    expect_equal(
+      covariance$vcov,
+      fit$var,
+      tolerance = case$vcov_tolerance,
+      info = case$label
+    )
+    expect_equal(components$ids, cluster_ids, info = case$label)
+    expect_equal(components$scores, expected_scores, info = case$label)
+    expect_equal(components$n, length(cluster_ids), info = case$label)
+    expect_equal(
+      components$Ainv,
+      length(cluster_ids) * fit$bread,
+      info = case$label
+    )
+    expect_false(
+      isTRUE(all.equal(components$Ainv, fit$var)),
+      info = case$label
+    )
+    expect_equal(
+      components$metadata$bread_source,
+      case$bread_source,
+      info = case$label
+    )
+    expect_equal(
+      components$metadata$n_patients,
+      length(cluster_ids),
+      info = case$label
+    )
+  }
+
+  # The stored fit keeps its backend settings in the metadata; the raw fit's
+  # covariance is computed.
+  stored <- get_delta_cluster_vcov(fit)
+  expect_equal(stored$metadata$type, fit$type)
+  expect_identical(stored$metadata$cadjust, fit$cadjust)
+  expect_equal(stored$metadata$adjustment_factor, fit$adjustment_factor)
+  stored_components <- get_delta_score_components(fit)
+  expect_equal(stored_components$metadata$backend_hc_type_ignored, fit$type)
   expect_identical(
-    components$metadata$backend_cadjust_ignored,
+    stored_components$metadata$backend_cadjust_ignored,
     fit$cadjust
   )
-  expect_equal(components$metadata$n_patients, length(cluster_ids))
-})
-
-test_that("raw vglm models compute patient covariance and score components", {
-  fit <- local_delta_vglm_fit()
-  raw_fit <- fit$vglm_fit
-  fitted_data <- attr(fit, "markov_data")
-  cluster_ids <- unique(as.character(fitted_data$id))
-
-  covariance <- get_delta_cluster_vcov(raw_fit, cluster = fitted_data$id)
-  components <- get_delta_score_components(raw_fit, cluster = fitted_data$id)
-  expected_scores <- rowsum(
-    fit$scores,
-    factor(as.character(fitted_data$id), levels = cluster_ids),
-    reorder = FALSE
-  )
-  rownames(expected_scores) <- cluster_ids
-
-  expect_equal(covariance$vcov, fit$var, tolerance = 1e-10)
-  expect_equal(covariance$metadata$source, "computed_robcov_vglm")
-  expect_equal(components$scores, expected_scores)
-  expect_equal(components$Ainv, length(cluster_ids) * fit$bread)
+  computed <- get_delta_cluster_vcov(fit$vglm_fit, cluster = fitted_data$id)
+  expect_equal(computed$metadata$source, "computed_robcov_vglm")
 })
 
 test_that("orm covariance and score components use inverse total information", {
@@ -447,39 +523,7 @@ test_that("vglm patient-weight refits independently validate unconditional covar
     patient_ids = patient_ids
   )
 
-  expect_equal(
-    oracle$numerical_coefficient,
-    oracle$expected_coefficient,
-    tolerance = 2e-3
-  )
-  expect_equal(
-    oracle$numerical_sop,
-    oracle$expected_sop,
-    tolerance = 2e-3
-  )
-  expect_gt(max(abs(oracle$numerical_sop - oracle$profile_only_sop)), 1e-3)
-  # Each derivative changes fitting and averaging weights together. Using every
-  # patient checks the joint contribution, including cross-covariances, without
-  # constructing scores, sensitivity, or coefficient derivatives in the oracle.
-  n <- length(patient_ids)
-  centered <- sweep(oracle$numerical_sop, 2L, colMeans(oracle$numerical_sop))
-  covariance <- crossprod(centered) / (n * (n - 1))
-  expect_lt(
-    max(abs(stats::vcov(oracle$inferred) - covariance)) / max(abs(covariance)),
-    2e-3
-  )
-  expect_equal(
-    oracle$inferred$std.error,
-    sqrt(diag(covariance)),
-    tolerance = 2e-3
-  )
-  without_cross_term <- (stats::cov(oracle$profile_only_sop) +
-    stats::cov(oracle$numerical_sop - oracle$profile_only_sop)) /
-    n
-  expect_gt(
-    max(abs(covariance - without_cross_term)) / max(abs(covariance)),
-    2e-3
-  )
+  expect_patient_weight_refits_match(oracle, patient_ids)
 })
 
 test_that("orm patient-weight refits independently validate unconditional covariance", {
@@ -505,39 +549,7 @@ test_that("orm patient-weight refits independently validate unconditional covari
     patient_ids = patient_ids
   )
 
-  expect_equal(
-    oracle$numerical_coefficient,
-    oracle$expected_coefficient,
-    tolerance = 2e-3
-  )
-  expect_equal(
-    oracle$numerical_sop,
-    oracle$expected_sop,
-    tolerance = 2e-3
-  )
-  expect_gt(max(abs(oracle$numerical_sop - oracle$profile_only_sop)), 1e-3)
-  # Each derivative changes fitting and averaging weights together. Using every
-  # patient checks the joint contribution, including cross-covariances, without
-  # constructing scores, sensitivity, or coefficient derivatives in the oracle.
-  n <- length(patient_ids)
-  centered <- sweep(oracle$numerical_sop, 2L, colMeans(oracle$numerical_sop))
-  covariance <- crossprod(centered) / (n * (n - 1))
-  expect_lt(
-    max(abs(stats::vcov(oracle$inferred) - covariance)) / max(abs(covariance)),
-    2e-3
-  )
-  expect_equal(
-    oracle$inferred$std.error,
-    sqrt(diag(covariance)),
-    tolerance = 2e-3
-  )
-  without_cross_term <- (stats::cov(oracle$profile_only_sop) +
-    stats::cov(oracle$numerical_sop - oracle$profile_only_sop)) /
-    n
-  expect_gt(
-    max(abs(covariance - without_cross_term)) / max(abs(covariance)),
-    2e-3
-  )
+  expect_patient_weight_refits_match(oracle, patient_ids)
 })
 
 test_that("unconditional score machinery rejects partial proportional odds", {
@@ -649,63 +661,46 @@ test_that("stacked influence matches fitted patients and retains the cross term"
   expect_gt(max(abs(result$covariance - additive_covariance)), 1e-8)
 })
 
-test_that("stacked influence rejects profile-only patients", {
-  values <- rbind(
-    p1 = c(cell = 0.2),
-    p2 = c(cell = 0.4),
-    p3 = c(cell = 0.6)
-  )
+test_that("stacked influence rejects patients missing from profiles or scores", {
   jacobian <- matrix(1, nrow = 1L, dimnames = list("cell", "beta"))
-  scores <- matrix(
-    c(0.1, -0.1),
-    ncol = 1L,
-    dimnames = list(c("p1", "p2"), "beta")
-  )
-
-  expect_error(
-    delta_stacked_influence(
-      values,
-      jacobian,
-      rownames(values),
-      list(
-        ids = rownames(scores),
-        scores = scores,
-        Ainv = matrix(1, dimnames = list("beta", "beta")),
-        n = 2L
-      )
-    ),
-    "Target-profile patients have no usable likelihood transition: p3",
-    fixed = TRUE
-  )
-})
-
-test_that("stacked influence rejects score patients absent from profiles", {
-  values <- rbind(
-    p1 = c(cell = 0.2),
-    p2 = c(cell = 0.4)
-  )
-  jacobian <- matrix(
-    1,
-    nrow = 1L,
-    dimnames = list("cell", "beta")
-  )
-  scores <- matrix(
-    c(0.1, -0.1),
-    ncol = 1L,
-    dimnames = list(c("p1", "p3"), "beta")
-  )
   Ainv <- matrix(1, dimnames = list("beta", "beta"))
-
-  expect_error(
-    delta_stacked_influence(
-      values,
-      jacobian,
-      rownames(values),
-      list(ids = rownames(scores), scores = scores, Ainv = Ainv, n = 2L)
+  cases <- list(
+    list(
+      label = "profile patient without likelihood scores",
+      profile_ids = c("p1", "p2", "p3"),
+      score_ids = c("p1", "p2"),
+      message = "Target-profile patients have no usable likelihood transition: p3"
     ),
-    "Likelihood-score patients are absent from the target profiles: p3",
-    fixed = TRUE
+    list(
+      label = "scored patient absent from the profiles",
+      profile_ids = c("p1", "p2"),
+      score_ids = c("p1", "p3"),
+      message = "Likelihood-score patients are absent from the target profiles: p3"
+    )
   )
+  for (case in cases) {
+    values <- matrix(
+      c(0.2, 0.4, 0.6)[seq_along(case$profile_ids)],
+      ncol = 1L,
+      dimnames = list(case$profile_ids, "cell")
+    )
+    scores <- matrix(
+      c(0.1, -0.1),
+      ncol = 1L,
+      dimnames = list(case$score_ids, "beta")
+    )
+    expect_error(
+      delta_stacked_influence(
+        values,
+        jacobian,
+        rownames(values),
+        list(ids = rownames(scores), scores = scores, Ainv = Ainv, n = 2L)
+      ),
+      case$message,
+      fixed = TRUE,
+      info = case$label
+    )
+  }
 })
 
 test_that("empirical covariance propagates named raw coefficients", {
@@ -723,67 +718,4 @@ test_that("empirical covariance propagates named raw coefficients", {
     t(jacobian)
 
   expect_equal(delta_empirical_covariance(jacobian, covariance), expected)
-})
-
-
-test_that("matrix validation respects covariance units", {
-  for (scale in c(1e-20, 1, 1e20)) {
-    covariance <- diag(c(1, 2)) * scale
-    dimnames(covariance) <- list(c("a", "b"), c("a", "b"))
-    expect_equal(
-      delta_validate_named_matrix(
-        covariance,
-        c("a", "b"),
-        "vcov",
-        positive_definite = TRUE
-      ) /
-        scale,
-      covariance / scale
-    )
-    invalid <- covariance
-    invalid[1, 1] <- -scale
-    expect_match(
-      tryCatch(
-        delta_validate_named_matrix(
-          invalid,
-          c("a", "b"),
-          "vcov",
-          positive_semidefinite = TRUE
-        ),
-        error = conditionMessage
-      ),
-      "not numerically positive semidefinite"
-    )
-    invalid <- covariance
-    invalid[1, 2] <- scale / 10
-    expect_match(
-      tryCatch(
-        delta_validate_named_matrix(invalid, c("a", "b"), "vcov"),
-        error = conditionMessage
-      ),
-      "not numerically symmetric"
-    )
-  }
-  zero <- covariance * 0
-  expect_equal(
-    delta_validate_named_matrix(
-      zero,
-      c("a", "b"),
-      "vcov",
-      positive_semidefinite = TRUE
-    ),
-    zero
-  )
-  expect_match(
-    tryCatch(
-      delta_validate_named_matrix(
-        zero,
-        c("a", "b"),
-        "bread",
-        positive_definite = TRUE
-      ),
-      error = conditionMessage
-    ),
-    "not numerically positive definite"
-  )
 })

@@ -1,4 +1,12 @@
-test_that("score-bootstrap simulation adds CIs and metadata for avg_sops", {
+# A score-bootstrap fit and its baseline rows, made once for the draw-generator
+# tests below.
+score_draw_case <- function() {
+  grid_fixture("score bootstrap draw case", function() {
+    make_score_bootstrap_case(seed = 2006, n_patients = 35, follow_up_time = 8)
+  })
+}
+
+test_that("score-bootstrap simulation adds CIs, metadata and draws for avg_sops", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -22,26 +30,6 @@ test_that("score-bootstrap simulation adds CIs and metadata for avg_sops", {
   expect_true(attr(result, "n_successful") <= 40)
   expect_true(attr(result, "n_successful") > 0)
   expect_inference_intervals(result, require_positive_std_error = TRUE)
-})
-
-test_that("score-bootstrap simulation stores draw-level output with expected structure", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  case <- make_score_bootstrap_case(seed = 2002)
-  withr::local_seed(2002)
-  result <- avg_sops(
-    model = case$model,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    y_levels = case$y_levels,
-    absorb = case$absorb,
-    id_var = "id"
-  ) |>
-    mostr:::inferences_score_bootstrap(
-      n_draws = 30,
-      return_draws = TRUE
-    )
 
   draws <- get_draws(result)
 
@@ -88,84 +76,11 @@ test_that("score-bootstrap treats supplied newdata as fixed profiles", {
   expect_false("id" %in% names(draws))
 })
 
-test_that("score-bootstrap simulation does not expose draws when return_draws is FALSE", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  case <- make_score_bootstrap_case(seed = 2003)
-  withr::local_seed(2003)
-  result <- avg_sops(
-    model = case$model,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    y_levels = case$y_levels,
-    absorb = case$absorb,
-    id_var = "id"
-  ) |>
-    mostr:::inferences_score_bootstrap(
-      n_draws = 20,
-      return_draws = FALSE
-    )
-
-  expect_error(get_draws(result), "No draws found")
-})
-
-test_that("score-bootstrap simulation rejects user-supplied vcov", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  case <- make_score_bootstrap_case(seed = 2004)
-  custom_vcov <- diag(length(coef(case$model)))
-
-  avg_result <- avg_sops(
-    model = case$model,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    y_levels = case$y_levels,
-    absorb = case$absorb,
-    id_var = "id"
-  )
-
-  expect_error(
-    mostr:::inferences_score_bootstrap(
-      avg_result,
-      n_draws = 10,
-      vcov = custom_vcov
-    ),
-    "cannot be supplied"
-  )
-})
-
-test_that("score-bootstrap uses the fixed exponential weight distribution", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  case <- make_score_bootstrap_case(seed = 2005)
-  avg_result <- avg_sops(
-    model = case$model,
-    variables = list(tx = c(0, 1)),
-    times = case$times,
-    y_levels = case$y_levels,
-    absorb = case$absorb,
-    id_var = "id"
-  )
-
-  expect_false("score_weight_dist" %in% names(formals(inferences)))
-  expect_s3_class(
-    mostr:::inferences_score_bootstrap(avg_result, n_draws = 10),
-    "markov_avg_sops"
-  )
-})
-
 test_that("generate_score_bootstrap_draws returns valid dimensions and normalized weights", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  case <- make_score_bootstrap_case(
-    seed = 2006,
-    n_patients = 35,
-    follow_up_time = 8
-  )
+  case <- score_draw_case()
 
   draws <- generate_score_bootstrap_draws(
     model = case$model,
@@ -194,22 +109,20 @@ test_that("generate_score_bootstrap_draws is reproducible with a fixed seed", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 30, seed = 2007, follow_up_time = 8)
-  model <- make_test_model(data)
-  baseline_data <- data[data$time == 1, ]
+  case <- score_draw_case()
 
   withr::local_seed(9999)
   draws_a <- generate_score_bootstrap_draws(
-    model = model,
-    baseline_data = baseline_data,
+    model = case$model,
+    baseline_data = case$baseline,
     id_var = "id",
     n_draws = 15
   )
 
   withr::local_seed(9999)
   draws_b <- generate_score_bootstrap_draws(
-    model = model,
-    baseline_data = baseline_data,
+    model = case$model,
+    baseline_data = case$baseline,
     id_var = "id",
     n_draws = 15
   )
@@ -222,15 +135,13 @@ test_that("score bootstrap draws are invariant to working-memory chunks", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 30, seed = 2017, follow_up_time = 8)
-  model <- make_test_model(data)
-  baseline_data <- data[data$time == 1, ]
+  case <- score_draw_case()
 
   withr::local_options(mostr.score_bootstrap_working_bytes = 1)
   withr::local_seed(777)
   small_chunks <- generate_score_bootstrap_draws(
-    model = model,
-    baseline_data = baseline_data,
+    model = case$model,
+    baseline_data = case$baseline,
     id_var = "id",
     n_draws = 17
   )
@@ -238,8 +149,8 @@ test_that("score bootstrap draws are invariant to working-memory chunks", {
   withr::local_options(mostr.score_bootstrap_working_bytes = Inf)
   withr::local_seed(777)
   one_chunk <- generate_score_bootstrap_draws(
-    model = model,
-    baseline_data = baseline_data,
+    model = case$model,
+    baseline_data = case$baseline,
     id_var = "id",
     n_draws = 17
   )
@@ -248,47 +159,51 @@ test_that("score bootstrap draws are invariant to working-memory chunks", {
   expect_identical(small_chunks$baseline_weights, one_chunk$baseline_weights)
 })
 
-test_that("generate_score_bootstrap_draws errors when baseline IDs do not match clusters", {
+test_that("generate_score_bootstrap_draws rejects bare fits, unknown baseline ids and missing robust components", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  withr::local_seed(2008)
-  data <- make_test_data(n_patients = 30, seed = 2008, follow_up_time = 8)
-  model <- make_test_model(data)
-  baseline_data <- data[data$time == 1, ]
-  baseline_data$id <- as.character(baseline_data$id)
-  baseline_data$id[1] <- "missing_cluster_id"
+  case <- score_draw_case()
+  unknown_ids <- case$baseline
+  unknown_ids$id <- as.character(unknown_ids$id)
+  unknown_ids$id[1] <- "missing_cluster_id"
+  no_scores <- case$model
+  no_scores$scores <- NULL
 
-  expect_error(
-    generate_score_bootstrap_draws(
-      model = model,
-      baseline_data = baseline_data,
-      id_var = "id",
-      n_draws = 10
+  cases <- list(
+    # `mostm(engine = "vglm")` always returns a robcov_vglm object, so only
+    # the bare vglm fit inside it lacks the patient scores.
+    list(
+      label = "bare vglm fit",
+      model = case$model$vglm_fit,
+      baseline = case$baseline,
+      error = "requires a 'robcov_vglm' model"
     ),
-    "were not found in the cluster variable"
-  )
-})
-
-test_that("generate_score_bootstrap_draws errors when required robust components are missing", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  withr::local_seed(2009)
-  data <- make_test_data(n_patients = 30, seed = 2009, follow_up_time = 8)
-  model <- make_test_model(data)
-  baseline_data <- data[data$time == 1, ]
-
-  broken_model <- model
-  broken_model$scores <- NULL
-
-  expect_error(
-    generate_score_bootstrap_draws(
-      model = broken_model,
-      baseline_data = baseline_data,
-      id_var = "id",
-      n_draws = 10
+    list(
+      label = "baseline ids not among the clusters",
+      model = case$model,
+      baseline = unknown_ids,
+      error = "were not found in the cluster variable"
     ),
-    "missing required components.*scores"
+    list(
+      label = "missing scores",
+      model = no_scores,
+      baseline = case$baseline,
+      error = "missing required components.*scores"
+    )
   )
+
+  for (row in cases) {
+    withr::local_seed(2008)
+    expect_error(
+      generate_score_bootstrap_draws(
+        model = row$model,
+        baseline_data = row$baseline,
+        id_var = "id",
+        n_draws = 10
+      ),
+      row$error,
+      info = row$label
+    )
+  }
 })

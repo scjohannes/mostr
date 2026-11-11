@@ -33,14 +33,6 @@
 ---
 
     Code
-      inferences(stratified, method = "delta")
-    Condition
-      Error:
-      ! Analytical delta inference with `by` is not yet supported.
-
----
-
-    Code
       inferences(second_order, method = "delta", vcov = case$covariance)
     Condition
       Error:

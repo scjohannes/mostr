@@ -95,18 +95,6 @@ describe("avg_sops() and inferences() pipeline", {
     ))
   }
 
-  fit_inline_pipeline_model <- function(data) {
-    suppressWarnings(
-      mostr::mostm(
-        ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
-        family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data,
-        id_var = "id",
-        engine = "vglm"
-      )
-    )
-  }
-
   fit_inline_pipeline_mostm_model <- function(data) {
     suppressWarnings(mostr::mostm(
       ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
@@ -129,14 +117,16 @@ describe("avg_sops() and inferences() pipeline", {
     )
   }
 
-  fit_numeric_yprev_mostm_model <- function(data) {
-    suppressWarnings(mostr::mostm(
-      ordered(y) ~ rms::rcs(time, 4) * tx + rms::rcs(yprev, 6),
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    ))
+  # The pipeline data and its explicit-basis mostm() fit, made once and shared
+  # by the bootstrap, FWB, score-bootstrap and inline-versus-basis tests.
+  pipeline_case <- function() {
+    grid_fixture("sops-inferences pipeline case", build_markov_pipeline_case)
+  }
+
+  pipeline_mostm_fit <- function() {
+    grid_fixture("sops-inferences pipeline mostm fit", function() {
+      fit_pipeline_mostm_model(pipeline_case()$data)
+    })
   }
 
   pipeline_signature <- function(result) {
@@ -215,164 +205,167 @@ describe("avg_sops() and inferences() pipeline", {
     }
   })
 
-  test_that("marginalize_sops_array() averages counterfactual blocks", {
-    sops_array <- array(
+  test_that("marginalize_sops_array() averages blocks, applies patient weights and normalizes them within by strata", {
+    block_array <- array(
       seq_len(4 * 2 * 3) / 100,
       dim = c(4, 2, 3),
       dimnames = list(NULL, NULL, as.character(1:3))
     )
-    grid <- data.frame(tx = c(0, 1))
-
-    out <- mostr:::marginalize_sops_array(
-      sops_array = sops_array,
-      grid = grid,
+    weighted_array <- array(
+      c(0.1, 0.7, 0.2, 0.2, 0.6, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3, 0.3),
+      dim = c(2, 2, 3)
+    )
+    patient_weights <- c(0.25, 0.75)
+    weighted_matrix <- matrix(
+      aperm(weighted_array, c(2, 3, 1)),
+      nrow = 6,
+      ncol = 2
+    )
+    weighted_args <- list(
+      sops_array = weighted_array,
+      grid = data.frame(tx = 0),
       times = c(1, 2),
       y_levels = 1:3,
-      variables = list(tx = c(0, 1)),
-      n_cf = 2,
+      variables = list(tx = 0),
+      n_cf = 1,
       n_each = 2
     )
 
-    expected_tx0 <- apply(sops_array[1:2, , , drop = FALSE], c(2, 3), mean)
-    expected_tx1 <- apply(sops_array[3:4, , , drop = FALSE], c(2, 3), mean)
-    expected <- c(as.vector(expected_tx0), as.vector(expected_tx1))
+    cases <- list(
+      list(
+        label = "unweighted counterfactual blocks",
+        args = list(
+          sops_array = block_array,
+          grid = data.frame(tx = c(0, 1)),
+          times = c(1, 2),
+          y_levels = 1:3,
+          variables = list(tx = c(0, 1)),
+          n_cf = 2,
+          n_each = 2
+        ),
+        expected = list(
+          estimate = c(
+            as.vector(apply(block_array[1:2, , , drop = FALSE], c(2, 3), mean)),
+            as.vector(apply(block_array[3:4, , , drop = FALSE], c(2, 3), mean))
+          ),
+          tx = rep(c(0, 1), each = 6)
+        )
+      ),
+      list(
+        label = "patient weights",
+        args = c(weighted_args, list(weights = patient_weights)),
+        expected = list(
+          estimate = as.vector(weighted_matrix %*% patient_weights)
+        )
+      ),
+      list(
+        label = "negative patient weights",
+        args = c(weighted_args, list(weights = c(1, -1))),
+        error = "non-negative"
+      ),
+      list(
+        label = "weights normalized within by strata",
+        args = list(
+          sops_array = array(c(0.2, 0.8, 0.1, 0.5), dim = c(4, 1, 1)),
+          grid = data.frame(tx = 0),
+          times = 1,
+          y_levels = 1,
+          variables = list(tx = 0),
+          n_cf = 1,
+          n_each = 4,
+          weights = c(1, 3, 2, 6),
+          by = "subgroup",
+          newdata = data.frame(
+            id = 1:4,
+            tx = 0,
+            subgroup = c("a", "a", "b", "b")
+          )
+        ),
+        order_by = "subgroup",
+        expected = list(estimate = c(0.65, 0.4), subgroup = c("a", "b"))
+      )
+    )
 
-    expect_equal(out$estimate, expected)
-    expect_equal(out$tx, rep(c(0, 1), each = 6))
+    for (case in cases) {
+      if (!is.null(case$error)) {
+        expect_error(
+          do.call(mostr:::marginalize_sops_array, case$args),
+          case$error,
+          info = case$label
+        )
+        next
+      }
+      out <- do.call(mostr:::marginalize_sops_array, case$args)
+      if (!is.null(case$order_by)) {
+        out <- out[order(out[[case$order_by]]), , drop = FALSE]
+      }
+      for (column in names(case$expected)) {
+        expect_equal(out[[column]], case$expected[[column]], info = case$label)
+      }
+    }
   })
 
-  test_that("marginalize_sops_array() supports patient weights", {
-    sops_array <- array(
-      c(
-        0.1,
-        0.7,
-        0.2,
-        0.2,
-        0.6,
-        0.2,
-        0.3,
-        0.4,
-        0.3,
-        0.4,
-        0.3,
-        0.3
-      ),
-      dim = c(2, 2, 3)
-    )
-    weights <- c(0.25, 0.75)
-
-    out <- mostr:::marginalize_sops_array(
-      sops_array = sops_array,
-      grid = data.frame(tx = 0),
-      times = c(1, 2),
-      y_levels = 1:3,
-      variables = list(tx = 0),
-      n_cf = 1,
-      n_each = 2,
-      weights = weights
-    )
-
-    sops_matrix <- matrix(aperm(sops_array, c(2, 3, 1)), nrow = 6, ncol = 2)
-    expected <- as.vector(sops_matrix %*% weights)
-
-    expect_equal(out$estimate, expected)
-    expect_error(
-      mostr:::marginalize_sops_array(
-        sops_array = sops_array,
-        grid = data.frame(tx = 0),
+  test_that("array_to_df_individual() keeps row identity, copies draw weights and rejects weight column collisions", {
+    cases <- list(
+      list(
+        label = "row identity",
+        sops_array = array(seq_len(3 * 2 * 2) / 20, dim = c(3, 2, 2)),
         times = c(1, 2),
-        y_levels = 1:3,
-        variables = list(tx = 0),
-        n_cf = 1,
-        n_each = 2,
-        weights = c(1, -1)
+        y_levels = 1:2,
+        newdata = data.frame(
+          id = c(101, 102, 103),
+          rowid = c(11, 12, 13),
+          tx = c(0, 0, 1)
+        )
       ),
-      "non-negative"
-    )
-  })
-
-  test_that("marginalize_sops_array() normalizes weights within by strata", {
-    sops_array <- array(c(0.2, 0.8, 0.1, 0.5), dim = c(4, 1, 1))
-    newdata <- data.frame(
-      id = 1:4,
-      tx = 0,
-      subgroup = c("a", "a", "b", "b")
-    )
-
-    out <- mostr:::marginalize_sops_array(
-      sops_array = sops_array,
-      grid = data.frame(tx = 0),
-      times = 1,
-      y_levels = 1,
-      variables = list(tx = 0),
-      n_cf = 1,
-      n_each = 4,
-      weights = c(1, 3, 2, 6),
-      by = "subgroup",
-      newdata = newdata
-    )
-    out <- out[order(out$subgroup), , drop = FALSE]
-
-    expect_equal(out$estimate, c(0.65, 0.4))
-    expect_equal(out$subgroup, c("a", "b"))
-  })
-
-  test_that("array_to_df_individual() preserves row identity", {
-    sops_array <- array(seq_len(3 * 2 * 2) / 20, dim = c(3, 2, 2))
-    newdata <- data.frame(
-      id = c(101, 102, 103),
-      rowid = c(11, 12, 13),
-      tx = c(0, 0, 1)
-    )
-
-    out <- mostr:::array_to_df_individual(
-      sops_array = sops_array,
-      times = c(1, 2),
-      y_levels = 1:2,
-      newdata = newdata
-    )
-
-    expect_equal(nrow(out), length(sops_array))
-    expect_equal(out$rowid[1:3], newdata$rowid)
-    expect_equal(out$estimate, as.vector(sops_array))
-  })
-
-  test_that("array_to_df_individual() supports draw weights", {
-    sops_array <- array(c(0.1, 0.5, 0.9), dim = c(3, 1, 1))
-    newdata <- data.frame(id = 1:3, rowid = 1:3)
-    weights <- c(1, 3, 100)
-
-    individual <- mostr:::array_to_df_individual(
-      sops_array = sops_array,
-      times = 1,
-      y_levels = 1,
-      newdata = newdata,
-      weights = weights,
-      weight_col = "fwb_weight"
-    )
-    expect_equal(individual$fwb_weight, weights)
-  })
-
-  test_that("array_to_df_individual() rejects draw weight column collisions", {
-    sops_array <- array(c(0.1, 0.5), dim = c(2, 1, 1))
-    newdata <- data.frame(
-      id = 1:2,
-      rowid = 1:2,
-      fwb_weight = c(10, 20)
-    )
-
-    expect_error(
-      mostr:::array_to_df_individual(
-        sops_array = sops_array,
+      list(
+        label = "draw weights",
+        sops_array = array(c(0.1, 0.5, 0.9), dim = c(3, 1, 1)),
         times = 1,
         y_levels = 1,
-        newdata = newdata,
-        weights = c(1, 3),
-        weight_col = "fwb_weight"
+        newdata = data.frame(id = 1:3, rowid = 1:3),
+        weights = c(1, 3, 100)
       ),
-      "reserved for bootstrap draw weights",
-      fixed = TRUE
+      list(
+        label = "weight column collision",
+        sops_array = array(c(0.1, 0.5), dim = c(2, 1, 1)),
+        times = 1,
+        y_levels = 1,
+        newdata = data.frame(id = 1:2, rowid = 1:2, fwb_weight = c(10, 20)),
+        weights = c(1, 3),
+        error = "reserved for bootstrap draw weights"
+      )
     )
+
+    for (case in cases) {
+      args <- list(
+        sops_array = case$sops_array,
+        times = case$times,
+        y_levels = case$y_levels,
+        newdata = case$newdata
+      )
+      if (!is.null(case$weights)) {
+        args$weights <- case$weights
+        args$weight_col <- "fwb_weight"
+      }
+      if (!is.null(case$error)) {
+        expect_error(
+          do.call(mostr:::array_to_df_individual, args),
+          case$error,
+          fixed = TRUE,
+          info = case$label
+        )
+        next
+      }
+      out <- do.call(mostr:::array_to_df_individual, args)
+      first_rows <- seq_len(nrow(case$newdata))
+      expect_equal(nrow(out), length(case$sops_array), info = case$label)
+      expect_equal(out$rowid[first_rows], case$newdata$rowid, info = case$label)
+      expect_equal(out$estimate, as.vector(case$sops_array), info = case$label)
+      if (!is.null(case$weights)) {
+        expect_equal(out$fwb_weight, case$weights, info = case$label)
+      }
+    }
   })
 
   test_that("compute_ci_from_draws() computes percentile and wald intervals", {
@@ -477,126 +470,12 @@ describe("avg_sops() and inferences() pipeline", {
     )
   })
 
-  test_that("fast Markov components match soprob_markov() on a Markov model", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_markov_pipeline_case()
-    model <- fit_pipeline_model(case$data)
-    baseline <- case$baseline[1:12, , drop = FALSE]
-
-    components <- mostr:::markov_msm_build(
-      model = model,
-      newdata = baseline,
-      time_covariates = case$time_covariates,
-      times = 1:8,
-      y_levels = case$y_levels,
-      time_var = "time_lin",
-      p_var = "yprev"
-    )
-    gamma <- mostr:::get_effective_coefs(model)
-    fast <- mostr:::markov_msm_run(
-      components = components,
-      Gamma = gamma,
-      times = 1:8,
-      absorb = case$absorb
-    )
-    slow <- mostr::soprob_markov(
-      model = model,
-      newdata = baseline,
-      times = 1:8,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      time_var = "time_lin",
-      p_var = "yprev",
-      time_covariates = case$time_covariates
-    )
-
-    expect_equal(dim(fast), dim(slow))
-    expect_equal(unname(fast), unname(slow), tolerance = 1e-10)
-    expect_equal(
-      rowSums(fast[, 8, , drop = FALSE][, 1, ]),
-      rep(1, nrow(baseline)),
-      tolerance = 1e-10
-    )
-  })
-
-  test_that("fast Markov components support inline rcs() time terms", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_markov_pipeline_case()
-    model <- fit_inline_pipeline_model(case$data)
-    baseline <- case$baseline[1:12, , drop = FALSE]
-
-    components <- mostr:::markov_msm_build(
-      model = model,
-      newdata = baseline,
-      times = 1:8,
-      y_levels = case$y_levels,
-      p_var = "yprev"
-    )
-    gamma <- mostr:::get_effective_coefs(model)
-    fast <- mostr:::markov_msm_run(
-      components = components,
-      Gamma = gamma,
-      times = 1:8,
-      absorb = case$absorb
-    )
-    slow <- mostr::soprob_markov(
-      model = model,
-      newdata = baseline,
-      times = 1:8,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      p_var = "yprev"
-    )
-
-    expect_equal(dim(fast), dim(slow))
-    expect_equal(unname(fast), unname(slow), tolerance = 1e-10)
-  })
-
-  test_that("fast Markov components support inline rcs() previous-state terms", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_numeric_yprev_case()
-    model <- fit_numeric_yprev_model(case$data)
-    baseline <- case$baseline[1:10, , drop = FALSE]
-
-    components <- mostr:::markov_msm_build(
-      model = model,
-      newdata = baseline,
-      times = 1:7,
-      y_levels = case$y_levels,
-      p_var = "yprev"
-    )
-    gamma <- mostr:::get_effective_coefs(model)
-    fast <- mostr:::markov_msm_run(
-      components = components,
-      Gamma = gamma,
-      times = 1:7,
-      absorb = case$absorb
-    )
-    slow <- mostr::soprob_markov(
-      model = model,
-      newdata = baseline,
-      times = 1:7,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      p_var = "yprev"
-    )
-
-    expect_equal(dim(fast), dim(slow))
-    expect_equal(unname(fast), unname(slow), tolerance = 1e-10)
-  })
-
   test_that("seeded Markov avg_sops() and fast simulation inference remain stable", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
 
-    case <- build_markov_pipeline_case()
+    case <- pipeline_case()
     model <- fit_pipeline_model(case$data)
 
     avg <- mostr::avg_sops(
@@ -638,17 +517,15 @@ describe("avg_sops() and inferences() pipeline", {
     )
   })
 
-  test_that("numeric previous-state spline supports fast MVN inference", {
+  test_that("numeric previous-state spline supports MVN, bootstrap and score-bootstrap inference", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
 
     case <- build_numeric_yprev_case()
     model <- fit_numeric_yprev_model(case$data)
-
     avg <- mostr::avg_sops(
       model = model,
-      newdata = case$baseline,
       variables = "tx",
       times = 1:7,
       y_levels = case$y_levels,
@@ -657,27 +534,49 @@ describe("avg_sops() and inferences() pipeline", {
       id_var = "id"
     )
 
-    withr::local_seed(4413)
-    inferred <- mostr::inferences(
-      avg,
-      method = "mvn",
-      n_draws = 2,
-      return_draws = TRUE
+    cases <- list(
+      list(method = "mvn", seed = 4413, n_draws = 2, return_draws = TRUE),
+      list(method = "bootstrap", seed = 4414, n_draws = 1, return_draws = TRUE),
+      list(
+        method = "score_bootstrap",
+        seed = 4415,
+        n_draws = 2,
+        return_draws = FALSE
+      )
     )
-    draws <- mostr::get_draws(inferred)
 
-    expect_equal(attr(inferred, "method"), "mvn")
-    expect_equal(attr(inferred, "n_successful"), 2L)
-    expect_inference_intervals(inferred)
-    expect_equal(sort(unique(draws$draw_id)), 1:2)
+    for (row in cases) {
+      withr::local_seed(row$seed)
+      inferred <- run_inferences_method(
+        avg,
+        method = row$method,
+        n_draws = row$n_draws,
+        return_draws = row$return_draws
+      )
+
+      expect_equal(attr(inferred, "method"), row$method, info = row$method)
+      expect_equal(
+        attr(inferred, "n_successful"),
+        as.integer(row$n_draws),
+        info = row$method
+      )
+      expect_inference_intervals(inferred)
+      if (row$return_draws) {
+        expect_equal(
+          sort(unique(mostr::get_draws(inferred)$draw_id)),
+          seq_len(row$n_draws),
+          info = row$method
+        )
+      }
+    }
   })
 
   test_that("avg_sops() supports standard bootstrap inference", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
-    case <- build_markov_pipeline_case()
-    model <- fit_pipeline_mostm_model(case$data)
+    case <- pipeline_case()
+    model <- pipeline_mostm_fit()
 
     avg <- mostr::avg_sops(
       model = model,
@@ -725,8 +624,8 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
-    case <- build_markov_pipeline_case()
-    model <- fit_pipeline_mostm_model(case$data)
+    case <- pipeline_case()
+    model <- pipeline_mostm_fit()
 
     avg <- mostr::avg_sops(
       model = model,
@@ -760,46 +659,15 @@ describe("avg_sops() and inferences() pipeline", {
     expect_draw_specific_baseline_anchor(inferred, 2, 1:8)
   })
 
-  test_that("numeric previous-state spline supports bootstrap inference", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_numeric_yprev_case()
-    model <- fit_numeric_yprev_mostm_model(case$data)
-
-    avg <- mostr::avg_sops(
-      model = model,
-      variables = "tx",
-      times = 1:7,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      p_var = "yprev",
-      id_var = "id"
-    )
-
-    withr::local_seed(4414)
-    inferred <- mostr::inferences(
-      avg,
-      method = "bootstrap",
-      n_draws = 1,
-      return_draws = TRUE
-    )
-
-    expect_equal(attr(inferred, "method"), "bootstrap")
-    expect_equal(attr(inferred, "n_successful"), 1L)
-    expect_inference_intervals(inferred)
-  })
-
   test_that("avg_sops() supports score-bootstrap simulation on the fast path", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
-    case <- build_markov_pipeline_case()
-    model <- fit_pipeline_mostm_model(case$data)
-    robust_model <- model
+    case <- pipeline_case()
+    model <- pipeline_mostm_fit()
 
     avg <- mostr::avg_sops(
-      model = robust_model,
+      model = model,
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,
@@ -912,116 +780,14 @@ describe("avg_sops() and inferences() pipeline", {
     }
   })
 
-  test_that("numeric previous-state spline supports score-bootstrap fast path", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_numeric_yprev_case()
-    model <- fit_numeric_yprev_mostm_model(case$data)
-    robust_model <- model
-
-    avg <- mostr::avg_sops(
-      model = robust_model,
-      variables = "tx",
-      times = 1:7,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      p_var = "yprev",
-      id_var = "id"
-    )
-
-    withr::local_seed(4415)
-    inferred <- mostr:::inferences_score_bootstrap(
-      avg,
-      n_draws = 2,
-      return_draws = FALSE
-    )
-
-    expect_equal(attr(inferred, "method"), "score_bootstrap")
-    expect_equal(attr(inferred, "n_successful"), 2L)
-    expect_inference_intervals(inferred)
-  })
-
-  test_that("inline rcs() and explicit basis agree for MVN simulation inference", {
+  test_that("inline rcs() and explicit basis agree for simulation inference", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
 
-    case <- build_markov_pipeline_case()
-    explicit_model <- fit_pipeline_model(case$data)
-    inline_model <- fit_inline_pipeline_model(case$data)
-
+    case <- pipeline_case()
     explicit_avg <- mostr::avg_sops(
-      model = explicit_model,
-      newdata = case$baseline,
-      variables = "tx",
-      times = 1:8,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      time_var = "time_lin",
-      p_var = "yprev",
-      time_covariates = case$time_covariates
-    )
-    inline_avg <- mostr::avg_sops(
-      model = inline_model,
-      newdata = case$baseline,
-      variables = "tx",
-      times = 1:8,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      p_var = "yprev"
-    )
-
-    expect_equal(inline_avg$estimate, explicit_avg$estimate, tolerance = 1e-10)
-
-    withr::local_seed(4411)
-    explicit_inferred <- mostr::inferences(
-      explicit_avg,
-      method = "mvn",
-      n_draws = 3,
-      return_draws = TRUE
-    )
-    withr::local_seed(4411)
-    inline_inferred <- mostr::inferences(
-      inline_avg,
-      method = "mvn",
-      n_draws = 3,
-      return_draws = TRUE
-    )
-
-    explicit_draws <- mostr::get_draws(explicit_inferred)
-    inline_draws <- mostr::get_draws(inline_inferred)
-
-    expect_equal(
-      inline_inferred$estimate,
-      explicit_inferred$estimate,
-      tolerance = 1e-10
-    )
-    expect_equal(
-      inline_inferred$conf.low,
-      explicit_inferred$conf.low,
-      tolerance = 1e-10
-    )
-    expect_equal(
-      inline_inferred$conf.high,
-      explicit_inferred$conf.high,
-      tolerance = 1e-10
-    )
-    expect_equal(inline_draws$draw, explicit_draws$draw, tolerance = 1e-10)
-  })
-
-  test_that("inline rcs() and explicit basis agree for score-bootstrap simulation inference", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_markov_pipeline_case()
-    explicit_model <- fit_pipeline_mostm_model(case$data)
-    inline_model <- fit_inline_pipeline_mostm_model(case$data)
-    explicit_robust <- explicit_model
-    inline_robust <- inline_model
-
-    explicit_avg <- mostr::avg_sops(
-      model = explicit_robust,
+      model = pipeline_mostm_fit(),
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,
@@ -1032,7 +798,7 @@ describe("avg_sops() and inferences() pipeline", {
       id_var = "id"
     )
     inline_avg <- mostr::avg_sops(
-      model = inline_robust,
+      model = fit_inline_pipeline_mostm_model(case$data),
       variables = "tx",
       times = 1:8,
       y_levels = case$y_levels,
@@ -1043,38 +809,42 @@ describe("avg_sops() and inferences() pipeline", {
 
     expect_equal(inline_avg$estimate, explicit_avg$estimate, tolerance = 1e-10)
 
-    withr::local_seed(4412)
-    explicit_inferred <- mostr:::inferences_score_bootstrap(
-      explicit_avg,
-      n_draws = 3,
-      return_draws = TRUE
+    cases <- list(
+      list(method = "mvn", seed = 4411),
+      list(method = "score_bootstrap", seed = 4412)
     )
-    withr::local_seed(4412)
-    inline_inferred <- mostr:::inferences_score_bootstrap(
-      inline_avg,
-      n_draws = 3,
-      return_draws = TRUE
-    )
+    for (row in cases) {
+      infer <- function(avg) {
+        withr::with_seed(
+          row$seed,
+          run_inferences_method(
+            avg,
+            method = row$method,
+            n_draws = 3,
+            return_draws = TRUE
+          )
+        )
+      }
+      explicit_inferred <- infer(explicit_avg)
+      inline_inferred <- infer(inline_avg)
 
-    explicit_draws <- mostr::get_draws(explicit_inferred)
-    inline_draws <- mostr::get_draws(inline_inferred)
-
-    expect_equal(
-      inline_inferred$estimate,
-      explicit_inferred$estimate,
-      tolerance = 1e-10
-    )
-    expect_equal(
-      inline_inferred$conf.low,
-      explicit_inferred$conf.low,
-      tolerance = 1e-10
-    )
-    expect_equal(
-      inline_inferred$conf.high,
-      explicit_inferred$conf.high,
-      tolerance = 1e-10
-    )
-    expect_equal(inline_draws$draw, explicit_draws$draw, tolerance = 1e-10)
+      for (column in c("estimate", "conf.low", "conf.high")) {
+        expect_equal(
+          inline_inferred[[column]],
+          explicit_inferred[[column]],
+          tolerance = 1e-10,
+          info = paste(row$method, column)
+        )
+      }
+      inline_draws <- mostr::get_draws(inline_inferred)$draw
+      expect_gt(length(inline_draws), 0)
+      expect_equal(
+        inline_draws,
+        mostr::get_draws(explicit_inferred)$draw,
+        tolerance = 1e-10,
+        info = row$method
+      )
+    }
   })
 
   test_that("full-PO vglm engine fit with inline rcs matches VGAM::vglm()", {
@@ -1125,87 +895,10 @@ describe("avg_sops() and inferences() pipeline", {
     )
   })
 
-  test_that("inline rcs vglm engine fit can use column-level PPO constraints", {
+  test_that("vglm engine fit with constrained PPO matches explicit spline basis in fit and MVN inference", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
-
-    raw_data <- make_markov_trajectories(
-      n_patients = 200,
-      follow_up_time = 12,
-      treatment_prob = 0.5,
-      absorbing_state = 6,
-      seed = 2375679,
-      treatment_effect = 0
-    )
-    data <- mostr::prepare_markov_data(raw_data, absorbing_state = 6)
-    data <- add_patient_age(data)
-    baseline <- data[data$time == 1, , drop = FALSE]
-    form <- ordered(y) ~ rms::rcs(time, 4) + tx + age + yprev
-
-    fit_po <- suppressWarnings(
-      mostr::mostm(
-        form,
-        family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data,
-        id_var = "id",
-        engine = "vglm"
-      )
-    )$vglm_fit
-
-    cons <- fit_po@constraints
-    linear_time_term <- grep(
-      "^rms::rcs\\(time, 4\\).*time$",
-      names(cons),
-      value = TRUE
-    )[[1]]
-    n_thresholds <- nrow(cons[[linear_time_term]])
-    yprev_terms <- grep("^yprev", names(cons), value = TRUE)
-    cons[yprev_terms] <- NULL
-    cons[["yprev"]] <- cbind(PO_effect = rep(1, n_thresholds))
-    cons[[linear_time_term]] <- cbind(
-      PO_effect = rep(1, n_thresholds),
-      linear_deviation = seq_len(n_thresholds) - 1
-    )
-
-    fit_ppo <- suppressWarnings(
-      mostr::mostm(
-        form,
-        family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
-        data = data,
-        id_var = "id",
-        constraints = cons,
-        engine = "vglm"
-      )
-    )$vglm_fit
-    fit_ppo@call$constraints <- cons
-
-    robust_fit <- mostr::robcov_vglm(fit_ppo, cluster = data$id)
-    expect_equal(robust_fit$bread_type, "observed")
-    expect_equal(all(is.finite(robust_fit$se)), TRUE)
-
-    withr::local_seed(42)
-    out <- mostr::avg_sops(
-      robust_fit,
-      newdata = baseline,
-      variables = "tx",
-      times = 1:4,
-      y_levels = 1:6,
-      absorb = "6",
-      id_var = "id"
-    ) |>
-      mostr::inferences(
-        method = "mvn",
-        n_draws = 2,
-        workers = 1
-      )
-
-    expect_s3_class(out, "markov_avg_sops")
-    expect_true(all(is.finite(out$estimate)))
-  })
-
-  test_that("vglm engine fit with constrained PPO matches explicit spline basis", {
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
+    skip_if_not_installed("mvtnorm")
 
     raw_data <- make_markov_trajectories(
       n_patients = 200,
@@ -1273,6 +966,8 @@ describe("avg_sops() and inferences() pipeline", {
       )
     )$vglm_fit
 
+    # Column-level constraints on the inline spline: a partial proportional
+    # odds effect for its linear column only.
     inline_constraints <- inline_po@constraints
     inline_time_terms <- grep(
       "^rms::rcs\\(time, 4\\)",
@@ -1351,5 +1046,50 @@ describe("avg_sops() and inferences() pipeline", {
       explicit_sops$estimate,
       tolerance = 1e-10
     )
+
+    # Seeded MVN inference on patient-clustered robust fits gives the same
+    # limits whichever way the spline basis was written.
+    inline_robust <- mostr::robcov_vglm(inline_fit, cluster = data$id)
+    explicit_robust <- mostr::robcov_vglm(explicit_fit, cluster = data$id)
+    expect_equal(inline_robust$bread_type, "observed")
+    expect_true(all(is.finite(inline_robust$se)))
+
+    explicit_inferred <- mostr::avg_sops(
+      explicit_robust,
+      newdata = baseline,
+      variables = "tx",
+      times = 1:12,
+      y_levels = y_levels,
+      absorb = "6",
+      time_var = "time_lin",
+      p_var = "yprev",
+      time_covariates = time_covariates,
+      id_var = "id"
+    ) |>
+      mostr::inferences(method = "mvn", n_draws = 3, workers = 1, seed = 42)
+    inline_inferred <- mostr::avg_sops(
+      inline_robust,
+      newdata = baseline,
+      variables = "tx",
+      times = 1:12,
+      y_levels = y_levels,
+      absorb = "6",
+      p_var = "yprev",
+      id_var = "id"
+    ) |>
+      mostr::inferences(method = "mvn", n_draws = 3, workers = 1, seed = 42)
+
+    expect_s3_class(inline_inferred, "markov_avg_sops")
+    explicit_inferred <- order_sops(explicit_inferred)
+    inline_inferred <- order_sops(inline_inferred)
+    for (column in c("estimate", "conf.low", "conf.high", "std.error")) {
+      expect_true(all(is.finite(inline_inferred[[column]])), info = column)
+      expect_equal(
+        inline_inferred[[column]],
+        explicit_inferred[[column]],
+        tolerance = 1e-8,
+        info = column
+      )
+    }
   })
 })

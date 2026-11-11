@@ -1044,8 +1044,23 @@ fractional-bootstrap profile draws reproduce the averaged draws;
 engine, order, odds, weights, profiles, `by`, time scale and comparison type
 pairwise in a 27-row covering array whose coverage a test re-checks; pairs the
 package refuses are left to the refusal table. Every refusal is one row of the
-table in `tests/testthat/test-refusals.R`, grouped into fitting, prediction and
-inference: a call, and the phrase or condition class its error must have.
+table in `tests/testthat/test-refusals.R`, grouped into fitting, prediction,
+inference, simulation (`sim_markov()`) and robust variance (`robcov_vglm()`):
+a call, and the phrase or condition class its error must have. Other test files
+check a refusal only where the table cannot: an error-text snapshot whose wording
+is longer than the table's phrase, a warning or state after the error, or an
+internal validator called directly.
+
+Results built by the streamed design builder (`markov_msm_build()` and
+`markov_msm_run()`, which MVN draws and delta inference use) are compared with
+public `sops()` on every first-order grid set-up, plus spline, numeric
+previous-state and factor-time set-ups, in `tests/testthat/test-orm-fast-path.R`.
+Since `sops()` is checked against the readable loop, this check is indirectly
+independent too.
+
+The remaining test files are mostly table-driven: tests that differ only in
+inputs share one `test_that()` with a list of cases, each named in the failure
+message through `info`, and share their fits.
 
 `soprob_markov_reference()` in `R/sops-engine.R` is not one of these test-only
 references, despite its name. It is a production engine: the only one for `blrm`,
@@ -1055,7 +1070,10 @@ and the fallback when prediction designs exceed
 GitHub Actions runs R CMD check and runs the native and analytical-inference
 tests under address/undefined sanitizers and Valgrind. Planted-bug checks, which
 test whether the tests would fail on wrong code, are local tools in the ignored
-`benchmarks/local/mutation/`.
+`benchmarks/local/mutation/`. They plant bugs in the recursion, its derivatives,
+the prediction designs, `blrm` prediction, simulation, robust covariance,
+`mostm()` argument checks and plots; a test consolidation must not turn any
+caught bug into a missed one.
 
 The ten vignettes demonstrate Markov-generated data, including a custom
 30-state generator and a waning-treatment-effect simulation study comparing

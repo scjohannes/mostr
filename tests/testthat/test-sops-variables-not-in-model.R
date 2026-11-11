@@ -32,18 +32,10 @@ test_that("a comparison of a variable the model doesn't use is 0, without a mess
     times = 1:4,
     absorb = 3
   )
-  results <- list(
-    sop = do.call(avg_comparisons, c(base, list(state_sets = "1"))),
-    time_in_state = do.call(
-      avg_comparisons,
-      c(base, list(estimand = "time_in_state", state_sets = "1"))
-    ),
-    time_benefit = do.call(avg_comparisons, c(base, list(estimand = "time_benefit"))),
-    per_profile = do.call(comparisons, c(base, list(state_sets = "1")))
-  )
-  for (name in names(results)) {
-    expect_equal(results[[name]]$estimate, rep(0, nrow(results[[name]])), info = name)
-  }
+  # The averaged comparisons are 0 in every grid set-up; this checks the
+  # comparison of each profile.
+  per_profile <- do.call(comparisons, c(base, list(state_sets = "1")))
+  expect_equal(per_profile$estimate, rep(0, nrow(per_profile)))
   expect_no_warning(do.call(avg_comparisons, c(base, list(state_sets = "1"))))
   expect_no_message(do.call(avg_comparisons, c(base, list(state_sets = "1"))))
 })
@@ -115,23 +107,8 @@ test_that("predictions under a variable the model doesn't use keep their standar
     times = 1:4,
     absorb = 3
   )
-  zero <- average[average$note == 0, , drop = FALSE]
-  one <- average[average$note == 1, , drop = FALSE]
-  expect_equal(zero$estimate, one$estimate)
+  # That the estimates are equal for every value is checked in every grid
+  # set-up; this checks that they keep finite standard errors.
   inferred <- inferences(average, method = "delta", vcov = "conditional")
   expect_true(all(is.finite(inferred$std.error)))
-})
-
-test_that("a column that is not in the data is an error", {
-  case <- make_comparisons_case()
-  expect_error(
-    avg_sops(
-      case$model,
-      newdata = case$profiles,
-      variables = list(nope = c(0, 1)),
-      times = 1:4,
-      absorb = 3
-    ),
-    "nope"
-  )
 })
