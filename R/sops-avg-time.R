@@ -225,7 +225,14 @@ avg_state_time <- function(
   # From here on, `by` holds the grouping columns, or `NULL` to average over
   # all profiles.
   by <- by_choice$by
-  variables <- resolve_prediction_variables(variables, model, newdata)
+  variables <- resolve_prediction_variables(
+    variables,
+    model,
+    newdata,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels
+  )
   stop_by_names_set_variable(by, variables, "avg_state_time()")
   reserved <- intersect(
     c(names(variables), by),

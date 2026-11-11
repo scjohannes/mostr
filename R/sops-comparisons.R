@@ -189,7 +189,10 @@ avg_comparisons <- function(
     variables,
     model = model,
     newdata = newdata,
-    fn = "avg_comparisons()"
+    fn = "avg_comparisons()",
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels
   )
   validate_avg_comparison_estimand(estimand, state_sets, comparison)
 

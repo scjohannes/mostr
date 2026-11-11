@@ -705,6 +705,18 @@ the five-number summary, as `predictions()` does, while comparisons
 each row's value plus one, is not a comparison of fixed values. Inference
 replays use the resolved list stored in `avg_args$variables`.
 
+Both resolvers then pass the list to `match_previous_state_variables()`,
+which treats values of the previous-state columns (`p_var`, and `p2_var` for
+second-order models) as state labels: `2`, `2L` and `"2"` all mean state
+`"2"`, and a value that matches no state (`markov_model_ylevels()`) is an
+error naming the column and the states. Matched values are converted once,
+here, to the column's type in the model's refit data (else `newdata`, else
+the stored starting profiles; `previous_state_prototype()`): a factor with
+the fitted levels, plus any matched state missing from them, such as an
+absorbing state no transition starts from, so `stop_absorbing_start()` can
+still refuse it; or a number. Every later route (native engine, reference
+engine, delta, mvn, bootstrap, stored results) sees the converted values.
+
 ### Comparisons and times for each profile
 
 `comparisons()` (`R/sops-comparisons-individual.R`) returns one comparison per

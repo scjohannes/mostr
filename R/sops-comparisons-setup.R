@@ -34,8 +34,17 @@ bare_variable_data <- function(model, newdata) {
 }
 
 # Turns a bare variable name into the named list of values to compare, then
-# validates the list.
-resolve_comparison_variables <- function(variables, model, newdata, fn) {
+# validates the list. Values of the previous-state columns are matched to
+# states by label (`match_previous_state_variables()`).
+resolve_comparison_variables <- function(
+  variables,
+  model,
+  newdata,
+  fn,
+  p_var = NULL,
+  p2_var = NULL,
+  y_levels = NULL
+) {
   if (!missing(variables) && is.character(variables)) {
     if (length(variables) != 1L || is.na(variables) || !nzchar(variables)) {
       stop("`", fn, "` supports exactly one named variable.")
@@ -49,30 +58,147 @@ resolve_comparison_variables <- function(variables, model, newdata, fn) {
       variables
     )
   }
-  validate_avg_comparison_variables(variables, fn)
+  variables <- validate_avg_comparison_variables(variables, fn)
+  match_previous_state_variables(
+    variables,
+    model = model,
+    newdata = newdata,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels
+  )
 }
 
 # Turns bare variable names for predictions (`sops()`, `avg_sops()`,
-# `state_time()`, `avg_state_time()`) into a named list of values. `NULL`
-# and named lists are returned unchanged.
-resolve_prediction_variables <- function(variables, model, newdata) {
-  if (is.null(variables) || !is.character(variables)) {
+# `state_time()`, `avg_state_time()`) into a named list of values. Named
+# lists are kept, except that values of the previous-state columns are
+# matched to states by label (`match_previous_state_variables()`).
+resolve_prediction_variables <- function(
+  variables,
+  model,
+  newdata,
+  p_var = NULL,
+  p2_var = NULL,
+  y_levels = NULL
+) {
+  if (is.null(variables)) {
     return(variables)
   }
-  if (anyNA(variables) || any(!nzchar(variables)) || anyDuplicated(variables)) {
-    stop("Bare variable names must be unique, non-missing, and non-empty.")
+  if (is.character(variables)) {
+    if (
+      anyNA(variables) || any(!nzchar(variables)) || anyDuplicated(variables)
+    ) {
+      stop("Bare variable names must be unique, non-missing, and non-empty.")
+    }
+    data <- bare_variable_data(model, newdata)
+    missing_vars <- setdiff(variables, names(data))
+    if (length(missing_vars) > 0L) {
+      stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+    }
+    variables <- stats::setNames(
+      lapply(variables, function(name) {
+        prediction_variable_values(data[[name]], name)
+      }),
+      variables
+    )
   }
-  data <- bare_variable_data(model, newdata)
-  missing_vars <- setdiff(variables, names(data))
-  if (length(missing_vars) > 0L) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
-  }
-  stats::setNames(
-    lapply(variables, function(name) {
-      prediction_variable_values(data[[name]], name)
-    }),
-    variables
+  match_previous_state_variables(
+    variables,
+    model = model,
+    newdata = newdata,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels
   )
+}
+
+# State labels are names: when `variables` sets the previous state (`p_var`)
+# or the state two visits back (`p2_var`), a value means the state whose
+# label it matches, so 2, 2L and "2" are all state "2". A value that matches
+# no state is an error. Matched values are converted to the type of that
+# column in the data the model was fitted to (or `newdata`, or the stored
+# starting profiles), so every later step (the native engine, the reference
+# engine, inference replays) sees values the model's design can use. A
+# factor keeps its levels; a state that is not among them, such as an
+# absorbing state that no transition starts from, is added as a level, so
+# the absorbing-start refusal can still name it.
+match_previous_state_variables <- function(
+  variables,
+  model,
+  newdata,
+  p_var = NULL,
+  p2_var = NULL,
+  y_levels = NULL
+) {
+  if (!is.list(variables) || is.null(names(variables))) {
+    return(variables)
+  }
+  columns <- intersect(c(p_var, p2_var), names(variables))
+  if (length(columns) == 0L) {
+    return(variables)
+  }
+  states <- tryCatch(
+    as_state_labels(markov_model_ylevels(model, y_levels)),
+    error = function(e) NULL
+  )
+  for (column in columns) {
+    values <- variables[[column]]
+    labels <- as_state_labels(values)
+    if (!is.null(states)) {
+      unknown <- unique(labels[is.na(labels) | !labels %in% states])
+      if (length(unknown) > 0L) {
+        role <- if (identical(column, p_var)) {
+          "the previous state"
+        } else {
+          "the state two visits back"
+        }
+        stop(
+          "`",
+          column,
+          "` is ",
+          role,
+          ", so `variables` must set it to states. ",
+          paste(unknown, collapse = ", "),
+          if (length(unknown) == 1L) " is" else " are",
+          " not a state; the states are ",
+          paste(states, collapse = ", "),
+          ".",
+          call. = FALSE
+        )
+      }
+    }
+    prototype <- previous_state_prototype(model, newdata, column)
+    if (is.null(prototype)) {
+      next
+    }
+    variables[[column]] <- if (is.factor(prototype)) {
+      factor(
+        labels,
+        levels = union(levels(prototype), intersect(states, labels)),
+        ordered = is.ordered(prototype)
+      )
+    } else {
+      coerce_previous_state_values(labels, prototype, column)
+    }
+  }
+  variables
+}
+
+# The previous-state column whose type `variables` values take: from the
+# data the model was fitted to, else `newdata`, else the starting profiles
+# stored by `mostm()`.
+previous_state_prototype <- function(model, newdata, column) {
+  sources <- list(
+    markov_model_refit_data(model),
+    newdata,
+    markov_model_metadata_attr(model, "markov_starting_profile_data")
+  )
+  for (data in sources) {
+    if (is.data.frame(data) && column %in% names(data)) {
+      return(data[[column]])
+    }
+  }
+  NULL
 }
 
 # Observed values of a variable named without values, chosen as in

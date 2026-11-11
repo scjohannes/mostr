@@ -236,7 +236,14 @@ sops <- function(
     ))
   }
   # One row per profile from here on; averaging is left to `avg_sops()`.
-  variables <- resolve_prediction_variables(variables, model, newdata)
+  variables <- resolve_prediction_variables(
+    variables,
+    model,
+    newdata,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels
+  )
 
   data_res <- resolve_markov_source_data(
     model,
@@ -949,7 +956,14 @@ avg_sops <- function(
   # From here on, `by` holds the grouping columns, or `NULL` to average over
   # all profiles.
   by <- by_choice$by
-  var_list <- resolve_prediction_variables(variables, model, newdata)
+  var_list <- resolve_prediction_variables(
+    variables,
+    model,
+    newdata,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels
+  )
   stop_by_names_set_variable(by, var_list, "avg_sops()")
 
   data_res <- resolve_markov_source_data(

@@ -175,7 +175,14 @@ state_time <- function(
     ))
   }
 
-  variables <- resolve_prediction_variables(variables, model, newdata)
+  variables <- resolve_prediction_variables(
+    variables,
+    model,
+    newdata,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels
+  )
   if (!is.null(state_sets)) {
     validate_avg_time_state_sets(state_sets)
   }
