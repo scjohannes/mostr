@@ -337,6 +337,10 @@ sops_impl <- function(
       time_var = settings$time_var
     )
   }
+  # Every profile column is copied into the result, and the prediction rows
+  # are stored for `inferences()`, so bookkeeping columns are removed here
+  # once for the estimates, every replay, and the draws.
+  newdata <- drop_markov_internal_columns(newdata)
   newdata <- ensure_markov_rowid(newdata)
   if (length(variables) > 0L) {
     newdata <- stack_prediction_profiles(newdata, variables)

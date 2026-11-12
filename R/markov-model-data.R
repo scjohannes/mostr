@@ -635,6 +635,8 @@ markov_prepare_stored_data <- function(
   starting_profile_data <- refit_data[at_start & in_fit, , drop = FALSE]
   # Stored row weights are fitting metadata, not prediction variables.
   starting_profile_data[[markov_prior_weight_column()]] <- NULL
+  # A bookkeeping column, so it starts with `.markov_`; see
+  # `markov_internal_column()`.
   starting_profile_data$.markov_source_row <- source$rows[at_start & in_fit]
 
   predictor_terms <- stats::delete.response(stats::terms(formula, data = data))
@@ -661,6 +663,23 @@ markov_prepare_stored_data <- function(
       )
     )
   )
+}
+
+# Columns that mostr adds to the stored starting profiles for its own
+# bookkeeping start with `.markov_`, such as `.markov_source_row` (the row of
+# the source data each profile came from). They are not patient variables, so
+# no result shows them, whichever function or inference method made it.
+# Results match profiles to patients through the ID column and `rowid`, not
+# through these columns.
+markov_internal_column <- function(names) {
+  startsWith(names, ".markov_")
+}
+
+drop_markov_internal_columns <- function(data) {
+  for (col in names(data)[markov_internal_column(names(data))]) {
+    data[[col]] <- NULL
+  }
+  data
 }
 
 markov_align_model_data <- function(data, model_or_frame) {
