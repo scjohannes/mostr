@@ -266,6 +266,10 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
     source$estimate
   )) +
     anchor
+  # This operator is later applied to the derivatives and influence values, so
+  # check that it rebuilds the stored contrasts; a mismatch means edited
+  # estimates or a wrong weight. Rounding differences are below 5e-15 on the
+  # test grid; the tolerance is the one in delta_match_cells().
   if (
     any(!is.finite(propagated)) ||
       any(
@@ -339,9 +343,12 @@ delta_propagate_comparison_state <- function(avg, operator) {
     transpose = TRUE
   )
   n <- nrow(influence)
+  # A sample covariance over patients needs at least two of them.
   if (n < 2L) {
     mostr_abort("Unconditional delta inference requires at least two patients.")
   }
+  # The same estimator as delta_stacked_influence(): sample variance of the
+  # patients' influence values (divisor n - 1), divided by n.
   centered <- sweep(influence, 2L, colMeans(influence), "-")
   variance <- colSums(centered^2) / ((n - 1) * n)
   average_jacobian <- delta_apply_comparison_operator(

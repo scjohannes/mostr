@@ -1,5 +1,11 @@
 # Analytic first-order derivatives for compiled SOP execution plans.
 
+# A hard limit on the largest arrays analytical inference allocates (nothing is
+# chunked). 256 MiB was a choice, not a measurement; it refuses only large
+# requests. Nov 2026, orm with 15 coefficients and 29 visits: sops() with delta
+# inference passes at 5,000 profiles (19 s, 0.78 GB R heap) and is refused from
+# about 12,000. Real use was about 7x the checked arrays, so this is not a bound
+# on total memory.
 delta_max_bytes <- function() {
   value <- getOption("mostr.delta_max_bytes", 256 * 1024^2)
   if (

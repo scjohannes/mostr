@@ -589,6 +589,8 @@ resolve_vglm_corrections <- function(
     return(list(cadjust = validate_flag(cadjust, "cadjust")))
   }
 
+  # The default G / (G - 1) cluster correction follows sandwich::vcovCL(); see
+  # the comment at the same default in robcov_orm().
   list(cadjust = !is.null(cluster))
 }
 

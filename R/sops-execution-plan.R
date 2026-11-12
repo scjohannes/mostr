@@ -17,6 +17,11 @@ validate_sop_threshold_count <- function(Gamma, y_levels) {
   invisible(NULL)
 }
 
+# Caps the retained designs of all visits: (profiles + (visits - 1) x profiles x
+# non-absorbing states) x columns x 8 bytes. Above it, prediction uses the R
+# engine and delta inference stops. 256 MiB was a choice, not a measurement. Nov
+# 2026, 25k profiles x 29 visits: 10 MVN draws took 69 s in the R engine against
+# 19 s compiled (0.29 vs 0.72 GB peak), so it is on the conservative side.
 execution_plan_max_bytes <- function() {
   value <- getOption("mostr.execution_plan_max_bytes", 256 * 1024^2)
   if (

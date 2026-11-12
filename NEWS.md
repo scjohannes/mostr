@@ -160,6 +160,11 @@
 
 ## Minor improvements
 
+* When `rms::orm()` cannot fit a model, the error now suggests
+  `opt_method = "LM", maxit = 100` together, and merging rarely observed
+  states. Since rms 8.2-0, the `"LM"` algorithm often needs more than the
+  default 30 iterations.
+
 * Every error that mostr raises now has class `mostr_error`, so you can catch
   them with `tryCatch(..., mostr_error = function(e) ...)`. The "Error in" line
   names the mostr function you called, such as `sops()`, instead of an

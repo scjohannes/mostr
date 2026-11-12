@@ -78,14 +78,21 @@ orm_case_weights <- function(model, n) {
   as.numeric(weights)
 }
 
+# Since rms 8.2-0, the "LM" algorithm relaxes its damping slowly (by 1.5 instead
+# of 10 after each accepted step), so it often needs more than orm()'s default
+# 30 iterations: suggest it only together with a larger `maxit`. Measured Nov
+# 2026 on simulated ACTT-2 data: with `maxit = 100` LM converged in every case
+# under rms 8.1-1 and 8.2-1, at most 98 iterations. Small data sets where a
+# state never follows some previous state have no finite estimates, which is
+# why merging rare states is suggested too.
 stop_failed_orm_fit <- function() {
   mostr_abort(
     "`rms::orm()` could not fit the model: its fitting algorithm stopped ",
     "without finding the coefficient estimates. You can try another ",
-    "algorithm with `opt_method = \"LM\"`, scale the covariates with ",
-    "`scale = TRUE`, allow more iterations with a larger `maxit`, or ",
-    "simplify the model, for example by removing covariates that are ",
-    "nearly collinear."
+    "algorithm with more iterations, `opt_method = \"LM\", maxit = 100`, ",
+    "scale the covariates with `scale = TRUE`, or simplify the model, for ",
+    "example by removing covariates that are nearly collinear or by merging ",
+    "states that are rarely observed."
   )
 }
 
@@ -207,6 +214,12 @@ orm_model_bread <- function(fit) {
   } else {
     0
   }
+  # The bread must be positive definite. Its correlation matrix is checked so
+  # that covariate units do not matter; there the largest eigenvalue lies
+  # between 1 and p. Refuse when the smallest is at most p * 1e-10 times the
+  # largest: inverting it would lose about 10 of 16 digits. On simulated trial
+  # fits the ratio is 2e-4 to 3e-3 (measured Nov 2026), about 1e5 times above
+  # the cut-off; only nearly duplicated covariates reach it.
   tolerance <- max(1, max(abs(eigenvalues))) * length(coefficients) * 1e-10
   if (min(eigenvalues) <= tolerance) {
     mostr_abort(
@@ -303,6 +316,11 @@ robcov_orm <- function(
     sandwich_scores <- scores[represented, , drop = FALSE]
     n_clusters <- NULL
   }
+  # By default a patient-clustered variance is multiplied by G / (G - 1), with
+  # G the number of patients, as sandwich::vcovCL() does (`cadjust = TRUE`,
+  # HC0 for models other than lm); rms::robcov() applies no factor. With HC0
+  # this also makes the variance equal cov(influence) / G, the convention of
+  # the unconditional variance. Without a cluster no factor is applied.
   if (is.null(cadjust)) {
     cadjust <- !is.null(cluster)
   }

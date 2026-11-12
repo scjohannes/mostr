@@ -723,6 +723,8 @@ delta_stacked_influence <- function(
   n <- nrow(values)
   m <- ncol(values)
 
+  # The variance below is a sample covariance over patients, which needs at
+  # least two of them.
   if (n < 2L) {
     mostr_abort(
       "Stacked unconditional inference requires at least two profiles."
@@ -878,6 +880,13 @@ delta_stacked_influence <- function(
   influence <- profile_component + coefficient_influence
   dimnames(influence) <- list(profile_ids, cell_names)
 
+  # Each estimate is an average over the n patients, so its variance is the
+  # variance of the patients' influence values divided by n. cov() divides by
+  # n - 1, which gives the same n / (n - 1) factor as the default conditional
+  # variance (HC0 with `cadjust = TRUE`); test-sops-delta-unconditional-identity.R
+  # relies on this. With `cadjust = FALSE` only the conditional variance loses the
+  # factor. The centring cov() does is harmless: summed scores are 0 at the fit
+  # (vglm stops early, but that moves standard errors by less than 1e-11).
   covariance <- stats::cov(influence) / n
   covariance <- (covariance + t(covariance)) / 2
   dimnames(covariance) <- list(cell_names, cell_names)

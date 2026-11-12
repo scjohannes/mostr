@@ -272,8 +272,10 @@ which can shorten the fitting.
 This happens when the fitting algorithm has not converged, or when some
 coefficients grow without bound because a transition never occurs in the
 data, for example from a rare state to death. For the `"orm"` engine,
-the arguments `opt_method = "LM"`, `scale = TRUE` and a larger `maxit`, which
-are passed on to `rms::orm()`, often help it converge. If a transition never
+the arguments `opt_method = "LM"`, `scale = TRUE` and `maxit = 100`, which
+are passed on to `rms::orm()`, often help it converge. Use `"LM"` together
+with the larger `maxit`: since rms 8.2, the `"LM"` algorithm often needs more
+than the default 30 iterations. If a transition never
 occurs, simplify the model, for example by combining rare states.
 
 ### What do `weights` in `mostm()` change?

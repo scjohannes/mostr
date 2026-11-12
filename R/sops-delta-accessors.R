@@ -177,6 +177,7 @@ delta_vcov <- function(object, rows = NULL) {
 
   if (identical(analytical$representation, "influence")) {
     n <- nrow(analytical$influence)
+    # A sample covariance over patients needs at least two of them.
     if (n < 2L) {
       mostr_abort(
         "Unconditional analytical covariance requires at least two patients."
@@ -185,6 +186,9 @@ delta_vcov <- function(object, rows = NULL) {
     required <- (as.double(n) * m + as.double(m) * m) * 8
     delta_assert_bytes(required, "The requested analytical covariance block")
     influence <- analytical$influence[, index, drop = FALSE]
+    # The estimator of delta_stacked_influence(): the sample covariance of the
+    # patients' influence values divided by n, so the diagonal reproduces the
+    # stored standard errors.
     out <- stats::cov(influence) / n
   } else {
     q <- ncol(analytical$jacobian)

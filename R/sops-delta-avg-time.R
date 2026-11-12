@@ -127,6 +127,10 @@ inferences_delta_avg_time <- function(
     source$estimate
   )) +
     integration$baseline * baseline_mean
+  # These time weights are also applied to the SOP derivatives, so first check
+  # that they rebuild the stored totals; otherwise the standard errors would
+  # belong to other numbers. Rounding differences are below 2e-15 on the test
+  # grid; the tolerance (as in delta_match_cells()) only catches real changes.
   if (
     any(!is.finite(calculated)) ||
       any(

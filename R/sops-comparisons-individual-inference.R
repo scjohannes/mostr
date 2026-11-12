@@ -244,6 +244,11 @@ check_comparison_replay <- function(object, setup, reduce_draw, model) {
     settings = setup$settings
   ))
   stored <- object$estimate
+  # Each draw goes through the same reducer, which drops row labels, so check
+  # that a replay at the fitted coefficients rebuilds the stored rows in order.
+  # The values are identical when both came from the compiled code and differ by
+  # about 1e-14 when the estimates came from the R engine; a larger gap means
+  # edited estimates or rows the draws would not line up with.
   same_missing <- identical(is.na(replayed), is.na(stored))
   ok <- !is.na(stored)
   if (

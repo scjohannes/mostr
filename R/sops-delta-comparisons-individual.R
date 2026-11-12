@@ -103,6 +103,10 @@ inferences_delta_profile_results <- function(
   }
 
   stored <- object$estimate
+  # The derivatives come from the same per-scenario blocks, so check that the
+  # blocks rebuild the stored rows; otherwise the standard errors would describe
+  # other numbers. Rounding differences are below 1e-14 on the test grid; the
+  # tolerance is the one in delta_match_cells().
   if (
     any(!is.finite(estimate)) ||
       any(

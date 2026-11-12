@@ -591,6 +591,10 @@ posterior_draw_matrix_to_df <- function(draw_values, cells, draw_indices) {
 
 split_draw_indices <- function(draw_indices, chunk_size = NULL) {
   if (is.null(chunk_size)) {
+    # Fallback only: package callers pass a chunk size (the option, or one sized
+    # by mostr.posterior_working_bytes). Nov 2026, sops() with 200 profiles x 15
+    # visits and 400 draws: 1, 10 and 50 draws per chunk took 18.5, 12.7 and
+    # 11.7 s, so 10 is close to the best.
     chunk_size <- getOption("mostr.blrm_chunk_size", 10L)
   }
   chunk_size <- max(1L, as.integer(chunk_size))
@@ -1247,6 +1251,11 @@ avg_sops_blrm <- function(
   )
 }
 
+# Draws per chunk = budget / (prediction rows x visits x states x 8 x 3); most
+# analyses fit all draws in one chunk. 256 MiB was a choice. Nov 2026 (fake
+# blrm, 2 x 1000 profiles x 29 visits, 100 draws): chunks of 8, 32 and 100 draws
+# took 14.2, 14.5 and 14.9 s with 0.17, 0.42 and 0.80 GB, so larger chunks cost
+# memory and save no time.
 posterior_chunk_size <- function(cells_per_draw, n_draws) {
   budget <- getOption("mostr.posterior_working_bytes", 256 * 1024^2)
   bytes_per_draw <- max(1, cells_per_draw * 8 * 3)

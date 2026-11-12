@@ -458,6 +458,11 @@ soprob_markov_second_order_run <- function(
   predictable_pair <- pair_grid$h %in%
     non_absorb_idx &
     pair_grid$j %in% non_absorb_idx
+  # Pairs per chunk count only the transition probabilities (3 arrays of draws x
+  # profiles x states), not each pair's expanded data and design, so peak use is
+  # about 6x the budget. Nov 2026, 100k profiles and 6 states: 1 pair per chunk
+  # took 26 s and 0.43 GB, the default (18 pairs) 29 s and 1.6 GB, all pairs
+  # 31 s and 2.2 GB. See dev/decisions.md before changing it.
   budget <- getOption("mostr.second_order_working_bytes", 256 * 1024^2)
   draw_factor <- max(1L, nd)
   bytes_per_pair <- max(1, draw_factor * n_pat * n_states * 8 * 3)

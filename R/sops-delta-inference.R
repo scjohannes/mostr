@@ -228,6 +228,12 @@ delta_match_cells <- function(object, calculated, key_cols) {
   }
   object_estimate <- object$estimate
   calculated_estimate <- calculated$estimate[index]
+  # inferences() recomputes the SOPs with the code that also computes their
+  # derivatives. If these differ from the stored estimates (an edited
+  # `estimate` column, or a bug in either path), the standard errors would
+  # belong to other numbers. The two paths agree to about 1e-14 on the test
+  # grid (measured Nov 2026), so 1e-10 relative leaves ample headroom; the
+  # 1e-12 absolute part covers estimates near 0.
   if (
     !is.numeric(object_estimate) ||
       !is.numeric(calculated_estimate) ||
@@ -342,14 +348,6 @@ delta_unconditional_state <- function(
   }
   colnames(influence) <- NULL
   standard_error <- stacked$std.error
-  if (is.null(standard_error) || length(standard_error) != ncol(influence)) {
-    if (nrow(influence) < 2L) {
-      mostr_abort(
-        "Unconditional delta inference requires at least two patients."
-      )
-    }
-    standard_error <- sqrt(diag(stats::cov(influence) / nrow(influence)))
-  }
   metadata <- stacked$metadata %||%
     score_components$metadata %||%
     list()

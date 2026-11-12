@@ -48,7 +48,8 @@ fit <- mostm(
   data = markov_data,
   id_var = "id",
   opt_method = "LM",
-  scale = TRUE
+  scale = TRUE,
+  maxit = 100
 )
 
 sop <- avg_sops(

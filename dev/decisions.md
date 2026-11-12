@@ -12,6 +12,81 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-12: Size limits measured; two defaults open
+
+**Decided.** The size limits stay as they are for now, with comments that
+state what each bounds and what was measured. Whether to change two of them is
+open (below).
+
+**Why.** None had a recorded reason; all came over from markov.misc without a
+measurement. Measured Nov 2026 on an installed build (Ryzen AI 9 HX 370, 32 GB;
+scripts and tables in `benchmarks/local/thresholds/`):
+
+- `mostr.max_batched_design_rows = 2e6`: the batched design build is faster
+  only below about 25k rows per visit; from 50k it is 1.3 to 1.9 times slower
+  with up to 1.8 times the peak memory (it subsets one data frame with
+  duplicated rows, which makes unique row names). Proposed: 5e4. Open.
+- `mostr.second_order_working_bytes = 256 MiB`: the chunking counts only the
+  transition probabilities, so peak use is about 6 times the budget, and
+  smaller chunks cost no time. Proposed: 32 MiB, or counting each pair's design.
+  Open.
+- `mostr.execution_plan_max_bytes`, `mostr.delta_max_bytes` and
+  `mostr.posterior_working_bytes` (256 MiB each): reasonable. The plan budget
+  is conservative: above it MVN inference ran 3.6 times slower in the R engine,
+  and delta inference stops.
+- `mostr.blrm_chunk_size = 10`: a fallback no package caller reaches; 10 is
+  within about 8% of the fastest chunk size.
+
+**Decided against.** Changing defaults inside a comment-only change: a changed
+default needs its own check that results are identical.
+
+## 2026-11-12: Recommend `"LM"` only with `maxit = 100`
+
+**Decided.** When `rms::orm()` fails, the error suggests
+`opt_method = "LM", maxit = 100`, `scale = TRUE`, removing nearly collinear
+covariates, or merging rare states. The README example passes `maxit = 100`.
+
+**Why.** rms 8.2-0 changed LM to relax its damping by 1.5 instead of 10 after
+an accepted step (upstream: the old rule could cycle on an ill-conditioned
+data set). LM then often needs more than the default 30 iterations. On
+simulated ACTT-2 data (25 seeds per setting), LM with `scale = TRUE` failed in
+up to 16 of 25 small data sets and 4 of 100 README-sized ones under rms 8.2-1,
+and never under 8.1-1. With `maxit = 100` it converged everywhere, in at most
+98 iterations. Under 8.1-1 the default Newton-Raphson algorithm failed on small
+data sets with no finite estimates, where LM succeeded, so LM stays the
+suggested alternative. Scripts: `benchmarks/local/lm-convergence/`.
+
+**Decided against.** Dropping the LM suggestion: it still rescues fits the
+default algorithm cannot. Recommending LM without `maxit`: it fails often
+under rms 8.2. An upstream report to rms is drafted but not filed.
+
+## 2026-11-12: Cluster-corrected robust variance by default
+
+**Decided.** Keep `cadjust = TRUE` (multiply by G / (G - 1), G = number of
+patients) as the default for patient-clustered variances, with `type = "HC0"`.
+
+**Why.** It is the default of `sandwich::vcovCL()` for models other than `lm`;
+mostr's four type and cadjust combinations agree with `vcovCL()` on a binary
+logistic model to glm's convergence tolerance. It also makes the conditional
+variance equal `cov(influence) / G`, the convention of the unconditional
+variance, which the identity test relies on. `rms::robcov()` applies no factor,
+so mostr's standard errors are sqrt(G / (G - 1)) times larger than rms's.
+
+**Decided against.** Following `rms::robcov()` (no factor). Reason recorded
+only now; the default dates from the first commit.
+
+## 2026-11-12: Leave the user's parallel plan alone; retire the score bootstrap
+
+**Decided.** The bootstrap currently replaces the user's future plan with
+`callr` for the run and restores it afterwards. It should not touch the user's
+plan; this is fixed together with the switch to mirai (issue #27), not
+separately. The score bootstrap, already hidden from `inferences()`, will be
+retired, so its probability clipping gets no comment.
+
+**Why.** Changing global state inside a function, even temporarily, surprises
+users and interacts badly with their own parallel set-up; the backend switch
+rewrites the same code anyway.
+
 ## 2026-11-12: Ship one vignette; the other articles are website-only
 
 **Decided.** The package ships only `vignettes/mostr.Rmd`, the get-started
