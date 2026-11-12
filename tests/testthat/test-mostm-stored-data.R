@@ -742,3 +742,11 @@ test_that("FWB inference on SOPs for each profile works with every frequentist e
     c("sex", "draw_id")
   )
 })
+
+test_that("sops() on the stored patients returns no internal bookkeeping columns", {
+  cell <- grid_cell("orm")
+  result <- do.call(sops, c(list(grid_fit(cell)), grid_public_args(cell)))
+  expect_false(any(startsWith(names(result), ".markov_")))
+  inferred <- inferences(result, method = "delta", vcov = "conditional")
+  expect_false(any(startsWith(names(inferred), ".markov_")))
+})

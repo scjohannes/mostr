@@ -670,3 +670,15 @@ test_that("model-based functions reject orm fits that hold random effects", {
     )
   }
 })
+
+test_that("a weighted orm fit does not show rms's warning that its bootstrap ignores weights", {
+  # rms warns that orm's own validation and bootstrap ignore weights. mostr
+  # never uses those, and its own bootstrap keeps the weights, so the warning
+  # would mislead.
+  # grid_fit_to() hides all warnings, so fit directly.
+  data <- grid_cell_data(grid_cell("orm", weighted = TRUE))
+  expect_no_warning(
+    mostm(y ~ time + tx + age + yprev, data = data, id_var = "id", weights = w),
+    message = "weights are ignored"
+  )
+})

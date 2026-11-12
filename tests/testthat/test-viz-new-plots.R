@@ -924,3 +924,20 @@ test_that("model correlations match exact trajectories for both Markov orders", 
     )
   }
 })
+
+test_that("plot_lp_difference() on a real fit needs no `absorb`, for vglm as for orm", {
+  # The absorbing state never appears as a previous state in the fitted data,
+  # so leaving out `absorb` must give the same plot as passing it.
+  for (engine in c("orm", "vglm")) {
+    cell <- grid_cell(engine)
+    args <- list(
+      grid_fit(cell),
+      profile = grid_profiles(cell)[1, , drop = FALSE],
+      variables = list(tx = c(0, 1)),
+      times = 1:4
+    )
+    with_absorb <- do.call(plot_lp_difference, c(args, absorb = grid_n_states))
+    without <- do.call(plot_lp_difference, args)
+    expect_equal(without$data, with_absorb$data, label = engine)
+  }
+})

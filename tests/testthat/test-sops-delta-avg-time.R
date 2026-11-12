@@ -454,3 +454,35 @@ test_that("interpolated SOP estimates and draws start at the set starting state"
     )
   )
 })
+
+test_that("time_in_state() on delta SOPs keeps the uncertainty avg_state_time() gives", {
+  # Expected time in a set of states is a weighted sum of SOPs, so its delta
+  # standard error follows from the SOPs' covariances. avg_state_time() computes
+  # the same total directly, which gives an independent value to compare with.
+  case <- delta_avg_time_case()
+  variables <- list(tx = c(0, 1))
+  for (variance in c("conditional", "unconditional")) {
+    sop <- avg_sops(
+      case$fit,
+      variables = variables,
+      times = case$times,
+      absorb = 6
+    ) |>
+      inferences(method = "delta", vcov = variance)
+    total <- time_in_state(sop, target_states = c("1", "2"))
+    direct <- avg_state_time(
+      case$fit,
+      variables = variables,
+      times = case$times,
+      state_sets = list(lower = c("1", "2")),
+      absorb = 6
+    ) |>
+      inferences(method = "delta", vcov = variance)
+    direct <- direct[match(total$tx, direct$tx), , drop = FALSE]
+    expect_equal(total$total_time, direct$estimate, tolerance = 1e-10)
+    expect_true(all(c("std.error", "conf.low", "conf.high") %in% names(total)))
+    expect_equal(total$std.error, direct$std.error, tolerance = 1e-8, label = variance)
+    expect_equal(total$conf.low, direct$conf.low, tolerance = 1e-8, label = variance)
+    expect_equal(total$conf.high, direct$conf.high, tolerance = 1e-8, label = variance)
+  }
+})
