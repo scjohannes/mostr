@@ -20,12 +20,16 @@
 #'   first value is the reference.
 #' @param times Time values at which to evaluate the linear predictor.
 #' @param previous_states Optional previous-state values to facet by. Defaults
-#'   to all non-absorbing states in `y_levels`.
+#'   to the states in `y_levels` that occur as the previous state in the data
+#'   the model was fitted to, which leaves out absorbing states without
+#'   `absorb`. A supplied state that never occurs there is an error, because
+#'   the model has no linear predictor for it.
 #' @param y_levels The states in fitted order. `NULL` (the default) uses the
 #'   states of the fitted model. A supplied vector must hold the same states
 #'   in the same order, otherwise it is an error.
 #' @param absorb Optional absorbing-state label excluded from the default
-#'   previous-state grid.
+#'   previous-state grid. It is needed only for a model that does not carry
+#'   the data it was fitted to; a [mostm()] fit carries them.
 #' @param time_var Name of the time column. `NULL` (the default) uses the
 #'   `time_var` given to [mostm()]; a different name is an error.
 #' @param p_var Name of the previous-state column. `NULL` (the default) uses
@@ -96,9 +100,12 @@ plot_lp_difference <- function(
   time_var <- settings$time_var
 
   y_levels <- markov_model_ylevels(model, settings$y_levels)
-  ylevel_names <- as_state_labels(y_levels)
-  previous_states <- previous_states %||%
-    setdiff(ylevel_names, as_state_labels(settings$absorb))
+  previous_states <- plot_lp_previous_states(
+    model,
+    previous_states = previous_states,
+    y_levels = y_levels,
+    settings = settings
+  )
 
   data <- plot_lp_grid(
     model = model,
@@ -142,6 +149,48 @@ plot_lp_difference <- function(
   }
 
   p + ggplot2::scale_color_viridis_d()
+}
+
+# The previous states to facet by. A state that never occurs as the previous
+# state in the fitted data, such as an absorbing state, has no linear
+# predictor: with a factor previous-state column its grid rows get a missing
+# previous state, which `vglm` drops from the model matrix (so the predictors
+# no longer line up with the grid) and `orm` turns into missing lines. Such
+# states are left out of the default and refused when requested. Fits that do
+# not carry their data fall back to all states except `absorb`.
+plot_lp_previous_states <- function(
+  model,
+  previous_states,
+  y_levels,
+  settings
+) {
+  p_var <- settings$p_var
+  ylevel_names <- as_state_labels(y_levels)
+  fitted <- markov_fitted_previous_states(model, p_var)
+  if (is.null(previous_states)) {
+    out <- setdiff(ylevel_names, as_state_labels(settings$absorb))
+    if (!is.null(fitted)) {
+      out <- intersect(out, fitted)
+    }
+    return(out)
+  }
+  if (!is.null(fitted)) {
+    unfitted <- setdiff(as_state_labels(previous_states), fitted)
+    if (length(unfitted) > 0L) {
+      mostr_abort(
+        "`previous_states` includes state(s) that never occur in `",
+        p_var,
+        "` in the data the model was fitted to: ",
+        paste(unfitted, collapse = ", "),
+        ". The model has no linear predictor for a previous state it was ",
+        "not fitted on; an absorbing state, which a patient never leaves, is ",
+        "never a previous state. Use only: ",
+        paste(intersect(ylevel_names, fitted), collapse = ", "),
+        "."
+      )
+    }
+  }
+  previous_states
 }
 
 plot_lp_grid <- function(
@@ -327,6 +376,20 @@ plot_lp_difference_data <- function(
   eta <- as.matrix(eta)
   if (is.null(colnames(eta))) {
     colnames(eta) <- paste0("eta", seq_len(ncol(eta)))
+  }
+  # A model matrix drops grid rows with a missing value. The predictors would
+  # then be recycled onto the wrong rows, so this refuses instead.
+  if (nrow(eta) != nrow(data)) {
+    mostr_abort(
+      "The model returned linear predictors for ",
+      nrow(eta),
+      " of the ",
+      nrow(data),
+      " plotted rows, which happens when a row has a missing value, for ",
+      "example a value that is not a level of a factor column of `profile`. ",
+      "Check that `profile` has no missing values and that its factor ",
+      "columns have every level the model was fitted with."
+    )
   }
 
   long <- data[rep(seq_len(nrow(data)), times = ncol(eta)), , drop = FALSE]
