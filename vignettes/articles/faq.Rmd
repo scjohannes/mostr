@@ -276,14 +276,14 @@ the arguments `opt_method = "LM"`, `scale = TRUE` and a larger `maxit`, which
 are passed on to `rms::orm()`, often help it converge. If a transition never
 occurs, simplify the model, for example by combining rare states.
 
-### A weighted `"orm"` fit warns that "weights are ignored in model validation and bootstrapping"
+### What do `weights` in `mostm()` change?
 
-This warning comes from `rms::orm()` and refers to rms's own validation and
-bootstrap functions, which mostr does not use. mostr's bootstrap keeps each
-row's weight when it resamples patients. Note that the weights are used only
-to fit the model: `avg_sops()` and the other averaging functions give every
-patient the same weight, and `inferences(method = "delta")` offers only
-conditional variance for a weighted fit.
+The weights are used only to fit the model. mostr's bootstrap keeps each
+row's weight when it resamples patients, and the fractional weighted bootstrap
+multiplies each row's weight by its patient's random weight. `avg_sops()` and
+the other averaging functions give every patient the same weight, and
+`inferences(method = "delta")` offers only conditional variance for a weighted
+fit.
 
 ### How do I check that the model describes the data?
 

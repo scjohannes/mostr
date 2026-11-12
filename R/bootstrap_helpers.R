@@ -972,19 +972,32 @@ markov_with_coefficients_only_refit <- function(expr) {
   expr
 }
 
-# rms warns that orm ignores weights in its own bootstrap, which mostr does
-# not use.
+# A refit of an orm model runs `rms::orm()` again, so it hides the same
+# warning as the original fit in `mostm()`.
 suppress_expected_refit_warnings <- function(model, expr) {
+  if (!inherits(model, "orm")) {
+    return(expr)
+  }
+  suppress_orm_weights_warning(expr)
+}
+
+# Whenever it is given weights, `rms::orm()` warns "currently weights are
+# ignored in model validation and bootstrapping orm fits". The warning is
+# about rms's own `validate()` and `bootcov()`, which mostr never calls;
+# mostr's bootstrap and fractional weighted bootstrap refit with each row's
+# weight, so the warning would tell users that their weights are lost when
+# they are not. Only this exact message is muffled, so every other warning
+# from the fit, such as one about convergence, still reaches the user.
+suppress_orm_weights_warning <- function(expr) {
   withCallingHandlers(
     expr,
     warning = function(w) {
       if (
-        inherits(model, "orm") &&
-          grepl(
-            "currently weights are ignored in model validation and bootstrapping orm fits",
-            conditionMessage(w),
-            fixed = TRUE
-          )
+        grepl(
+          "currently weights are ignored in model validation and bootstrapping orm fits",
+          conditionMessage(w),
+          fixed = TRUE
+        )
       ) {
         invokeRestart("muffleWarning")
       }

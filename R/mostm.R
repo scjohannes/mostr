@@ -485,7 +485,9 @@ mostm_fit_orm <- function(setup, ...) {
   if (!is.null(subset_rows)) {
     fit_call$subset <- quote(subset_rows)
   }
-  fit <- eval(fit_call)
+  # With weights, rms::orm() warns that its own bootstrap ignores them; see
+  # suppress_orm_weights_warning() for why mostr hides that one warning.
+  fit <- suppress_orm_weights_warning(eval(fit_call))
   # When its fitting algorithm fails, rms::orm() returns an object that holds
   # only `fail = TRUE` instead of stopping.
   if (isTRUE(fit$fail)) {
