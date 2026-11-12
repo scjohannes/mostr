@@ -355,11 +355,11 @@ comparison_profile_columns <- function(baseline_data, time_var, estimand) {
 # Profile columns are copied into a result next to its own columns, so they
 # must not reuse those (`reserved`) names. The profile's visit column is
 # dropped: it holds the starting visit, not a prediction time. So are the
-# row numbers and columns that mostr adds for its own bookkeeping, such as
-# `.markov_source_row`.
+# row numbers and columns that mostr adds for its own bookkeeping
+# (`markov_internal_column()`).
 profile_output_columns <- function(data, time_var, reserved, fn) {
   profile_cols <- setdiff(names(data), c("rowid", "rowidcf", time_var))
-  profile_cols <- profile_cols[!startsWith(profile_cols, ".markov_")]
+  profile_cols <- profile_cols[!markov_internal_column(profile_cols)]
   clash <- intersect(profile_cols, reserved)
   if (length(clash) > 0L) {
     mostr_abort(
