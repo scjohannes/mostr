@@ -276,9 +276,7 @@ test_that("weighted orm scores equal numerical weighted row likelihood derivativ
     wrapped,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = wrapped$yunique,
-    absorb = 6,
-    p_var = "yprev"
+    absorb = 6
   )
   inferred <- inferences(average, method = "delta", vcov = "conditional")
   expect_true(all(is.finite(inferred$std.error)))

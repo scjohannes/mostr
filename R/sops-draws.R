@@ -170,9 +170,7 @@ compute_ci_from_draws <- function(
 #'   newdata = data,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:30,
-#'   y_levels = 1:6,
-#'   absorb = 6,
-#'   id_var = "id"
+#'   absorb = 6
 #' ) |>
 #'   inferences(method = "bootstrap", n_draws = 1000, return_draws = TRUE)
 #'

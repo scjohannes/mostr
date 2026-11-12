@@ -198,8 +198,6 @@ test_that("factor visit gap requires explicit numeric time_covariates", {
       fit,
       newdata = baseline,
       times = 1:4,
-      y_levels = factor(1:4),
-      p_var = "yprev",
       gap_var = "gap"
     ),
     "Factor visit time with `gap_var` requires numeric gap_var values"
@@ -209,8 +207,6 @@ test_that("factor visit gap requires explicit numeric time_covariates", {
     fit,
     newdata = baseline,
     times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev",
     gap_var = "gap",
     time_covariates = data.frame(gap = c(3, 4, 7, 14))
   )
@@ -227,7 +223,6 @@ test_that("factor visit orm SOP interpolation uses absorbing state", {
     fit,
     variables = list(tx = c(0, 1)),
     times = names(case$visit_days),
-    y_levels = fit$yunique,
     absorb = case$absorb
   )
   expect_equal(

@@ -87,10 +87,10 @@
 #' @param p2_var For a second-order model, the name of the column that holds
 #'   each patient's state two visits back, for example `"ypprev"`. `NULL` (the
 #'   default) fits a first-order model, in which the next state depends only on
-#'   the previous one. Give it here, where the model is fitted: the prediction
-#'   functions then use second-order calculations without being told again.
-#'   Without it, a column with the older state in the formula would be held at
-#'   each patient's starting value.
+#'   the previous one. The prediction functions take it from the fit, as they
+#'   do `id_var`, `time_var` and `p_var`, and then use second-order
+#'   calculations. Without it, a column with the older state in the formula
+#'   would be held at each patient's starting value.
 #' @param first_followup_time Time of the first visit after baseline. Each
 #'   patient's row at this time is their starting row for automatic
 #'   predictions. For numeric time, `NULL` (the default) uses 1, time may not
@@ -409,8 +409,9 @@ mostm <- function(
     starting_profiles = !coefficients_only
   )
   # The column names and model settings that every later call on the fit
-  # reads, built once here. A vglm fit to an unordered response records no
-  # state labels; calls on it then supply `y_levels`.
+  # reads, built once here. The engines record the states in fitted order
+  # (VGAM as the response's column names, rms and rmsb as its levels); an
+  # object without them can't be used to predict (`stop_no_fitted_states()`).
   y_levels <- markov_model_ylevels_or_null(fitted$fit)
   settings <- markov_settings(
     engine = engine,

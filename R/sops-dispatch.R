@@ -13,69 +13,49 @@
 #'   recursion takes one transition per value, so leaving out visits does not
 #'   skip time; see [sops()]. Unlike [sops()], this function does not warn
 #'   when `times` leaves out fitted visits.
-#' @param y_levels Ordered outcome-state levels. `NULL` (the default) uses the
-#'   states of the fitted model in fitted order. A supplied vector must hold
-#'   the same states in the same order; its type sets the type of the state
-#'   labels.
 #' @param absorb Optional absorbing state levels: states that a patient can't
-#'   leave. A row of `newdata` whose `p_var` or `p2_var` value is absorbing
+#'   leave. A row of `newdata` whose previous state (the `p_var` column of
+#'   [mostm()]) or state two visits back (the `p2_var` column) is absorbing
 #'   gives an error: such a patient can't move to another state, and the model
 #'   has no transitions out of an absorbing state to predict from.
-#' @param time_var Name of the model time variable. `NULL` (the default) uses
-#'   the `time_var` given to [mostm()]; a different name is an error.
-#' @param p_var Name of the previous-state variable. `NULL` (the default) uses
-#'   the `p_var` given to [mostm()]; a different name is an error.
-#' @param p2_var Name of the variable with the state two visits back. `NULL`
-#'   (the default) uses the `p2_var` given to [mostm()], so a model fitted
-#'   with `p2_var` uses second-order recursion and one fitted without it
-#'   first-order recursion. A different name is an error.
 #' @param gap_var Optional elapsed-time-gap variable.
 #' @param time_covariates Optional data frame with one row per requested visit
 #'   containing precomputed time-varying covariates.
 #' @param include_re For `blrm` fits, include fitted random-effect draws for
-#'   known IDs. Only `blrm` fits have random effects, so `TRUE` gives an error
-#'   for other fits.
-#' @param id_var ID column used for `blrm` random effects. `NULL` (the
-#'   default) uses the `id_var` given to [mostm()]; a different name is an
-#'   error.
+#'   known IDs, which `newdata` gives in the patient ID column (`id_var` of
+#'   [mostm()]). Only `blrm` fits have random effects, so `TRUE` gives an
+#'   error for other fits.
 #' @param n_draws Number of `blrm` posterior draws, or `NULL` for all draws.
 #' @param seed Optional seed used when selecting posterior draws.
 #' @param ... Reserved for internal posterior draw batching.
 #' @return An array of state probabilities. Frequentist fits return
 #'   `[patient, time, state]`; Bayesian fits return
-#'   `[draw, patient, time, state]`.
+#'   `[draw, patient, time, state]`. The state dimension is named by the
+#'   fitted states.
+#' @inheritSection sops Settings taken from the fit
 #' @export
 soprob_markov <- function(
   model,
   newdata,
   times = NULL,
-  y_levels = NULL,
   absorb = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
-  id_var = NULL,
   n_draws = 100L,
   seed = NULL,
   ...
 ) {
+  stop_removed_fit_arguments(...)
   stop_include_re_without_blrm(model, include_re)
   settings <- resolve_markov_settings(
     model,
-    id_var = id_var,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates
   )
   if (is.null(settings$y_levels)) {
-    mostr_abort("`y_levels` cannot be NULL")
+    stop_no_fitted_states()
   }
   predict_markov_sops(
     model,

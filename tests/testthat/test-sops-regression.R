@@ -183,9 +183,7 @@ describe("SOP regression baselines", {
       model = model,
       newdata = case$baseline,
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
       time_covariates = case$time_covariates
     )
 
@@ -194,9 +192,7 @@ describe("SOP regression baselines", {
       newdata = case$baseline,
       variables = "tx",
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
       time_covariates = case$time_covariates
     )
 
@@ -237,9 +233,7 @@ describe("SOP regression baselines", {
       model = model,
       newdata = case$baseline,
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
       time_covariates = case$time_covariates
     )
 
@@ -248,9 +242,7 @@ describe("SOP regression baselines", {
       newdata = case$baseline,
       variables = "tx",
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
       time_covariates = case$time_covariates
     )
 
@@ -277,9 +269,7 @@ describe("SOP regression baselines", {
       model = explicit_model,
       newdata = case$baseline[1:10, , drop = FALSE],
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
       time_covariates = case$time_covariates
     )
 
@@ -287,7 +277,6 @@ describe("SOP regression baselines", {
       model = inline_model,
       newdata = case$baseline[1:10, , drop = FALSE],
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb
     )
 
@@ -296,9 +285,7 @@ describe("SOP regression baselines", {
       newdata = case$baseline,
       variables = "tx",
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
       time_covariates = case$time_covariates
     )
 
@@ -307,7 +294,6 @@ describe("SOP regression baselines", {
       newdata = case$baseline,
       variables = "tx",
       times = 1:10,
-      y_levels = case$y_levels,
       absorb = case$absorb
     )
 

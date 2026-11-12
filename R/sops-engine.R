@@ -95,7 +95,6 @@
 #'   fit,
 #'   newdata = baseline,
 #'   times = 1:3,
-#'   y_levels = fit$yunique,
 #'   absorb = "8"
 #' )
 #' dim(probabilities)

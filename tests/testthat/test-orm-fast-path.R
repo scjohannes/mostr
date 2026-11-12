@@ -42,7 +42,6 @@ test_that("the streamed design builder matches sops() on every model set-up", {
   )
   cases <- lapply(grid_cells, function(cell) {
     args <- grid_public_args(cell)
-    args$y_levels <- seq_len(grid_n_states)
     list(
       label = grid_label(cell),
       fit = grid_fit(cell),
@@ -64,12 +63,7 @@ test_that("the streamed design builder matches sops() on every model set-up", {
     label = "orm, rcs(time) * tx",
     fit = orm_fit,
     profiles = orm_data[!duplicated(orm_data$id), ][1:12, , drop = FALSE],
-    args = list(
-      times = 1:5,
-      y_levels = orm_fit$yunique,
-      absorb = "6",
-      p_var = "yprev"
-    )
+    args = list(times = 1:5, absorb = "6")
   )
 
   # vglm with a spline of a numeric previous state.
@@ -94,7 +88,7 @@ test_that("the streamed design builder matches sops() on every model set-up", {
       engine = "vglm"
     )),
     profiles = numeric_data[numeric_data$time == 1, , drop = FALSE][1:8, ],
-    args = list(times = 1:7, y_levels = 1:10, absorb = "10", p_var = "yprev")
+    args = list(times = 1:7, absorb = "10")
   )
 
   # vglm with an inline rcs(time) spline, and the same spline as an explicit
@@ -131,7 +125,7 @@ test_that("the streamed design builder matches sops() on every model set-up", {
       engine = "vglm"
     )),
     profiles = spline_profiles,
-    args = list(times = 1:8, y_levels = 1:6, absorb = "6", p_var = "yprev")
+    args = list(times = 1:8, absorb = "6")
   )
   cases[[length(cases) + 1L]] <- list(
     label = "vglm, explicit time basis * tx with time_covariates",
@@ -145,9 +139,7 @@ test_that("the streamed design builder matches sops() on every model set-up", {
     profiles = spline_profiles,
     args = list(
       times = 1:8,
-      y_levels = 1:6,
       absorb = "6",
-      p_var = "yprev",
       time_covariates = time_covariates
     )
   )
@@ -182,7 +174,7 @@ test_that("the streamed design builder matches sops() on every model set-up", {
     engine = "vglm"
   ))
   factor_baseline <- factor_data[!duplicated(factor_data$id), , drop = FALSE]
-  factor_args <- list(times = 1:4, y_levels = factor(1:4), p_var = "yprev")
+  factor_args <- list(times = 1:4)
   cases[[length(cases) + 1L]] <- list(
     label = "vglm, factor visit time",
     fit = factor_fit,
@@ -197,7 +189,7 @@ test_that("the streamed design builder matches sops() on every model set-up", {
     ))
     streamed <- streamed_builder_sops(case$fit, case$profiles, case$args)
 
-    n_states <- length(case$args$y_levels)
+    n_states <- length(mostr:::markov_model_settings(case$fit)$y_levels)
     expect_probability_array(
       streamed,
       expected_dim = c(nrow(case$profiles), length(case$args$times), n_states)
@@ -273,12 +265,18 @@ test_that("orm SOPs report a state count that differs from the fit and a missing
   ))
   baseline <- data[!duplicated(data$id), ][1:3, , drop = FALSE]
 
+  # The fit always supplies its own states, so a state count that differs
+  # from the fit can reach the recursion only through internal settings.
+  fewer_states <- mostr:::markov_settings_update(
+    mostr:::resolve_markov_settings(fit),
+    y_levels = fit$yunique[-length(fit$yunique)]
+  )
   expect_snapshot(
-    mostr::soprob_markov(
+    mostr:::predict_markov_sops(
       fit,
       baseline,
       times = 1,
-      y_levels = fit$yunique[-length(fit$yunique)]
+      settings = fewer_states
     ),
     error = TRUE
   )
@@ -287,8 +285,7 @@ test_that("orm SOPs report a state count that differs from the fit and a missing
     mostr::soprob_markov(
       fit,
       baseline[1L, , drop = FALSE],
-      times = 1,
-      y_levels = fit$yunique
+      times = 1
     ),
     error = TRUE
   )
@@ -309,7 +306,6 @@ test_that("execution-plan budgets bound all retained first-order designs", {
     model = fit,
     newdata = baseline,
     times = 1:5,
-    y_levels = fit$yunique,
     absorb = "6"
   )
   # The compiled result, before the budget forces the R fallback.
@@ -416,14 +412,12 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
     fit_default,
     baseline,
     times = 1:4,
-    y_levels = fit_default$yunique,
     absorb = "6"
   )
   sops_scaled <- mostr::sops(
     fit_scaled,
     baseline,
     times = 1:4,
-    y_levels = fit_scaled$yunique,
     absorb = "6"
   )
   expect_equal(sops_scaled$estimate, sops_default$estimate, tolerance = 1e-10)
@@ -434,17 +428,13 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
     robust_default,
     variables = "tx",
     times = 1:4,
-    y_levels = fit_default$yunique,
-    absorb = "6",
-    id_var = "id"
+    absorb = "6"
   )
   avg_scaled <- mostr::avg_sops(
     robust_scaled,
     variables = "tx",
     times = 1:4,
-    y_levels = fit_scaled$yunique,
-    absorb = "6",
-    id_var = "id"
+    absorb = "6"
   )
   expect_equal(avg_scaled$estimate, avg_default$estimate, tolerance = 1e-10)
 
@@ -496,9 +486,7 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
       newdata = data,
       variables = "tx",
       times = 1:4,
-      y_levels = fit$yunique,
-      absorb = "6",
-      id_var = "id"
+      absorb = "6"
     )
     withr::with_seed(61053, mostr::inferences(
       full,
@@ -535,9 +523,7 @@ test_that("orm checks the size of an MVN covariance matrix and supports score-bo
     robust_fit,
     variables = "tx",
     times = 1:4,
-    y_levels = fit$yunique,
-    absorb = "6",
-    id_var = "id"
+    absorb = "6"
   )
 
   expect_error(
@@ -622,7 +608,6 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
           first_fit,
           newdata = newdata,
           times = 1:3,
-          y_levels = 1:8,
           absorb = 8
         )$estimate)
       }
@@ -660,9 +645,7 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
           second_fit,
           newdata = newdata,
           times = 1:3,
-          y_levels = 1:8,
-          absorb = 8,
-          p2_var = "ypprev"
+          absorb = 8
         )$estimate)
       }
     )

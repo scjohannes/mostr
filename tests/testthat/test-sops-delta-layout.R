@@ -12,7 +12,6 @@ test_that("analytical averaging checks scenario and starting-profile order", {
     newdata = baseline,
     variables = variables,
     times = 1:3,
-    y_levels = 1:6,
     absorb = 6
   )
   inferred <- inferences(average, method = "delta", vcov = stats::vcov(model))

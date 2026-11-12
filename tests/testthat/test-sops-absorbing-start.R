@@ -35,10 +35,10 @@ absorbing_start_profiles <- function(profiles, count, column = "yprev") {
   profiles
 }
 
-# Every public SOP call type on the same profiles. `...` takes further
-# arguments for every call, such as `p2_var` for a second-order model.
-absorbing_start_calls <- function(model, profiles, ...) {
-  base <- list(model, newdata = profiles, times = 1:4, absorb = 3, ...)
+# Every public SOP call type on the same profiles. A second-order model
+# records `p2_var`, so the calls are the same for both orders.
+absorbing_start_calls <- function(model, profiles) {
+  base <- list(model, newdata = profiles, times = 1:4, absorb = 3)
   compare <- c(base, list(variables = list(tx = c(0, 1))))
   list(
     sops = function() do.call(sops, base),
@@ -105,7 +105,6 @@ test_that("every SOP call refuses profiles starting in an absorbing state", {
       label = "second order, both previous states",
       model = second$model,
       profiles = both,
-      p2_var = "ypprev",
       column = "yprev",
       count = 2
     ),
@@ -115,15 +114,13 @@ test_that("every SOP call refuses profiles starting in an absorbing state", {
       label = "second order, ypprev only",
       model = second$model,
       profiles = absorbing_start_profiles(second$profiles, 1, column = "ypprev"),
-      p2_var = "ypprev",
       column = "ypprev",
       count = 1
     )
   )
 
   for (row in cases) {
-    extra <- if (!is.null(row$p2_var)) list(p2_var = row$p2_var)
-    calls <- do.call(absorbing_start_calls, c(list(row$model, row$profiles), extra))
+    calls <- absorbing_start_calls(row$model, row$profiles)
     for (name in names(calls)) {
       expect_absorbing_start_error(
         calls[[name]](),
@@ -171,7 +168,6 @@ test_that("soprob_markov() refuses prediction rows with an absorbing start", {
       case$model,
       newdata = rows,
       times = 1:4,
-      y_levels = 1:3,
       absorb = 3
     ),
     "`yprev` is the absorbing state 3 for 2 of the 60 prediction rows",

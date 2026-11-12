@@ -1,34 +1,63 @@
-# a setting that contradicts the fit is an error
+# the prediction functions refuse the settings that the fit records
 
     Code
-      avg_sops(second, times = 1:4, absorb = 4, p2_var = "yprev")
+      sops(first, times = 1:4, absorb = 4, p2_var = "ypprev")
+    Condition
+      Error in `sops()`:
+      ! `p2_var` is not an argument of this function: the fitted model records the `p2_var` given to `mostm()`. Leave it out; to use another column, give it to `mostm()` and refit.
+    Code
+      avg_sops(first, times = 1:4, absorb = 4, p_var = "yprev")
     Condition
       Error in `avg_sops()`:
+      ! `p_var` is not an argument of this function: the fitted model records the `p_var` given to `mostm()`. Leave it out; to use another column, give it to `mostm()` and refit.
+    Code
+      state_time(first, times = 1:4, absorb = 4, time_var = "time")
+    Condition
+      Error in `state_time()`:
+      ! `time_var` is not an argument of this function: the fitted model records the `time_var` given to `mostm()`. Leave it out; to use another column, give it to `mostm()` and refit.
+    Code
+      comparisons(first, variables = "tx", times = 1:4, absorb = 4, id_var = "id")
+    Condition
+      Error in `comparisons()`:
+      ! `id_var` is not an argument of this function: the fitted model records the `id_var` given to `mostm()`. Leave it out; to use another column, give it to `mostm()` and refit.
+    Code
+      avg_comparisons(first, variables = "tx", times = 1:4, absorb = 4, y_levels = 1:
+      4)
+    Condition
+      Error in `avg_comparisons()`:
+      ! `y_levels` is not an argument of this function: the fitted model records its states in fitted order. Leave it out.
+
+# diagnostic plots refuse a setting that contradicts the fit
+
+    Code
+      plot_transitions(second, times = 1:4, absorb = 4, p2_var = "yprev")
+    Condition
+      Error in `plot_transitions()`:
       ! `p2_var = "yprev"` does not match the fitted model: `mostm()` fitted it with `p2_var = "ypprev"`. Leave `p2_var` out to use the fit's value, or refit the model with `mostm(..., p2_var = "yprev")`.
     Code
-      avg_sops(first, times = 1:4, absorb = 4, p2_var = "ypprev")
+      plot_transitions(first, times = 1:4, absorb = 4, p2_var = "ypprev")
     Condition
-      Error in `avg_sops()`:
+      Error in `plot_transitions()`:
       ! `p2_var = "ypprev"` does not match the fitted model: `mostm()` fitted it with `p2_var = NULL`. The model was fitted as a first-order model. For a second-order model, refit it with `mostm(..., p2_var = "ypprev")`.
     Code
-      avg_sops(first, times = 1:4, absorb = 4, p_var = "ypprev")
+      plot_correlation(first, times = 1:4, absorb = 4, p_var = "ypprev")
     Condition
-      Error in `avg_sops()`:
+      Error in `plot_correlation()`:
       ! `p_var = "ypprev"` does not match the fitted model: `mostm()` fitted it with `p_var = "yprev"`. Leave `p_var` out to use the fit's value, or refit the model with `mostm(..., p_var = "ypprev")`.
     Code
-      avg_sops(day, times = 1:4, absorb = 4, time_var = "time")
+      plot_variogram(day, times = 1:4, absorb = 4, time_var = "time")
     Condition
-      Error in `avg_sops()`:
+      Error in `plot_variogram()`:
       ! `time_var = "time"` does not match the fitted model: `mostm()` fitted it with `time_var = "day"`. Leave `time_var` out to use the fit's value, or refit the model with `mostm(..., time_var = "time")`.
     Code
-      avg_sops(first, times = 1:4, absorb = 4, id_var = "age")
+      plot_transitions(first, times = 1:4, absorb = 4, id_var = "age")
     Condition
-      Error in `avg_sops()`:
+      Error in `plot_transitions()`:
       ! `id_var = "age"` does not match the fitted model: `mostm()` fitted it with `id_var = "id"`. Leave `id_var` out to use the fit's value, or refit the model with `mostm(..., id_var = "age")`.
     Code
-      avg_sops(first, times = 1:4, absorb = 4, y_levels = c(1, 2, 4, 3))
+      plot_correlation(first, times = 1:4, absorb = 4, y_levels = c(1, 2, 4, 3))
     Condition
-      Error in `avg_sops()`:
+      Error in `plot_correlation()`:
       ! `y_levels` must be the fitted model's states in fitted order (1, 2, 3, 4), but it is 1, 2, 4, 3. Leave `y_levels` out to use the fitted states.
 
 # `mostm()` records the settings and checks the previous-state columns

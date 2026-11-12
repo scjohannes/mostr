@@ -80,10 +80,10 @@ it with each possible previous state as they move from visit to visit.}
 \item{p2_var}{For a second-order model, the name of the column that holds
 each patient's state two visits back, for example \code{"ypprev"}. \code{NULL} (the
 default) fits a first-order model, in which the next state depends only on
-the previous one. Give it here, where the model is fitted: the prediction
-functions then use second-order calculations without being told again.
-Without it, a column with the older state in the formula would be held at
-each patient's starting value.}
+the previous one. The prediction functions take it from the fit, as they
+do \code{id_var}, \code{time_var} and \code{p_var}, and then use second-order
+calculations. Without it, a column with the older state in the formula
+would be held at each patient's starting value.}
 
 \item{first_followup_time}{Time of the first visit after baseline. Each
 patient's row at this time is their starting row for automatic

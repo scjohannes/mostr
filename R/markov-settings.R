@@ -3,10 +3,12 @@
 # one.
 #
 # `mostm()` builds it once and stores it on the fit (`markov_set_settings()`);
-# `markov_model_settings()` reads it back. A public SOP call merges its own
-# arguments into the fit's settings with `resolve_markov_settings()`, which
-# refuses a value that contradicts the fit, and passes the result to the
-# internal functions. Results keep that call's settings in their `settings`
+# `markov_model_settings()` reads it back. A public SOP call adds its own
+# `absorb`, `gap_var` and `time_covariates` to the fit's settings with
+# `resolve_markov_settings()` and passes the result to the internal functions.
+# The column names, the order and the states come from the fit only; the
+# diagnostic plots, which also take observed data, may repeat them but not
+# change them. Results keep that call's settings in their `settings`
 # attribute (`markov_result_settings()`), so inference replays the same
 # calculation.
 
@@ -21,8 +23,8 @@
 #' @param absorb Absorbing states.
 #' @param time_covariates Lookup table of time-varying covariates by visit.
 #' @param first_followup_time The visit of the stored starting profiles.
-#' @param from_fit Names of the fields that the fit fixes. A public call may
-#'   repeat these but not change them.
+#' @param from_fit Names of the fields that the fit fixes. A diagnostic plot
+#'   may repeat these but not change them.
 #' @return An object of class `markov_settings`; `order` is the Markov order.
 #' @noRd
 markov_settings <- function(
@@ -111,10 +113,11 @@ markov_set_settings <- function(model, settings) {
   model
 }
 
-# The settings recorded on a fit. Fits made by `mostm()` store them. Other
-# objects, such as the hand-made fits of the package tests, get settings
-# built from what they record (engine and patient ID), with nothing fixed, so
-# calls on them behave as they did before settings were stored.
+# The settings recorded on a fit. Fits made by `mostm()` store them, and so do
+# the hand-made fits of the package tests (`with_fit_settings()` in
+# `tests/testthat/helper-mocks.R`). Other objects get settings built from what
+# they record (engine and patient ID) and the default column names, with
+# nothing fixed.
 markov_model_settings <- function(model) {
   settings <- markov_model_metadata_attr(model, "markov_settings")
   if (inherits(settings, "markov_settings")) {
@@ -140,10 +143,13 @@ markov_result_settings <- function(object) {
   settings
 }
 
-# The settings of one public call: the call's arguments, with every argument
-# left `NULL` taken from the fit. An argument that the fit fixes must agree
-# with it. `y_levels` is compared by state label and the supplied vector is
-# kept, because the result's `state` column takes its type.
+# The settings of one public call: the fit's settings with the call's
+# `absorb`, `gap_var` and `time_covariates`. Only the diagnostic plots pass
+# `id_var`, `time_var`, `p_var`, `p2_var` and `y_levels`, which they also need
+# for observed data; for a fit, every one left `NULL` is taken from the fit,
+# and one that the fit fixes must agree with it. `y_levels` is compared by
+# state label and the supplied vector is kept, because the plot's state labels
+# take its type.
 resolve_markov_settings <- function(
   model,
   id_var = NULL,
@@ -169,20 +175,17 @@ resolve_markov_settings <- function(
       next
     }
     if (identical(arg, "y_levels")) {
-      # A wrong number of states is reported by the threshold-count check,
-      # `validate_sop_threshold_count()`, as before.
-      if (
-        length(value) == length(fit$y_levels) &&
-          !identical(as_state_labels(value), as_state_labels(fit$y_levels))
-      ) {
+      # A wrong number of states is refused here too: the plots that pass
+      # `y_levels` would otherwise fail later with an unrelated R error.
+      if (!identical(as_state_labels(value), as_state_labels(fit$y_levels))) {
         stop_y_levels_contradict_fit(value, fit$y_levels)
       }
     } else if (!identical(value, fit[[arg]])) {
       stop_setting_contradicts_fit(arg, value, fit[[arg]])
     }
   }
-  # `p2_var = NULL` means "as fitted"; on a fit without a fixed order it is
-  # first order, as before.
+  # `p2_var = NULL` means "as fitted"; on an object without stored settings it
+  # is first order.
   p2 <- if ("p2_var" %in% fit$from_fit) fit$p2_var else p2_var
   markov_settings(
     engine = fit$engine,
@@ -252,6 +255,52 @@ stop_y_levels_contradict_fit <- function(value, fitted) {
     "), but it is ",
     paste(as_state_labels(value), collapse = ", "),
     ". Leave `y_levels` out to use the fitted states."
+  )
+}
+
+# Every fit made by `mostm()` records its states; an object without them can't
+# label the state occupancy probabilities.
+stop_no_fitted_states <- function() {
+  mostr_abort(
+    "The fitted model does not record its states in fitted order. Refit it ",
+    "with `mostm()`."
+  )
+}
+
+# The arguments that the prediction functions (`sops()`, `avg_sops()`,
+# `state_time()`, `avg_state_time()`, `comparisons()`, `avg_comparisons()`,
+# `soprob_markov()`) no longer have, because the fit records them.
+markov_removed_fit_arguments <- function() {
+  c("id_var", "time_var", "p_var", "p2_var", "y_levels")
+}
+
+# Refuses a removed argument passed to a prediction function. Their `...`
+# would otherwise take it without effect: a call that passes `p2_var` for a
+# model fitted without it would silently predict with the first-order
+# recursion.
+stop_removed_fit_arguments <- function(...) {
+  supplied <- intersect(...names(), markov_removed_fit_arguments())
+  if (!length(supplied)) {
+    return(invisible(NULL))
+  }
+  arg <- supplied[[1L]]
+  what <- if (identical(arg, "y_levels")) {
+    "the fitted model records its states in fitted order"
+  } else {
+    paste0("the fitted model records the `", arg, "` given to `mostm()`")
+  }
+  advice <- if (identical(arg, "y_levels")) {
+    "Leave it out."
+  } else {
+    "Leave it out; to use another column, give it to `mostm()` and refit."
+  }
+  mostr_abort(
+    "`",
+    arg,
+    "` is not an argument of this function: ",
+    what,
+    ". ",
+    advice
   )
 }
 

@@ -88,7 +88,6 @@ delta_weighted_sop_estimate <- function(
     model = weighted_model,
     newdata = prediction_data,
     times = times,
-    y_levels = y_levels,
     absorb = absorb
   )
   n <- length(profile_weights)
@@ -123,7 +122,6 @@ delta_weighted_refit_oracle <- function(
     model,
     variables = variables,
     times = times,
-    y_levels = y_levels,
     absorb = absorb
   )
   inferred <- inferences(

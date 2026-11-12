@@ -81,9 +81,9 @@ hand_refit <- function(case, engine, order = 1L) {
   fit_case(renumber_states(s), engine, order)
 }
 # Hand-refit SOPs on the original state labels, state 2 having probability 0.
-hand_sops <- function(ref_model, profiles, times, p2_var = NULL, by = NULL) {
+hand_sops <- function(ref_model, profiles, times, by = NULL) {
   out <- as.data.frame(avg_sops(ref_model, newdata = renumber_states(profiles),
-    times = times, absorb = 3, p2_var = p2_var, by = by %||% TRUE))
+    times = times, absorb = 3, by = by %||% TRUE))
   groups <- if (is.null(by)) list(NULL) else sort(unique(profiles[[by]]))
   pieces <- lapply(groups, function(group) {
     full <- expand.grid(time = times, state = 1:4)
@@ -117,15 +117,14 @@ test_that("supplied profiles in states the resample has are predicted from those
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   profiles <- start_profiles(case, without_state = 2)
   for (order in 1:2) {
-    p2 <- if (order == 2L) "ypprev" else NULL
     model <- fit_case(case$data, "vglm", order)
-    est <- avg_sops(model, newdata = profiles, times = 1:2, absorb = 4, p2_var = p2)
+    est <- avg_sops(model, newdata = profiles, times = 1:2, absorb = 4)
     expect_no_warning(
       boot <- inferences(est, method = "bootstrap", n_draws = 2, seed = 1,
         return_draws = TRUE)
     )
     expect_identical(attr(boot, "n_successful"), 2L, info = paste("order", order))
-    expected <- hand_sops(hand_refit(case, "vglm", order), profiles, 1:2, p2)
+    expected <- hand_sops(hand_refit(case, "vglm", order), profiles, 1:2)
     draw <- first_draw(boot)
     draw <- draw[order(draw$state, draw$time), ]
     expect_equal(draw$estimate, expected$estimate, tolerance = 1e-6, info = paste("order", order))
@@ -240,7 +239,7 @@ test_that("the bootstrap refuses `variables` that set the state two visits back"
   levels <- levels(case$data$ypprev)
   for (values in list(c(1, 3), c(1, 2))) {
     est <- avg_sops(model, variables = list(ypprev = factor(values, levels = levels)),
-      times = 1, absorb = 4, p2_var = "ypprev")
+      times = 1, absorb = 4)
     for (method in c("bootstrap", "fwb")) {
       expect_error(
         inferences(est, method = method, n_draws = 2, seed = 1),

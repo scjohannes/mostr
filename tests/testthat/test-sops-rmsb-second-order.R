@@ -1,4 +1,9 @@
-make_fake_blrm <- function(draws = NULL, gamma_draws = NULL, pppo = 0L) {
+make_fake_blrm <- function(
+  draws = NULL,
+  gamma_draws = NULL,
+  pppo = 0L,
+  p2_var = NULL
+) {
   if (is.null(draws)) {
     draws <- rbind(
       c(0.50, -0.50, 0.25),
@@ -11,7 +16,8 @@ make_fake_blrm <- function(draws = NULL, gamma_draws = NULL, pppo = 0L) {
   fake_blrm(
     draws,
     tau = if (pppo > 0) "tau_tx" else character(),
-    gamma_draws = gamma_draws
+    gamma_draws = gamma_draws,
+    p2_var = p2_var
   )
 }
 
@@ -29,7 +35,11 @@ test_that("Markov workflows reject raw blrm fits", {
 })
 
 test_that("soprob_markov handles second-order recursion and absorbing states", {
-  model <- structure(list(), class = "vglm")
+  model <- with_fit_settings(
+    structure(list(), class = "vglm"),
+    p2_var = "ypprev",
+    y_levels = 1:3
+  )
 
   transition <- function(h, j) {
     if (j == 3) {
@@ -75,9 +85,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
         model = model,
         newdata = data,
         times = 1:2,
-        y_levels = 1:3,
-        absorb = 3,
-        p2_var = "ypprev"
+        absorb = 3
       )
       withr::local_options(
         mostr.second_order_working_bytes = 256 * 1024^2
@@ -86,9 +94,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
         model = model,
         newdata = data,
         times = 1:2,
-        y_levels = 1:3,
-        absorb = 3,
-        p2_var = "ypprev"
+        absorb = 3
       )
 
       # A patient cannot start in an absorbing state.
@@ -100,9 +106,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
           model = model,
           newdata = absorb_data,
           times = 1:2,
-          y_levels = 1:3,
-          absorb = 3,
-          p2_var = "ypprev"
+          absorb = 3
         ),
         "`yprev` is the absorbing state 3 for 1 of the 1 prediction rows",
         fixed = TRUE
@@ -120,7 +124,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
 })
 
 test_that("soprob_markov handles single first-order time points", {
-  model <- structure(list(), class = "vglm")
+  model <- with_fit_settings(structure(list(), class = "vglm"), y_levels = 1:3)
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
@@ -143,7 +147,6 @@ test_that("soprob_markov handles single first-order time points", {
           yprev = factor(1, levels = 1:3)
         ),
         times = 1,
-        y_levels = 1:3,
         absorb = 3
       )
     }
@@ -158,7 +161,7 @@ test_that("soprob_markov handles single first-order time points", {
 })
 
 test_that("soprob_markov carries absorbing labels that are not column positions", {
-  model <- structure(list(), class = "vglm")
+  model <- with_fit_settings(structure(list(), class = "vglm"), y_levels = 0:2)
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
@@ -190,7 +193,6 @@ test_that("soprob_markov carries absorbing labels that are not column positions"
           yprev = factor(0, levels = 0:2)
         ),
         times = 1:2,
-        y_levels = 0:2,
         absorb = 2
       )
     }
@@ -470,6 +472,7 @@ test_that("avg_sops() streams and summarizes blrm posterior draws", {
   model$clusterInfo <- list(name = "subject", cluster = c("a", "b"))
   # As for `mostm(..., id_var = "subject")` with `cluster(subject)`
   attr(model, "markov_id_var") <- "subject"
+  model <- with_fit_settings(model, id_var = "subject")
   newdata <- data.frame(
     subject = c("a", "b"),
     tx = c(0, 1),
@@ -560,7 +563,7 @@ test_that("observed blrm averages reduce individual posterior draws", {
 })
 
 test_that("second-order blrm posterior results are invariant to outer draw chunks", {
-  model <- make_fake_blrm()
+  model <- make_fake_blrm(p2_var = "ypprev")
   newdata <- data.frame(
     id = "a",
     tx = 1,
@@ -579,7 +582,6 @@ test_that("second-order blrm posterior results are invariant to outer draw chunk
         model,
         newdata = newdata,
         times = 1:3,
-        p2_var = "ypprev",
         n_draws = 3,
         return_draws = TRUE
       )

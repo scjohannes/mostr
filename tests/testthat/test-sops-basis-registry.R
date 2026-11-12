@@ -162,17 +162,13 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
     list(label = "vglm", fit = vglm_fit, plan_model = vglm_fit$vglm_fit),
     list(label = "orm", fit = orm_fit, plan_model = orm_fit)
   )
-  args <- list(newdata = baseline, times = 1:8, y_levels = 1:6, absorb = 6)
+  args <- list(newdata = baseline, times = 1:8, absorb = 6)
 
   for (case in cases) {
     internal_args <- list(
       newdata = baseline,
       times = 1:8,
-      settings = mostr:::resolve_markov_settings(
-        case$fit,
-        y_levels = 1:6,
-        absorb = 6
-      )
+      settings = mostr:::resolve_markov_settings(case$fit, absorb = 6)
     )
     reference <- do.call(
       mostr:::soprob_markov_r_engine,

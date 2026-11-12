@@ -497,9 +497,9 @@ prediction_refusals <- list(
     "Model prediction requires transitions from state level(s) not represented"
   ),
   refusal(
-    "P10", "`y_levels` with the wrong number of states",
-    function() refusal_call(sops, y_levels = 1:3),
-    "`y_levels` defines"
+    "P10", "a model-based plot given `y_levels` with the wrong number of states",
+    function() refusal_call(plot_transitions, y_levels = 1:3),
+    "`y_levels` must be the fitted model's states in fitted order"
   ),
   refusal(
     "P11", "`time_covariates` without one row per visit",
@@ -758,14 +758,19 @@ prediction_refusals <- list(
     "is no longer supported; use `baseline_time` instead."
   ),
   refusal(
-    "P49", "a `time_var` other than the one given to `mostm()`",
-    function() refusal_call(sops, time_var = "gap"),
+    "P49", "a model-based plot given a `time_var` other than the one given to `mostm()`",
+    function() refusal_call(plot_transitions, time_var = "gap"),
     "`time_var = \"gap\"` does not match the fitted model"
   ),
   refusal(
-    "P53", "`p2_var` for a model fitted as first order",
-    function() refusal_call(sops, p2_var = "ypprev"),
+    "P53", "a model-based plot given `p2_var` for a model fitted as first order",
+    function() refusal_call(plot_transitions, p2_var = "ypprev"),
     "The model was fitted as a first-order model"
+  ),
+  refusal(
+    "P56", "a column name that the fit records, given to a prediction function",
+    function() refusal_call(sops, p2_var = "ypprev"),
+    "`p2_var` is not an argument of this function"
   ),
   refusal(
     "P54", "a linear-predictor plot faceted by an absorbing previous state",

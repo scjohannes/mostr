@@ -650,10 +650,9 @@ test_that("inferences_simulation() rejects reserved score weight columns", {
 test_that("soprob_markov() validates model classes and propagates Bayesian draws", {
   expect_error(
     soprob_markov(
-      model = structure(list(), class = "other"),
+      model = with_fit_settings(structure(list(), class = "other"), y_levels = 1),
       newdata = data.frame(yprev = 1),
-      times = 1,
-      y_levels = 1
+      times = 1
     ),
     "Object class not supported",
     fixed = TRUE
@@ -664,20 +663,24 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
     {
       expect_error(
         soprob_markov(
-          model = structure(list(vglm_fit = NULL), class = "robcov_vglm"),
+          model = with_fit_settings(
+            structure(list(vglm_fit = NULL), class = "robcov_vglm"),
+            y_levels = 1:2
+          ),
           newdata = data.frame(yprev = 1),
-          times = 1,
-          y_levels = 1:2
+          times = 1
         ),
         "does not contain the original vglm fit",
         fixed = TRUE
       )
       expect_error(
         soprob_markov(
-          model = structure(list(), class = "vglm"),
+          model = with_fit_settings(
+            structure(list(), class = "vglm"),
+            y_levels = 1:2
+          ),
           newdata = data.frame(x = 1),
-          times = 1,
-          y_levels = 1:2
+          times = 1
         ),
         "Previous-state variable",
         fixed = TRUE
@@ -701,7 +704,6 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
           z = 0
         ),
         times = 1:2,
-        y_levels = 1:2,
         absorb = 2,
         gap_var = "gap_var",
         time_covariates = data.frame(z = c(1, 2))

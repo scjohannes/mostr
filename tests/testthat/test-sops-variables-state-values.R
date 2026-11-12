@@ -59,15 +59,13 @@ test_that("the state two visits back is matched by label too", {
     case$model,
     variables = list(ypprev = factor(c("1", "2"), levels = levels)),
     times = 1:3,
-    absorb = 3,
-    p2_var = "ypprev"
+    absorb = 3
   )
   by_number <- avg_sops(
     case$model,
     variables = list(ypprev = 1:2),
     times = 1:3,
-    absorb = 3,
-    p2_var = "ypprev"
+    absorb = 3
   )
   expect_equal(by_number$estimate, by_factor$estimate, tolerance = 1e-12)
 })

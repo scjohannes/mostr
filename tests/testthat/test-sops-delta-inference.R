@@ -149,11 +149,7 @@ replay_public_sops <- function(object, model) {
     model = model,
     newdata = attr(object, "newdata_pred"),
     times = args$times,
-    y_levels = settings$y_levels,
     absorb = settings$absorb,
-    time_var = settings$time_var,
-    p_var = settings$p_var,
-    p2_var = settings$p2_var,
     gap_var = settings$gap_var,
     time_covariates = settings$time_covariates
   )
@@ -293,7 +289,6 @@ test_that("delta replay rejects stale estimates even when cell keys align", {
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
     times = 1,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   point$estimate[1] <- point$estimate[1] + 1e-8
@@ -318,7 +313,6 @@ test_that("public delta workflow returns bounded SOP and Wald comparison interva
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
     times = 1:3,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   inferred <- inferences(
@@ -371,7 +365,6 @@ test_that("public delta workflow returns bounded SOP and Wald comparison interva
     estimand = "sop",
     state_sets = list(low = c(1, 2)),
     times = 1:3,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   comparison <- inferences(
@@ -429,7 +422,6 @@ test_that("public fixed VGLM Jacobians match coefficient replay", {
     case$model,
     newdata = case$baseline[1:4, , drop = FALSE],
     times = 1:3,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
 
@@ -472,7 +464,6 @@ test_that("public fixed ORM Jacobians match coefficient replay", {
     case$model,
     newdata = case$baseline[1:3, , drop = FALSE],
     times = 1:3,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   inferred <- inferences(
@@ -495,7 +486,6 @@ test_that("public empirical ORM averages use complete named covariance", {
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
     times = 1:3,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   inferred <- inferences(
@@ -523,7 +513,6 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
     case$model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   inferred <- inferences(avg, method = "delta", vcov = "unconditional")
@@ -635,14 +624,12 @@ test_that("backend HC settings affect empirical but not unconditional inference"
     hc0,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   point_hc1 <- avg_sops(
     hc1,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   empirical_hc0 <- inferences(point_hc0, method = "delta", vcov = "conditional")
@@ -687,7 +674,6 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
     case$model,
     newdata = case$baseline[1:3, , drop = FALSE],
     times = 1:2,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
 
@@ -718,7 +704,6 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
     unconditional_case$model,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = unconditional_case$y_levels,
     absorb = max(unconditional_case$y_levels)
   )
   expect_snapshot(
@@ -738,7 +723,6 @@ test_that("delta vcov choices preserve calculations and select class defaults", 
     model = case$model,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = case$y_levels,
     absorb = max(case$y_levels)
   )
   objects <- list(

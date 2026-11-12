@@ -105,6 +105,7 @@
 #' `mostr.max_sops_draw_cells` (50 million by default, about 400 MB).
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [avg_comparisons()] for averaged comparisons, [sops()] for each
 #'   profile's state occupancy probabilities.
@@ -153,16 +154,11 @@ comparisons <- function(
   comparison = c("difference", "ratio"),
   by = FALSE,
   times,
-  y_levels = NULL,
   absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -173,6 +169,7 @@ comparisons <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_removed_fit_arguments(...)
   stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
   stop_legacy_baseline_args(extra_args)
@@ -185,11 +182,6 @@ comparisons <- function(
   validate_markov_model(model)
   settings <- resolve_markov_settings(
     model,
-    id_var = id_var,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates
@@ -213,16 +205,11 @@ comparisons <- function(
       comparison = comparison,
       by = by$by %||% TRUE,
       times = times,
-      y_levels = y_levels,
       absorb = absorb,
       time_map = time_map,
       baseline_time = baseline_time,
       target_times = target_times,
       time_unit = time_unit,
-      id_var = id_var,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
       gap_var = gap_var,
       time_covariates = time_covariates,
       include_re = include_re,

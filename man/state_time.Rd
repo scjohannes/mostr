@@ -11,16 +11,11 @@ state_time(
   state_sets = NULL,
   by = FALSE,
   times,
-  y_levels = NULL,
   absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -67,18 +62,13 @@ every visit and select the period with \code{time_map} and \code{target_times}.
 Numeric time variables use numeric values; factor-valued visit indices use
 fitted visit levels.}
 
-\item{y_levels}{The states in fitted order. \code{NULL} (the default) uses the
-states of the fitted model. A supplied vector must hold the same states in
-the same order, otherwise it is an error; its type (for example numbers
-or text) sets the type of the result's \code{state} column.}
-
 \item{absorb}{The absorbing states, such as death: states that a patient
 can't leave. Every profile must start outside them: a profile whose
-previous state (the \code{p_var} column) is absorbing, or, for a second-order
-model, whose state two visits back (the \code{p2_var} column) is, gives an
-error. Such a patient can't move to another state, and the model has no
-transitions out of an absorbing state to predict from, so remove those
-patients from \code{newdata} first.}
+previous state (the \code{p_var} column of \code{\link[=mostm]{mostm()}}) is absorbing, or, for a
+second-order model, whose state two visits back (the \code{p2_var} column) is,
+gives an error. Such a patient can't move to another state, and the model
+has no transitions out of an absorbing state to predict from, so remove
+those patients from \code{newdata} first.}
 
 \item{time_map}{Optional named numeric vector or data frame giving the
 elapsed time of each visit label, for example
@@ -102,26 +92,6 @@ example, \code{target_times = 7:28} to total only days 7 to 28.}
 
 \item{time_unit}{Optional label stored in output.}
 
-\item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
-\code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error. Bootstrap
-inference resamples patients by this column in the data stored on the
-fitted model. For user-supplied \code{newdata}, the column is needed only for
-\code{blrm} random-effect prediction (\code{include_re = TRUE}).}
-
-\item{time_var}{Name of the time column. \code{NULL} (the default) uses the
-\code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error. Each
-transition sets this column of the prediction rows to its visit.}
-
-\item{p_var}{Name of the previous-state column. \code{NULL} (the default) uses
-the \code{p_var} given to \code{\link[=mostm]{mostm()}}, \code{"yprev"} unless set there; a different
-name is an error.}
-
-\item{p2_var}{Name of the column with the state two visits back. \code{NULL}
-(the default) uses the \code{p2_var} given to \code{\link[=mostm]{mostm()}}: a model fitted with
-\code{p2_var} uses a second-order recursion, and one fitted without it a
-first-order recursion. A different name is an error, so to predict a
-second-order model, give \code{p2_var} to \code{\link[=mostm]{mostm()}}.}
-
 \item{gap_var}{Optional name of the variable holding the time elapsed since
 the previous visit, if the model includes one. Each transition then uses
 the difference between consecutive values of \code{times} (the first value for
@@ -134,7 +104,9 @@ explicit precomputed time-basis columns. Registered inline terms such as
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
 fitted random-effect draws in posterior predictions for known IDs. Only
-\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.
+\code{newdata} must then contain the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}),
+so that each row gets its patient's estimated random effect.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -149,7 +121,9 @@ fitted random-effect draws in posterior predictions for known IDs. Only
 \item{return_draws}{Logical. For \code{blrm}, store the posterior draws of each
 total for extraction with \code{\link[=get_draws]{get_draws()}}.}
 
-\item{...}{Additional arguments reserved for future extensions.}
+\item{...}{Additional arguments reserved for future extensions. The column
+names and states recorded by \code{\link[=mostm]{mostm()}} can't be given here; see the
+section "Settings taken from the fit".}
 }
 \value{
 A data frame of class \code{markov_state_time} with one row per state
@@ -234,6 +208,17 @@ omitted, does not begin at the first follow-up visit. Times after the last
 fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
 because each transition then uses its own elapsed time, so the visits may be
 spaced unevenly.
+}
+
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, and the states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var} and \code{p2_var} given to
+\code{\link[=mostm]{mostm()}}, and the states of the response in fitted order. A model fitted
+with \code{p2_var} is therefore always predicted with the second-order recursion.
+The \code{state} column of the result holds the fitted state labels. To predict
+with other columns, refit the model with \code{\link[=mostm]{mostm()}}.
 }
 
 \examples{

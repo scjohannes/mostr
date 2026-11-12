@@ -76,7 +76,6 @@ delta_factor_time_point <- function(model, case) {
     state_sets = list(lower = c("1", "2")),
     comparison = "difference",
     times = case$visits,
-    y_levels = case$y_levels,
     time_map = case$time_map,
     baseline_time = 0,
     target_times = case$target_times,
@@ -129,8 +128,7 @@ test_that("joint average SOP Jacobians retain cross-arm covariance", {
   avg <- avg_sops(
     case$fit,
     variables = variables,
-    times = times,
-    y_levels = case$y_levels
+    times = times
   )
   avg <- inferences(
     avg,
@@ -144,8 +142,7 @@ test_that("joint average SOP Jacobians retain cross-arm covariance", {
     estimand = "sop",
     state_sets = state_sets,
     comparison = "difference",
-    times = times,
-    y_levels = case$y_levels
+    times = times
   )
   comparison <- inferences(
     comparison,
@@ -225,8 +222,7 @@ test_that("factor-time ORM differences match public finite differences", {
   avg <- avg_sops(
     case$fit,
     variables = list(tx = c(0, 1)),
-    times = case$visits,
-    y_levels = case$y_levels
+    times = case$visits
   )
   operator <- delta_comparison_operator(
     point,
@@ -430,8 +426,7 @@ test_that("unconditional comparisons retain transformed stacked influence", {
     estimand = "sop",
     state_sets = list(lower = c("1", "2")),
     comparison = "difference",
-    times = case$visits[1:3],
-    y_levels = case$y_levels
+    times = case$visits[1:3]
   )
   inferred <- inferences(
     point,
@@ -475,8 +470,7 @@ test_that("analytical comparison scope rejects deferred estimands", {
     estimand = "sop",
     state_sets = "1",
     comparison = "difference",
-    times = case$visits[1:2],
-    y_levels = case$y_levels
+    times = case$visits[1:2]
   )
 
   ratio <- base
@@ -529,8 +523,7 @@ test_that("analytical comparisons reject partial proportional odds", {
     estimand = "sop",
     state_sets = "1",
     comparison = "difference",
-    times = case$visits[1:2],
-    y_levels = case$y_levels
+    times = case$visits[1:2]
   )
   expect_snapshot(
     inferences(

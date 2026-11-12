@@ -149,6 +149,8 @@ test_that("model diagnostics expand sparse factor visit grids", {
 
 test_that("transition traces preserve first- and second-order SOP marginals", {
   model <- structure(list(), class = "vglm", markov_id_var = "id")
+  model_first <- with_fit_settings(model, y_levels = 1:2)
+  model_second <- with_fit_settings(model, p2_var = "ypprev", y_levels = 1:2)
   first_order <- data.frame(
     id = 1:2,
     time = 0,
@@ -175,10 +177,9 @@ test_that("transition traces preserve first- and second-order SOP marginals", {
         settings = markov_settings(id_var = "id", y_levels = 1:2)
       )
       sops_first <- soprob_markov(
-        model,
+        model_first,
         newdata = first_order,
-        times = 1:3,
-        y_levels = 1:2
+        times = 1:3
       )
       trace_second <- mostr:::markov_transition_trace(
         model,
@@ -191,11 +192,9 @@ test_that("transition traces preserve first- and second-order SOP marginals", {
         )
       )
       sops_second <- soprob_markov(
-        model,
+        model_second,
         newdata = second_order,
-        times = 1:3,
-        y_levels = 1:2,
-        p2_var = "ypprev"
+        times = 1:3
       )
     }
   )
@@ -304,13 +303,7 @@ test_that("model-based plots take settings from the fit and refuse others", {
         "does not match the fitted model"
       )
       expect_error(
-        plot_lp_difference(
-          model,
-          profile = newdata[1, ],
-          variables = list(tx = c(0, 1)),
-          times = 1:3,
-          y_levels = 2:1
-        ),
+        plot_correlation(model, newdata = newdata, times = 1:3, y_levels = 2:1),
         "fitted order"
       )
     }
@@ -748,7 +741,10 @@ test_that("plot_correlation and plot_variogram pass n_draws to blrm diagnostics"
 })
 
 test_that("plot_lp_difference plots profile-based contrasts by previous state", {
-  model <- structure(list(), class = "vglm", markov_id_var = "id")
+  model <- with_fit_settings(
+    structure(list(), class = "vglm", markov_id_var = "id"),
+    y_levels = 1:2
+  )
   profile <- data.frame(
     tx = 0,
     age = 59,
@@ -769,8 +765,7 @@ test_that("plot_lp_difference plots profile-based contrasts by previous state", 
         profile = profile,
         variables = list(tx = c(0, 1)),
         times = 1:2,
-        previous_states = 1:2,
-        y_levels = 1:2
+        previous_states = 1:2
       )
     }
   )
@@ -784,11 +779,11 @@ test_that("plot_lp_difference plots profile-based contrasts by previous state", 
 })
 
 test_that("plot_lp_difference supports blrm posterior median linear predictors", {
-  model <- structure(
+  model <- with_fit_settings(structure(
     list(ylevels = 1:3),
     class = "blrm",
     markov_id_var = "id"
-  )
+  ))
   profile <- data.frame(
     tx = 0,
     yprev = factor(1, levels = 1:3)
@@ -808,8 +803,7 @@ test_that("plot_lp_difference supports blrm posterior median linear predictors",
         profile = profile,
         variables = list(tx = c(0, 1)),
         times = 1:2,
-        previous_states = 1:2,
-        y_levels = 1:3
+        previous_states = 1:2
       )
     }
   )

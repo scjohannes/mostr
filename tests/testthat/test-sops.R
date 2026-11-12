@@ -30,7 +30,6 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
     model,
     newdata = data[1, ],
     times = seq_len(follow_up),
-    y_levels = factor(1:6),
     absorb = "6"
   )
 
@@ -127,7 +126,6 @@ test_that("soprob_markov follows custom partial proportional-odds constraints an
         model,
         newdata = profile,
         times = seq_len(follow_up),
-        y_levels = factor(1:6),
         absorb = "6",
         time_covariates = time_covariates
       )
@@ -176,7 +174,6 @@ test_that("soprob_markov normalizes transitions when no state is absorbing", {
     model,
     newdata = baseline,
     times = seq_len(follow_up),
-    y_levels = factor(1:6),
     absorb = NULL
   )
 
@@ -215,9 +212,7 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
     robust_model,
     newdata = baseline_tx1,
     times = seq_len(follow_up),
-    y_levels = 1:6,
     absorb = "6",
-    id_var = "id",
     time_covariates = time_covariates
   )
   manual_tx1 <- aggregate(
@@ -233,9 +228,7 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
     robust_model,
     newdata = baseline_tx0,
     times = seq_len(follow_up),
-    y_levels = 1:6,
     absorb = "6",
-    id_var = "id",
     time_covariates = time_covariates
   )
   manual_tx0 <- aggregate(
@@ -253,9 +246,7 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
     newdata = baseline,
     variables = "tx",
     times = seq_len(follow_up),
-    y_levels = 1:6,
     absorb = "6",
-    id_var = "id",
     time_covariates = time_covariates
   )
   automated <- as.data.frame(automated)

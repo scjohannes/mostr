@@ -17,9 +17,7 @@ test_that("score-bootstrap simulation adds CIs, metadata and draws for avg_sops"
     model = case$model,
     variables = list(tx = c(0, 1)),
     times = case$times,
-    y_levels = case$y_levels,
-    absorb = case$absorb,
-    id_var = "id"
+    absorb = case$absorb
   ) |>
     mostr:::inferences_score_bootstrap(
       n_draws = 40,
@@ -55,9 +53,7 @@ test_that("score-bootstrap treats supplied newdata as fixed profiles", {
     newdata = profiles,
     variables = list(tx = c(0, 1)),
     times = case$times[1:2],
-    y_levels = case$y_levels,
-    absorb = case$absorb,
-    id_var = "id"
+    absorb = case$absorb
   )
 
   withr::local_seed(2010)

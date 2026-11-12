@@ -1,5 +1,37 @@
 # Hand-made stand-ins for fitted models, shared by the test files.
 
+# Records settings on a hand-made fit as `mostm()` records them on a real one
+# (`markov_settings()` with every field fixed by the fit). The prediction
+# functions take the patient ID, time and previous-state columns, the order
+# and the states from the fit, so a hand-made fit that tests other columns, a
+# second-order recursion or particular state labels records them here.
+# `y_levels` defaults to the states the object itself records.
+with_fit_settings <- function(
+  model,
+  id_var = markov_model_id_var(model),
+  time_var = "time",
+  p_var = "yprev",
+  p2_var = NULL,
+  y_levels = markov_model_ylevels_or_null(model),
+  engine = markov_model_engine(model)
+) {
+  settings <- markov_settings(
+    engine = engine,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    first_followup_time =
+      markov_model_starting_profile_metadata(model)$first_followup_time,
+    from_fit = setdiff(
+      markov_settings_fit_fields(),
+      if (is.null(y_levels)) "y_levels"
+    )
+  )
+  markov_set_settings(model, settings)
+}
+
 # A blrm fit as `mostm(engine = "blrm")` makes it. Sampling from Stan is too slow
 # for the default run, so the posterior draws are real numbers given here, and
 # tests mock only the design matrix (see `fake_blrm_design()`).
@@ -15,13 +47,16 @@
 # `gamma_draws`: random-effect draws, so that no Stan fit is needed to read
 #   them.
 # `class`: the class of the fit; c("blrm", "orm") as for rmsb fits.
+# `p2_var`: the column with the state two visits back for a second-order fit,
+#   recorded as `mostm(p2_var = )` records it.
 fake_blrm <- function(
   draws,
   tau = character(),
   cppo = NULL,
   cluster = TRUE,
   gamma_draws = NULL,
-  class = c("blrm", "orm")
+  class = c("blrm", "orm"),
+  p2_var = NULL
 ) {
   non_slopes <- sum(startsWith(colnames(draws), "y>="))
   fit <- list(
@@ -35,12 +70,13 @@ fake_blrm <- function(
     clusterInfo = if (cluster) list(name = "id", cluster = c("a", "b")),
     gamma_draws = gamma_draws
   )
-  structure(
+  fit <- structure(
     Filter(Negate(is.null), fit),
     class = class,
     markov_engine = "blrm",
     markov_id_var = "id"
   )
+  with_fit_settings(fit, p2_var = p2_var)
 }
 
 # A stand-in for `blrm_design_matrix()`: the design matrix is the `columns` of

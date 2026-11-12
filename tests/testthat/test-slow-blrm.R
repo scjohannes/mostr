@@ -54,9 +54,6 @@ slow_blrm_check <- function(fit, second_order, label) {
     return_draws = TRUE,
     posterior_summary = "mean"
   )
-  if (second_order) {
-    args$p2_var <- "ypprev"
-  }
   result <- do.call(sops, args)
   draws <- attr(result, "draws")
   predictor <- slow_blrm_predictor(fit)
@@ -106,7 +103,7 @@ test_that("real blrm fits match the readable loop draw by draw", {
     "first order, partial odds"
   )
   slow_blrm_check(
-    slow_blrm_fit(y ~ time + tx + age + yprev + ypprev),
+    slow_blrm_fit(y ~ time + tx + age + yprev + ypprev, p2_var = "ypprev"),
     second_order = TRUE,
     "second order"
   )

@@ -484,9 +484,7 @@ describe("avg_sops() and inferences() pipeline", {
       newdata = case$baseline,
       variables = "tx",
       times = 1:8,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
       time_covariates = case$time_covariates
     )
     expect_equal(nrow(attr(avg, "newdata_orig")), nrow(case$baseline))
@@ -529,10 +527,7 @@ describe("avg_sops() and inferences() pipeline", {
       model = model,
       variables = "tx",
       times = 1:7,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      p_var = "yprev",
-      id_var = "id"
+      absorb = case$absorb
     )
 
     cases <- list(
@@ -584,11 +579,8 @@ describe("avg_sops() and inferences() pipeline", {
       model = model,
       variables = "tx",
       times = 1:8,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
-      time_covariates = case$time_covariates,
-      id_var = "id"
+      time_covariates = case$time_covariates
     )
     expect_equal(nrow(attr(avg, "newdata_orig")), nrow(case$baseline))
     expect_equal(nrow(attr(avg, "refit_data")), nrow(case$data))
@@ -633,11 +625,8 @@ describe("avg_sops() and inferences() pipeline", {
       model = model,
       variables = "tx",
       times = 1:8,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
-      time_covariates = case$time_covariates,
-      id_var = "id"
+      time_covariates = case$time_covariates
     )
 
     withr::local_seed(4404)
@@ -672,11 +661,8 @@ describe("avg_sops() and inferences() pipeline", {
       model = model,
       variables = "tx",
       times = 1:8,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
-      time_covariates = case$time_covariates,
-      id_var = "id"
+      time_covariates = case$time_covariates
     )
     expect_equal(nrow(attr(avg, "newdata_orig")), nrow(case$baseline))
     expect_equal(nrow(attr(avg, "refit_data")), nrow(case$data))
@@ -793,20 +779,14 @@ describe("avg_sops() and inferences() pipeline", {
       model = pipeline_mostm_fit(),
       variables = "tx",
       times = 1:8,
-      y_levels = case$y_levels,
       absorb = case$absorb,
-      p_var = "yprev",
-      time_covariates = case$time_covariates,
-      id_var = "id"
+      time_covariates = case$time_covariates
     )
     inline_avg <- mostr::avg_sops(
       model = fit_inline_pipeline_mostm_model(case$data),
       variables = "tx",
       times = 1:8,
-      y_levels = case$y_levels,
-      absorb = case$absorb,
-      p_var = "yprev",
-      id_var = "id"
+      absorb = case$absorb
     )
 
     expect_equal(inline_avg$estimate, explicit_avg$estimate, tolerance = 1e-10)
@@ -1018,21 +998,15 @@ describe("avg_sops() and inferences() pipeline", {
       newdata = baseline,
       variables = "tx",
       times = 1:12,
-      y_levels = y_levels,
       absorb = "6",
-      p_var = "yprev",
-      time_covariates = time_covariates,
-      id_var = "id"
+      time_covariates = time_covariates
     )
     inline_sops <- mostr::avg_sops(
       inline_fit,
       newdata = baseline,
       variables = "tx",
       times = 1:12,
-      y_levels = y_levels,
-      absorb = "6",
-      p_var = "yprev",
-      id_var = "id"
+      absorb = "6"
     )
 
     order_sops <- function(x) {
@@ -1062,11 +1036,8 @@ describe("avg_sops() and inferences() pipeline", {
       newdata = baseline,
       variables = "tx",
       times = 1:12,
-      y_levels = y_levels,
       absorb = "6",
-      p_var = "yprev",
-      time_covariates = time_covariates,
-      id_var = "id"
+      time_covariates = time_covariates
     ) |>
       mostr::inferences(method = "mvn", n_draws = 3, workers = 1, seed = 42)
     inline_inferred <- mostr::avg_sops(
@@ -1074,10 +1045,7 @@ describe("avg_sops() and inferences() pipeline", {
       newdata = baseline,
       variables = "tx",
       times = 1:12,
-      y_levels = y_levels,
-      absorb = "6",
-      p_var = "yprev",
-      id_var = "id"
+      absorb = "6"
     ) |>
       mostr::inferences(method = "mvn", n_draws = 3, workers = 1, seed = 42)
 

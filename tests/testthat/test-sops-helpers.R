@@ -16,7 +16,10 @@ test_that("baseline selection keeps factor id order, earliest visits and ties", 
 })
 
 test_that("sops() validates inputs and supports stratified aggregation", {
-  model <- structure(list(), class = "mock_model", markov_id_var = "id")
+  model <- with_fit_settings(
+    structure(list(), class = "mock_model", markov_id_var = "id"),
+    y_levels = 1:2
+  )
   newdata <- data.frame(
     id = 1:3,
     time = c(1, 2, 1),
@@ -50,7 +53,7 @@ test_that("sops() validates inputs and supports stratified aggregation", {
     },
     {
       expect_error(
-        sops(model, newdata = newdata, times = 1:2, y_levels = 1:2, by = 1),
+        sops(model, newdata = newdata, times = 1:2, by = 1),
         "`by` must be `FALSE`, `TRUE`, or a character vector of column names.",
         fixed = TRUE
       )
@@ -59,7 +62,6 @@ test_that("sops() validates inputs and supports stratified aggregation", {
           model,
           newdata = newdata,
           times = 1:2,
-          y_levels = 1:2,
           by = "missing"
         ),
         "Grouping variables missing: missing",
@@ -71,7 +73,6 @@ test_that("sops() validates inputs and supports stratified aggregation", {
         model,
         newdata = newdata,
         times = 1:2,
-        y_levels = 1:2,
         by = "tx"
       )
     }
@@ -136,21 +137,21 @@ test_that("sops() infers y_levels from supported model containers", {
       vglm_model@extra <- list(colnames.y = NULL)
       expect_error(
         sops(vglm_model, newdata = newdata, times = 1),
-        "`y_levels` cannot be NULL",
+        "does not record its states",
         fixed = TRUE
       )
 
       robust_model$extra <- list(colnames.y = NULL)
       expect_error(
         sops(robust_model, newdata = newdata, times = 1),
-        "`y_levels` cannot be NULL",
+        "does not record its states",
         fixed = TRUE
       )
 
       orm_model$yunique <- NULL
       expect_error(
         sops(orm_model, newdata = newdata, times = 1),
-        "`y_levels` cannot be NULL",
+        "does not record its states",
         fixed = TRUE
       )
 
@@ -160,7 +161,7 @@ test_that("sops() infers y_levels from supported model containers", {
           newdata = newdata,
           times = 1
         ),
-        "`y_levels` cannot be NULL",
+        "does not record its states",
         fixed = TRUE
       )
     }
@@ -168,7 +169,13 @@ test_that("sops() infers y_levels from supported model containers", {
 })
 
 test_that("avg_sops() validates inputs and preserves grouping metadata", {
-  model <- structure(list(), class = "mock_model", markov_id_var = "id")
+  model <- with_fit_settings(
+    structure(list(), class = "mock_model", markov_id_var = "id"),
+    time_var = "visit",
+    p_var = "prev",
+    p2_var = "preprev",
+    y_levels = c(1, 2)
+  )
   newdata <- data.frame(
     id = c(1, 2),
     tx = c(0, 1),
@@ -235,11 +242,7 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
         variables = "tx",
         by = "subgroup",
         times = 1:2,
-        y_levels = c(1, 2),
         absorb = 2,
-        time_var = "visit",
-        p_var = "prev",
-        p2_var = "preprev",
         gap_var = "gap",
         time_covariates = time_covariates
       )
@@ -373,10 +376,7 @@ test_that("get_draws() preserves covariates for individual SOP draws", {
     model = m_vglm_rob,
     newdata = dplyr::filter(data, time == 1),
     times = 1:5,
-    y_levels = 1:6,
-    absorb = 6,
-    time_var = "time",
-    p_var = "yprev"
+    absorb = 6
   )
 
   result_ci <- inferences(

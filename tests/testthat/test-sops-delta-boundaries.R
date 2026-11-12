@@ -94,7 +94,6 @@ test_that("absorption during prediction does not certify numerical saturation", 
     model,
     newdata = baseline,
     times = 1:3,
-    y_levels = states,
     absorb = max(states)
   )
   expect_gt(min(individual$estimate), 0)
@@ -120,7 +119,6 @@ test_that("absorption during prediction does not certify numerical saturation", 
       saturated_model,
       newdata = baseline,
       times = 1:3,
-      y_levels = states,
       absorb = max(states)
     ),
     avg_sops(
@@ -128,7 +126,6 @@ test_that("absorption during prediction does not certify numerical saturation", 
       newdata = baseline,
       times = 1:3,
       variables = list(tx = c(0, 1)),
-      y_levels = states,
       absorb = max(states)
     )
   )

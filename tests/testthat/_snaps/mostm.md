@@ -44,7 +44,7 @@
 # fits without mostm() provenance must be refitted
 
     Code
-      sops(old, times = 1:2, y_levels = 1:6, absorb = 6)
+      sops(old, times = 1:2, absorb = 6)
     Condition
       Error in `sops()`:
       ! Model-based Markov workflows require fits created by `mostm()`. Refit this model with `mostm(engine = "orm")`.

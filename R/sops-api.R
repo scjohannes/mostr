@@ -28,17 +28,13 @@
 #'   30. Each value is one transition, so leaving out visits does not skip
 #'   time; see the section "Choosing visits". Numeric time variables use
 #'   numeric values; factor-valued visit indices use fitted visit levels.
-#' @param y_levels The states in fitted order. `NULL` (the default) uses the
-#'   states of the fitted model. A supplied vector must hold the same states in
-#'   the same order, otherwise it is an error; its type (for example numbers
-#'   or text) sets the type of the result's `state` column.
 #' @param absorb The absorbing states, such as death: states that a patient
 #'   can't leave. Every profile must start outside them: a profile whose
-#'   previous state (the `p_var` column) is absorbing, or, for a second-order
-#'   model, whose state two visits back (the `p2_var` column) is, gives an
-#'   error. Such a patient can't move to another state, and the model has no
-#'   transitions out of an absorbing state to predict from, so remove those
-#'   patients from `newdata` first.
+#'   previous state (the `p_var` column of [mostm()]) is absorbing, or, for a
+#'   second-order model, whose state two visits back (the `p2_var` column) is,
+#'   gives an error. Such a patient can't move to another state, and the model
+#'   has no transitions out of an absorbing state to predict from, so remove
+#'   those patients from `newdata` first.
 #' @param variables Optional covariates to set before predicting: a named list
 #'   of values, such as `list(tx = c(0, 1))`, or bare names, such as `"tx"`.
 #'   Each profile is then predicted once for every combination of the values,
@@ -52,24 +48,6 @@
 #'   both return the result of [avg_sops()] with the same arguments. A `by`
 #'   column must have no missing values among the averaged profiles; drop or
 #'   impute those patients first.
-#' @param id_var Name of the patient ID column. `NULL` (the default) uses the
-#'   `id_var` given to [mostm()]; a different name is an error. It selects one
-#'   starting row per patient from the stored data and tells the bootstrap
-#'   which rows belong to one patient. With `include_re = TRUE` for a `blrm`
-#'   fit, `newdata` must contain this column, so that each row gets its
-#'   patient's estimated random effect. Rows of user-supplied `newdata` need it
-#'   only in that case.
-#' @param time_var Name of the time column. `NULL` (the default) uses the
-#'   `time_var` given to [mostm()]; a different name is an error. Each
-#'   transition sets this column of the prediction rows to its visit.
-#' @param p_var Name of the previous-state column. `NULL` (the default) uses
-#'   the `p_var` given to [mostm()], `"yprev"` unless set there; a different
-#'   name is an error.
-#' @param p2_var Name of the column with the state two visits back. `NULL`
-#'   (the default) uses the `p2_var` given to [mostm()]: a model fitted with
-#'   `p2_var` uses a second-order recursion, and one fitted without it a
-#'   first-order recursion. A different name is an error, so to predict a
-#'   second-order model, give `p2_var` to [mostm()].
 #' @param gap_var Optional name of the variable holding the time elapsed since
 #'   the previous visit, if the model includes one. Each transition then uses
 #'   the difference between consecutive values of `times` (the first value for
@@ -82,6 +60,8 @@
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
 #'   fitted random-effect draws in posterior predictions for known IDs. Only
 #'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
+#'   `newdata` must then contain the patient ID column (`id_var` of [mostm()]),
+#'   so that each row gets its patient's estimated random effect.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.
@@ -91,7 +71,9 @@
 #' @param return_draws Logical. For `blrm`, store posterior SOP draws for
 #'   extraction with `get_draws()`. Large draw objects are guarded to protect
 #'   memory.
-#' @param ... Additional arguments (currently unused).
+#' @param ... Additional arguments (currently unused). The column names and
+#'   states recorded by [mostm()] can't be given here; see the section
+#'   "Settings taken from the fit".
 #'
 #' @return A data frame of class `markov_sops`, or, with `by = TRUE` or
 #'   grouping columns, the `markov_avg_sops` result of [avg_sops()]. The
@@ -166,21 +148,29 @@
 #' because each transition then uses its own elapsed time, so the visits may be
 #' spaced unevenly.
 #'
+#' @section Settings taken from the fit:
+#' The patient ID column, the time column, the previous-state column, the
+#' column with the state two visits back, and the states are those of the
+#' fitted model: the `id_var`, `time_var`, `p_var` and `p2_var` given to
+#' [mostm()], and the states of the response in fitted order. A model fitted
+#' with `p2_var` is therefore always predicted with the second-order recursion.
+#' The `state` column of the result holds the fitted state labels. To predict
+#' with other columns, refit the model with [mostm()].
+#'
 #' @seealso [avg_sops()] for averaged SOPs, [soprob_markov()] for the
 #'   underlying computation.
 #'
 #' @examples
 #' \dontrun{
 #' # SOPs for each profile
-#' sops_ind <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6)
+#' sops_ind <- sops(fit, newdata = baseline_data, times = 1:30)
 #'
 #' # Each profile's SOPs under control and under treatment
 #' sops_cf <- sops(fit, newdata = baseline_data, variables = list(tx = c(0, 1)),
-#'                 times = 1:30, y_levels = 1:6)
+#'                 times = 1:30)
 #'
 #' # Averaged within ECOG levels; the same as avg_sops(by = "ecog")
-#' sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
-#'                   by = "ecog")
+#' sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, by = "ecog")
 #'
 #' # Compatible with inferences()
 #' sops_cf |> inferences(method = "mvn", n_draws = 1000)
@@ -192,14 +182,9 @@ sops <- function(
   model,
   newdata = NULL,
   times,
-  y_levels = NULL,
   absorb = NULL,
   variables = NULL,
   by = FALSE,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -211,6 +196,7 @@ sops <- function(
   ...
 ) {
   # --- 1. Setup & Defaults ---
+  stop_removed_fit_arguments(...)
   # Validate model compatibility
   validate_markov_model(model)
   stop_include_re_without_blrm(model, include_re)
@@ -220,11 +206,6 @@ sops <- function(
   conf_level <- validate_conf_level(conf_level)
   settings <- resolve_markov_settings(
     model,
-    id_var = id_var,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates
@@ -347,7 +328,7 @@ sops_impl <- function(
   }
 
   if (is.null(settings$y_levels)) {
-    mostr_abort("`y_levels` cannot be NULL")
+    stop_no_fitted_states()
   }
 
   if (inherits(model, "blrm")) {
@@ -695,17 +676,9 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   `FALSE` or `NULL` does not average and returns the [sops()] result, one
 #'   row per profile, value of `variables`, time, and state.
 #' @inheritParams sops
-#' @param id_var Name of the patient ID column. `NULL` (the default) uses the
-#'   `id_var` given to [mostm()]; a different name is an error. Bootstrap
-#'   inference resamples patients by this column in the data stored on the
-#'   fitted model. For user-supplied `newdata`, the column is needed only for
-#'   `blrm` random-effect prediction (`include_re = TRUE`).
 #' @param time_covariates Optional time-varying covariate lookup table for
 #'   explicit precomputed time-basis columns. Registered inline terms such as
 #'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without it.
-#' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs. Only
-#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.
@@ -714,7 +687,9 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' @param conf_level Confidence level for `blrm` posterior intervals.
 #' @param return_draws Logical. For `blrm`, store posterior SOP draws for
 #'   extraction with `get_draws()`.
-#' @param ... Additional arguments reserved for future extensions.
+#' @param ... Additional arguments reserved for future extensions. The column
+#'   names and states recorded by [mostm()] can't be given here; see the
+#'   section "Settings taken from the fit".
 #'
 #' @return With `by = FALSE`, the `markov_sops` result of [sops()]. Otherwise
 #'   a data frame of class `markov_avg_sops` with columns:
@@ -774,6 +749,7 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' conditional choice. See [inferences()] for model restrictions.
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [sops()] for individual-level SOPs, [inferences()] for analytical,
 #'   simulation, or bootstrap
@@ -789,14 +765,13 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' )
 #'
 #' # Models fitted with mostm() can use their stored starting profiles.
-#' observed <- avg_sops(fit, times = 1:60, y_levels = 1:6, absorb = 6)
+#' observed <- avg_sops(fit, times = 1:60, absorb = 6)
 #'
 #' # Set treatment to each requested value before averaging.
 #' result <- avg_sops(
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:60,
-#'   y_levels = 1:6,
 #'   absorb = 6
 #' ) |> inferences(method = "mvn", n_draws = 500)
 #'
@@ -805,7 +780,6 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:60,
-#'   y_levels = 1:6,
 #'   absorb = 6
 #' ) |> inferences(method = "fwb", n_draws = 500)
 #' }
@@ -817,12 +791,7 @@ avg_sops <- function(
   variables = NULL,
   by = TRUE,
   times,
-  y_levels = NULL,
   absorb = NULL,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -834,6 +803,7 @@ avg_sops <- function(
   ...
 ) {
   # --- 1. Input Validation ---
+  stop_removed_fit_arguments(...)
   # Validate model compatibility
   validate_markov_model(model)
   stop_include_re_without_blrm(model, include_re)
@@ -843,11 +813,6 @@ avg_sops <- function(
   conf_level <- validate_conf_level(conf_level)
   settings <- resolve_markov_settings(
     model,
-    id_var = id_var,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates
@@ -1018,7 +983,7 @@ avg_sops_impl <- function(
   }
 
   if (is.null(settings$y_levels)) {
-    mostr_abort("`y_levels` cannot be NULL")
+    stop_no_fitted_states()
   }
 
   if (inherits(model, "blrm")) {

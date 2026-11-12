@@ -13,6 +13,10 @@
 #' model covariates for the patient or scenario being plotted; `times` and
 #' `previous_states` define the plotting grid.
 #'
+#' The time column, the previous-state column and the states are those of the
+#' fitted model: the `time_var` and `p_var` given to [mostm()], and the states
+#' of the response in fitted order.
+#'
 #' @param x A fitted `orm`, `blrm`, `vglm`, or `robcov_vglm` Markov
 #'   model.
 #' @param profile One-row data frame containing the covariate profile.
@@ -20,21 +24,13 @@
 #'   first value is the reference.
 #' @param times Time values at which to evaluate the linear predictor.
 #' @param previous_states Optional previous-state values to facet by. Defaults
-#'   to the states in `y_levels` that occur as the previous state in the data
-#'   the model was fitted to, which leaves out absorbing states without
+#'   to the fitted states that occur as the previous state in the data the
+#'   model was fitted to, which leaves out absorbing states without
 #'   `absorb`. A supplied state that never occurs there is an error, because
 #'   the model has no linear predictor for it.
-#' @param y_levels The states in fitted order. `NULL` (the default) uses the
-#'   states of the fitted model. A supplied vector must hold the same states
-#'   in the same order, otherwise it is an error.
 #' @param absorb Optional absorbing-state label excluded from the default
 #'   previous-state grid. It is needed only for a model that does not carry
 #'   the data it was fitted to; a [mostm()] fit carries them.
-#' @param time_var Name of the time column. `NULL` (the default) uses the
-#'   `time_var` given to [mostm()]; a different name is an error.
-#' @param p_var Name of the previous-state column. `NULL` (the default) uses
-#'   the `p_var` given to [mostm()], `"yprev"` unless set there; a different
-#'   name is an error.
 #' @param gap_var Optional time-gap_var variable used by the fitted model.
 #' @param time_covariates Optional time-varying covariate lookup table used by the fitted
 #'   model.
@@ -49,7 +45,6 @@
 #'   profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:28,
-#'   y_levels = 1:8,
 #'   absorb = 8
 #' )
 #' }
@@ -60,10 +55,7 @@ plot_lp_difference <- function(
   variables,
   times,
   previous_states = NULL,
-  y_levels = NULL,
   absorb = NULL,
-  time_var = NULL,
-  p_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   line_width = 0.7
@@ -90,9 +82,6 @@ plot_lp_difference <- function(
   plot_validate_scalar(line_width, "line_width", lower = 0)
   settings <- resolve_markov_settings(
     model,
-    time_var = time_var,
-    p_var = p_var,
-    y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates

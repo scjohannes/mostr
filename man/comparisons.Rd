@@ -13,16 +13,11 @@ comparisons(
   comparison = c("difference", "ratio"),
   by = FALSE,
   times,
-  y_levels = NULL,
   absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -78,10 +73,6 @@ order, for example \code{times = 1:30}. Each value is one transition, so
 leaving out visits does not skip time; see the section "Choosing visits"
 and \code{\link[=avg_sops]{avg_sops()}}.}
 
-\item{y_levels}{The states in fitted order. \code{NULL} (the default) uses the
-states of the fitted model; a different set of states is an error. See
-\code{\link[=sops]{sops()}}.}
-
 \item{absorb}{The absorbing state. See \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{time_map}{Optional named numeric vector or data frame mapping visit
@@ -102,20 +93,6 @@ With \code{baseline_time = NULL}, the omitted grid is the mapped visit times
 only.}
 
 \item{time_unit}{Optional label stored in output.}
-
-\item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
-\code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
-
-\item{time_var}{Name of the time column. \code{NULL} (the default) uses the
-\code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
-
-\item{p_var}{Name of the previous-state column. \code{NULL} (the default) uses
-the \code{p_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
-
-\item{p2_var}{Name of the column with the state two visits back. \code{NULL}
-(the default) uses the \code{p2_var} given to \code{\link[=mostm]{mostm()}}, so a second-order
-fit is compared with a second-order recursion. A different name is an
-error. See \code{\link[=sops]{sops()}}.}
 
 \item{gap_var}{Optional name of the variable holding the time elapsed since
 the previous visit, if the model includes one. See \code{\link[=avg_sops]{avg_sops()}}.}
@@ -140,7 +117,9 @@ fitted random-effect draws in posterior predictions for known IDs. Only
 \item{return_draws}{Logical. For \code{blrm}, store the posterior draws of each
 comparison for extraction with \code{\link[=get_draws]{get_draws()}}.}
 
-\item{...}{Additional arguments reserved for future extensions.}
+\item{...}{Additional arguments reserved for future extensions. The column
+names and states recorded by \code{\link[=mostm]{mostm()}} can't be given here; see the
+section "Settings taken from the fit".}
 }
 \value{
 A data frame of class \code{markov_comparisons} with one row per profile,
@@ -244,6 +223,17 @@ omitted, does not begin at the first follow-up visit. Times after the last
 fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
 because each transition then uses its own elapsed time, so the visits may be
 spaced unevenly.
+}
+
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, and the states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var} and \code{p2_var} given to
+\code{\link[=mostm]{mostm()}}, and the states of the response in fitted order. A model fitted
+with \code{p2_var} is therefore always predicted with the second-order recursion.
+The \code{state} column of the result holds the fitted state labels. To predict
+with other columns, refit the model with \code{\link[=mostm]{mostm()}}.
 }
 
 \examples{

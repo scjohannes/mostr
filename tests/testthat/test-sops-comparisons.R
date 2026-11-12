@@ -182,15 +182,18 @@ test_that("real-time comparisons use baseline support without integrating it", {
   expect_equal(disabled$estimate, 2.1)
 })
 
-test_that("avg_comparisons() forwards model-structure arguments to the SOP call", {
-  # A model without stored settings, so the call's arguments are used as given.
-  model <- structure(list(), class = "mock_model", markov_id_var = "id")
-  structure_args <- list(
-    time_var = "visit",
-    p_var = "prev",
-    p2_var = "preprev",
-    gap_var = "gap"
+test_that("avg_comparisons() passes the fit's settings and its own arguments to the SOP call", {
+  # The column names come from the fit's settings, `gap_var` from the call.
+  fit_settings <- list(time_var = "visit", p_var = "prev", p2_var = "preprev")
+  model <- do.call(
+    with_fit_settings,
+    c(
+      list(structure(list(), class = "mock_model", markov_id_var = "id")),
+      fit_settings,
+      list(y_levels = c("1", "2"))
+    )
   )
+  structure_args <- list(gap_var = "gap")
 
   # The time-benefit estimand pairs the profiles itself, so it calls
   # `sops_impl()`; the other estimands call `avg_sops_impl()`. `forwarded` lists
@@ -215,7 +218,6 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
                 estimand = "time_in_state",
                 state_sets = "1",
                 times = 1:2,
-                y_levels = c("1", "2"),
                 absorb = "2",
                 time_covariates = time_covariates
               ),
@@ -224,7 +226,11 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
           )
         )
       },
-      forwarded = c(structure_args, list(y_levels = c("1", "2"), absorb = "2")),
+      forwarded = c(
+        fit_settings,
+        structure_args,
+        list(y_levels = c("1", "2"), absorb = "2")
+      ),
       expected = list()
     ),
     list(
@@ -269,7 +275,6 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
                 variables = list(tx = c(0, 1)),
                 estimand = "time_benefit",
                 times = 1,
-                y_levels = c("1", "2"),
                 time_covariates = time_covariates
               ),
               structure_args
@@ -277,7 +282,7 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
           )
         )
       },
-      forwarded = structure_args,
+      forwarded = c(fit_settings, structure_args),
       expected = list(estimate = 0.5, estimand = "time_benefit")
     )
   )

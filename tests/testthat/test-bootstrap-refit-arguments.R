@@ -26,7 +26,6 @@ expect_refits_succeed <- function(fit, method) {
     fit,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = 1:6,
     absorb = 6
   )
   warnings <- character()
@@ -204,7 +203,6 @@ test_that("FWB never falls back to unweighted refits for mostm() fits", {
     fit,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = 1:6,
     absorb = 6
   )
 
@@ -233,7 +231,7 @@ test_that("stored row weights stay out of starting profiles and SOP output", {
   expect_false(
     weight_column %in% names(attr(fit, "markov_starting_profile_data"))
   )
-  out <- sops(fit, times = 1:2, y_levels = 1:6, absorb = 6)
+  out <- sops(fit, times = 1:2, absorb = 6)
   expect_false(weight_column %in% names(out))
 })
 

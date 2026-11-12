@@ -123,7 +123,7 @@ missing.
 \examples{
 \dontrun{
 # --- Scenario 1: Patient-Level Estimates ---
-sops_arr <- soprob_markov(model, data, times = 1:30, y_levels = 1:6)
+sops_arr <- soprob_markov(model, data, times = 1:30)
 days_home <- time_in_state(sops_arr, target_states = 1)
 
 # Real-time AUC after fitting on factor visit indices
@@ -139,9 +139,7 @@ real_days_home <- time_in_state(
 avg_boot <- avg_sops(
   model,
   variables = list(tx = c(0, 1)),
-  times = 1:30,
-  y_levels = 1:6,
-  id_var = "id"
+  times = 1:30
 ) |>
   inferences(method = "bootstrap", n_draws = 100)
 boot_effects <- time_in_state(avg_boot, target_states = 1)

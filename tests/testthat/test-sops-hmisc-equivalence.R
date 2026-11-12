@@ -60,9 +60,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     model = fit.a,
     newdata = baseline_data[1, ],
     times = times,
-    y_levels = y_levels,
     absorb = absorb,
-    p_var = "yprev",
     time_covariates = time_covariates
   )[1, , ]
 
@@ -132,9 +130,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     model = fit.a,
     newdata = baseline_data[1, ],
     times = times,
-    y_levels = y_levels,
     absorb = absorb,
-    p_var = "yprev",
     time_covariates = time_covariates
   )[1, , ]
 
@@ -212,9 +208,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
     model = fit.a,
     newdata = baseline_data,
     times = times,
-    y_levels = y_levels,
     absorb = absorb,
-    p_var = "yprev",
     time_covariates = time_covariates
   )
 
@@ -306,7 +300,6 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
       model = fit,
       newdata = newdata,
       times = times,
-      y_levels = y_levels,
       absorb = absorb,
       time_covariates = time_covariates
     )

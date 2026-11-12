@@ -282,7 +282,7 @@ test_that("fits without mostm() provenance must be refitted", {
   attr(old, "markov_fit_wrapper") <- "orm_markov"
 
   expect_snapshot(
-    sops(old, times = 1:2, y_levels = 1:6, absorb = 6),
+    sops(old, times = 1:2, absorb = 6),
     error = TRUE
   )
 })
@@ -433,7 +433,6 @@ test_that("orm refits keep the fit's na.action and penalty", {
     fit,
     variables = list(tx = c(0, 1)),
     times = 1:3,
-    y_levels = 1:6,
     absorb = 6
   )
   withr::local_seed(6113)
@@ -546,7 +545,7 @@ test_that("mostm() refuses factor() written inside the formula unless the engine
   )
   expect_s3_class(fit, "robcov_vglm")
   expect_contains(names(stats::coef(fit)), paste0("factor(time)", 2:6))
-  out <- sops(fit, times = 1:2, y_levels = 1:6, absorb = 6)
+  out <- sops(fit, times = 1:2, absorb = 6)
   totals <- tapply(out$estimate, list(out$rowid, out$time), sum)
   expect_equal(dim(totals), c(length(unique(data$id)), 2L))
   expect_equal(as.vector(totals), rep(1, length(totals)), tolerance = 1e-10)

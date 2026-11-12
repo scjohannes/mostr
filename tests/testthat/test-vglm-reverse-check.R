@@ -13,7 +13,6 @@ avg_sops_reverse_case <- function(fit) {
     fit,
     variables = list(tx = c(0, 1)),
     times = 1:2,
-    y_levels = 1:6,
     absorb = 6
   )
 }

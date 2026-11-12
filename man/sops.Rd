@@ -8,14 +8,9 @@ sops(
   model,
   newdata = NULL,
   times,
-  y_levels = NULL,
   absorb = NULL,
   variables = NULL,
   by = FALSE,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -44,18 +39,13 @@ in increasing order, for example \code{times = 1:30} for daily visits up to day
 time; see the section "Choosing visits". Numeric time variables use
 numeric values; factor-valued visit indices use fitted visit levels.}
 
-\item{y_levels}{The states in fitted order. \code{NULL} (the default) uses the
-states of the fitted model. A supplied vector must hold the same states in
-the same order, otherwise it is an error; its type (for example numbers
-or text) sets the type of the result's \code{state} column.}
-
 \item{absorb}{The absorbing states, such as death: states that a patient
 can't leave. Every profile must start outside them: a profile whose
-previous state (the \code{p_var} column) is absorbing, or, for a second-order
-model, whose state two visits back (the \code{p2_var} column) is, gives an
-error. Such a patient can't move to another state, and the model has no
-transitions out of an absorbing state to predict from, so remove those
-patients from \code{newdata} first.}
+previous state (the \code{p_var} column of \code{\link[=mostm]{mostm()}}) is absorbing, or, for a
+second-order model, whose state two visits back (the \code{p2_var} column) is,
+gives an error. Such a patient can't move to another state, and the model
+has no transitions out of an absorbing state to predict from, so remove
+those patients from \code{newdata} first.}
 
 \item{variables}{Optional covariates to set before predicting: a named list
 of values, such as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}.
@@ -72,28 +62,6 @@ both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same argu
 column must have no missing values among the averaged profiles; drop or
 impute those patients first.}
 
-\item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
-\code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error. It selects one
-starting row per patient from the stored data and tells the bootstrap
-which rows belong to one patient. With \code{include_re = TRUE} for a \code{blrm}
-fit, \code{newdata} must contain this column, so that each row gets its
-patient's estimated random effect. Rows of user-supplied \code{newdata} need it
-only in that case.}
-
-\item{time_var}{Name of the time column. \code{NULL} (the default) uses the
-\code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error. Each
-transition sets this column of the prediction rows to its visit.}
-
-\item{p_var}{Name of the previous-state column. \code{NULL} (the default) uses
-the \code{p_var} given to \code{\link[=mostm]{mostm()}}, \code{"yprev"} unless set there; a different
-name is an error.}
-
-\item{p2_var}{Name of the column with the state two visits back. \code{NULL}
-(the default) uses the \code{p2_var} given to \code{\link[=mostm]{mostm()}}: a model fitted with
-\code{p2_var} uses a second-order recursion, and one fitted without it a
-first-order recursion. A different name is an error, so to predict a
-second-order model, give \code{p2_var} to \code{\link[=mostm]{mostm()}}.}
-
 \item{gap_var}{Optional name of the variable holding the time elapsed since
 the previous visit, if the model includes one. Each transition then uses
 the difference between consecutive values of \code{times} (the first value for
@@ -107,7 +75,9 @@ supplying \code{time_covariates}.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
 fitted random-effect draws in posterior predictions for known IDs. Only
-\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.
+\code{newdata} must then contain the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}),
+so that each row gets its patient's estimated random effect.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -123,7 +93,9 @@ fitted random-effect draws in posterior predictions for known IDs. Only
 extraction with \code{get_draws()}. Large draw objects are guarded to protect
 memory.}
 
-\item{...}{Additional arguments (currently unused).}
+\item{...}{Additional arguments (currently unused). The column names and
+states recorded by \code{\link[=mostm]{mostm()}} can't be given here; see the section
+"Settings taken from the fit".}
 }
 \value{
 A data frame of class \code{markov_sops}, or, with \code{by = TRUE} or
@@ -215,18 +187,28 @@ because each transition then uses its own elapsed time, so the visits may be
 spaced unevenly.
 }
 
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, and the states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var} and \code{p2_var} given to
+\code{\link[=mostm]{mostm()}}, and the states of the response in fitted order. A model fitted
+with \code{p2_var} is therefore always predicted with the second-order recursion.
+The \code{state} column of the result holds the fitted state labels. To predict
+with other columns, refit the model with \code{\link[=mostm]{mostm()}}.
+}
+
 \examples{
 \dontrun{
 # SOPs for each profile
-sops_ind <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6)
+sops_ind <- sops(fit, newdata = baseline_data, times = 1:30)
 
 # Each profile's SOPs under control and under treatment
 sops_cf <- sops(fit, newdata = baseline_data, variables = list(tx = c(0, 1)),
-                times = 1:30, y_levels = 1:6)
+                times = 1:30)
 
 # Averaged within ECOG levels; the same as avg_sops(by = "ecog")
-sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
-                  by = "ecog")
+sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, by = "ecog")
 
 # Compatible with inferences()
 sops_cf |> inferences(method = "mvn", n_draws = 1000)

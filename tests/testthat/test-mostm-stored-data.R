@@ -305,7 +305,6 @@ test_that("automatic SOP prediction never substitutes a later profile row", {
     sops(
       fit,
       times = 1:3,
-      y_levels = 1:6,
       absorb = 6
     ),
     error = TRUE
@@ -376,7 +375,7 @@ test_that("missing values leave complete starting profiles of the fitted patient
     )
   )
 
-  sop_args <- list(times = 1:2, y_levels = 1:6, absorb = 6)
+  sop_args <- list(times = 1:2, absorb = 6)
   for (case in cases) {
     data <- case$change(base)
     fit <- do.call(mostm, c(case$args, list(data = data, id_var = "id")))
@@ -431,7 +430,6 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
       incomplete_fit,
       variables = list(tx = c(0, 1)),
       times = 1:2,
-      y_levels = 1:6,
       absorb = 6
     ),
     error = TRUE
@@ -462,7 +460,6 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
       duplicated_fit,
       variables = list(tx = c(0, 1)),
       times = 1:2,
-      y_levels = 1:6,
       absorb = 6
     ),
     error = TRUE
@@ -562,7 +559,7 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
     profiles$rowid <- rowid
     profiles[, setdiff(names(profiles), "id"), drop = FALSE]
   }
-  sop_args <- list(times = 1:2, y_levels = 1:6, absorb = 6)
+  sop_args <- list(times = 1:2, absorb = 6)
 
   # `rowid` gives the expected row numbers of the prediction data, and
   # `warning` the warning of a fractional bootstrap, which uses the stored
@@ -683,8 +680,8 @@ test_that("FWB inference on SOPs for each profile works with every frequentist e
   # The ordinary bootstrap of SOPs for each profile is row I42 of
   # test-refusals.R.
   sop_args <- list(
-    vglm = list(times = 1:2, y_levels = 1:6, absorb = 6),
-    orm = list(times = 1:2, y_levels = fits$orm$yunique, absorb = "6")
+    vglm = list(times = 1:2, absorb = 6),
+    orm = list(times = 1:2, absorb = "6")
   )
   fwb_args <- list(
     vglm = list(use_coefstart = FALSE),
@@ -723,7 +720,6 @@ test_that("FWB inference on SOPs for each profile works with every frequentist e
     fits$orm,
     by = "sex",
     times = 1:2,
-    y_levels = fits$orm$yunique,
     absorb = "6"
   )
   withr::local_seed(10061)

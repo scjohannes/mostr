@@ -59,9 +59,6 @@
 #'   order, for example `times = 1:30`. Each value is one transition, so
 #'   leaving out visits does not skip time; see the section "Choosing visits"
 #'   and [avg_sops()].
-#' @param y_levels The states in fitted order. `NULL` (the default) uses the
-#'   states of the fitted model; a different set of states is an error. See
-#'   [sops()].
 #' @param absorb The absorbing state. See [avg_sops()].
 #' @param time_map Optional named numeric vector or data frame mapping visit
 #'   labels to real elapsed times. Used by `"time_in_state"` and
@@ -78,16 +75,6 @@
 #'   With `baseline_time = NULL`, the omitted grid is the mapped visit times
 #'   only.
 #' @param time_unit Optional label stored in output.
-#' @param id_var Name of the patient ID column. `NULL` (the default) uses the
-#'   `id_var` given to [mostm()]; a different name is an error.
-#' @param time_var Name of the time column. `NULL` (the default) uses the
-#'   `time_var` given to [mostm()]; a different name is an error.
-#' @param p_var Name of the previous-state column. `NULL` (the default) uses
-#'   the `p_var` given to [mostm()]; a different name is an error.
-#' @param p2_var Name of the column with the state two visits back. `NULL`
-#'   (the default) uses the `p2_var` given to [mostm()], so a second-order
-#'   fit is compared with a second-order recursion. A different name is an
-#'   error. See [sops()].
 #' @param gap_var Optional name of the variable holding the time elapsed since
 #'   the previous visit, if the model includes one. See [avg_sops()].
 #' @param time_covariates Optional time-varying covariate lookup table for explicit
@@ -103,7 +90,9 @@
 #' @param conf_level Confidence level for `blrm` posterior intervals.
 #' @param return_draws Logical. For `blrm`, store posterior comparison draws.
 #'   Frequentist uncertainty draws are stored by [inferences()].
-#' @param ... Additional arguments reserved for future extensions.
+#' @param ... Additional arguments reserved for future extensions. The column
+#'   names and states recorded by [mostm()] can't be given here; see the
+#'   section "Settings taken from the fit".
 #'
 #' @return A data frame of class `markov_avg_comparisons`, or, with
 #'   `by = FALSE`, of class `markov_comparisons`.
@@ -134,6 +123,7 @@
 #' restrictions.
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [comparisons()] for the comparison of each profile before
 #'   averaging, [avg_sops()], [sops()], [inferences()]
@@ -146,7 +136,6 @@
 #'   estimand = "time_in_state",
 #'   state_sets = "1",
 #'   times = 1:30,
-#'   y_levels = 1:6,
 #'   absorb = 6
 #' ) |>
 #'   inferences(method = "mvn", n_draws = 500)
@@ -162,16 +151,11 @@ avg_comparisons <- function(
   comparison = c("difference", "ratio"),
   by = TRUE,
   times,
-  y_levels = NULL,
   absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -182,6 +166,7 @@ avg_comparisons <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_removed_fit_arguments(...)
   stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
   stop_legacy_baseline_args(extra_args)
@@ -195,11 +180,6 @@ avg_comparisons <- function(
   validate_markov_model(model)
   settings <- resolve_markov_settings(
     model,
-    id_var = id_var,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
     time_covariates = time_covariates
@@ -223,16 +203,11 @@ avg_comparisons <- function(
       comparison = comparison,
       by = FALSE,
       times = times,
-      y_levels = y_levels,
       absorb = absorb,
       time_map = time_map,
       baseline_time = baseline_time,
       target_times = target_times,
       time_unit = time_unit,
-      id_var = id_var,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
       gap_var = gap_var,
       time_covariates = time_covariates,
       include_re = include_re,

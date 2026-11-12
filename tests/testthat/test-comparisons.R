@@ -538,12 +538,9 @@ test_that("comparisons() matches paired sops() with factor visit times and secon
       p2_var = "ypprev"
     )
   )
+  # The second-order fit records `p2_var`, which the results keep.
   for (row in cases) {
-    extra <- if (!is.null(row$p2_var)) list(p2_var = row$p2_var)
-    cmp <- do.call(
-      expect_comparisons_match_paired_sops,
-      c(list(row$case, info = row$label), extra)
-    )
+    cmp <- expect_comparisons_match_paired_sops(row$case, info = row$label)
     expect_identical(
       as.character(unique(cmp$time)),
       as.character(1:4),

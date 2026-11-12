@@ -10,12 +10,7 @@ avg_sops(
   variables = NULL,
   by = TRUE,
   times,
-  y_levels = NULL,
   absorb = NULL,
-  id_var = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
@@ -75,38 +70,13 @@ in increasing order, for example \code{times = 1:30} for daily visits up to day
 time; see the section "Choosing visits". Numeric time variables use
 numeric values; factor-valued visit indices use fitted visit levels.}
 
-\item{y_levels}{The states in fitted order. \code{NULL} (the default) uses the
-states of the fitted model. A supplied vector must hold the same states in
-the same order, otherwise it is an error; its type (for example numbers
-or text) sets the type of the result's \code{state} column.}
-
 \item{absorb}{The absorbing states, such as death: states that a patient
 can't leave. Every profile must start outside them: a profile whose
-previous state (the \code{p_var} column) is absorbing, or, for a second-order
-model, whose state two visits back (the \code{p2_var} column) is, gives an
-error. Such a patient can't move to another state, and the model has no
-transitions out of an absorbing state to predict from, so remove those
-patients from \code{newdata} first.}
-
-\item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
-\code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error. Bootstrap
-inference resamples patients by this column in the data stored on the
-fitted model. For user-supplied \code{newdata}, the column is needed only for
-\code{blrm} random-effect prediction (\code{include_re = TRUE}).}
-
-\item{time_var}{Name of the time column. \code{NULL} (the default) uses the
-\code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error. Each
-transition sets this column of the prediction rows to its visit.}
-
-\item{p_var}{Name of the previous-state column. \code{NULL} (the default) uses
-the \code{p_var} given to \code{\link[=mostm]{mostm()}}, \code{"yprev"} unless set there; a different
-name is an error.}
-
-\item{p2_var}{Name of the column with the state two visits back. \code{NULL}
-(the default) uses the \code{p2_var} given to \code{\link[=mostm]{mostm()}}: a model fitted with
-\code{p2_var} uses a second-order recursion, and one fitted without it a
-first-order recursion. A different name is an error, so to predict a
-second-order model, give \code{p2_var} to \code{\link[=mostm]{mostm()}}.}
+previous state (the \code{p_var} column of \code{\link[=mostm]{mostm()}}) is absorbing, or, for a
+second-order model, whose state two visits back (the \code{p2_var} column) is,
+gives an error. Such a patient can't move to another state, and the model
+has no transitions out of an absorbing state to predict from, so remove
+those patients from \code{newdata} first.}
 
 \item{gap_var}{Optional name of the variable holding the time elapsed since
 the previous visit, if the model includes one. Each transition then uses
@@ -120,7 +90,9 @@ explicit precomputed time-basis columns. Registered inline terms such as
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
 fitted random-effect draws in posterior predictions for known IDs. Only
-\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.
+\code{newdata} must then contain the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}),
+so that each row gets its patient's estimated random effect.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -135,7 +107,9 @@ fitted random-effect draws in posterior predictions for known IDs. Only
 \item{return_draws}{Logical. For \code{blrm}, store posterior SOP draws for
 extraction with \code{get_draws()}.}
 
-\item{...}{Additional arguments reserved for future extensions.}
+\item{...}{Additional arguments reserved for future extensions. The column
+names and states recorded by \code{\link[=mostm]{mostm()}} can't be given here; see the
+section "Settings taken from the fit".}
 }
 \value{
 With \code{by = FALSE}, the \code{markov_sops} result of \code{\link[=sops]{sops()}}. Otherwise
@@ -226,6 +200,17 @@ because each transition then uses its own elapsed time, so the visits may be
 spaced unevenly.
 }
 
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, and the states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var} and \code{p2_var} given to
+\code{\link[=mostm]{mostm()}}, and the states of the response in fitted order. A model fitted
+with \code{p2_var} is therefore always predicted with the second-order recursion.
+The \code{state} column of the result holds the fitted state labels. To predict
+with other columns, refit the model with \code{\link[=mostm]{mostm()}}.
+}
+
 \examples{
 \dontrun{
 fit <- mostm(
@@ -236,14 +221,13 @@ fit <- mostm(
 )
 
 # Models fitted with mostm() can use their stored starting profiles.
-observed <- avg_sops(fit, times = 1:60, y_levels = 1:6, absorb = 6)
+observed <- avg_sops(fit, times = 1:60, absorb = 6)
 
 # Set treatment to each requested value before averaging.
 result <- avg_sops(
   model = fit,
   variables = list(tx = c(0, 1)),
   times = 1:60,
-  y_levels = 1:6,
   absorb = 6
 ) |> inferences(method = "mvn", n_draws = 500)
 
@@ -252,7 +236,6 @@ result_boot <- avg_sops(
   model = fit,
   variables = list(tx = c(0, 1)),
   times = 1:60,
-  y_levels = 1:6,
   absorb = 6
 ) |> inferences(method = "fwb", n_draws = 500)
 }

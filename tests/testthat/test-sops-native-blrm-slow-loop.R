@@ -4,7 +4,8 @@
 # probabilities depend on time, treatment and both previous states, and only the
 # design matrix is mocked. test-slow-blrm.R covers the design matrix with real fits.
 
-markov_fake_blrm <- function(partial_odds = FALSE) {
+markov_fake_blrm <- function(partial_odds = FALSE, second_order = FALSE) {
+  p2_var <- if (second_order) "ypprev"
   draws <- rbind(
     c(1.2, 0.1, -1.3, 0.40, 0.08, -0.60, -0.25),
     c(0.9, -0.2, -1.1, 0.10, 0.03, -0.45, -0.35),
@@ -13,12 +14,13 @@ markov_fake_blrm <- function(partial_odds = FALSE) {
   )
   colnames(draws) <- c("y>=2", "y>=3", "y>=4", "tx", "time", "yprev", "ypprev")
   if (!partial_odds) {
-    return(fake_blrm(draws))
+    return(fake_blrm(draws, p2_var = p2_var))
   }
   fake_blrm(
     cbind(draws, tau_time = c(0.05, -0.10, 0.15, 0.02)),
     tau = "tau_time",
-    cppo = function(y) as.numeric(y) - 1
+    cppo = function(y) as.numeric(y) - 1,
+    p2_var = p2_var
   )
 }
 
@@ -83,7 +85,7 @@ test_that("blrm sops() draws match the readable loop draw by draw", {
   times <- 1:4
 
   for (case in markov_fake_cases) {
-    model <- markov_fake_blrm(case$partial_odds)
+    model <- markov_fake_blrm(case$partial_odds, case$second_order)
     for (absorb in list(4L, c(3L, 4L))) {
       # SOP calls refuse a start in an absorbing state, and for second-order
       # models also an absorbing state two visits back.
@@ -102,9 +104,6 @@ test_that("blrm sops() draws match the readable loop draw by draw", {
         return_draws = TRUE,
         posterior_summary = "mean"
       )
-      if (case$second_order) {
-        args$p2_var <- "ypprev"
-      }
       result <- do.call(sops, args)
       draws <- attr(result, "draws")
       reference <- markov_fake_reference(
@@ -164,7 +163,7 @@ test_that("blrm avg_sops() draws match averaging the loop within unequal groups"
   times <- 1:3
 
   for (case in markov_fake_cases) {
-    model <- markov_fake_blrm(case$partial_odds)
+    model <- markov_fake_blrm(case$partial_odds, case$second_order)
     args <- list(
       model,
       newdata = profiles,
@@ -175,9 +174,6 @@ test_that("blrm avg_sops() draws match averaging the loop within unequal groups"
       return_draws = TRUE,
       posterior_summary = "mean"
     )
-    if (case$second_order) {
-      args$p2_var <- "ypprev"
-    }
     result <- do.call(avg_sops, args)
     draws <- attr(result, "draws")
     reference <- markov_fake_reference(

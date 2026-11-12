@@ -8,15 +8,10 @@ soprob_markov(
   model,
   newdata,
   times = NULL,
-  y_levels = NULL,
   absorb = NULL,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   include_re = FALSE,
-  id_var = NULL,
   n_draws = 100L,
   seed = NULL,
   ...
@@ -35,26 +30,11 @@ recursion takes one transition per value, so leaving out visits does not
 skip time; see \code{\link[=sops]{sops()}}. Unlike \code{\link[=sops]{sops()}}, this function does not warn
 when \code{times} leaves out fitted visits.}
 
-\item{y_levels}{Ordered outcome-state levels. \code{NULL} (the default) uses the
-states of the fitted model in fitted order. A supplied vector must hold
-the same states in the same order; its type sets the type of the state
-labels.}
-
 \item{absorb}{Optional absorbing state levels: states that a patient can't
-leave. A row of \code{newdata} whose \code{p_var} or \code{p2_var} value is absorbing
+leave. A row of \code{newdata} whose previous state (the \code{p_var} column of
+\code{\link[=mostm]{mostm()}}) or state two visits back (the \code{p2_var} column) is absorbing
 gives an error: such a patient can't move to another state, and the model
 has no transitions out of an absorbing state to predict from.}
-
-\item{time_var}{Name of the model time variable. \code{NULL} (the default) uses
-the \code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
-
-\item{p_var}{Name of the previous-state variable. \code{NULL} (the default) uses
-the \code{p_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
-
-\item{p2_var}{Name of the variable with the state two visits back. \code{NULL}
-(the default) uses the \code{p2_var} given to \code{\link[=mostm]{mostm()}}, so a model fitted
-with \code{p2_var} uses second-order recursion and one fitted without it
-first-order recursion. A different name is an error.}
 
 \item{gap_var}{Optional elapsed-time-gap variable.}
 
@@ -62,12 +42,9 @@ first-order recursion. A different name is an error.}
 containing precomputed time-varying covariates.}
 
 \item{include_re}{For \code{blrm} fits, include fitted random-effect draws for
-known IDs. Only \code{blrm} fits have random effects, so \code{TRUE} gives an error
-for other fits.}
-
-\item{id_var}{ID column used for \code{blrm} random effects. \code{NULL} (the
-default) uses the \code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an
-error.}
+known IDs, which \code{newdata} gives in the patient ID column (\code{id_var} of
+\code{\link[=mostm]{mostm()}}). Only \code{blrm} fits have random effects, so \code{TRUE} gives an
+error for other fits.}
 
 \item{n_draws}{Number of \code{blrm} posterior draws, or \code{NULL} for all draws.}
 
@@ -78,10 +55,22 @@ error.}
 \value{
 An array of state probabilities. Frequentist fits return
 \verb{[patient, time, state]}; Bayesian fits return
-\verb{[draw, patient, time, state]}.
+\verb{[draw, patient, time, state]}. The state dimension is named by the
+fitted states.
 }
 \description{
 Computes patient-level state occupancy probabilities from a supported
 Markov transition model. Frequentist first-order models use the optimized
 native engine; other supported workflows use an engine written in R.
 }
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, and the states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var} and \code{p2_var} given to
+\code{\link[=mostm]{mostm()}}, and the states of the response in fitted order. A model fitted
+with \code{p2_var} is therefore always predicted with the second-order recursion.
+The \code{state} column of the result holds the fitted state labels. To predict
+with other columns, refit the model with \code{\link[=mostm]{mostm()}}.
+}
+

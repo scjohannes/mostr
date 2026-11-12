@@ -321,10 +321,8 @@ grid_visit_columns <- function(cell, times = grid_times(cell)) {
 
 # Arguments that select the same set-up in the public functions.
 grid_public_args <- function(cell, absorb = grid_n_states, times = grid_times(cell)) {
+  # The fit records the order (`grid_fit_to()` gives `p2_var` to `mostm()`).
   args <- list(times = times, absorb = absorb)
-  if (cell$order == 2L) {
-    args$p2_var <- "ypprev"
-  }
   if (cell$visit == "gap") {
     args$gap_var <- "gap"
   }

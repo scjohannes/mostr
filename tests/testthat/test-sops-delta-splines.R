@@ -43,12 +43,7 @@ replay_spline_avg_sops <- function(object, model) {
     # Stored averages use `by = NULL` for the overall average.
     by = avg_args$by %||% TRUE,
     times = avg_args$times,
-    y_levels = settings$y_levels,
     absorb = settings$absorb,
-    id_var = settings$id_var,
-    time_var = settings$time_var,
-    p_var = settings$p_var,
-    p2_var = settings$p2_var,
     gap_var = settings$gap_var,
     time_covariates = settings$time_covariates
   )
@@ -161,9 +156,7 @@ test_that("penalized orm previous-state splines support delta inference", {
   avg <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    y_levels = fit$yunique,
-    p_var = "yprev"
+    times = 1:3
   )
 
   plan <- delta_compile_plan(

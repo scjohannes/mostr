@@ -310,7 +310,6 @@
 #'   model = fit_robust,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:60,
-#'   y_levels = factor(1:6),
 #'   absorb = "6"
 #' ) |>
 #'   inferences(method = "mvn", n_draws = 1000)
@@ -322,7 +321,6 @@
 #'   model = fit_orm,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:60,
-#'   y_levels = factor(1:6),
 #'   absorb = "6"
 #' )
 #' result_orm <- avg_orm |>
@@ -333,7 +331,6 @@
 #'   model = fit_robust,
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:60,
-#'   y_levels = factor(1:6),
 #'   absorb = "6"
 #' ) |>
 #'   inferences(method = "bootstrap", n_draws = 500)
@@ -342,7 +339,6 @@
 #' ind_result <- sops(
 #'   model = fit_robust,
 #'   times = 1:60,
-#'   y_levels = factor(1:6),
 #'   absorb = "6") |>
 #'   inferences(n_draws = 500)
 #'
@@ -350,7 +346,6 @@
 #' ind_boot <- sops(
 #'   model = fit_robust,
 #'   times = 1:60,
-#'   y_levels = factor(1:6),
 #'   absorb = "6") |>
 #'   inferences(method = "fwb", n_draws = 500)
 #'

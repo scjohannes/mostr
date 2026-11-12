@@ -25,7 +25,6 @@ test_that("the vglm engine supplies rms formula helpers and keeps %ia% semantics
           fit,
           newdata = baseline[1:3, , drop = FALSE],
           times = 1:4,
-          y_levels = 1:6,
           absorb = "6"
         )
         expect_equal(dim(out), c(3L, 4L, 6L), info = label)
