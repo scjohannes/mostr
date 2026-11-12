@@ -12,6 +12,26 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-12: Ship one vignette; the other articles are website-only
+
+**Decided.** The package ships only `vignettes/mostr.Rmd`, the get-started
+guide. The nine longer analyses are pkgdown articles in `vignettes/articles/`,
+which `.Rbuildignore` excludes, so CRAN never builds them. Help pages, the
+README and messages link to their website URLs.
+
+**Why.** One `R CMD check --as-cran` with vignettes took 13.7 minutes on the
+development machine (busy with other R processes), against CRAN's limit of
+about 10. Rebuilding the vignettes took 7.1 minutes of that; four of them took
+70 to 92 seconds each. Tests in CRAN mode were already cut to about 50 seconds,
+so vignettes were the remaining cost. Many packages, the tidyverse among them,
+ship few vignettes and keep the rest on the website.
+
+**Decided against.** Shipping saved results that the vignettes load instead of
+recomputing (bartisan's approach): it keeps the vignettes installed, but the
+saved results must be regenerated whenever the output changes. Gating the heavy
+chunks behind an environment variable, as the Bayesian article does: an
+installed vignette would then show code without its results.
+
 ## 2026-11-12: Keep a tracked record of decisions
 
 **Decided.** Record decisions in this file and state, before a simulation or
