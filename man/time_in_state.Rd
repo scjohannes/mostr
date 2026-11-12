@@ -50,7 +50,9 @@ first mapped follow-up time.}
 columns. When stored draws are available, draw-based \code{conf.low},
 \code{conf.high}, and \code{std.error} columns are recomputed and the reduced draws
 are retained in a \code{draws} attribute. Any draw-specific baseline anchors
-have already been propagated by \code{\link[=interpolate_sops]{interpolate_sops()}}. Tests from
+have already been propagated by \code{\link[=interpolate_sops]{interpolate_sops()}}. For SOPs from
+\code{inferences(method = "delta")}, \code{conf.low}, \code{conf.high}, and
+\code{std.error} are delta-method results for the totals. Tests from
 \code{inferences(null = )} are dropped, because a null value for
 probabilities does not apply to a total time.
 \item \strong{Input = Bootstrap DF:} A data frame with columns:
@@ -74,11 +76,48 @@ It automatically adapts to the input format:
 \item \strong{Tidy SOP:} If input is a \code{markov_sops} or \code{markov_avg_sops}
 object, it returns grouped total time. Stored simulation, bootstrap, or
 posterior draws are reduced identically and used to recompute confidence
-intervals and standard errors.
+intervals and standard errors. For SOPs from
+\code{inferences(method = "delta")}, standard errors and confidence limits of
+the totals are computed with the delta method; see Details.
 \item \strong{Legacy Wide Bootstrap-Level:} If input is a data frame with
 \code{boot_id}, \code{time}, \code{tx}, and \verb{state_*} columns, it returns mean
 time-in-state per treatment group and the difference for each bootstrap
 sample.
+}
+}
+\details{
+\subsection{Delta-method uncertainty}{
+
+A total time is a weighted sum of SOPs: each visit counts once without
+\code{time_map}, and with \code{time_map} each visit gets the weight it carries in
+the area under the interpolated curve. With \code{baseline_time}, the curve
+starts at that time from the starting state, so the total also depends on
+the share of profiles that start in a target state. For SOPs from
+\code{inferences(method = "delta")},
+\code{time_in_state()} applies these weights to how each SOP changes with each
+model coefficient, and so obtains the standard error of the total. It keeps
+the variance chosen with \code{vcov} in \code{\link[=inferences]{inferences()}}:
+\itemize{
+\item \strong{Conditional variance} accounts for coefficient estimation and
+treats the patients' starting states and covariates as given. It is the
+only choice for \code{\link[=sops]{sops()}} results, one row per profile.
+\item \strong{Unconditional variance} (the default for \code{\link[=avg_sops]{avg_sops()}}) also
+accounts for which patients were sampled. With \code{time_map} and
+\code{baseline_time}, this includes the share of sampled patients who start
+in a target state.
+}
+Confidence limits are the total plus and minus the normal quantile for the
+stored \code{conf_level} times the standard error, as in \code{\link[=avg_state_time]{avg_state_time()}} and
+\code{\link[=state_time]{state_time()}} with \code{method = "delta"}, which give the same results. The
+calculation uses only the weighted sums, never the covariance of every pair
+of SOPs, within the memory limit \link{mostr.delta_max_bytes}.
+
+Pass the result of \code{\link[=inferences]{inferences()}} unchanged. \code{time_in_state()} stops with
+an error, instead of returning totals without uncertainty, for delta
+results already passed through \code{\link[=interpolate_sops]{interpolate_sops()}} (use \code{time_map} here
+instead), and, with \code{time_map}, for delta results whose rows were filtered
+so that the groups no longer share the same visits or some states are
+missing.
 }
 }
 \examples{

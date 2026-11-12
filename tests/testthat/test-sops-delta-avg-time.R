@@ -486,3 +486,102 @@ test_that("time_in_state() on delta SOPs keeps the uncertainty avg_state_time() 
     expect_equal(total$conf.high, direct$conf.high, tolerance = 1e-8, label = variance)
   }
 })
+
+test_that("time_in_state() keeps delta uncertainty on the real-time scale", {
+  # On the real-time scale the total also counts the time spent in the
+  # starting state from `baseline_time`. Under unconditional variance, the
+  # share of sampled patients starting in a target state varies with the
+  # sample, which avg_state_time() includes.
+  skip_on_cran()
+  case <- delta_avg_time_case()
+  variables <- list(tx = c(0, 1))
+  for (variance in c("conditional", "unconditional")) {
+    for (target_times in list(NULL, 0:14)) {
+      sop <- avg_sops(
+        case$fit,
+        variables = variables,
+        times = case$times,
+        absorb = 6
+      ) |>
+        inferences(method = "delta", vcov = variance)
+      total <- time_in_state(
+        sop,
+        target_states = c("1", "2"),
+        time_map = case$time_map,
+        target_times = target_times
+      )
+      direct <- avg_state_time(
+        case$fit,
+        variables = variables,
+        times = case$times,
+        state_sets = list(lower = c("1", "2")),
+        absorb = 6,
+        time_map = case$time_map,
+        target_times = target_times
+      ) |>
+        inferences(method = "delta", vcov = variance)
+      direct <- direct[match(total$tx, direct$tx), , drop = FALSE]
+      label <- paste(variance, length(target_times))
+      expect_equal(total$total_time, direct$estimate, tolerance = 1e-10)
+      expect_equal(total$std.error, direct$std.error, tolerance = 1e-8, label = label)
+      expect_equal(total$conf.low, direct$conf.low, tolerance = 1e-8, label = label)
+      expect_equal(total$conf.high, direct$conf.high, tolerance = 1e-8, label = label)
+    }
+  }
+})
+
+test_that("time_in_state() on per-profile delta SOPs matches state_time()", {
+  skip_on_cran()
+  case <- delta_avg_time_case()
+  variables <- list(tx = c(0, 1))
+  sop <- sops(
+    case$fit,
+    variables = variables,
+    times = case$times,
+    absorb = 6
+  ) |>
+    inferences(method = "delta")
+  for (time_map in list(NULL, case$time_map)) {
+    total <- time_in_state(
+      sop,
+      target_states = c("1", "2"),
+      time_map = time_map
+    )
+    direct <- state_time(
+      case$fit,
+      variables = variables,
+      times = case$times,
+      state_sets = list(lower = c("1", "2")),
+      absorb = 6,
+      time_map = time_map
+    ) |>
+      inferences(method = "delta")
+    expect_equal(nrow(total), nrow(direct))
+    direct <- direct[match(total$rowid, direct$rowid), , drop = FALSE]
+    label <- if (is.null(time_map)) "visits" else "real time"
+    expect_equal(total$total_time, direct$estimate, tolerance = 1e-10)
+    expect_gt(min(total$std.error), 0)
+    expect_equal(total$std.error, direct$std.error, tolerance = 1e-8, label = label)
+    expect_equal(total$conf.low, direct$conf.low, tolerance = 1e-8, label = label)
+    expect_equal(total$conf.high, direct$conf.high, tolerance = 1e-8, label = label)
+  }
+
+  # Interpolated SOPs no longer match the stored derivatives, so time_in_state()
+  # stops instead of returning totals without their uncertainty.
+  interpolated <- suppressWarnings(
+    interpolate_sops(sop, time_map = case$time_map)
+  )
+  expect_error(
+    time_in_state(interpolated, target_states = "1"),
+    "already interpolated",
+    class = "mostr_error"
+  )
+  # Without the other states, interpolation renormalizes the remaining
+  # probabilities, which the stored derivatives do not describe.
+  kept <- sop[as.character(sop$state) %in% c("1", "2"), , drop = FALSE]
+  expect_error(
+    time_in_state(kept, target_states = "1", time_map = case$time_map),
+    "all states",
+    class = "mostr_error"
+  )
+})

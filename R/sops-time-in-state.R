@@ -132,6 +132,225 @@ time_in_state_tidy_inference <- function(x, target_states, real_time) {
   result
 }
 
+time_in_state_is_delta <- function(x) {
+  !is.null(attr(x, "analytical", exact = TRUE)) ||
+    identical(attr(x, "method"), "delta")
+}
+
+# Delta-method uncertainty of the totals of SOPs from
+# `inferences(method = "delta")`. Each total is a weighted sum of SOP rows,
+# plus a starting-state term when real time starts at `baseline_time`:
+#   total_g = sum_r w_gr * p_r + b * a_g,
+# where w_gr is the time weight of row r (1 per visit without `time_map`, the
+# trapezoid weights of the interpolation grid with it) when row r is a target
+# state of group g and 0 otherwise, b is the weight of `baseline_time`, and a_g
+# is the probability that group g starts in a target state. The weights are
+# applied to what the SOPs store: their derivatives with respect to the
+# coefficients (conditional variance, w J V J' w') or their per-patient
+# influence values (unconditional variance), so the covariance of every pair of
+# SOP rows is never formed. Under unconditional variance, a_g is the share of
+# sampled patients starting in a target state, whose influence is added.
+time_in_state_delta <- function(
+  x,
+  target_states,
+  time_map,
+  baseline_time,
+  target_times
+) {
+  analytical <- attr(x, "analytical", exact = TRUE)
+  if (is.null(analytical)) {
+    mostr_abort(
+      "These delta-method SOPs no longer carry the derivatives needed for ",
+      "standard errors of the total time. Run `inferences(method = \"delta\")` ",
+      "again and pass its result to `time_in_state()` unchanged."
+    )
+  }
+  # The totals come from the estimates alone. Without the interval columns,
+  # `interpolate_sops()` does not warn that it interpolates interval endpoints,
+  # which are replaced below.
+  point <- x
+  for (column in setdiff(inference_columns(), "estimate")) {
+    point[[column]] <- NULL
+  }
+  result <- if (is.null(time_map)) {
+    time_in_state_tidy(point, target_states, real_time = FALSE)
+  } else {
+    grid <- comparison_real_time_target_times(
+      point,
+      time_map,
+      target_times,
+      baseline_time
+    )
+    interpolated <- interpolate_sops(
+      point,
+      time_map = time_map,
+      target_times = grid,
+      baseline_time = baseline_time
+    )
+    time_in_state_tidy(interpolated, target_states, real_time = TRUE)
+  }
+
+  source <- as.data.frame(x)
+  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(source))
+  group_cols <- setdiff(
+    names(source),
+    c(
+      "time",
+      "state",
+      sop_measure_cols(source),
+      sop_test_cols(source),
+      weight_cols
+    )
+  )
+  source_row <- match(
+    delta_row_key(delta_row_key_frame(x)),
+    analytical$row_key
+  )
+  if (anyNA(source_row) || !all(group_cols %in% names(result))) {
+    mostr_abort(
+      "The SOP rows do not align with their stored delta-method derivatives. ",
+      "Pass the result of `inferences(method = \"delta\")` to ",
+      "`time_in_state()` unchanged."
+    )
+  }
+  group <- if (length(group_cols) == 0L) {
+    rep(1L, nrow(source))
+  } else {
+    match(
+      delta_row_key(source[, group_cols, drop = FALSE]),
+      delta_row_key(as.data.frame(result)[, group_cols, drop = FALSE])
+    )
+  }
+
+  source_time <- as.character(source$time)
+  integration <- if (is.null(time_map)) {
+    list(
+      visit = stats::setNames(
+        rep(1, length(unique(source_time))),
+        unique(source_time)
+      ),
+      baseline = 0
+    )
+  } else {
+    delta_real_time_weights(
+      x,
+      list(
+        time_map = time_map,
+        baseline_time = baseline_time,
+        target_times = target_times
+      )
+    )
+  }
+  time_weight <- unname(integration$visit[match(
+    source_time,
+    names(integration$visit)
+  )])
+  targets <- as.character(target_states)
+  keep <- which(
+    as.character(source$state) %in% targets & time_weight != 0
+  )
+  delta_assert_bytes(
+    as.double(nrow(source)) * 64 + as.double(length(keep)) * 12,
+    "The analytical time-in-state operator"
+  )
+  if (anyNA(group[keep]) || anyNA(time_weight[keep])) {
+    mostr_abort(
+      "The SOP rows do not align with the time-in-state groups."
+    )
+  }
+  rows_by_group <- split(
+    keep,
+    factor(group[keep], levels = seq_len(nrow(result)))
+  )
+  operator <- lapply(rows_by_group, function(rows) {
+    list(index = source_row[rows], weight = time_weight[rows])
+  })
+
+  # Probability that each group starts in a target state.
+  p_var <- markov_result_settings(x)$p_var
+  start_share <- numeric(nrow(result))
+  start <- NULL
+  if (integration$baseline != 0) {
+    if (p_var %in% group_cols) {
+      # Each profile, or each scenario that sets the starting state, starts
+      # in its own state.
+      start_share <- as.numeric(as.character(result[[p_var]]) %in% targets)
+    } else if (inherits(x, "markov_avg_sops")) {
+      baseline <- baseline_rows_for_anchor(x)
+      if (!p_var %in% names(baseline)) {
+        mostr_abort(
+          "Previous-state variable `",
+          p_var,
+          "` not found in baseline data."
+        )
+      }
+      start <- as.character(baseline[[p_var]])
+      start_share <- rep(mean(start %in% targets), nrow(result))
+    } else {
+      mostr_abort(
+        "Previous-state variable `",
+        p_var,
+        "` not found in SOP output."
+      )
+    }
+  }
+
+  estimate <- rep(0, length(analytical$row_key))
+  estimate[source_row] <- source$estimate
+  calculated <- drop(delta_apply_comparison_operator(operator, estimate)) +
+    integration$baseline * start_share
+  # With `time_map`, the weights assume one shared visit grid and probabilities
+  # that sum to one over the states (so that interpolation's renormalization
+  # changes nothing). Rows filtered out by the user can break either; the
+  # standard errors would then belong to a different total, so stop instead.
+  if (
+    any(!is.finite(calculated)) ||
+      any(
+        abs(calculated - result$total_time) >
+          1e-12 + 1e-10 * pmax(abs(calculated), abs(result$total_time))
+      )
+  ) {
+    mostr_abort(
+      "With `time_map`, delta-method standard errors of the total time need ",
+      "the same visits and all states in every group. Pass the result of ",
+      "`inferences(method = \"delta\")` to `time_in_state()` unchanged."
+    )
+  }
+
+  propagated <- delta_propagate_comparison_state(x, operator)
+  standard_error <- propagated$std.error
+  if (
+    identical(propagated$analytical$representation, "influence") &&
+      !is.null(start)
+  ) {
+    profile_ids <- as.character(propagated$analytical$profile_ids)
+    ids <- delta_profile_ids(baseline, markov_result_settings(x)$id_var)
+    index <- match(profile_ids, ids)
+    if (anyNA(index) || length(ids) != length(profile_ids)) {
+      mostr_abort(
+        "Baseline-anchor patients do not align with the analytical patient influences."
+      )
+    }
+    indicator <- as.numeric(start[index] %in% targets)
+    influence <- propagated$analytical$influence +
+      integration$baseline * (indicator - mean(indicator))
+    standard_error <- sqrt(
+      apply(influence, 2L, stats::var) / length(profile_ids)
+    )
+  }
+
+  bounds <- delta_interval_bounds(
+    estimate = result$total_time,
+    standard_error = standard_error,
+    conf_level = attr(x, "conf_level") %||% 0.95,
+    conf_type = "wald"
+  )
+  result$conf.low <- bounds$conf.low
+  result$conf.high <- bounds$conf.high
+  result$std.error <- standard_error
+  result
+}
+
 time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
   if (!all(c("boot_id", "time", "tx") %in% colnames(sops))) {
     mostr_abort(
@@ -214,7 +433,9 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'   \item **Tidy SOP:** If input is a `markov_sops` or `markov_avg_sops`
 #'     object, it returns grouped total time. Stored simulation, bootstrap, or
 #'     posterior draws are reduced identically and used to recompute confidence
-#'     intervals and standard errors.
+#'     intervals and standard errors. For SOPs from
+#'     `inferences(method = "delta")`, standard errors and confidence limits of
+#'     the totals are computed with the delta method; see Details.
 #'   \item **Legacy Wide Bootstrap-Level:** If input is a data frame with
 #'     `boot_id`, `time`, `tx`, and `state_*` columns, it returns mean
 #'     time-in-state per treatment group and the difference for each bootstrap
@@ -254,7 +475,9 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     columns. When stored draws are available, draw-based `conf.low`,
 #'     `conf.high`, and `std.error` columns are recomputed and the reduced draws
 #'     are retained in a `draws` attribute. Any draw-specific baseline anchors
-#'     have already been propagated by [interpolate_sops()]. Tests from
+#'     have already been propagated by [interpolate_sops()]. For SOPs from
+#'     `inferences(method = "delta")`, `conf.low`, `conf.high`, and
+#'     `std.error` are delta-method results for the totals. Tests from
 #'     `inferences(null = )` are dropped, because a null value for
 #'     probabilities does not apply to a total time.
 #'   \item **Input = Bootstrap DF:** A data frame with columns:
@@ -265,6 +488,40 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'       \item `delta`: Difference (Treatment - Control)
 #'     }
 #' }
+#'
+#' @details
+#' ## Delta-method uncertainty
+#'
+#' A total time is a weighted sum of SOPs: each visit counts once without
+#' `time_map`, and with `time_map` each visit gets the weight it carries in
+#' the area under the interpolated curve. With `baseline_time`, the curve
+#' starts at that time from the starting state, so the total also depends on
+#' the share of profiles that start in a target state. For SOPs from
+#' `inferences(method = "delta")`,
+#' `time_in_state()` applies these weights to how each SOP changes with each
+#' model coefficient, and so obtains the standard error of the total. It keeps
+#' the variance chosen with `vcov` in [inferences()]:
+#' \itemize{
+#'   \item **Conditional variance** accounts for coefficient estimation and
+#'     treats the patients' starting states and covariates as given. It is the
+#'     only choice for [sops()] results, one row per profile.
+#'   \item **Unconditional variance** (the default for [avg_sops()]) also
+#'     accounts for which patients were sampled. With `time_map` and
+#'     `baseline_time`, this includes the share of sampled patients who start
+#'     in a target state.
+#' }
+#' Confidence limits are the total plus and minus the normal quantile for the
+#' stored `conf_level` times the standard error, as in [avg_state_time()] and
+#' [state_time()] with `method = "delta"`, which give the same results. The
+#' calculation uses only the weighted sums, never the covariance of every pair
+#' of SOPs, within the memory limit [mostr.delta_max_bytes].
+#'
+#' Pass the result of [inferences()] unchanged. `time_in_state()` stops with
+#' an error, instead of returning totals without uncertainty, for delta
+#' results already passed through [interpolate_sops()] (use `time_map` here
+#' instead), and, with `time_map`, for delta results whose rows were filtered
+#' so that the groups no longer share the same visits or some states are
+#' missing.
 #'
 #' @examples
 #' \dontrun{
@@ -309,6 +566,15 @@ time_in_state <- function(
   use_real_time <- !is.null(time_map)
 
   if (inherits(sops, "markov_interpolated_sops")) {
+    # The stored derivatives belong to the visit SOPs, not to the interpolated
+    # rows, and `interpolate_sops()` interpolated only the interval endpoints.
+    if (time_in_state_is_delta(sops)) {
+      mostr_abort(
+        "`time_in_state()` cannot compute delta-method standard errors from ",
+        "SOPs already interpolated with `interpolate_sops()`. Pass the SOPs ",
+        "from `inferences(method = \"delta\")` with `time_map` instead."
+      )
+    }
     if (!is.null(time_map) || baseline_time_supplied) {
       mostr_abort(
         "`markov_interpolated_sops` is already on the real-time scale; ",
@@ -352,6 +618,15 @@ time_in_state <- function(
       mostr_abort(
         "`target_times` requires `time_map` or an already interpolated SOP object."
       )
+    }
+    if (time_in_state_is_delta(sops)) {
+      return(time_in_state_delta(
+        sops,
+        target_states,
+        time_map = time_map,
+        baseline_time = baseline_time,
+        target_times = target_times
+      ))
     }
     if (use_real_time) {
       if (is.null(time_map)) {
