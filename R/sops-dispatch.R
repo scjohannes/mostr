@@ -294,7 +294,7 @@ validate_fast_previous_state_support <- function(model, settings) {
   ) {
     return(invisible(NULL))
   }
-  observed <- unique(as.character(model_data[[p_var]]))
+  observed <- markov_fitted_previous_states(model, p_var)
   unsupported <- setdiff(as_state_labels(settings$y_levels), observed)
   unsupported <- setdiff(unsupported, as_state_labels(settings$absorb))
   if (length(unsupported) > 0L) {

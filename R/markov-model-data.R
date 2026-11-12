@@ -286,6 +286,19 @@ markov_model_data <- function(model) {
   NULL
 }
 
+# The states that occur as the previous state in the data the model was fitted
+# to, as labels, or NULL when the fit does not carry those data. An absorbing
+# state never occurs there: a patient in it has no further transition, so the
+# model has no linear predictor for it as a previous state.
+markov_fitted_previous_states <- function(model, p_var) {
+  model_data <- markov_model_data(model)
+  if (is.null(model_data) || !p_var %in% names(model_data)) {
+    return(NULL)
+  }
+  values <- model_data[[p_var]]
+  unique(as_state_labels(values[!is.na(values)]))
+}
+
 markov_model_id_var <- function(model, id_var = NULL) {
   if (!is.null(id_var)) {
     return(id_var)

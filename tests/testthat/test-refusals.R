@@ -766,6 +766,33 @@ prediction_refusals <- list(
     "P53", "`p2_var` for a model fitted as first order",
     function() refusal_call(sops, p2_var = "ypprev"),
     "The model was fitted as a first-order model"
+  ),
+  refusal(
+    "P54", "a linear-predictor plot faceted by an absorbing previous state",
+    function() {
+      plot_lp_difference(
+        grid_fit(refusal_orm),
+        profile = grid_profiles(refusal_orm)[1, , drop = FALSE],
+        variables = list(tx = c(0, 1)),
+        times = 1:4,
+        previous_states = 1:4
+      )
+    },
+    "`previous_states` includes state(s) that never occur in `yprev`"
+  ),
+  refusal(
+    "P55", "a linear-predictor plot of a profile missing factor levels of yprev",
+    function() {
+      profile <- grid_profiles(refusal_vglm)[1, , drop = FALSE]
+      profile$yprev <- factor(as.character(profile$yprev))
+      plot_lp_difference(
+        grid_fit(refusal_vglm),
+        profile = profile,
+        variables = list(tx = c(0, 1)),
+        times = 1:4
+      )
+    },
+    "The model returned linear predictors for 8 of the 24 plotted rows"
   )
 )
 

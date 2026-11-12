@@ -31,14 +31,18 @@ first value is the reference.}
 \item{times}{Time values at which to evaluate the linear predictor.}
 
 \item{previous_states}{Optional previous-state values to facet by. Defaults
-to all non-absorbing states in \code{y_levels}.}
+to the states in \code{y_levels} that occur as the previous state in the data
+the model was fitted to, which leaves out absorbing states without
+\code{absorb}. A supplied state that never occurs there is an error, because
+the model has no linear predictor for it.}
 
 \item{y_levels}{The states in fitted order. \code{NULL} (the default) uses the
 states of the fitted model. A supplied vector must hold the same states
 in the same order, otherwise it is an error.}
 
 \item{absorb}{Optional absorbing-state label excluded from the default
-previous-state grid.}
+previous-state grid. It is needed only for a model that does not carry
+the data it was fitted to; a \code{\link[=mostm]{mostm()}} fit carries them.}
 
 \item{time_var}{Name of the time column. \code{NULL} (the default) uses the
 \code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
