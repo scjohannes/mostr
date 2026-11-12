@@ -106,25 +106,6 @@ reference_second_order_step <- function(joint, transition_for, absorb) {
   out
 }
 
-# Normalize every (draw, observation) probability vector over states. Missing
-# entries are ignored; vectors with infinite entries or non-positive mass are
-# returned unchanged.
-reference_normalize_probability_array <- function(values) {
-  out <- values
-  dims <- dim(values)
-  for (draw in seq_len(dims[1L])) {
-    for (observation in seq_len(dims[2L])) {
-      vector <- values[draw, observation, ]
-      present <- !is.na(vector)
-      total <- sum(vector[present])
-      if (all(is.finite(vector[present])) && total > 0) {
-        out[draw, observation, present] <- vector[present] / total
-      }
-    }
-  }
-  out
-}
-
 # Average draw-level SOP arrays [draw, observation, time, state] within groups.
 reference_group_means <- function(values, groups, group_count) {
   dims <- dim(values)

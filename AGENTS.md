@@ -53,9 +53,11 @@ When changing the analytical recursion, update its test-only R reference and
 native-versus-R checks in the same change. Cover the affected behavior with a
 shared deterministic example; the R reference must never become a production
 fallback. Keep analytical recursion tests in the existing native-safety CI jobs.
-This rule is about the references under `tests/`. `soprob_markov_reference()` in
-`R/sops-engine.R` is a production engine despite its name, so it does not count as
-an independent check.
+This rule is about the test-only references under `tests/`. They differ from
+`soprob_markov_r_engine()` in `R/sops-engine.R`, the production engine written
+in R that runs `blrm` fits and designs too large for the compiled path. It
+shares code with the compiled path, so it does not count as an independent
+check.
 
 `tests/testthat/helper-slow-loop.R` is the readable reference for SOPs. Keep it as
 plain loops that call no package code, so that a maintainer can check it by eye

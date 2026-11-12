@@ -101,7 +101,7 @@ jobs:
           grep -E -- "g\\+\\+.*-fsanitize=${SANITIZER}.* -shared .*mostr\\.so" "$log"
       - name: Run native and recursion tests
         run: |
-          Rscript -e 'testthat::test_local(".", filter = "sops-native|sops-delta|fast_vs_slow_equivalence|orm-fast-path|sops-rmsb-second-order", load_package = "installed", stop_on_failure = TRUE)'
+          Rscript -e 'testthat::test_local(".", filter = "sops-native|sops-delta|sops-hmisc-equivalence|orm-fast-path|sops-rmsb-second-order", load_package = "installed", stop_on_failure = TRUE)'
 
   valgrind:
     runs-on: ubuntu-latest

@@ -330,9 +330,9 @@ test_that("execution-plan budgets bound all retained first-order designs", {
 test_that("fallback notifications are emitted once per inference call", {
   messages <- testthat::capture_messages({
     mostr:::with_sop_fallback_notification_scope({
-      mostr:::notify_sop_reference_fallback("first draw failed.")
+      mostr:::notify_sop_r_engine_fallback("first draw failed.")
       mostr:::with_sop_fallback_notification_scope({
-        mostr:::notify_sop_reference_fallback("second draw failed.")
+        mostr:::notify_sop_r_engine_fallback("second draw failed.")
       })
     })
   })

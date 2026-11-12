@@ -129,62 +129,6 @@ double cumulative_to_categories(
 
 }  // namespace
 
-[[cpp11::register]] doubles cpp_markov_propagate(
-    doubles_matrix<> initial,
-    list transitions,
-    integers non_absorb,
-    integers absorb) {
-  const int n = initial.nrow();
-  const int states = initial.ncol();
-  const int times = transitions.size() + 1;
-  validate_state_partition(non_absorb, absorb, states);
-  writable::doubles out(checked_product({n, times, states}));
-  std::fill(out.begin(), out.end(), 0.0);
-  out.attr("dim") = writable::integers({n, times, states});
-
-  auto index = [n, times](const int i, const int t, const int k) -> R_xlen_t {
-    return static_cast<R_xlen_t>(i) +
-      static_cast<R_xlen_t>(n) * t +
-      static_cast<R_xlen_t>(n) * times * k;
-  };
-  for (int k = 0; k < states; ++k) {
-    for (int i = 0; i < n; ++i) {
-      out[index(i, 0, k)] = initial(i, k);
-    }
-  }
-
-  for (int t = 1; t < times; ++t) {
-    doubles_matrix<> trans(transitions[t - 1]);
-    if (trans.nrow() != n * non_absorb.size() || trans.ncol() != states) {
-      cpp11::stop("Transition matrix dimensions do not match the SOP state plan.");
-    }
-    for (R_xlen_t origin_pos = 0; origin_pos < non_absorb.size(); ++origin_pos) {
-      const int origin = non_absorb[origin_pos] - 1;
-      const R_xlen_t row_offset = origin_pos * n;
-      for (int i = 0; i < n; ++i) {
-        const double previous = out[index(i, t - 1, origin)];
-        if (previous == 0.0) {
-          continue;
-        }
-        for (int target = 0; target < states; ++target) {
-          out[index(i, t, target)] +=
-            previous * trans(row_offset + i, target);
-        }
-      }
-    }
-    for (R_xlen_t a_pos = 0; a_pos < absorb.size(); ++a_pos) {
-      const int state = absorb[a_pos] - 1;
-      for (int i = 0; i < n; ++i) {
-        out[index(i, t, state)] += out[index(i, t - 1, state)];
-      }
-    }
-    if ((t & 7) == 0) {
-      cpp11::check_user_interrupt();
-    }
-  }
-  return out;
-}
-
 [[cpp11::register]] doubles cpp_markov_update_logits(
     doubles_matrix<> previous,
     doubles_matrix<> logits,
@@ -872,52 +816,6 @@ bool delta_category_probabilities(
     out[i] = selected;
   }
   PutRNGstate();
-  return out;
-}
-
-[[cpp11::register]] doubles cpp_normalize_probability_array(
-    doubles values,
-    int draws,
-    int observations,
-    int states) {
-  const R_xlen_t expected = checked_product({draws, observations, states});
-  if (values.size() != expected) {
-    cpp11::stop("Probability array length does not match its dimensions.");
-  }
-  writable::doubles out(values);
-  auto index = [draws, observations](const int d, const int i, const int k) -> R_xlen_t {
-    return static_cast<R_xlen_t>(d) +
-      static_cast<R_xlen_t>(draws) * i +
-      static_cast<R_xlen_t>(draws) * observations * k;
-  };
-  for (int d = 0; d < draws; ++d) {
-    for (int i = 0; i < observations; ++i) {
-      double total = 0.0;
-      bool finite = true;
-      for (int k = 0; k < states; ++k) {
-        const double value = out[index(d, i, k)];
-        if (ISNAN(value)) {
-          continue;
-        }
-        if (!std::isfinite(value)) {
-          finite = false;
-        }
-        total += value;
-      }
-      if (finite && total > 0.0) {
-        for (int k = 0; k < states; ++k) {
-          const R_xlen_t pos = index(d, i, k);
-          if (!ISNAN(out[pos])) {
-            out[pos] /= total;
-          }
-        }
-      }
-    }
-    if ((d & 31) == 0) {
-      cpp11::check_user_interrupt();
-    }
-  }
-  out.attr("dim") = writable::integers({draws, observations, states});
   return out;
 }
 

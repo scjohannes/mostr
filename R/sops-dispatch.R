@@ -2,7 +2,7 @@
 #'
 #' Computes patient-level state occupancy probabilities from a supported
 #' Markov transition model. Frequentist first-order models use the optimized
-#' native engine; other supported workflows use the reference engine.
+#' native engine; other supported workflows use an engine written in R.
 #'
 #' @param model A Markov transition model fitted by [mostm()], including the
 #'   `robcov_vglm` object that the vglm engine returns. Models
@@ -66,8 +66,8 @@ soprob_markov <- function(
     p2_var = p2_var,
     source = "rows"
   )
-  run_reference <- function() {
-    soprob_markov_reference(
+  run_r_engine <- function() {
+    soprob_markov_r_engine(
       model = model,
       newdata = newdata,
       times = times,
@@ -86,7 +86,7 @@ soprob_markov <- function(
     )
   }
   model_fast <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
-  reference_supported <- inherits(
+  r_engine_supported <- inherits(
     model,
     c("vglm", "orm", "blrm", "robcov_vglm")
   )
@@ -102,15 +102,15 @@ soprob_markov <- function(
     length(dots) == 0L
 
   if (!use_fast) {
-    if (reference_supported && !inherits(model_fast, "blrm")) {
+    if (r_engine_supported && !inherits(model_fast, "blrm")) {
       reason <- if (length(dots) > 0L) {
-        "additional backend arguments require reference evaluation."
+        "additional backend arguments need the R engine."
       } else {
         "the fitted model or configuration has no compiled execution plan."
       }
-      notify_sop_reference_fallback(reason)
+      notify_sop_r_engine_fallback(reason)
     }
-    return(run_reference())
+    return(run_r_engine())
   }
 
   validate_markov_model(model_fast)
@@ -142,8 +142,8 @@ soprob_markov <- function(
     }
   )
   if (is.null(plan)) {
-    notify_sop_reference_fallback(conditionMessage(fallback_condition))
-    return(run_reference())
+    notify_sop_r_engine_fallback(conditionMessage(fallback_condition))
+    return(run_r_engine())
   }
   resolved_times <- plan$times
   out <- run_sop_execution_plan(plan, get_effective_coefs(model_fast))

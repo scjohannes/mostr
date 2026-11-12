@@ -965,7 +965,7 @@ inferences_simulation <- function(
         output = if (is_avg) "average" else "individual"
       ),
       error = function(e) {
-        notify_sop_reference_fallback(conditionMessage(e))
+        notify_sop_r_engine_fallback(conditionMessage(e))
         NULL
       }
     )

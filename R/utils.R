@@ -259,7 +259,7 @@ with_sop_fallback_notification_scope <- function(code) {
   force(code)
 }
 
-notify_sop_reference_fallback <- function(reason = NULL) {
+notify_sop_r_engine_fallback <- function(reason = NULL) {
   state <- getOption("mostr.sop_fallback_notification")
   if (is.environment(state) && isTRUE(state$shown)) {
     return(invisible(FALSE))

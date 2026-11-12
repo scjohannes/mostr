@@ -1,4 +1,5 @@
 test_that("soprobMarkovOrdm and soprob_markov yield identical results - single patient", {
+  skip_if_not_installed("Hmisc")
   withr::local_seed(1234)
 
   follow_up <- 30
@@ -69,6 +70,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
 })
 
 test_that("soprobMarkovOrdm and soprob_markov yield identical results - single patient; partial PO", {
+  skip_if_not_installed("Hmisc")
   withr::local_seed(1234)
 
   follow_up <- 30
@@ -140,6 +142,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
 })
 
 test_that("soprobMarkovOrdm and soprob_markov yield identical results - all patients", {
+  skip_if_not_installed("Hmisc")
   withr::local_seed(7890)
 
   follow_up <- 30

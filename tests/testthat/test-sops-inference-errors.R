@@ -153,7 +153,7 @@ test_that("inferences() reports repeated R fallbacks only once", {
   with_mocked_bindings(
     inferences_impl = function(...) {
       for (i in seq_len(1000L)) {
-        notify_sop_reference_fallback(paste("draw", i))
+        notify_sop_r_engine_fallback(paste("draw", i))
       }
       object
     },
@@ -226,7 +226,7 @@ test_that("inferences_simulation() falls back when fast-path setup fails", {
   expect_s3_class(attr(out, "draws"), "data.frame")
 })
 
-test_that("inferences_simulation() errors when all fast-path or slow-path draws fail", {
+test_that("inferences_simulation() errors when all compiled-path or R-engine draws fail", {
   newdata <- data.frame(id = 1:2, tx = c(0, 1), yprev = c(1, 2), time = 1)
   shared_mocks <- list(
     get_coef = function(model) c(a = 0, b = 0),
@@ -237,7 +237,7 @@ test_that("inferences_simulation() errors when all fast-path or slow-path draws 
   cases <- list(
     # A vglm fit takes the compiled path, where every plan run fails.
     list(
-      label = "fast path",
+      label = "compiled path",
       class = "vglm",
       mocks = list(
         compile_sop_execution_plan = function(...) {
@@ -254,7 +254,7 @@ test_that("inferences_simulation() errors when all fast-path or slow-path draws 
     ),
     # Another model class takes the R path, where every SOP call fails.
     list(
-      label = "slow path",
+      label = "R engine",
       class = "mock_model",
       mocks = list(
         set_coef = function(model, new_coefs) model,

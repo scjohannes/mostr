@@ -75,5 +75,5 @@ An array of state probabilities. Frequentist fits return
 \description{
 Computes patient-level state occupancy probabilities from a supported
 Markov transition model. Frequentist first-order models use the optimized
-native engine; other supported workflows use the reference engine.
+native engine; other supported workflows use an engine written in R.
 }

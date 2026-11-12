@@ -108,7 +108,7 @@
 #' dim(probabilities)
 #'
 #' @noRd
-soprob_markov_reference <- function(
+soprob_markov_r_engine <- function(
   model,
   newdata,
   times = NULL,

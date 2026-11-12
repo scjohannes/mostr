@@ -165,7 +165,7 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
 
   for (case in cases) {
     reference <- do.call(
-      mostr:::soprob_markov_reference,
+      mostr:::soprob_markov_r_engine,
       c(list(case$fit), args)
     )
     expect_equal(

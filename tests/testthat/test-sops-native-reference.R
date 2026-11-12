@@ -17,36 +17,6 @@ native_reference_previous <- function(n, K) {
   previous / rowSums(previous)
 }
 
-test_that("native first-order propagation matches the reference over visits", {
-  set.seed(4101)
-  n <- 4L
-  K <- 5L
-  initial <- native_reference_previous(n, K)
-
-  for (absorb in native_absorbing_sets) {
-    non_absorb <- setdiff(seq_len(K), absorb)
-    transitions <- lapply(1:3, function(visit) {
-      reference_random_stochastic(n * length(non_absorb), K)
-    })
-    actual <- cpp_markov_propagate(
-      initial,
-      transitions,
-      as.integer(non_absorb),
-      as.integer(absorb)
-    )
-
-    expected <- array(0, dim = c(n, 4L, K))
-    expected[, 1L, ] <- initial
-    current <- initial
-    for (visit in seq_along(transitions)) {
-      blocks <- reference_origin_blocks(transitions[[visit]], non_absorb, n)
-      current <- reference_markov_step(current, blocks, absorb)
-      expected[, visit + 1L, ] <- current
-    }
-    expect_equal(actual, expected, tolerance = 1e-14)
-  }
-})
-
 test_that("native logit updates match the reference and report crossed cut-points", {
   set.seed(4102)
   n <- 4L
@@ -248,7 +218,7 @@ test_that("native second-order updates match the joint-history reference", {
     )
     expect_equal(actual, expected, tolerance = 1e-14)
 
-    # The reference engine accumulates pair chunks and absorbing mass
+    # The R engine accumulates pair chunks and absorbing mass
     # separately.
     chunks <- split(seq_len(nrow(pairs)), rep(1:2, length.out = nrow(pairs)))
     chunked <- Reduce(`+`, lapply(chunks, function(chunk) {
@@ -376,27 +346,6 @@ test_that("native BLRM probabilities match the reference and keep crossed rows r
     "posterior draws",
     class = "mostr_crossed_thresholds"
   )
-})
-
-test_that("native probability-array normalization matches the reference", {
-  values <- array(
-    c(
-      0.2, 0.0, NA, 1, -1, 3,
-      0.3, 0.0, 0.5, Inf, 0.5, NaN,
-      0.5, 0.0, 0.5, 1, 0.2, 1
-    ),
-    dim = c(2L, 3L, 3L)
-  )
-  set.seed(4108)
-  random_values <- array(stats::runif(4L * 5L * 6L), dim = c(4L, 5L, 6L))
-
-  for (input in list(values, random_values)) {
-    expect_equal(
-      normalize_probability_array_native(input),
-      reference_normalize_probability_array(input),
-      tolerance = 1e-15
-    )
-  }
 })
 
 test_that("native posterior reduction matches unequal unordered groups", {

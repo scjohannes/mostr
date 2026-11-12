@@ -266,7 +266,7 @@ describe("SOP regression baselines", {
     )
   })
 
-  test_that("inline and explicit spline slow-path SOPs agree for interaction models", {
+  test_that("inline and explicit spline SOPs from the R engine agree for interaction models", {
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 

@@ -76,7 +76,7 @@ flowchart TD
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
-| Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `R/sops-crossed-thresholds.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories; errors for crossed thresholds |
+| Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `R/sops-crossed-thresholds.R`, `src/sops.cpp` | Native propagation, with an engine in R for `blrm` and oversized designs; first- and second-order histories; errors for crossed thresholds |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap (internal only, through `inferences_score_bootstrap()`) |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
@@ -526,8 +526,8 @@ predictors into category probabilities stops with a classed
 The tolerance is `crossed_threshold_tolerance()` = 1e-10 in
 `R/sops-crossed-thresholds.R`, mirrored by `kCrossedTolerance` in
 `src/sops.cpp` and already used by the analytical recursion
-(`delta_category_probabilities()`, `sop_delta_raw_probabilities()`). Rounding
-in a difference of two logistic values is of order 1e-16, so values in
+(`delta_category_probabilities()` in `src/sops.cpp`). Rounding in a
+difference of two logistic values is of order 1e-16, so values in
 [-1e-10, 0) are rounding: they are set to zero and the row is rescaled, as
 before. Anything lower is a crossing.
 
@@ -540,7 +540,7 @@ Where the check lives:
   (`predict_vglm_response_markov()`) never clipped. The callers run
   `check_crossed_thresholds()` next to `check_transition_probabilities()`:
   `markov_msm_run()`, `run_second_order_execution_plan()`,
-  `soprob_markov_reference()` and its second-order run, and the transition
+  `soprob_markov_r_engine()` and its second-order run, and the transition
   trace in `R/diagnostic-trace.R`. Prediction rows stack the profiles once per
   previous state (or pair), so row r is profile (r - 1) %% n + 1; posterior
   arrays also give the number of draws.
@@ -569,7 +569,7 @@ The test-only reference `reference_checked_probabilities()` in
 `tests/testthat/helper-sops-native-reference.R` follows the same rule, and
 `reference_posterior_probabilities()` describes the raw rows of the blrm
 kernel. `tests/testthat/test-sops-crossed-thresholds.R` covers the public
-calls, the reference engine, the tolerance, MVN and bootstrap inference, and a
+calls, the R engine (`soprob_markov_r_engine()`), the tolerance, MVN and bootstrap inference, and a
 hand-made `blrm` fit with a non-proportional effect of time.
 
 ### Average time in states
@@ -1046,6 +1046,10 @@ test-only R reference written from the mathematics of the calculation
 `tests/testthat/helper-sops-delta-oracle.R`); these references are never
 production fallbacks. They start from prediction designs that the package built,
 so they cannot see a bug in how those designs are made.
+`tests/testthat/test-sops-hmisc-equivalence.R` and the first test in
+`tests/testthat/test-sops.R` compare first-order `soprob_markov()` results on
+`vglm` fits with `Hmisc::soprobMarkovOrdm()`, which shares no `mostr` code.
+Hmisc is only suggested, so these tests are skipped without it.
 
 `tests/testthat/helper-slow-loop.R` closes that gap. It holds plain per-patient,
 per-visit, per-previous-state loops for first- and second-order recursion, which
@@ -1145,10 +1149,12 @@ The remaining test files are mostly table-driven: tests that differ only in
 inputs share one `test_that()` with a list of cases, each named in the failure
 message through `info`, and share their fits.
 
-`soprob_markov_reference()` in `R/sops-engine.R` is not one of these test-only
-references, despite its name. It is a production engine: the only one for `blrm`,
+`soprob_markov_r_engine()` in `R/sops-engine.R` is not one of these test-only
+references. It is the production engine written in R: the only one for `blrm`,
 and the fallback when prediction designs exceed
-`mostr.execution_plan_max_bytes`.
+`mostr.execution_plan_max_bytes`. It shares the visit and previous-state
+helpers (`assign_sop_visit()`, `make_previous_state_column()`) with the
+compiled path, so agreement between the two is not an independent check.
 
 GitHub Actions runs R CMD check and runs the native and analytical-inference
 tests under address/undefined sanitizers and Valgrind. Planted-bug checks, which

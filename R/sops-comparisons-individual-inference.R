@@ -288,7 +288,7 @@ comparison_coefficient_predictor <- function(model, setup) {
         output = "individual"
       ),
       error = function(e) {
-        notify_sop_reference_fallback(conditionMessage(e))
+        notify_sop_r_engine_fallback(conditionMessage(e))
         NULL
       }
     )

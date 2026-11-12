@@ -117,10 +117,10 @@ test_that("sops() agrees with the readable loop on both sides of the crossing", 
   expect_error(loop(3L), "cut-points cross")
 })
 
-test_that("the reference engine, which predicts with VGAM, also stops", {
+test_that("the R engine, which predicts with VGAM, also stops", {
   case <- make_crossed_threshold_case()
   expect_error(
-    soprob_markov_reference(
+    soprob_markov_r_engine(
       case$model,
       newdata = case$profiles,
       times = 1:3,

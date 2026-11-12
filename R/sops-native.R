@@ -29,19 +29,6 @@ markov_update_po_native <- function(
   check_native_crossed_thresholds(out, nrow(previous), time)
 }
 
-normalize_probability_array_native <- function(probs) {
-  dims <- dim(probs)
-  values <- if (is.double(probs)) probs else as.numeric(probs)
-  out <- cpp_normalize_probability_array(
-    values,
-    dims[1],
-    dims[2],
-    dims[3]
-  )
-  dimnames(out) <- dimnames(probs)
-  out
-}
-
 reduce_sops_draw_array <- function(probs, groups, group_count) {
   dims <- dim(probs)
   if (length(dims) != 4L || length(groups) != dims[2]) {

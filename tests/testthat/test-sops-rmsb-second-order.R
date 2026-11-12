@@ -256,7 +256,7 @@ test_that("compiled second-order ORM plans match the reference recursion", {
     plan,
     mostr:::get_effective_coefs(model)
   )
-  expected <- mostr:::soprob_markov_reference(
+  expected <- mostr:::soprob_markov_r_engine(
     model,
     baseline,
     times = 1:6,
