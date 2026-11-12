@@ -34,19 +34,18 @@ inferences_profile_results <- function(
   use_coefstart
 ) {
   if (identical(method, "bootstrap")) {
-    stop(
+    mostr_abort(
       "Standard refit bootstrap is not supported for results with one row ",
       "per profile, from ",
       profile_result_source(object),
       ", because a resample can lack outcome states that the fixed profiles ",
       "need. Use `method = \"fwb\"`, or average over the profiles ",
-      "(`by = TRUE` or grouping columns) for ordinary bootstrap inference.",
-      call. = FALSE
+      "(`by = TRUE` or grouping columns) for ordinary bootstrap inference."
     )
   }
   model <- attr(object, "model")
   if (is.null(model)) {
-    stop("Model not stored in object. Cannot perform inference.")
+    mostr_abort("Model not stored in object. Cannot perform inference.")
   }
   validate_comparison_draw_cells(n_draws, nrow(object))
   setup <- setup_from_avg_comparison_object(object)
@@ -119,15 +118,14 @@ validate_comparison_draw_cells <- function(n_draws, n_rows) {
   max_cells <- getOption("mostr.max_sops_draw_cells", 5e7)
   n_cells <- as.double(n_draws) * n_rows
   if (n_cells > max_cells) {
-    stop(
+    mostr_abort(
       "Inference for one row per profile would keep ",
       format(n_cells, scientific = FALSE),
       " draw values (draws x result rows), above the current limit of ",
       format(max_cells, scientific = FALSE),
       ". Lower `n_draws`; request fewer `times`, state sets, or profiles; ",
       "average over the profiles (`by = TRUE`); or increase option ",
-      "`mostr.max_sops_draw_cells` if this allocation is intentional.",
-      call. = FALSE
+      "`mostr.max_sops_draw_cells` if this allocation is intentional."
     )
   }
   invisible(NULL)
@@ -226,7 +224,9 @@ profile_draw_reducer <- function(object, setup) {
 stacked_to_counterfactual_array <- function(sops_array, n_cf, n_each) {
   dims <- dim(sops_array)
   if (dims[1L] != n_cf * n_each) {
-    stop("Stacked SOP rows are not aligned with the comparison scenarios.")
+    mostr_abort(
+      "Stacked SOP rows are not aligned with the comparison scenarios."
+    )
   }
   aperm(
     array(sops_array, dim = c(n_each, n_cf, dims[2L], dims[3L])),
@@ -260,9 +260,8 @@ check_comparison_replay <- function(object, setup, reduce_draw, model) {
           1e-12 + 1e-10 * pmax(abs(replayed[ok]), abs(stored[ok]))
       )
   ) {
-    stop(
-      "Replaying `comparisons()` did not reproduce the stored estimates.",
-      call. = FALSE
+    mostr_abort(
+      "Replaying `comparisons()` did not reproduce the stored estimates."
     )
   }
   invisible(NULL)
@@ -376,7 +375,7 @@ comparison_simulation_draws <- function(
   )
   successful <- which(!vapply(results, is.null, logical(1)))
   if (length(successful) == 0L) {
-    stop("All simulation draws failed.")
+    mostr_abort("All simulation draws failed.")
   }
   weights <- simulation_draws$baseline_weights_draws
   weight_col <- simulation_draws$draw_weight_col

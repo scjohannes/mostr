@@ -35,7 +35,7 @@ markov_model_ylevels <- function(model, y_levels = NULL) {
     }
   }
 
-  stop("`y_levels` cannot be NULL.")
+  mostr_abort("`y_levels` cannot be NULL.")
 }
 
 validate_plot_counterfactual_variables <- function(
@@ -46,19 +46,21 @@ validate_plot_counterfactual_variables <- function(
     return(NULL)
   }
   if (!is.list(variables) || is.null(names(variables))) {
-    stop("`variables` must be a named list, for example `list(tx = c(0, 1))`.")
+    mostr_abort(
+      "`variables` must be a named list, for example `list(tx = c(0, 1))`."
+    )
   }
   if (length(variables) != 1L || !nzchar(names(variables)[1])) {
-    stop("`variables` must contain exactly one named variable.")
+    mostr_abort("`variables` must contain exactly one named variable.")
   }
   if (length(variables[[1]]) < 1L) {
-    stop("`variables[[1]]` must contain at least one value.")
+    mostr_abort("`variables[[1]]` must contain at least one value.")
   }
   if (require_two && length(variables[[1]]) < 2L) {
-    stop("`variables[[1]]` must contain at least two values.")
+    mostr_abort("`variables[[1]]` must contain at least two values.")
   }
   if (anyDuplicated(as.character(variables[[1]]))) {
-    stop("`variables[[1]]` must not contain duplicate values.")
+    mostr_abort("`variables[[1]]` must not contain duplicate values.")
   }
   variables
 }
@@ -68,7 +70,7 @@ complete_plot_recursion_times <- function(times, time_info) {
     labels <- as.character(times)
     idx <- match(labels, time_info$levels)
     if (anyNA(idx)) {
-      stop("Could not align plot times with fitted visit levels.")
+      mostr_abort("Could not align plot times with fitted visit levels.")
     }
     return(factor(
       time_info$levels[seq_len(max(idx))],

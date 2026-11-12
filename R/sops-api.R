@@ -207,7 +207,7 @@ sops <- function(
   validate_markov_model(model)
   stop_include_re_without_blrm(model, include_re)
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `sops()`.")
+    mostr_abort("`times` must be supplied to `sops()`.")
   }
   conf_level <- validate_conf_level(conf_level)
   by_choice <- resolve_by_choice(by)
@@ -310,20 +310,20 @@ sops <- function(
     if (inherits(model, "vglm")) {
       # VGAM stores response levels
       y_levels <- model@extra$colnames.y
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
+      if (is.null(y_levels)) mostr_abort("`y_levels` cannot be NULL")
     } else if (inherits(model, "robcov_vglm")) {
       # robcov_vglm stores extra slot in list
       y_levels <- model$extra$colnames.y
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
+      if (is.null(y_levels)) mostr_abort("`y_levels` cannot be NULL")
     } else if (inherits(model, "blrm")) {
       y_levels <- model$ylevels
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
+      if (is.null(y_levels)) mostr_abort("`y_levels` cannot be NULL")
     } else if (inherits(model, "orm")) {
       # rms orm stores levels
       y_levels <- model$yunique
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
+      if (is.null(y_levels)) mostr_abort("`y_levels` cannot be NULL")
     } else {
-      stop("`y_levels` cannot be NULL")
+      mostr_abort("`y_levels` cannot be NULL")
     }
   }
 
@@ -440,7 +440,7 @@ sops_blrm <- function(
   max_draw_cells <- getOption("mostr.max_sops_draw_cells", 5e7)
 
   if (n_cells * n_requested > max_draw_cells) {
-    stop(
+    mostr_abort(
       "`sops()` for `blrm` would require ",
       format(n_cells * n_requested, scientific = FALSE),
       " posterior draw cells, above the current limit of ",
@@ -570,9 +570,8 @@ sops_blrm <- function(
 posterior_group_setup <- function(data, group_cols) {
   rows <- which(stats::complete.cases(data[, group_cols, drop = FALSE]))
   if (!length(rows)) {
-    stop(
-      "No complete prediction rows remain after omitting missing grouping values.",
-      call. = FALSE
+    mostr_abort(
+      "No complete prediction rows remain after omitting missing grouping values."
     )
   }
   complete_data <- data[rows, , drop = FALSE]
@@ -924,7 +923,7 @@ avg_sops <- function(
   validate_markov_model(model)
   stop_include_re_without_blrm(model, include_re)
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `avg_sops()`.")
+    mostr_abort("`times` must be supplied to `avg_sops()`.")
   }
   conf_level <- validate_conf_level(conf_level)
 
@@ -998,7 +997,7 @@ avg_sops <- function(
   # Validate variables exist in data
   missing_vars <- setdiff(names(var_list), names(newdata_orig))
   if (length(missing_vars) > 0) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+    mostr_abort("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
 
   # --- 2. Extract Baseline Data (One Row Per Patient) ---
@@ -1058,7 +1057,7 @@ avg_sops <- function(
     group_cols <- unique(c("time", "state", names(var_list), by))
     missing_groups <- setdiff(group_cols, names(sops_ind))
     if (length(missing_groups) > 0L) {
-      stop(
+      mostr_abort(
         "Grouping variables missing: ",
         paste(missing_groups, collapse = ", ")
       )
@@ -1102,7 +1101,7 @@ avg_sops <- function(
     } else {
       NULL
     }
-    if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
+    if (is.null(y_levels)) mostr_abort("`y_levels` cannot be NULL")
   }
 
   if (inherits(model, "blrm")) {

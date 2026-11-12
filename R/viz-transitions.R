@@ -99,7 +99,7 @@ plot_transitions <- function(
   if (
     !is.logical(show_values) || length(show_values) != 1L || is.na(show_values)
   ) {
-    stop("`show_values` must be TRUE or FALSE.")
+    mostr_abort("`show_values` must be TRUE or FALSE.")
   }
   if (!is.null(digits)) {
     plot_validate_scalar(digits, "digits", lower = 0)
@@ -130,16 +130,18 @@ plot_transitions <- function(
     )
   } else {
     if (!is.data.frame(object)) {
-      stop("`object` must be a data frame or a supported Markov model.")
+      mostr_abort("`object` must be a data frame or a supported Markov model.")
     }
     if (!is.null(newdata)) {
-      stop("`newdata` is only used for model-based plots.")
+      mostr_abort("`newdata` is only used for model-based plots.")
     }
     if (!is.null(variables)) {
-      stop("`variables` is only used for model-based plots.")
+      mostr_abort("`variables` is only used for model-based plots.")
     }
     if (!identical(comparison, "none")) {
-      stop("`comparison = \"difference\"` requires a fitted Markov model.")
+      mostr_abort(
+        "`comparison = \"difference\"` requires a fitted Markov model."
+      )
     }
     data <- plot_transitions_empirical_data(
       data = object,

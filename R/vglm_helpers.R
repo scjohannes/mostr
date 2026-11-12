@@ -103,7 +103,7 @@ mostm_fit_vglm <- function(
 
   if (!is.null(form2)) {
     if (!is.null(subset_rows)) {
-      stop(
+      mostr_abort(
         "argument 'subset' cannot be used when argument 'form2' is used"
       )
     }
@@ -125,10 +125,10 @@ mostm_fit_vglm <- function(
     Ym2 <- retlist$Ym2
     Xm2 <- retlist$Xm2
     if (length(Ym2) && NROW(Ym2) != NROW(y)) {
-      stop("number of rows of 'y' and 'Ym2' are unequal")
+      mostr_abort("number of rows of 'y' and 'Ym2' are unequal")
     }
     if (length(Xm2) && NROW(Xm2) != NROW(x)) {
-      stop("number of rows of 'x' and 'Xm2' are unequal")
+      mostr_abort("number of rows of 'x' and 'Xm2' are unequal")
     }
   } else {
     Xm2 <- Ym2 <- NULL
@@ -140,7 +140,7 @@ mostm_fit_vglm <- function(
   if (!length(w)) {
     w <- rep_len(1, nrow(mf))
   } else if (NCOL(w) == 1 && any(w < 0)) {
-    stop("negative weights not allowed")
+    mostr_abort("negative weights not allowed")
   }
 
   if (is.character(family)) {
@@ -150,7 +150,7 @@ mostm_fit_vglm <- function(
     family <- family()
   }
   if (!inherits(family, "vglmff")) {
-    stop("'family = ", family, "' is not a VGAM family function")
+    mostr_abort("'family = ", family, "' is not a VGAM family function")
   }
 
   control <- eval_vcontrol(control, family, function.name, ...)

@@ -62,22 +62,22 @@ plot_lp_difference <- function(
 ) {
   model <- x
   if (!inherits(model, c("orm", "blrm", "vglm", "robcov_vglm"))) {
-    stop(
+    mostr_abort(
       "`model` must be an `orm`, `blrm`, `vglm`, or ",
       "`robcov_vglm` object."
     )
   }
   validate_markov_model(model)
   if (!is.data.frame(profile) || nrow(profile) != 1L) {
-    stop("`profile` must be a one-row data frame.")
+    mostr_abort("`profile` must be a one-row data frame.")
   }
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied.")
+    mostr_abort("`times` must be supplied.")
   }
   variables <- validate_avg_comparison_variables(variables)
   variable <- names(variables)[1]
   if (!variable %in% names(profile)) {
-    stop("Variables not in profile: ", variable)
+    mostr_abort("Variables not in profile: ", variable)
   }
   plot_validate_scalar(line_width, "line_width", lower = 0)
 
@@ -211,7 +211,7 @@ plot_lp_previous_state <- function(value, model, profile, p_var) {
 markov_linear_predictor_matrix <- function(model, newdata) {
   if (inherits(model, "robcov_vglm")) {
     if (is.null(model$vglm_fit)) {
-      stop(
+      mostr_abort(
         "robcov_vglm object does not contain the original vglm fit. ",
         "Please re-run robcov_vglm() with the latest version of the package."
       )
@@ -233,14 +233,16 @@ markov_linear_predictor_matrix <- function(model, newdata) {
     return(out)
   }
 
-  stop("Unsupported model class.")
+  mostr_abort("Unsupported model class.")
 }
 
 plot_blrm_lp_median_matrix <- function(model, newdata) {
   y_levels <- markov_model_ylevels(model)
   n_thresholds <- length(y_levels) - 1L
   if (n_thresholds < 1L) {
-    stop("`blrm` linear predictor plots require at least two state levels.")
+    mostr_abort(
+      "`blrm` linear predictor plots require at least two state levels."
+    )
   }
 
   out <- vapply(
@@ -265,7 +267,7 @@ plot_blrm_lp_median_matrix <- function(model, newdata) {
 
 plot_blrm_predict <- function(model, newdata, type, ...) {
   if (!requireNamespace("rmsb", quietly = TRUE)) {
-    stop("Package 'rmsb' is required for `blrm` plotting.")
+    mostr_abort("Package 'rmsb' is required for `blrm` plotting.")
   }
 
   stats::predict(model, newdata = newdata, type = type, ...)

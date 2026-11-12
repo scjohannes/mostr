@@ -239,7 +239,7 @@ avg_state_time <- function(
     c("state_set", if (!is.null(time_unit)) "time_unit")
   )
   if (length(reserved)) {
-    stop(
+    mostr_abort(
       "Grouping or counterfactual variables use reserved output names: ",
       paste(reserved, collapse = ", "),
       ". Rename these variables."
@@ -304,30 +304,32 @@ validate_state_time_arguments <- function(
   fn
 ) {
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `", fn, "`.")
+    mostr_abort("`times` must be supplied to `", fn, "`.")
   }
   if (anyDuplicated(times)) {
-    stop(
+    mostr_abort(
       "`times` must not contain duplicate visits; each visit is counted once."
     )
   }
   if (baseline_time_supplied && !is.null(baseline_time) && is.null(time_map)) {
-    stop(
+    mostr_abort(
       "`baseline_time` requires `time_map`; without `time_map`, totals sum ",
       "occupancy probabilities at the requested visits."
     )
   }
   if (!is.null(target_times) && is.null(time_map)) {
-    stop("`target_times` requires `time_map` for real-time integration.")
+    mostr_abort("`target_times` requires `time_map` for real-time integration.")
   }
   if (!is.null(target_times) && !length(target_times)) {
-    stop("`target_times` must contain at least one time.")
+    mostr_abort("`target_times` must contain at least one time.")
   }
   if (
     !is.null(time_unit) &&
       (!is.character(time_unit) || length(time_unit) != 1L || is.na(time_unit))
   ) {
-    stop("`time_unit` must be a single non-missing character label or NULL.")
+    mostr_abort(
+      "`time_unit` must be a single non-missing character label or NULL."
+    )
   }
   invisible(NULL)
 }
@@ -353,7 +355,7 @@ validate_avg_time_state_sets <- function(state_sets) {
       any(!nzchar(labels)) ||
       anyDuplicated(labels)
   ) {
-    stop(
+    mostr_abort(
       "`state_sets` must contain nonempty state sets with unique, non-missing names."
     )
   }
@@ -364,7 +366,7 @@ replay_avg_time_sops <- function(object, conf_level, return_draws = FALSE) {
   args <- attr(object, "time_args")
   avg_args <- attr(object, "avg_args")
   if (is.null(args) || is.null(avg_args)) {
-    stop("Stored average-time arguments are required for inference.")
+    mostr_abort("Stored average-time arguments are required for inference.")
   }
   avg_comparison_replay_avg_sops(
     model = attr(object, "model"),

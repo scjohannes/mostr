@@ -134,7 +134,7 @@ soprob_markov_r_engine <- function(
     c(".draw_indices", ".gamma_draws", ".prediction_cache")
   )
   if (length(unknown_dots) > 0) {
-    stop("Unused arguments: ", paste(unknown_dots, collapse = ", "))
+    mostr_abort("Unused arguments: ", paste(unknown_dots, collapse = ", "))
   }
   draw_indices_arg <- dots$.draw_indices
   gamma_draws_arg <- dots$.gamma_draws
@@ -160,17 +160,17 @@ soprob_markov_r_engine <- function(
   ftype <- ftypes[cl]
 
   if (is.na(ftype)) {
-    stop("Object class not supported")
+    mostr_abort("Object class not supported")
   }
 
   # Validate model is compatible with Markov simulation
   validate_markov_model(object)
 
   if (!p_var %in% names(data)) {
-    stop("Previous-state variable `", p_var, "` not found in `data`.")
+    mostr_abort("Previous-state variable `", p_var, "` not found in `data`.")
   }
   if (!is.null(p2_var) && !p2_var %in% names(data)) {
-    stop(
+    mostr_abort(
       "Second previous-state variable `",
       p2_var,
       "` not found in `data`."
@@ -212,7 +212,7 @@ soprob_markov_r_engine <- function(
     },
     robcov = function(obj, d) {
       if (is.null(obj$vglm_fit)) {
-        stop(
+        mostr_abort(
           "robcov_vglm object does not contain the original vglm fit. ",
           "Please re-run robcov_vglm() with the latest version of the package."
         )
@@ -389,7 +389,7 @@ match_state_indices <- function(values, ylevel_names, varname) {
   idx <- match(as.character(values), ylevel_names)
   if (anyNA(idx)) {
     bad <- unique(as.character(values[is.na(idx)]))
-    stop(
+    mostr_abort(
       "Values in `",
       varname,
       "` are not among `y_levels`: ",
@@ -405,14 +405,13 @@ check_transition_probabilities <- function(probs, context) {
     return(invisible(NULL))
   }
 
-  stop(
+  mostr_abort(
     "Model prediction returned missing transition probabilities during ",
     context,
     ". This often happens when the SOP recursion asks for transitions from ",
     "a state level that is not represented in the fitted transition model. ",
     "If that level is absorbing, pass it via `absorb`; otherwise check that ",
-    "`data`, `y_levels`, and fitted factor levels agree.",
-    call. = FALSE
+    "`data`, `y_levels`, and fitted factor levels agree."
   )
 }
 

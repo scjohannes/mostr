@@ -37,7 +37,7 @@ inferences_bootstrap <- function(
 
   if (!inherits(object, "markov_avg_sops")) {
     if (engine != "fwb") {
-      stop(
+      mostr_abort(
         "Standard refit bootstrap is not supported for individual-level ",
         "SOPs because ordinary resampling can drop outcome-state support ",
         "needed by fixed prediction rows. Use `method = \"fwb\"`, or call ",
@@ -137,7 +137,9 @@ inferences_bootstrap <- function(
       newdata_cf <- prediction_data
       n_cf <- nrow(grid)
       if (is.null(newdata_cf) || nrow(newdata_cf) %% n_cf != 0L) {
-        stop("Stored prediction data is not aligned with counterfactual grid.")
+        mostr_abort(
+          "Stored prediction data is not aligned with counterfactual grid."
+        )
       }
       baseline_weights <- NULL
     } else {
@@ -491,11 +493,11 @@ inferences_bootstrap_sops_fwb <- function(
   time_covariates <- attr(object, "time_covariates")
   times <- call_args$times
   if (is.null(model)) {
-    stop("Model not stored in object. Cannot perform bootstrap.")
+    mostr_abort("Model not stored in object. Cannot perform bootstrap.")
   }
   id_var <- markov_require_id_var(model, attr(object, "id_var"))
   if (is.null(prediction_data)) {
-    stop("Prediction data not stored. Cannot perform bootstrap.")
+    mostr_abort("Prediction data not stored. Cannot perform bootstrap.")
   }
   refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, id_var, time_var)
@@ -693,10 +695,9 @@ stored_refit_bootstrap_data <- function(object, model) {
   refit_data <- attr(object, "refit_data", exact = TRUE) %||%
     markov_model_refit_data(model)
   if (is.null(refit_data)) {
-    stop(
+    mostr_abort(
       "Refit bootstrap inference resamples the data stored on the fitted ",
-      "model, but this model has no stored data. Fit it with `mostm()`.",
-      call. = FALSE
+      "model, but this model has no stored data. Fit it with `mostm()`."
     )
   }
   refit_data
@@ -740,7 +741,7 @@ check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
     return(invisible(NULL))
   }
   shown <- utils::head(missing_counts, 5L)
-  stop(
+  mostr_abort(
     "The ordinary bootstrap left out every patient of ",
     paste0(
       "`",
@@ -755,8 +756,7 @@ check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
     if (length(missing_counts) > length(shown)) "; and other groups",
     ", so those groups' intervals would rest on fewer resamples. Use ",
     "`method = \"fwb\"`, which keeps every patient in every refit, or ",
-    "combine small groups.",
-    call. = FALSE
+    "combine small groups."
   )
 }
 
@@ -827,7 +827,7 @@ check_bootstrap_starting_states <- function(
   )
   columns <- columns[!is.na(columns)]
   one <- length(states) == 1L
-  stop(
+  mostr_abort(
     "The ordinary bootstrap left out every patient who was ever in ",
     paste0(
       "state ",
@@ -846,8 +846,7 @@ check_bootstrap_starting_states <- function(
     "). The refit of a resample without a state has no estimate for leaving ",
     "it, so it can't predict for those profiles. Use `method = \"fwb\"`, ",
     "which keeps every patient in every refit, or remove those profiles ",
-    "from `newdata`.",
-    call. = FALSE
+    "from `newdata`."
   )
 }
 
@@ -886,12 +885,11 @@ validate_refit_bootstrap_data <- function(refit_data, id_var, time_var) {
     ))
 
     if (all(rows_per_patient == 1)) {
-      stop(
+      mostr_abort(
         "Bootstrap inference requires full longitudinal data (all time ",
         "points), but the refit data stored on the fitted model contain one ",
         "row per patient. Fit the model to the full longitudinal data.\n",
-        "For simulation: baseline-only prediction profiles are supported.",
-        call. = FALSE
+        "For simulation: baseline-only prediction profiles are supported."
       )
     }
   }

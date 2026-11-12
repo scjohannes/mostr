@@ -37,6 +37,8 @@ By default, skip vignette building when running package checks because it takes 
 ## Coding Style & Naming Conventions
 Follow tidyverse-oriented R style: 2-space indentation, `|>` pipes, and explicit namespaces for non-base calls (for example `dplyr::mutate`, `stats::predict`). Use `snake_case` for functions and variables. Preserve project naming for state-model fields (`id`, `time`, `y`, `yprev`, `tx`). Exported functions require roxygen2 docs with `@export`; add `@importFrom` tags as needed. If you use NSE column names in dplyr/ggplot2, register them in `R/globals.R`.
 
+Raise errors with `mostr_abort()` (`R/mostr-abort.R`), never `stop()`. It takes message parts like `stop()`, adds class `mostr_error`, and shows the exported function the user called instead of an internal name; pass `class` for errors that callers catch and `data` for fields they read. Messages are used literally, so braces and `%` need no escaping. To re-raise a caught error, use `mostr_abort(e)`.
+
 ## Writing for Package Users
 - Write help pages and vignettes for readers who know neither the implementation nor prior discussions. Explain what they can calculate, which arguments to use, what the output means, and any restrictions that affect their choices.
 - Make explanations standalone. Do not rely on an inaccessible manuscript, internal design notes, or development history to define a method or justify its behavior.

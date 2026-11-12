@@ -19,11 +19,10 @@ sets_starting_state <- function(object) {
 }
 
 stop_starting_state_conditional_only <- function() {
-  stop(
+  mostr_abort(
     "Setting the starting state with `variables` supports only conditional ",
     'variance: use `method = "delta", vcov = "conditional"` or ',
-    '`method = "mvn"`.',
-    call. = FALSE
+    '`method = "mvn"`.'
   )
 }
 
@@ -48,10 +47,9 @@ delta_individual_subject <- function(object) {
 }
 
 stop_individual_conditional_only <- function(object) {
-  stop(
+  mostr_abort(
     delta_individual_subject(object),
-    ' supports only `vcov = "conditional"` or a coefficient covariance matrix.',
-    call. = FALSE
+    ' supports only `vcov = "conditional"` or a coefficient covariance matrix.'
   )
 }
 
@@ -65,9 +63,8 @@ delta_resolve_vcov <- function(object, vcov) {
         is.na(vcov) ||
         !vcov %in% c("conditional", "unconditional")
     ) {
-      stop(
-        '`vcov` must be "conditional", "unconditional", NULL, or a coefficient covariance matrix.',
-        call. = FALSE
+      mostr_abort(
+        '`vcov` must be "conditional", "unconditional", NULL, or a coefficient covariance matrix.'
       )
     }
     vcov
@@ -107,20 +104,18 @@ delta_validate_target <- function(object, target) {
 
   target <- target %||% "empirical"
   if (!target %in% c("empirical", "unconditional")) {
-    stop(
+    mostr_abort(
       "Averaged delta inference supports `vcov = \"conditional\"`, ",
-      "`vcov = \"unconditional\"`, or a coefficient covariance matrix.",
-      call. = FALSE
+      "`vcov = \"unconditional\"`, or a coefficient covariance matrix."
     )
   }
   if (
     identical(target, "unconditional") &&
       isTRUE(attr(object, "newdata_supplied"))
   ) {
-    stop(
+    mostr_abort(
       "`vcov = \"unconditional\"` requires the stored fitted-patient ",
-      "cohort. For user-supplied `newdata`, use `vcov = \"conditional\"`.",
-      call. = FALSE
+      "cohort. For user-supplied `newdata`, use `vcov = \"conditional\"`."
     )
   }
   target
@@ -128,24 +123,21 @@ delta_validate_target <- function(object, target) {
 
 delta_validate_sop_scope <- function(object, model, by) {
   if (!is.null(by)) {
-    stop(
-      "Analytical delta inference with `by` is not yet supported.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical delta inference with `by` is not yet supported."
     )
   }
   if (!is.null(attr(object, "p2_var"))) {
-    stop(
+    mostr_abort(
       "Analytical delta inference for second-order Markov models is not yet ",
-      "supported.",
-      call. = FALSE
+      "supported."
     )
   }
   model_plan <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
   if (!inherits(model_plan, c("orm", "vglm")) || inherits(model_plan, "blrm")) {
-    stop(
+    mostr_abort(
       "Analytical delta inference currently supports frequentist `orm`, ",
-      "`vglm`, and `robcov_vglm` models.",
-      call. = FALSE
+      "`vglm`, and `robcov_vglm` models."
     )
   }
   invisible(model_plan)
@@ -174,11 +166,10 @@ delta_compile_plan <- function(object, model_plan, newdata, times, output) {
     plan$components$X_init
   )
   if (is.null(po)) {
-    stop(
+    mostr_abort(
       "Analytical delta inference currently requires a full ",
       "proportional-odds model; partial proportional odds are not yet ",
-      "supported.",
-      call. = FALSE
+      "supported."
     )
   }
   plan
@@ -190,26 +181,26 @@ delta_validate_plan_result <- function(result, n_profiles, n_times, n_states) {
       is.null(result$probabilities) ||
       is.null(result$jacobian)
   ) {
-    stop("The analytical SOP engine returned an invalid result.", call. = FALSE)
+    mostr_abort("The analytical SOP engine returned an invalid result.")
   }
   expected_prob <- c(n_profiles, n_times, n_states)
   if (!identical(dim(result$probabilities), expected_prob)) {
-    stop("The analytical SOP probabilities have unexpected dimensions.")
+    mostr_abort("The analytical SOP probabilities have unexpected dimensions.")
   }
   jac_dim <- dim(result$jacobian)
   if (
     length(jac_dim) != 4L ||
       !identical(jac_dim[seq_len(3L)], expected_prob)
   ) {
-    stop("The analytical SOP Jacobian has unexpected dimensions.")
+    mostr_abort("The analytical SOP Jacobian has unexpected dimensions.")
   }
 
   coefficient_names <- result$coef_names %||% names(result$coef)
   if (is.null(coefficient_names) || length(coefficient_names) != jac_dim[4L]) {
-    stop("The analytical SOP Jacobian is missing raw coefficient names.")
+    mostr_abort("The analytical SOP Jacobian is missing raw coefficient names.")
   }
   if (anyDuplicated(coefficient_names)) {
-    stop("The analytical SOP Jacobian coefficient names must be unique.")
+    mostr_abort("The analytical SOP Jacobian coefficient names must be unique.")
   }
   list(
     probabilities = result$probabilities,
@@ -234,7 +225,9 @@ delta_match_cells <- function(object, calculated, key_cols) {
   calculated_key <- sop_draw_cell_key(calculated, key_cols)
   index <- match(object_key, calculated_key)
   if (anyNA(index)) {
-    stop("Analytical SOP cells do not align with the original point estimate.")
+    mostr_abort(
+      "Analytical SOP cells do not align with the original point estimate."
+    )
   }
   object_estimate <- object$estimate
   calculated_estimate <- calculated$estimate[index]
@@ -249,9 +242,8 @@ delta_match_cells <- function(object, calculated, key_cols) {
           1e-12 + 1e-10 * pmax(abs(object_estimate), abs(calculated_estimate))
       )
   ) {
-    stop(
-      "Analytical SOP replay did not reproduce the stored point estimates.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical SOP replay did not reproduce the stored point estimates."
     )
   }
   index
@@ -260,7 +252,7 @@ delta_match_cells <- function(object, calculated, key_cols) {
 delta_align_coefficient_vcov <- function(result, coefficient_names) {
   V <- result$vcov
   if (!is.matrix(V)) {
-    stop("The analytical coefficient covariance must be a matrix.")
+    mostr_abort("The analytical coefficient covariance must be a matrix.")
   }
   if (
     is.null(rownames(V)) ||
@@ -270,15 +262,16 @@ delta_align_coefficient_vcov <- function(result, coefficient_names) {
       !setequal(coefficient_names, rownames(V)) ||
       !setequal(coefficient_names, colnames(V))
   ) {
-    stop(
+    mostr_abort(
       "The analytical coefficient covariance names must match every raw ",
-      "model coefficient.",
-      call. = FALSE
+      "model coefficient."
     )
   }
   V <- V[coefficient_names, coefficient_names, drop = FALSE]
   if (any(!is.finite(V))) {
-    stop("The analytical coefficient covariance must contain finite values.")
+    mostr_abort(
+      "The analytical coefficient covariance must contain finite values."
+    )
   }
   V / 2 + t(V) / 2
 }
@@ -306,25 +299,23 @@ delta_jacobian_variance <- function(jacobian, coefficient_vcov) {
   tolerance <- sqrt(.Machine$double.eps) * rowSums(abs(JV * jacobian))
   variance[variance < 0 & abs(variance) <= tolerance] <- 0
   if (any(variance < 0)) {
-    stop("Analytical propagation produced a negative variance.", call. = FALSE)
+    mostr_abort("Analytical propagation produced a negative variance.")
   }
   variance
 }
 
 delta_profile_ids <- function(baseline_data, id_var) {
   if (is.null(id_var) || !id_var %in% names(baseline_data)) {
-    stop(
+    mostr_abort(
       "Unconditional delta inference requires the stored starting-profile ",
-      "ID column.",
-      call. = FALSE
+      "ID column."
     )
   }
   ids <- as.character(baseline_data[[id_var]])
   if (anyNA(ids) || anyDuplicated(ids)) {
-    stop(
+    mostr_abort(
       "Unconditional delta inference requires exactly one non-missing ",
-      "starting profile per fitted patient.",
-      call. = FALSE
+      "starting profile per fitted patient."
     )
   }
   ids
@@ -350,13 +341,15 @@ delta_unconditional_state <- function(
     nrow(influence) != length(profile_ids) ||
       ncol(influence) != nrow(average_jacobian)
   ) {
-    stop("The stacked SOP influence values have unexpected dimensions.")
+    mostr_abort("The stacked SOP influence values have unexpected dimensions.")
   }
   colnames(influence) <- NULL
   standard_error <- stacked$std.error
   if (is.null(standard_error) || length(standard_error) != ncol(influence)) {
     if (nrow(influence) < 2L) {
-      stop("Unconditional delta inference requires at least two patients.")
+      mostr_abort(
+        "Unconditional delta inference requires at least two patients."
+      )
     }
     standard_error <- sqrt(diag(stats::cov(influence) / nrow(influence)))
   }
@@ -386,9 +379,8 @@ delta_interval_bounds <- function(
     ))
   }
   if (!identical(conf_type, "logit")) {
-    stop(
-      "Delta SOP inference supports `conf_type = \"logit\"` or `\"wald\"`.",
-      call. = FALSE
+    mostr_abort(
+      "Delta SOP inference supports `conf_type = \"logit\"` or `\"wald\"`."
     )
   }
 
@@ -475,7 +467,7 @@ delta_finalize_result <- function(
   analytical$row_keys <- keys
   analytical$row_key <- delta_row_key(keys)
   if (anyDuplicated(analytical$row_key)) {
-    stop("Analytical result-row keys are not unique.")
+    mostr_abort("Analytical result-row keys are not unique.")
   }
 
   attr(result, "analytical") <- analytical
@@ -532,7 +524,7 @@ delta_average_arrays <- function(
           c(n_cf, length(times), length(y_levels))
         )
     ) {
-      stop("Grouped analytical SOP arrays have unexpected dimensions.")
+      mostr_abort("Grouped analytical SOP arrays have unexpected dimensions.")
     }
     marginal_probabilities <- probabilities
     marginal_n_each <- 1L
@@ -604,16 +596,15 @@ inferences_delta_sops <- function(
   is_average <- inherits(object, "markov_avg_sops")
   target <- delta_validate_target(object, target)
   if (identical(target, "unconditional") && !is.null(vcov)) {
-    stop(
+    mostr_abort(
       "A coefficient covariance matrix cannot be supplied for unconditional inference; ",
       "unconditional inference uses fitted-model score components and the ",
-      "stacked patient influence function.",
-      call. = FALSE
+      "stacked patient influence function."
     )
   }
   model <- attr(object, "model")
   if (is.null(model)) {
-    stop("Model not stored in object. Cannot perform delta inference.")
+    mostr_abort("Model not stored in object. Cannot perform delta inference.")
   }
   avg_args <- attr(object, "avg_args")
   call_args <- attr(object, "call_args")
@@ -629,7 +620,7 @@ inferences_delta_sops <- function(
   }
   newdata <- attr(object, "newdata_pred")
   if (is.null(newdata) || !is.data.frame(newdata)) {
-    stop("Stored SOP prediction data are required for delta inference.")
+    mostr_abort("Stored SOP prediction data are required for delta inference.")
   }
   times <- if (is_average) avg_args$times else call_args$times
   y_levels <- attr(object, "y_levels")
@@ -638,7 +629,7 @@ inferences_delta_sops <- function(
     grid <- create_counterfactual_grid(variables)
     n_cf <- nrow(grid)
     if (n_cf < 1L || nrow(newdata) < 1L || nrow(newdata) %% n_cf != 0L) {
-      stop(
+      mostr_abort(
         "Stored prediction data are not aligned with the counterfactual grid."
       )
     }
@@ -655,10 +646,9 @@ inferences_delta_sops <- function(
         ][[1L]]
       }
       if (!identical(unname(newdata[[column]]), unname(expected))) {
-        stop(
+        mostr_abort(
           "Stored prediction data must contain counterfactual grid blocks ",
-          "in grid order, with the same starting-profile order in every block.",
-          call. = FALSE
+          "in grid order, with the same starting-profile order in every block."
         )
       }
     }
@@ -733,7 +723,7 @@ inferences_delta_sops <- function(
 
   if (identical(target, "unconditional")) {
     if (is.null(reduced$individual_values)) {
-      stop(
+      mostr_abort(
         "Unconditional analytical SOP inference lost individual ",
         "probabilities."
       )

@@ -144,6 +144,13 @@
   `update_datadist` from your calls; the estimates and standard errors are the
   same as before.
 
+## Minor improvements
+
+* Every error that mostr raises now has class `mostr_error`, so you can catch
+  them with `tryCatch(..., mostr_error = function(e) ...)`. The "Error in" line
+  names the mostr function you called, such as `sops()`, instead of an
+  internal helper. The messages themselves are unchanged.
+
 ## Documentation
 
 * The help pages of `avg_sops()`, `avg_state_time()`, `avg_comparisons()`,

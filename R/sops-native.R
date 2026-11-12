@@ -32,7 +32,7 @@ markov_update_po_native <- function(
 reduce_sops_draw_array <- function(probs, groups, group_count) {
   dims <- dim(probs)
   if (length(dims) != 4L || length(groups) != dims[2]) {
-    stop("Posterior SOP array and grouping index are not aligned.")
+    mostr_abort("Posterior SOP array and grouping index are not aligned.")
   }
   values <- if (is.double(probs)) probs else as.numeric(probs)
   cpp_reduce_sops_draws(

@@ -9,9 +9,8 @@ delta_max_bytes <- function() {
       !is.finite(value) ||
       value <= 0
   ) {
-    stop(
-      "Option `mostr.delta_max_bytes` must be a positive finite number.",
-      call. = FALSE
+    mostr_abort(
+      "Option `mostr.delta_max_bytes` must be a positive finite number."
     )
   }
   as.double(value)
@@ -27,16 +26,15 @@ stop_sop_delta_too_large <- function(required_bytes, max_bytes, purpose) {
     " bytes. Increase option `mostr.delta_max_bytes` only if the ",
     "required allocation is acceptable."
   )
-  stop(structure(
-    list(
-      message = message,
-      call = NULL,
+  mostr_abort(
+    message,
+    class = "mostr_delta_too_large",
+    data = list(
       required_bytes = as.double(required_bytes),
       max_bytes = as.double(max_bytes),
       purpose = purpose
-    ),
-    class = c("mostr_delta_too_large", "error", "condition")
-  ))
+    )
+  )
 }
 
 delta_assert_bytes <- function(
@@ -46,9 +44,8 @@ delta_assert_bytes <- function(
   bytes <- as.double(bytes)
   max_bytes <- delta_max_bytes()
   if (length(bytes) != 1L || is.na(bytes) || !is.finite(bytes) || bytes < 0) {
-    stop(
-      "Analytical allocation size must be a finite non-negative number.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical allocation size must be a finite non-negative number."
     )
   }
   if (bytes > max_bytes) {
@@ -60,9 +57,8 @@ delta_assert_bytes <- function(
 sop_delta_backend_model <- function(model) {
   if (inherits(model, "robcov_vglm")) {
     if (is.null(model$vglm_fit) || !inherits(model$vglm_fit, "vglm")) {
-      stop(
-        "A `robcov_vglm` model must retain its underlying `vglm_fit`.",
-        call. = FALSE
+      mostr_abort(
+        "A `robcov_vglm` model must retain its underlying `vglm_fit`."
       )
     }
     return(model$vglm_fit)
@@ -78,9 +74,8 @@ sop_delta_raw_coef <- function(model) {
       anyNA(coef) ||
       any(!is.finite(coef))
   ) {
-    stop(
-      "Analytical SOP inference requires finite numeric coefficients.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical SOP inference requires finite numeric coefficients."
     )
   }
   if (
@@ -89,9 +84,8 @@ sop_delta_raw_coef <- function(model) {
       any(names(coef) == "") ||
       anyDuplicated(names(coef))
   ) {
-    stop(
-      "Analytical SOP inference requires uniquely named raw coefficients.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical SOP inference requires uniquely named raw coefficients."
     )
   }
   coef
@@ -112,16 +106,14 @@ get_effective_coef_map <- function(model) {
         is.null(names(constraints)) ||
         any(names(constraints) == "")
     ) {
-      stop(
-        "Could not determine the `vglm` coefficient constraints.",
-        call. = FALSE
+      mostr_abort(
+        "Could not determine the `vglm` coefficient constraints."
       )
     }
     threshold_count <- unique(vapply(constraints, nrow, integer(1)))
     if (length(threshold_count) != 1L || threshold_count < 1L) {
-      stop(
-        "The `vglm` constraint matrices have incompatible dimensions.",
-        call. = FALSE
+      mostr_abort(
+        "The `vglm` constraint matrices have incompatible dimensions."
       )
     }
     M <- unname(threshold_count)
@@ -136,23 +128,20 @@ get_effective_coef_map <- function(model) {
     for (term_index in seq_along(constraints)) {
       constraint <- constraints[[term_index]]
       if (!is.numeric(constraint) || nrow(constraint) != M) {
-        stop(
-          "The `vglm` constraint matrices must be numeric matrices.",
-          call. = FALSE
+        mostr_abort(
+          "The `vglm` constraint matrices must be numeric matrices."
         )
       }
       coefficient_count <- ncol(constraint)
       if (coefficient_count < 1L) {
-        stop(
-          "A `vglm` constraint matrix has no coefficient columns.",
-          call. = FALSE
+        mostr_abort(
+          "A `vglm` constraint matrix has no coefficient columns."
         )
       }
       coefficient_rows <- coefficient_index + seq_len(coefficient_count) - 1L
       if (max(coefficient_rows) > length(coef)) {
-        stop(
-          "The `vglm` constraints require more coefficients than the model stores.",
-          call. = FALSE
+        mostr_abort(
+          "The `vglm` constraints require more coefficients than the model stores."
         )
       }
       gamma_rows <- (term_index - 1L) * M + seq_len(M)
@@ -160,9 +149,8 @@ get_effective_coef_map <- function(model) {
       coefficient_index <- coefficient_index + coefficient_count
     }
     if (coefficient_index - 1L != length(coef)) {
-      stop(
-        "The `vglm` constraints do not consume every raw model coefficient.",
-        call. = FALSE
+      mostr_abort(
+        "The `vglm` constraints do not consume every raw model coefficient."
       )
     }
     gamma_dimnames <- list(
@@ -178,16 +166,14 @@ get_effective_coef_map <- function(model) {
         M < 1L ||
         M != as.integer(M)
     ) {
-      stop(
-        "Cannot determine the number of `orm` threshold coefficients.",
-        call. = FALSE
+      mostr_abort(
+        "Cannot determine the number of `orm` threshold coefficients."
       )
     }
     M <- as.integer(M)
     if (length(coef) < M) {
-      stop(
-        "The `orm` coefficient vector is shorter than its thresholds.",
-        call. = FALSE
+      mostr_abort(
+        "The `orm` coefficient vector is shorter than its thresholds."
       )
     }
     slope_count <- length(coef) - M
@@ -210,9 +196,8 @@ get_effective_coef_map <- function(model) {
       c("(Intercept)", names(coef)[M + seq_len(slope_count)])
     )
   } else {
-    stop(
-      "Analytical SOP inference supports only `vglm`, `robcov_vglm`, and `orm` models.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical SOP inference supports only `vglm`, `robcov_vglm`, and `orm` models."
     )
   }
 
@@ -236,9 +221,8 @@ get_effective_coef_map <- function(model) {
         check.attributes = FALSE
       ))
   ) {
-    stop(
-      "The raw-to-effective coefficient map does not reproduce the fitted model.",
-      call. = FALSE
+    mostr_abort(
+      "The raw-to-effective coefficient map does not reproduce the fitted model."
     )
   }
 
@@ -253,15 +237,12 @@ get_effective_coef_map <- function(model) {
 }
 
 sop_delta_condition <- function(message, class, ...) {
-  stop(structure(
-    c(list(message = message, call = NULL), list(...)),
-    class = c(class, "error", "condition")
-  ))
+  mostr_abort(message, class = class, data = list(...))
 }
 
 sop_delta_validate_plan <- function(plan, model, map, coef) {
   if (!inherits(plan, "markov_sop_exec_plan") || !identical(plan$version, 1L)) {
-    stop("Invalid or unsupported SOP execution plan.", call. = FALSE)
+    mostr_abort("Invalid or unsupported SOP execution plan.")
   }
   if (!identical(plan$recursion_order, 1L)) {
     sop_delta_condition(
@@ -280,16 +261,14 @@ sop_delta_validate_plan <- function(plan, model, map, coef) {
 
   backend <- sop_delta_backend_model(model)
   if (!inherits(backend, c("vglm", "orm")) || inherits(backend, "blrm")) {
-    stop(
-      "Analytical SOP inference supports only frequentist `vglm` and `orm` models.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical SOP inference supports only frequentist `vglm` and `orm` models."
     )
   }
   validate_markov_model(backend)
   if (!identical(class(backend)[1L], plan$model_class)) {
-    stop(
-      "The execution plan and fitted model use different backends.",
-      call. = FALSE
+    mostr_abort(
+      "The execution plan and fitted model use different backends."
     )
   }
 
@@ -309,15 +288,13 @@ sop_delta_validate_plan <- function(plan, model, map, coef) {
     !is.list(components) ||
       any(!required_component_names %in% names(components))
   ) {
-    stop(
-      "The SOP execution plan is missing first-order design components.",
-      call. = FALSE
+    mostr_abort(
+      "The SOP execution plan is missing first-order design components."
     )
   }
   if (!identical(components$transition_layout, "stacked")) {
-    stop(
-      "Analytical SOP inference requires stacked transition designs.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical SOP inference requires stacked transition designs."
     )
   }
   if (
@@ -325,21 +302,18 @@ sop_delta_validate_plan <- function(plan, model, map, coef) {
       nrow(components$X_init) != components$n_pat ||
       ncol(components$X_init) != length(components$col_names)
   ) {
-    stop(
-      "The SOP initial design matrix is inconsistent with the plan.",
-      call. = FALSE
+    mostr_abort(
+      "The SOP initial design matrix is inconsistent with the plan."
     )
   }
   if (length(plan$times) < 1L || components$n_states != length(plan$y_levels)) {
-    stop(
-      "The SOP execution plan has inconsistent time or state metadata.",
-      call. = FALSE
+    mostr_abort(
+      "The SOP execution plan has inconsistent time or state metadata."
     )
   }
   if (components$M != components$n_states - 1L) {
-    stop(
-      "The SOP execution plan has an inconsistent threshold count.",
-      call. = FALSE
+    mostr_abort(
+      "The SOP execution plan has an inconsistent threshold count."
     )
   }
 
@@ -350,18 +324,16 @@ sop_delta_validate_plan <- function(plan, model, map, coef) {
       gamma_dim[1L] != components$M ||
       ncol(map) != length(coef)
   ) {
-    stop(
-      "The fitted coefficient map is incompatible with the SOP plan.",
-      call. = FALSE
+    mostr_abort(
+      "The fitted coefficient map is incompatible with the SOP plan."
     )
   }
   gamma_columns <- gamma_dimnames[[2L]]
   column_index <- match(components$col_names, gamma_columns)
   if (anyNA(column_index)) {
-    stop(
+    mostr_abort(
       "The fitted coefficient map is missing execution-plan design columns: ",
-      paste(components$col_names[is.na(column_index)], collapse = ", "),
-      call. = FALSE
+      paste(components$col_names[is.na(column_index)], collapse = ", ")
     )
   }
   gamma <- matrix(
@@ -441,14 +413,13 @@ sop_delta_preflight <- function(
         average_group_size != as.integer(average_group_size) ||
         components$n_pat %% as.integer(average_group_size) != 0L
     ) {
-      stop("Invalid analytical SOP averaging group size.", call. = FALSE)
+      mostr_abort("Invalid analytical SOP averaging group size.")
     }
     output_profiles <- n / as.double(average_group_size)
   } else {
     if (isTRUE(retain_individual_probabilities)) {
-      stop(
-        "Individual analytical probabilities are already retained for fixed profiles.",
-        call. = FALSE
+      mostr_abort(
+        "Individual analytical probabilities are already retained for fixed profiles."
       )
     }
     output_profiles <- n
@@ -477,7 +448,9 @@ sop_delta_preflight <- function(
 delta_native_failure <- function(result, plan) {
   status <- as.integer(result$status)
   if (length(status) != 3L || anyNA(status)) {
-    stop("The native analytical SOP engine returned invalid status metadata.")
+    mostr_abort(
+      "The native analytical SOP engine returned invalid status metadata."
+    )
   }
   code <- status[1L]
   if (code == 0L) {
@@ -536,24 +509,23 @@ delta_native_failure <- function(result, plan) {
     )
   }
   if (code == 4L) {
-    stop(
-      "Internal analytical category derivatives do not sum to zero.",
-      call. = FALSE
+    mostr_abort(
+      "Internal analytical category derivatives do not sum to zero."
     )
   }
   if (code == 5L) {
-    stop(
-      "Internal analytical SOP probabilities do not sum to one.",
-      call. = FALSE
+    mostr_abort(
+      "Internal analytical SOP probabilities do not sum to one."
     )
   }
   if (code == 6L) {
-    stop(
-      "Internal analytical SOP derivatives do not sum to zero.",
-      call. = FALSE
+    mostr_abort(
+      "Internal analytical SOP derivatives do not sum to zero."
     )
   }
-  stop("The native analytical SOP engine returned an unknown failure status.")
+  mostr_abort(
+    "The native analytical SOP engine returned an unknown failure status."
+  )
 }
 
 run_sop_delta_plan <- function(
@@ -583,7 +555,7 @@ run_sop_delta_plan <- function(
   non_absorb <- setdiff(seq_len(K), absorb)
   origin_positions <- match(non_absorb, components$transition_origins)
   if (anyNA(origin_positions)) {
-    stop("Transition design is missing a required origin state.", call. = FALSE)
+    mostr_abort("Transition design is missing a required origin state.")
   }
 
   native <- cpp_run_sop_delta(
@@ -613,7 +585,7 @@ run_sop_delta_plan <- function(
   if (isTRUE(retain_individual_probabilities)) {
     individual <- native$individual_probabilities
     if (!identical(dim(individual), c(n, length(plan$times), K))) {
-      stop(
+      mostr_abort(
         "The native analytical SOP individual probabilities have unexpected dimensions."
       )
     }

@@ -39,7 +39,7 @@
 fast_group_bootstrap <- function(data, id_var = "id", n_boot) {
   # Input validation
   if (!id_var %in% names(data)) {
-    stop("id_var '", id_var, "' not found in data")
+    mostr_abort("id_var '", id_var, "' not found in data")
   }
 
   # Get unique group IDs
@@ -121,7 +121,9 @@ materialize_bootstrap_sample_indexed <- function(
   .datatable.aware <- TRUE
   required <- c("original_id", "new_id", "boot_id")
   if (!all(required %in% names(boot_ids))) {
-    stop("`boot_ids` must contain original_id, new_id, and boot_id columns.")
+    mostr_abort(
+      "`boot_ids` must contain original_id, new_id, and boot_id columns."
+    )
   }
 
   group <- match(as.character(boot_ids$original_id), row_plan$ids)
@@ -168,7 +170,7 @@ generate_fwb_bootstrap_weights <- function(
   weight_dist = "exponential"
 ) {
   if (!id_var %in% names(data)) {
-    stop("id_var '", id_var, "' not found in data")
+    mostr_abort("id_var '", id_var, "' not found in data")
   }
 
   weight_dist <- match.arg(weight_dist, choices = "exponential")
@@ -180,7 +182,7 @@ generate_fwb_bootstrap_weights <- function(
     raw_weights <- stats::rexp(n_clusters, rate = 1)
     weight_mean <- mean(raw_weights)
     if (!is.finite(weight_mean) || weight_mean <= 0) {
-      stop("Invalid fractional bootstrap weights generated.")
+      mostr_abort("Invalid fractional bootstrap weights generated.")
     }
 
     fwb_samples[[i]] <- data.frame(
@@ -195,7 +197,7 @@ generate_fwb_bootstrap_weights <- function(
 
 materialize_fwb_bootstrap_sample <- function(fwb_weights, data, id_var) {
   if (!all(c("original_id", "fwb_weight", "boot_id") %in% names(fwb_weights))) {
-    stop(
+    mostr_abort(
       "`fwb_weights` must contain original_id, fwb_weight, and boot_id columns."
     )
   }
@@ -206,7 +208,7 @@ materialize_fwb_bootstrap_sample <- function(fwb_weights, data, id_var) {
   )
   if (anyNA(idx)) {
     missing_ids <- unique(as.character(data[[id_var]])[is.na(idx)])
-    stop(
+    mostr_abort(
       "Some data IDs were not found in the fractional bootstrap weights: ",
       paste(utils::head(missing_ids, 5), collapse = ", "),
       if (length(missing_ids) > 5) " ..." else "",
@@ -222,7 +224,7 @@ materialize_fwb_bootstrap_sample <- function(fwb_weights, data, id_var) {
 
 fwb_baseline_weights <- function(fwb_weights, baseline_data, id_var) {
   if (!id_var %in% names(baseline_data)) {
-    stop("ID variable '", id_var, "' not found in baseline data.")
+    mostr_abort("ID variable '", id_var, "' not found in baseline data.")
   }
 
   idx <- match(
@@ -231,7 +233,7 @@ fwb_baseline_weights <- function(fwb_weights, baseline_data, id_var) {
   )
   if (anyNA(idx)) {
     missing_ids <- unique(as.character(baseline_data[[id_var]])[is.na(idx)])
-    stop(
+    mostr_abort(
       "Some baseline IDs were not found in the fractional bootstrap weights: ",
       paste(utils::head(missing_ids, 5), collapse = ", "),
       if (length(missing_ids) > 5) " ..." else "",
@@ -473,7 +475,7 @@ keep_successful_draws <- function(results) {
     )
   }
   if (length(failed) == n_draws) {
-    stop("All bootstrap iterations failed.", first_text, call. = FALSE)
+    mostr_abort("All bootstrap iterations failed.", first_text)
   }
   if (length(failed) > 0L) {
     n_left <- n_draws - length(failed)
@@ -559,7 +561,7 @@ bootstrap_analysis_wrapper <- function(
         any(!is.finite(fit_weights)) ||
         any(fit_weights < 0)
     ) {
-      stop("`fit_weights` must be non-negative finite row weights.")
+      mostr_abort("`fit_weights` must be non-negative finite row weights.")
     }
 
     original_weights <- bootstrap_original_fit_weights(fit_model, boot_data)
@@ -641,29 +643,27 @@ check_use_coefstart <- function(use_coefstart, model, method = NULL) {
       length(use_coefstart) != 1L ||
       is.na(use_coefstart)
   ) {
-    stop("`use_coefstart` must be `TRUE` or `FALSE`.", call. = FALSE)
+    mostr_abort("`use_coefstart` must be `TRUE` or `FALSE`.")
   }
   if (!use_coefstart) {
     return(invisible(NULL))
   }
   if (!is.null(method) && !method %in% c("bootstrap", "fwb")) {
-    stop(
+    mostr_abort(
       "`use_coefstart` applies only to `method = \"bootstrap\"` and ",
       "`method = \"fwb\"`, which refit the model; `method = \"",
       method,
-      "\"` does not refit it. Use `use_coefstart = FALSE`, the default.",
-      call. = FALSE
+      "\"` does not refit it. Use `use_coefstart = FALSE`, the default."
     )
   }
   if (!is.null(model) && !inherits(model, c("vglm", "robcov_vglm"))) {
     engine <- markov_model_engine(model) %||% class(model)[1L]
-    stop(
+    mostr_abort(
       "`use_coefstart` can be `TRUE` only for models fitted with ",
       "`engine = \"vglm\"`, because only vglm refits start from the ",
       "original coefficients; this model was fitted with `engine = \"",
       engine,
-      "\"`. Use `use_coefstart = FALSE`, the default.",
-      call. = FALSE
+      "\"`. Use `use_coefstart = FALSE`, the default."
     )
   }
   invisible(NULL)
@@ -672,7 +672,7 @@ check_use_coefstart <- function(use_coefstart, model, method = NULL) {
 bootstrap_refit_model <- function(model) {
   if (inherits(model, "robcov_vglm")) {
     if (is.null(model$vglm_fit)) {
-      stop(
+      mostr_abort(
         "The supplied robcov_vglm object does not contain the original vglm fit."
       )
     }
@@ -763,7 +763,9 @@ bootstrap_original_fit_weights <- function(model, data) {
       any(!is.finite(weights)) ||
       any(weights < 0)
   ) {
-    stop("Original model weights must be non-negative finite row weights.")
+    mostr_abort(
+      "Original model weights must be non-negative finite row weights."
+    )
   }
 
   as.numeric(weights)
@@ -771,16 +773,17 @@ bootstrap_original_fit_weights <- function(model, data) {
 
 bootstrap_prior_weights <- function(data, column) {
   if (!column %in% names(data)) {
-    stop(
+    mostr_abort(
       "The bootstrap data do not contain the model's row weights (column `",
       column,
-      "`). Resample the refit data stored on the fitted model.",
-      call. = FALSE
+      "`). Resample the refit data stored on the fitted model."
     )
   }
   weights <- data[[column]]
   if (!is.numeric(weights) || any(!is.finite(weights)) || any(weights < 0)) {
-    stop("Original model weights must be non-negative finite row weights.")
+    mostr_abort(
+      "Original model weights must be non-negative finite row weights."
+    )
   }
   weights
 }
@@ -840,7 +843,9 @@ bootstrap_as_row_weights <- function(weights, n_rows) {
     return(NULL)
   }
   if (any(!is.finite(weights)) || any(weights < 0)) {
-    stop("Original model weights must be non-negative finite row weights.")
+    mostr_abort(
+      "Original model weights must be non-negative finite row weights."
+    )
   }
 
   as.numeric(weights)

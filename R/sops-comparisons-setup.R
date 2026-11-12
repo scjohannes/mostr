@@ -3,11 +3,10 @@
 stop_legacy_baseline_args <- function(extra_args) {
   legacy_args <- intersect(names(extra_args), c("origin_time", "origin"))
   if (length(legacy_args) > 0L) {
-    stop(
+    mostr_abort(
       "`",
       legacy_args[1L],
-      "` is no longer supported; use `baseline_time` instead.",
-      call. = FALSE
+      "` is no longer supported; use `baseline_time` instead."
     )
   }
   invisible(NULL)
@@ -15,10 +14,10 @@ stop_legacy_baseline_args <- function(extra_args) {
 
 validate_comparison_times <- function(times, fn) {
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `", fn, "`.")
+    mostr_abort("`times` must be supplied to `", fn, "`.")
   }
   if (anyDuplicated(times)) {
-    stop(
+    mostr_abort(
       "`times` must not contain duplicate visits; each visit is counted once."
     )
   }
@@ -47,11 +46,11 @@ resolve_comparison_variables <- function(
 ) {
   if (!missing(variables) && is.character(variables)) {
     if (length(variables) != 1L || is.na(variables) || !nzchar(variables)) {
-      stop("`", fn, "` supports exactly one named variable.")
+      mostr_abort("`", fn, "` supports exactly one named variable.")
     }
     data <- bare_variable_data(model, newdata)
     if (!variables %in% names(data)) {
-      stop("Variables not in data: ", variables)
+      mostr_abort("Variables not in data: ", variables)
     }
     variables <- stats::setNames(
       list(comparison_variable_values(data[[variables]], variables)),
@@ -88,12 +87,17 @@ resolve_prediction_variables <- function(
     if (
       anyNA(variables) || any(!nzchar(variables)) || anyDuplicated(variables)
     ) {
-      stop("Bare variable names must be unique, non-missing, and non-empty.")
+      mostr_abort(
+        "Bare variable names must be unique, non-missing, and non-empty."
+      )
     }
     data <- bare_variable_data(model, newdata)
     missing_vars <- setdiff(variables, names(data))
     if (length(missing_vars) > 0L) {
-      stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+      mostr_abort(
+        "Variables not in data: ",
+        paste(missing_vars, collapse = ", ")
+      )
     }
     variables <- stats::setNames(
       lapply(variables, function(name) {
@@ -152,7 +156,7 @@ match_previous_state_variables <- function(
         } else {
           "the state two visits back"
         }
-        stop(
+        mostr_abort(
           "`",
           column,
           "` is ",
@@ -162,8 +166,7 @@ match_previous_state_variables <- function(
           if (length(unknown) == 1L) " is" else " are",
           " not a state; the states are ",
           paste(states, collapse = ", "),
-          ".",
-          call. = FALSE
+          "."
         )
       }
     }
@@ -225,11 +228,10 @@ bare_variable_values <- function(x, name, numeric = c("error", "fivenum")) {
     return(sort(unique(observed)))
   }
   if (!is.numeric(x) || is.object(x)) {
-    stop(
+    mostr_abort(
       "A bare variable name supports factor, character, logical, or numeric ",
       "variables; ",
-      explicit,
-      call. = FALSE
+      explicit
     )
   }
   unique_values <- sort(unique(observed))
@@ -239,13 +241,12 @@ bare_variable_values <- function(x, name, numeric = c("error", "fivenum")) {
   if (identical(numeric, "fivenum")) {
     return(unique(stats::fivenum(observed)))
   }
-  stop(
+  mostr_abort(
     "`",
     name,
     "` is numeric with values other than 0 and 1, so a bare name cannot ",
     "choose values to compare; ",
-    explicit,
-    call. = FALSE
+    explicit
   )
 }
 
@@ -253,11 +254,10 @@ bare_variable_values <- function(x, name, numeric = c("error", "fivenum")) {
 comparison_variable_values <- function(x, name) {
   values <- bare_variable_values(x, name, numeric = "error")
   if (length(values) < 2L) {
-    stop(
+    mostr_abort(
       "`",
       name,
-      "` needs at least two observed values to compare.",
-      call. = FALSE
+      "` needs at least two observed values to compare."
     )
   }
   values
@@ -266,7 +266,7 @@ comparison_variable_values <- function(x, name) {
 prediction_variable_values <- function(x, name) {
   values <- bare_variable_values(x, name, numeric = "fivenum")
   if (length(values) < 1L) {
-    stop("`", name, "` needs at least one observed value.", call. = FALSE)
+    mostr_abort("`", name, "` needs at least one observed value.")
   }
   values
 }
@@ -276,21 +276,25 @@ validate_avg_comparison_variables <- function(
   fn = "avg_comparisons()"
 ) {
   if (missing(variables) || is.null(variables)) {
-    stop("`variables` must be a named list with one counterfactual variable.")
+    mostr_abort(
+      "`variables` must be a named list with one counterfactual variable."
+    )
   }
   if (!is.list(variables) || is.null(names(variables))) {
-    stop("`variables` must be a named list, for example `list(tx = c(0, 1))`.")
+    mostr_abort(
+      "`variables` must be a named list, for example `list(tx = c(0, 1))`."
+    )
   }
   if (length(variables) != 1L || !nzchar(names(variables)[1])) {
-    stop("`", fn, "` supports exactly one named variable.")
+    mostr_abort("`", fn, "` supports exactly one named variable.")
   }
 
   values <- variables[[1]]
   if (length(values) < 2L) {
-    stop("`variables[[1]]` must contain at least two values.")
+    mostr_abort("`variables[[1]]` must contain at least two values.")
   }
   if (anyDuplicated(as.character(values))) {
-    stop("`variables[[1]]` must not contain duplicate values.")
+    mostr_abort("`variables[[1]]` must not contain duplicate values.")
   }
 
   variables
@@ -299,10 +303,12 @@ validate_avg_comparison_variables <- function(
 validate_avg_comparison_estimand <- function(estimand, state_sets, comparison) {
   if (estimand == "time_benefit") {
     if (!is.null(state_sets)) {
-      stop("`state_sets` is not used with `estimand = \"time_benefit\"`.")
+      mostr_abort(
+        "`state_sets` is not used with `estimand = \"time_benefit\"`."
+      )
     }
     if (comparison != "difference") {
-      stop(
+      mostr_abort(
         "`estimand = \"time_benefit\"` only supports `comparison = \"difference\"`."
       )
     }
@@ -358,7 +364,7 @@ avg_comparison_setup <- function(
 
   missing_vars <- setdiff(names(variables), names(newdata_orig))
   if (length(missing_vars) > 0L) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+    mostr_abort("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
 
   baseline_data <- if (newdata_supplied) {
@@ -518,7 +524,7 @@ normalize_comparison_state_sets <- function(states, y_levels) {
     state_labels
   )
   if (length(missing_states) > 0L) {
-    stop(
+    mostr_abort(
       "State(s) not found in SOP output: ",
       paste(missing_states, collapse = ", ")
     )

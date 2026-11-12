@@ -12,7 +12,7 @@ validate_conf_level <- function(conf_level, arg = "conf_level") {
       conf_level <= 0 ||
       conf_level >= 1
   ) {
-    stop("`", arg, "` must be a single finite number between 0 and 1.")
+    mostr_abort("`", arg, "` must be a single finite number between 0 and 1.")
   }
 
   conf_level
@@ -141,7 +141,7 @@ pivot_state_columns_long <- function(
   id_cols <- setdiff(names(data), state_cols)
 
   if (length(state_cols) == 0) {
-    stop("No state columns found.")
+    mostr_abort("No state columns found.")
   }
 
   row_index <- rep(seq_len(nrow(data)), each = length(state_cols))
@@ -223,10 +223,9 @@ model_uses_offset <- function(model) {
 }
 
 stop_unsupported_offset <- function() {
-  stop(
+  mostr_abort(
     "Model offsets are not supported by mostr Markov SOP workflows. ",
-    "Please remove offset() terms or the offset argument before fitting the model.",
-    call. = FALSE
+    "Please remove offset() terms or the offset argument before fitting the model."
   )
 }
 
@@ -236,14 +235,13 @@ orm_has_random_effects <- function(model) {
 }
 
 stop_unsupported_orm_random_effects <- function() {
-  stop(
+  mostr_abort(
     "Orm fits with random effects are not supported. State occupancy ",
     "probabilities would describe only a patient whose random effect is 0, ",
     "which is not the average over patients, and the patient-clustered ",
     "standard errors would not account for the random effects. Refit without ",
     "`cluster()` and `mix_re()` terms, or use `mostm(engine = \"blrm\")` with ",
-    "`cluster(id)` for a random intercept for each patient.",
-    call. = FALSE
+    "`cluster(id)` for a random intercept for each patient."
   )
 }
 

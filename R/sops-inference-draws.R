@@ -25,7 +25,7 @@ generate_sop_coefficient_draws <- function(
 
   if (engine == "mvn") {
     if (!requireNamespace("mvtnorm", quietly = TRUE)) {
-      stop(
+      mostr_abort(
         "Package 'mvtnorm' is required for MVN simulation inference.\n",
         "Install with: install.packages('mvtnorm')"
       )
@@ -42,10 +42,10 @@ generate_sop_coefficient_draws <- function(
   }
 
   if (engine != "score_bootstrap") {
-    stop("Unknown simulation engine: ", engine)
+    mostr_abort("Unknown simulation engine: ", engine)
   }
   if (!is.null(vcov)) {
-    stop(
+    mostr_abort(
       "`vcov` cannot be supplied when `method = \"score_bootstrap\"` because ",
       "draws are generated from score perturbations."
     )
@@ -113,7 +113,7 @@ apply_sop_simulation_draws <- function(
     return(results)
   }
   if (!requireNamespace("furrr", quietly = TRUE)) {
-    stop("Package 'furrr' is required for parallel processing")
+    mostr_abort("Package 'furrr' is required for parallel processing")
   }
 
   old_plan <- future::plan()

@@ -180,41 +180,37 @@ sim_markov <- function(
   seed = NULL
 ) {
   if (missing(preset)) {
-    stop(
+    mostr_abort(
       "`preset` is required: use one of ",
       paste0('"', markov_preset_names, '"', collapse = ", "),
-      ", or NULL to supply your own model.",
-      call. = FALSE
+      ", or NULL to supply your own model."
     )
   }
   model <- markov_preset(preset)
 
   sampling_supplied <- !missing(n_patients) || !missing(treatment_prob)
   if (!is.null(baseline_data) && sampling_supplied) {
-    stop(
+    mostr_abort(
       "Supply either `baseline_data` or `n_patients` and `treatment_prob`, ",
       "not both: `baseline_data` already fixes the patients and their ",
-      "treatment.",
-      call. = FALSE
+      "treatment."
     )
   }
   if (is.null(model)) {
     if (sampling_supplied) {
-      stop(
+      mostr_abort(
         "`n_patients` and `treatment_prob` sample patients from a preset. ",
-        "With `preset = NULL`, supply the patients in `baseline_data`.",
-        call. = FALSE
+        "With `preset = NULL`, supply the patients in `baseline_data`."
       )
     }
     missing_model <- c("baseline_data", "intercepts", "lp_function")[
       c(is.null(baseline_data), is.null(intercepts), is.null(lp_function))
     ]
     if (length(missing_model) > 0) {
-      stop(
+      mostr_abort(
         "With `preset = NULL`, supply ",
         paste0("`", missing_model, "`", collapse = ", "),
-        ".",
-        call. = FALSE
+        "."
       )
     }
   } else if (is.null(baseline_data)) {
@@ -562,24 +558,24 @@ simulate_markov_trajectories <- function(
 ) {
   # Input validation
   if (!is.data.frame(baseline_data)) {
-    stop("baseline_data must be a data frame")
+    mostr_abort("baseline_data must be a data frame")
   }
 
   required_cols <- c("id", "yprev")
   missing_cols <- setdiff(required_cols, names(baseline_data))
   if (length(missing_cols) > 0) {
-    stop(
+    mostr_abort(
       "baseline_data must contain columns: ",
       paste(missing_cols, collapse = ", ")
     )
   }
 
   if (!is.numeric(intercepts) || length(intercepts) < 1) {
-    stop("intercepts must be a numeric vector with at least one element")
+    mostr_abort("intercepts must be a numeric vector with at least one element")
   }
 
   if (!is.function(lp_function)) {
-    stop("lp_function must be a function")
+    mostr_abort("lp_function must be a function")
   }
 
   # Setup
@@ -702,7 +698,7 @@ simulate_markov_trajectories <- function(
             -1e-12
         )
     ) {
-      stop(
+      mostr_abort(
         "lp_function produced threshold-specific linear predictors that ",
         "create decreasing cumulative probabilities. This implies negative ",
         "state probabilities; use threshold-specific effects that preserve ",
@@ -761,11 +757,10 @@ markov_preset <- function(preset) {
       length(preset) != 1L ||
       !preset %in% markov_preset_names
   ) {
-    stop(
+    mostr_abort(
       "`preset` must be one of ",
       paste0('"', markov_preset_names, '"', collapse = ", "),
-      ", or NULL to supply your own model.",
-      call. = FALSE
+      ", or NULL to supply your own model."
     )
   }
 
@@ -985,10 +980,7 @@ validate_markov_wrapper_inputs <- function(n_patients, treatment_prob) {
       n_patients > .Machine$integer.max ||
       n_patients != as.integer(n_patients)
   ) {
-    stop(simpleError(
-      "n_patients must be a positive integer",
-      call = sys.call(-1)
-    ))
+    mostr_abort("n_patients must be a positive integer")
   }
 
   if (
@@ -998,10 +990,7 @@ validate_markov_wrapper_inputs <- function(n_patients, treatment_prob) {
       treatment_prob < 0 ||
       treatment_prob > 1
   ) {
-    stop(simpleError(
-      "treatment_prob must be a numeric scalar between 0 and 1",
-      call = sys.call(-1)
-    ))
+    mostr_abort("treatment_prob must be a numeric scalar between 0 and 1")
   }
 }
 
@@ -1015,10 +1004,7 @@ validate_markov_treatment_effect <- function(
       !is.numeric(treatment_effect) ||
       !is.finite(treatment_effect)
   ) {
-    stop(simpleError(
-      "treatment_effect must be a finite numeric scalar",
-      call = sys.call(-1)
-    ))
+    mostr_abort("treatment_effect must be a finite numeric scalar")
   }
 
   if (
@@ -1027,10 +1013,9 @@ validate_markov_treatment_effect <- function(
       !is.finite(treatment_effect_decay) ||
       treatment_effect_decay < 0
   ) {
-    stop(simpleError(
-      "treatment_effect_decay must be a nonnegative finite numeric scalar",
-      call = sys.call(-1)
-    ))
+    mostr_abort(
+      "treatment_effect_decay must be a nonnegative finite numeric scalar"
+    )
   }
 }
 
@@ -1043,22 +1028,19 @@ validate_markov_follow_up_time <- function(follow_up_time) {
       follow_up_time < 1 ||
       follow_up_time != as.integer(follow_up_time)
   ) {
-    stop(simpleError(
-      "follow_up_time must be a positive integer",
-      call = sys.call(-1)
-    ))
+    mostr_abort("follow_up_time must be a positive integer")
   }
 }
 
 
 normalize_markov_lp <- function(lp, n_thresholds, active_index, time) {
   if (!is.numeric(lp) || is.matrix(lp) || is.array(lp)) {
-    stop("lp_function must return a numeric scalar or numeric vector")
+    mostr_abort("lp_function must return a numeric scalar or numeric vector")
   }
 
   lp <- as.numeric(lp)
   if (!(length(lp) %in% c(1, n_thresholds))) {
-    stop(
+    mostr_abort(
       "lp_function must return either length 1 or length(intercepts) (",
       n_thresholds,
       ") for each patient; got length ",
@@ -1071,7 +1053,7 @@ normalize_markov_lp <- function(lp, n_thresholds, active_index, time) {
   }
 
   if (any(!is.finite(lp))) {
-    stop("lp_function must return finite numeric values")
+    mostr_abort("lp_function must return finite numeric values")
   }
 
   if (length(lp) == 1) {
@@ -1093,13 +1075,13 @@ normalize_vectorized_markov_lp <- function(lp, n_active, n_thresholds) {
     !is.numeric(lp) ||
       !identical(as.integer(dim(lp)), as.integer(c(n_active, n_thresholds)))
   ) {
-    stop(
+    mostr_abort(
       "A vectorized lp_function must return one value per patient or a ",
       "matrix with one row per patient and one column per threshold"
     )
   }
   if (any(!is.finite(lp))) {
-    stop("lp_function must return finite numeric values")
+    mostr_abort("lp_function must return finite numeric values")
   }
 
   lp

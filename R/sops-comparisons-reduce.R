@@ -140,7 +140,7 @@ reduce_avg_sop_metric_df <- function(
       real_time = real_time
     )
   } else {
-    stop("Unknown comparison estimand: ", estimand)
+    mostr_abort("Unknown comparison estimand: ", estimand)
   }
 
   if (!is.null(time_unit)) {
@@ -288,7 +288,7 @@ aggregate_value <- function(
   .datatable.aware <- TRUE
   data <- as.data.frame(data)
   if (nrow(data) == 0L) {
-    stop("No rows are available for the requested state set.")
+    mostr_abort("No rows are available for the requested state set.")
   }
   if (length(group_cols) == 0L) {
     out <- data.frame(.dummy = 1L)
@@ -308,7 +308,7 @@ aggregate_value <- function(
     work[stats::complete.cases(work)]
   }
   if (nrow(work) == 0L) {
-    stop("no rows to aggregate")
+    mostr_abort("no rows to aggregate")
   }
   out <- work[,
     lapply(.SD, fun, na.rm = TRUE),
@@ -356,7 +356,7 @@ compare_counterfactual_levels <- function(
   ref_rows <- as.character(work[[varname]]) == as.character(ref)
   ref_df <- work[ref_rows, c(base_cols, value_col), drop = FALSE]
   if (nrow(ref_df) == 0L) {
-    stop(
+    mostr_abort(
       "Reference level `",
       as.character(ref),
       "` was not found in comparison data."
@@ -368,7 +368,7 @@ compare_counterfactual_levels <- function(
     hi_rows <- as.character(work[[varname]]) == as.character(level)
     hi_df <- work[hi_rows, c(base_cols, value_col), drop = FALSE]
     if (nrow(hi_df) == 0L) {
-      stop(
+      mostr_abort(
         "Comparison level `",
         as.character(level),
         "` was not found in comparison data."
@@ -402,7 +402,7 @@ comparison_contrast_label <- function(hi, lo, comparison) {
     comparison,
     difference = " - ",
     ratio = " / ",
-    stop("Unknown comparison: ", comparison)
+    mostr_abort("Unknown comparison: ", comparison)
   )
   paste0(as.character(hi), operator, as.character(lo))
 }
@@ -416,7 +416,7 @@ comparison_value <- function(hi, lo, comparison) {
     out[lo == 0] <- NA_real_
     return(out)
   }
-  stop("Unknown comparison: ", comparison)
+  mostr_abort("Unknown comparison: ", comparison)
 }
 
 avg_comparison_time_benefit_point <- function(
@@ -710,7 +710,9 @@ ordinal_pairwise_benefit <- function(reference, comparison) {
       !is.matrix(comparison) ||
       !identical(dim(reference), dim(comparison))
   ) {
-    stop("Paired ordinal probability matrices must have identical dimensions.")
+    mostr_abort(
+      "Paired ordinal probability matrices must have identical dimensions."
+    )
   }
   n <- nrow(reference)
   states <- ncol(reference)
@@ -732,7 +734,9 @@ average_profile_values <- function(
   weights = NULL
 ) {
   if (length(profile_value) != nrow(baseline)) {
-    stop("Profile-level comparison values are not aligned with baseline data.")
+    mostr_abort(
+      "Profile-level comparison values are not aligned with baseline data."
+    )
   }
   weights <- validate_sops_weights(weights, length(profile_value))
   work <- baseline[, by %||% character(), drop = FALSE]

@@ -22,12 +22,12 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
   } else if ("draw" %in% names(x)) {
     "draw"
   } else {
-    stop("Tidy SOP input must contain an `estimate` or `draw` column.")
+    mostr_abort("Tidy SOP input must contain an `estimate` or `draw` column.")
   }
 
   keep <- as.character(x$state) %in% as.character(target_states)
   if (!any(keep)) {
-    stop("Target states not found in SOP data frame.")
+    mostr_abort("Target states not found in SOP data frame.")
   }
   x <- x[keep, , drop = FALSE]
   measure_cols <- sop_measure_cols(x)
@@ -134,12 +134,14 @@ time_in_state_tidy_inference <- function(x, target_states, real_time) {
 
 time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
   if (!all(c("boot_id", "time", "tx") %in% colnames(sops))) {
-    stop("Input data frame must contain 'boot_id', 'time', and 'tx' columns.")
+    mostr_abort(
+      "Input data frame must contain 'boot_id', 'time', and 'tx' columns."
+    )
   }
 
   state_cols_available <- grep("^state_", colnames(sops), value = TRUE)
   if (length(state_cols_available) == 0) {
-    stop(
+    mostr_abort(
       "Input data frame does not contain any columns starting with 'state_'."
     )
   }
@@ -148,7 +150,7 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
   target_cols <- paste0("state_", target_suffixes)
   missing_cols <- setdiff(target_cols, colnames(sops))
   if (length(missing_cols) > 0) {
-    stop(paste(
+    mostr_abort(paste(
       "The following target state columns were not found in the bootstrap output:",
       paste(missing_cols, collapse = ", ")
     ))
@@ -308,7 +310,7 @@ time_in_state <- function(
 
   if (inherits(sops, "markov_interpolated_sops")) {
     if (!is.null(time_map) || baseline_time_supplied) {
-      stop(
+      mostr_abort(
         "`markov_interpolated_sops` is already on the real-time scale; ",
         "omit `time_map` and `baseline_time`."
       )
@@ -321,7 +323,7 @@ time_in_state <- function(
       )
       missing_xout <- setdiff(target_times, unique(sops$time))
       if (length(missing_xout) > 0) {
-        stop(
+        mostr_abort(
           "`target_times` for already interpolated SOPs must be contained in ",
           "the existing `time` values."
         )
@@ -340,18 +342,20 @@ time_in_state <- function(
       !is.null(baseline_time) &&
       is.null(time_map)
   ) {
-    stop("`baseline_time` requires `time_map` for real-time interpolation.")
+    mostr_abort(
+      "`baseline_time` requires `time_map` for real-time interpolation."
+    )
   }
 
   if (inherits(sops, c("markov_sops", "markov_avg_sops"))) {
     if (!is.null(target_times) && !use_real_time) {
-      stop(
+      mostr_abort(
         "`target_times` requires `time_map` or an already interpolated SOP object."
       )
     }
     if (use_real_time) {
       if (is.null(time_map)) {
-        stop("`time_map` must be supplied for real-time AUC.")
+        mostr_abort("`time_map` must be supplied for real-time AUC.")
       }
       target_times <- comparison_real_time_target_times(
         sops,
@@ -383,17 +387,17 @@ time_in_state <- function(
   # =========================================================================
   if (inherits(sops, "data.frame")) {
     if (baseline_time_supplied && !is.null(baseline_time)) {
-      stop(
+      mostr_abort(
         "Empirical `baseline_time` anchoring is only supported for tidy SOP ",
         "outputs."
       )
     }
     if (!is.null(target_times)) {
-      stop("`target_times` is only supported for tidy SOP outputs.")
+      mostr_abort("`target_times` is only supported for tidy SOP outputs.")
     }
     if (use_real_time) {
       if (is.null(time_map)) {
-        stop("`time_map` must be supplied for real-time AUC.")
+        mostr_abort("`time_map` must be supplied for real-time AUC.")
       }
       time_map <- standardize_time_map(time_map)
       sops$time <- map_sop_time_values(sops$time, time_map)
@@ -410,13 +414,13 @@ time_in_state <- function(
   # =========================================================================
 
   if (!is.null(target_times)) {
-    stop("`target_times` is only supported for tidy SOP outputs.")
+    mostr_abort("`target_times` is only supported for tidy SOP outputs.")
   }
 
   # --- 1. Detect Dimensions ---
   dims <- dim(sops)
   if (is.null(dims)) {
-    stop("Input 'sops' must be an array or data frame.")
+    mostr_abort("Input 'sops' must be an array or data frame.")
   }
 
   ndim <- length(dims)
@@ -429,7 +433,7 @@ time_in_state <- function(
     # Bayesian: [Draws, Patients, Time, States]
     state_dim <- 4
   } else {
-    stop("Input array must be 3D or 4D.")
+    mostr_abort("Input array must be 3D or 4D.")
   }
 
   # --- 2. Resolve Target States ---
@@ -441,7 +445,7 @@ time_in_state <- function(
   target_chars <- as.character(target_states)
   missing_states <- setdiff(target_chars, state_names)
   if (length(missing_states) > 0) {
-    stop(paste(
+    mostr_abort(paste(
       "Target states not found in input array:",
       paste(missing_states, collapse = ", ")
     ))
@@ -457,10 +461,10 @@ time_in_state <- function(
   # --- 4. Integrate Over Time ---
   if (use_real_time) {
     if (is.null(time_map)) {
-      stop("`time_map` must be supplied for real-time AUC.")
+      mostr_abort("`time_map` must be supplied for real-time AUC.")
     }
     if (baseline_time_supplied && !is.null(baseline_time)) {
-      stop(
+      mostr_abort(
         "Empirical `baseline_time` anchoring is only supported for tidy SOP ",
         "outputs."
       )

@@ -239,7 +239,7 @@ stop_absorbing_start <- function(
         "`, use non-absorbing states only."
       )
     )
-    stop(
+    mostr_abort(
       "`",
       column,
       "` is ",
@@ -253,8 +253,7 @@ stop_absorbing_start <- function(
       ". ",
       reason,
       " ",
-      advice,
-      call. = FALSE
+      advice
     )
   }
   invisible(NULL)
@@ -278,12 +277,11 @@ validate_fast_previous_state_support <- function(
   unsupported <- setdiff(as_state_labels(y_levels), observed)
   unsupported <- setdiff(unsupported, as_state_labels(absorb))
   if (length(unsupported) > 0L) {
-    stop(
+    mostr_abort(
       "Model prediction requires transitions from state level(s) not ",
       "represented in the fitted transition data: ",
       paste(unsupported, collapse = ", "),
-      ". If a level is absorbing, pass it via `absorb`.",
-      call. = FALSE
+      ". If a level is absorbing, pass it via `absorb`."
     )
   }
   invisible(NULL)

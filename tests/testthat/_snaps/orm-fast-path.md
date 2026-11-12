@@ -4,7 +4,7 @@
       mostr::soprob_markov(fit, baseline, times = 1, y_levels = fit$yunique[-length(
         fit$yunique)])
     Condition
-      Error:
+      Error in `mostr::soprob_markov()`:
       ! `y_levels` defines 5 states, but the fitted model defines 6 states through 5 threshold coefficients.
 
 ---
@@ -13,6 +13,6 @@
       mostr::soprob_markov(fit, baseline[1L, , drop = FALSE], times = 1, y_levels = fit$
         yunique)
     Condition
-      Error:
+      Error in `mostr::soprob_markov()`:
       ! Model prediction requires transitions from state level(s) not represented in the fitted transition data: 6. If a level is absorbing, pass it via `absorb`.
 

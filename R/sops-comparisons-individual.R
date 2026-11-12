@@ -366,14 +366,13 @@ profile_output_columns <- function(data, time_var, reserved, fn) {
   profile_cols <- profile_cols[!startsWith(profile_cols, ".markov_")]
   clash <- intersect(profile_cols, reserved)
   if (length(clash) > 0L) {
-    stop(
+    mostr_abort(
       "`",
       fn,
       "` uses the column name(s) ",
       paste0("`", clash, "`", collapse = ", "),
       " for its output, so the prediction profiles cannot contain them. ",
-      "Rename these columns.",
-      call. = FALSE
+      "Rename these columns."
     )
   }
   profile_cols
