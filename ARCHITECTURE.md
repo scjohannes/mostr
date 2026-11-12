@@ -27,6 +27,20 @@ GitHub Pages artifact and deployment actions. In repository Settings > Pages,
 the source must be set to GitHub Actions. Local previews use
 `pkgdown::build_site()` with Pandoc available; this executes the vignette articles.
 
+User documentation is organised by task. `?mostr` (`R/mostr-package.R`) lists
+every exported function under what a user wants to do, so a new export needs an
+entry there and in a `_pkgdown.yml` reference section; every reference section
+has a `desc:`. `vignettes/mostr.Rmd` is the "Get started" article: one small
+`sim_markov()` to `mostm()` to `avg_sops()`, `avg_comparisons()` and
+`inferences(method = "delta")` example that knits in a few seconds, because
+CRAN rebuilds vignettes, followed by pointers to the other articles by
+question. The articles index groups vignettes by question rather than model
+type. `vignettes/articles/faq.Rmd` is a pkgdown-only article (the directory is
+in `.Rbuildignore`, so CRAN never builds it); it sources `../_setup.R` and
+runs small examples so its error and warning messages are the package's
+current ones. `README.md` is rendered from `README.Rmd` with
+`devtools::build_readme()`, which writes its figures to `man/figures/README-*`.
+
 `man/figures/logo.png` supplies the README and pkgdown logo. All vignettes source
 `vignettes/_setup.R`, which keeps code and figures visible and wraps text output
 longer than ten lines in native HTML `details` elements. Non-HTML output retains
@@ -49,7 +63,7 @@ Vignette correlation heatmaps omit tile labels. `plot_correlation_heatmap()`
 chooses a 0-1 fill scale for nonnegative finite correlations and -1 to 1 when
 negative values occur or no finite values are available; explicit `fill_limits`
 override this choice for both observed and model-based plots.
-The introductory vignette documents the ACTT-2 population, NIAID eight-point
+The proportional-odds vignette (`full-po-sops`) documents the ACTT-2 population, NIAID eight-point
 health-state scale, and data-access acknowledgment; its 400-patient, 28-day
 description matches the simulation code.
 Its plot chunks have descriptive names so inserting or renaming other chunks
@@ -1164,7 +1178,7 @@ the prediction designs, `blrm` prediction, simulation, robust covariance,
 `mostm()` argument checks and plots; a test consolidation must not turn any
 caught bug into a missed one.
 
-The ten vignettes demonstrate Markov-generated data, including a custom
+The vignettes demonstrate Markov-generated data, including a custom
 30-state generator and a waning-treatment-effect simulation study comparing
 constant and time-varying treatment models on full-grid SOP and time-in-state
 contrasts.

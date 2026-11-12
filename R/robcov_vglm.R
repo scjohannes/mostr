@@ -1189,6 +1189,8 @@ vcov.robcov_vglm <- function(object, ...) {
 #' @param vglm_fit A fitted vglm object from the VGAM package. Should be fit
 #'   with `cumulative(parallel = TRUE, reverse = TRUE)` to match orm's
 #'   parameterization for ordinal outcomes, or `binomialff` for binary outcomes.
+#'   For a fit from `mostm(engine = "vglm")`, which returns a `robcov_vglm`
+#'   object, pass its `$vglm_fit` element, as in the example.
 #' @param cluster Optional cluster variable for robust standard errors. Must
 #'   have the same length as the number of observations in both models.
 #'
@@ -1234,6 +1236,16 @@ vcov.robcov_vglm <- function(object, ...) {
 #'
 #' # With clustering
 #' comparison_cl <- compare_se_orm_vglm(m_orm, m_vglm, cluster = mydata$id)
+#'
+#' # With fits from mostm(), pass the vglm fit stored in the robcov_vglm object
+#' fit_orm <- mostm(y ~ yprev + time + tx, data = model_data, id_var = "id")
+#' fit_vglm <- mostm(
+#'   ordered(y) ~ yprev + time + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   engine = "vglm"
+#' )
+#' compare_se_orm_vglm(fit_orm, fit_vglm$vglm_fit, cluster = model_data$id)
 #' }
 #'
 #' @importFrom stats vcov
