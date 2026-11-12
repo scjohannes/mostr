@@ -37,6 +37,7 @@ build_avg_time_case <- function(factor_time) {
 }
 
 test_that("analytical inference clears bootstrap and previous null metadata", {
+  skip_on_cran()
   case <- make_avg_time_case()
   boot <- avg_state_time(case$model, times = 1:3, absorb = 3) |>
     inferences(method = "fwb", n_draws = 3, seed = 7211, null = 0)
@@ -56,6 +57,7 @@ test_that("analytical inference clears bootstrap and previous null metadata", {
 })
 
 test_that("avg_state_time() totals equal time_in_state() of the matching avg_sops()", {
+  skip_on_cran()
   case <- make_avg_time_case()
   profiles <- case$data[!duplicated(case$data$id), , drop = FALSE][1:15, ]
   observed <- list(case$model, absorb = 3, times = 1:4)
@@ -160,6 +162,7 @@ test_that("avg_state_time() totals equal time_in_state() of the matching avg_sop
 })
 
 test_that("avg_state_time integrates irregular factor visits with optional baseline", {
+  skip_on_cran()
   case <- make_avg_time_case(factor_time = TRUE)
   time_map <- c("1" = 2, "2" = 7, "3" = 9)
   avg <- avg_sops(case$model, absorb = 3, times = 1:3)
@@ -225,6 +228,7 @@ test_that("avg_state_time integrates irregular factor visits with optional basel
 })
 
 test_that("avg_state_time rejects grouping names that would overwrite output columns", {
+  skip_on_cran()
   case <- make_avg_time_case()
   profiles <- case$data[!duplicated(case$data$id), , drop = FALSE][1:8, ]
   profiles$state_set <- profiles$subgroup
@@ -278,6 +282,7 @@ test_that("avg_state_time rejects grouping names that would overwrite output col
 })
 
 test_that("all draw engines reduce matched SOP draws before calculating intervals", {
+  skip_on_cran()
   case <- make_avg_time_case()
   avg <- avg_sops(
     case$model,
@@ -332,6 +337,7 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
 })
 
 test_that("mapped resampling uses the baseline anchor of each draw", {
+  skip_on_cran()
   case <- make_avg_time_case()
   avg <- avg_sops(case$model, absorb = 3, times = 1:2)
   total <- avg_state_time(
@@ -376,6 +382,7 @@ test_that("mapped resampling uses the baseline anchor of each draw", {
 })
 
 test_that("avg_state_time replaces inference metadata and preserves seeds and Wald centers", {
+  skip_on_cran()
   case <- make_avg_time_case()
   total <- avg_state_time(case$model, absorb = 3, times = 1:3, state_sets = "1")
   withr::local_seed(9324)
@@ -412,6 +419,7 @@ test_that("avg_state_time replaces inference metadata and preserves seeds and Wa
 })
 
 test_that("posterior medians and intervals are calculated after time reduction", {
+  skip_on_cran()
   coefficients <- rbind(
     c(0.5, -0.5, 0, 1.2),
     c(2, 1, 0, -1.1),

@@ -121,6 +121,7 @@ test_that("formula helper injection includes every registered RMS basis and leav
 })
 
 test_that("lsp time bases give the same SOPs through the compiled plan and the R engine", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 

@@ -175,6 +175,7 @@ add_interpolation_intervals <- function(x) {
 }
 
 test_that("factor visit gap requires explicit numeric time_covariates", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   data <- make_factor_visit_case(n_patients = 40)
@@ -246,6 +247,7 @@ test_that("factor visit orm SOP interpolation uses absorbing state", {
 })
 
 test_that("interpolate_sops maps visits, anchors baseline, and normalizes states for each time grid", {
+  skip_on_cran()
   x <- make_interpolation_case()
   time_map <- c(v1 = 3, v2 = 7)
 
@@ -393,6 +395,7 @@ test_that("interpolate_sops gives individual profiles one-hot baselines", {
 })
 
 test_that("interpolate_sops takes percentile intervals from interpolated stored draws", {
+  skip_on_cran()
   simulated <- add_interpolation_draws(make_interpolation_case())
   # blrm results store posterior draws next to their intervals.
   posterior <- add_interpolation_intervals(make_interpolation_case())

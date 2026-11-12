@@ -62,6 +62,7 @@ absorbing_start_calls <- function(model, profiles, ...) {
 }
 
 test_that("every SOP call refuses profiles starting in an absorbing state", {
+  skip_on_cran()
   case <- make_comparisons_case()
   second <- make_second_order_comparisons_case()
 

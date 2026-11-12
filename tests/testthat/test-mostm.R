@@ -1,4 +1,5 @@
 test_that("mostm() records its call and engine, and bootstrap refits call it with that engine", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
@@ -64,6 +65,7 @@ test_that("mostm() records its call and engine, and bootstrap refits call it wit
 })
 
 test_that("the vglm engine fits the orm proportional odds model by default", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
@@ -97,6 +99,7 @@ test_that("the vglm engine fits the orm proportional odds model by default", {
 })
 
 test_that("mostm() names the engine an argument belongs to", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rmsb")
@@ -149,6 +152,7 @@ test_that("mostm() names the engine an argument belongs to", {
 })
 
 test_that("mostm() accepts the engine arguments used in the articles and passes them on", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
@@ -246,6 +250,7 @@ test_that("mostm() rejects arguments that every fit must keep", {
 })
 
 test_that("the blrm engine rejects `cadjust`", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("rmsb")
 
@@ -266,6 +271,7 @@ test_that("the blrm engine rejects `cadjust`", {
 })
 
 test_that("fits without mostm() provenance must be refitted", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   local_reproducible_output(width = 80)
 
@@ -341,6 +347,7 @@ test_that("mostm() refuses `id_var = NULL`", {
 })
 
 test_that("a patient column with another name gives the same results as `id`", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6113)
@@ -466,6 +473,7 @@ expect_formula_refusals <- function(cases, data) {
 }
 
 test_that("mostm() refuses factor() written inside the formula unless the engine fits it", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 

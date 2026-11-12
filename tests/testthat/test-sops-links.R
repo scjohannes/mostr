@@ -1,4 +1,5 @@
 test_that("Markov workflows reject links other than the logit", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -64,6 +65,7 @@ test_that("Markov workflows reject links other than the logit", {
 })
 
 test_that("Markov workflows reject raw and manually robust backend fits", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 

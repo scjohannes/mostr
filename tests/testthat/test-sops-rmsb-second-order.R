@@ -644,6 +644,7 @@ test_that("grouped blrm summaries refuse a missing grouping value", {
 })
 
 test_that("grouped blrm summaries reject entirely incomplete grouping rows", {
+  skip_on_cran()
   model <- make_fake_blrm()
   newdata <- data.frame(
     id = c("a", "b"),

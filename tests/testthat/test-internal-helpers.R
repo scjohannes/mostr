@@ -4,6 +4,7 @@
 # are never renumbered, and numeric columns keep their values. `warning` is
 # the expected warning, or NA for none.
 test_that("drop_absent_states drops missing states and keeps the state labels", {
+  skip_on_cran()
   letters_abc <- c("a", "b", "c")
   cases <- list(
     list(

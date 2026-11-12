@@ -10,6 +10,7 @@
 # every set-up, which keeps the run time near a minute.
 
 test_that("time totals lie between 0 and the follow-up and add up to it (L6, L7, L8)", {
+  skip_on_cran()
   lumps <- list(low = c("1", "2"), high = c("3", "4"))
   cells <- grid_consistency_cells()
   for (index in seq_along(cells)) {
@@ -87,6 +88,7 @@ test_that("time totals lie between 0 and the follow-up and add up to it (L6, L7,
 })
 
 test_that("time benefit lies within plus or minus the follow-up (L19)", {
+  skip_on_cran()
   cells <- grid_consistency_cells()
   for (index in seq_along(cells)) {
     cell <- cells[[index]]
@@ -110,6 +112,7 @@ test_that("time benefit lies within plus or minus the follow-up (L19)", {
 })
 
 test_that("avg_comparisons() is the mean of comparisons(), overall and within groups (R2)", {
+  skip_on_cran()
   # by = "tx" names the compared variable, so it groups by the treatment each
   # patient was observed with. Every set-up averages overall and takes its
   # turn with one kind of group and one real-time estimand.
@@ -156,6 +159,7 @@ test_that("avg_comparisons() is the mean of comparisons(), overall and within gr
 })
 
 test_that("time in state is the sum or area of the SOPs (R5)", {
+  skip_on_cran()
   cells <- grid_consistency_cells()
   for (index in seq_along(cells)) {
     cell <- cells[[index]]
@@ -230,6 +234,7 @@ test_that("time in state is the sum or area of the SOPs (R5)", {
 })
 
 test_that("time_in_state() on SOPs matches avg_state_time() and state_time() (R11)", {
+  skip_on_cran()
   cells <- grid_consistency_cells()
   for (index in seq_along(cells)) {
     cell <- cells[[index]]
@@ -313,6 +318,7 @@ test_that("time_in_state() on SOPs matches avg_state_time() and state_time() (R1
 })
 
 test_that("time benefit is the formula applied to each profile's paired SOPs (R18)", {
+  skip_on_cran()
   # At each visit, with reference distribution P0 and comparison P1 (states
   # ordered from best to worst): sum over s of P0(s) * (P1(below s) - P1(above s)).
   cells <- grid_consistency_cells()

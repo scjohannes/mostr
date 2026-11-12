@@ -41,6 +41,7 @@ test_that("a comparison of a variable the model doesn't use is 0, without a mess
 })
 
 test_that("its standard error, test and interval are NA for every method", {
+  skip_on_cran()
   case <- make_comparisons_case()
   profiles <- unused_profiles(case)
   contrast <- avg_comparisons(

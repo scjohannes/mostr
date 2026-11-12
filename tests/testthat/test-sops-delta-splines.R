@@ -110,6 +110,7 @@ test_that("backend orm spline covariance labels preserve coefficient order", {
 })
 
 test_that("unnamed orm bread preserves transformed and interaction coefficient order", {
+  skip_on_cran()
   data <- local_spline_delta_orm_case()$data
   data$yprev_factor <- factor(data$yprev)
   formulas <- list(
@@ -153,6 +154,7 @@ test_that("unnamed orm bread preserves transformed and interaction coefficient o
 })
 
 test_that("penalized orm previous-state splines support delta inference", {
+  skip_on_cran()
   case <- local_spline_delta_orm_case()
   fit <- case$model
   avg <- avg_sops(

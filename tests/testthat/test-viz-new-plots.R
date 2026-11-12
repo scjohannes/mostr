@@ -29,6 +29,7 @@ test_that("plot_transitions creates empirical joint-proportion heatmaps", {
 })
 
 test_that("plot_transitions orders time facets chronologically", {
+  skip_on_cran()
   # Numeric-looking character and factor weeks sort as numbers, and sparse
   # unsorted numeric times sort chronologically.
   twelve_weeks <- data.frame(
@@ -446,6 +447,7 @@ test_that("plot_correlation creates ordinal correlation heatmaps", {
 })
 
 test_that("correlation color limits handle zero and missing correlations", {
+  skip_on_cran()
   data <- data.frame(time_1 = 1:2, time_2 = 2:3, correlation = c(0, NA_real_))
   plot <- plot_correlation_heatmap(data, FALSE, 2, NULL)
   expect_equal(plot$scales$get_scales("fill")$limits, c(0, 1))
@@ -473,6 +475,7 @@ test_that("plot_variogram plots correlations by time difference", {
 })
 
 test_that("correlation diagnostics preserve negative correlations", {
+  skip_on_cran()
   data <- data.frame(
     id = rep(1:4, each = 2),
     time = rep(1:2, times = 4),
@@ -762,6 +765,7 @@ test_that("plot_lp_difference supports blrm posterior median linear predictors",
 
 
 test_that("correlation methods match R with ties and pairwise missing values", {
+  skip_on_cran()
   mat <- cbind(c(1, 1, 2, 3, 3, NA), c(1, 2, 2, 2, 3, 1), c(3, 2, 1, 1, NA, 2))
   data <- data.frame(id = rep(1:6, 3), time = rep(1:3, each = 6), y = c(mat))
   for (method in c("spearman", "pearson")) {
@@ -778,6 +782,7 @@ test_that("correlation methods match R with ties and pairwise missing values", {
 })
 
 test_that("model correlations match exact trajectories for both Markov orders", {
+  skip_on_cran()
   model <- structure(list(), class = "vglm", markov_id_var = "id")
   for (second_order in c(FALSE, TRUE)) {
     probabilities <- function(time, previous, second_previous) {

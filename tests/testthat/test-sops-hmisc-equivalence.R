@@ -1,4 +1,5 @@
 test_that("soprobMarkovOrdm and soprob_markov yield identical results - single patient", {
+  skip_on_cran()
   skip_if_not_installed("Hmisc")
   withr::local_seed(1234)
 
@@ -70,6 +71,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
 })
 
 test_that("soprobMarkovOrdm and soprob_markov yield identical results - single patient; partial PO", {
+  skip_on_cran()
   skip_if_not_installed("Hmisc")
   withr::local_seed(1234)
 
@@ -142,6 +144,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
 })
 
 test_that("soprobMarkovOrdm and soprob_markov yield identical results - all patients", {
+  skip_on_cran()
   skip_if_not_installed("Hmisc")
   withr::local_seed(7890)
 
@@ -226,6 +229,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
 
 
 test_that("compiled plan matches markov_msm_build() and the R reference for PPO, with and without constraints", {
+  skip_on_cran()
   follow_up <- 30
   times <- 1:follow_up
   absorb <- 6

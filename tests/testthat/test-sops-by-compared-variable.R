@@ -59,6 +59,7 @@ comparison_estimand_args <- function(estimand) {
 }
 
 test_that("avg_comparisons(by = compared variable) averages within observed groups", {
+  skip_on_cran()
   case <- make_comparisons_case()
   for (estimand in c("sop", "time_in_state", "time_benefit")) {
     args <- comparison_estimand_args(estimand)
@@ -83,6 +84,7 @@ test_that("time in state with time_map by the compared variable uses each group'
 })
 
 test_that("draw-based intervals by the compared variable match each group's own call", {
+  skip_on_cran()
   case <- make_comparisons_case()
   for (estimand in c("sop", "time_in_state", "time_benefit")) {
     args <- comparison_estimand_args(estimand)
@@ -156,6 +158,7 @@ test_that("avg_sops() by treatment without `variables` still groups by observed 
 })
 
 test_that("`by` with the compared variable and another column, and ratios, use observed groups", {
+  skip_on_cran()
   case <- make_comparisons_case()
   for (estimand in c("sop", "time_in_state")) {
     args <- c(comparison_estimand_args(estimand), list(comparison = "ratio"))
@@ -188,6 +191,7 @@ test_that("`by` with the compared variable and another column, and ratios, use o
 })
 
 test_that("resampling by the compared variable matches grouping by a copied column", {
+  skip_on_cran()
   case <- make_comparisons_case()
   # The reference: the same model fitted to data with a copy of the observed
   # treatment, grouped by that copy as an ordinary column.

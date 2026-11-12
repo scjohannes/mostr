@@ -226,6 +226,7 @@ test_that("apply_to_bootstrap and apply_to_fwb_bootstrap materialize samples bef
 })
 
 test_that("parallel bootstrap helpers return results and restore the future plan after success and errors", {
+  skip_on_cran()
   future::plan(future::sequential)
   withr::defer(future::plan(future::sequential))
 

@@ -89,6 +89,7 @@ robcov_contract_fixture <- function() {
 
 describe("robcov_vglm()", {
   it("produces valid covariance estimates", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
 
     fixture <- robcov_contract_fixture()
@@ -191,6 +192,7 @@ describe("robcov_vglm()", {
   })
 
   it("computes z-statistics and p-values and keeps the fit's information", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
 
     m <- robcov_contract_fixture()$fit
@@ -241,6 +243,7 @@ describe("robcov_vglm()", {
   })
 
   it("matches rms::robcov for equivalent binary and ordinal likelihoods", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -350,6 +353,7 @@ describe("robcov_vglm()", {
   })
 
   it("rejects non-converged fits and malformed covariance components", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
 
     withr::local_seed(405)
@@ -462,6 +466,7 @@ describe("Score properties", {
 })
 
 test_that("compare_se_orm_vglm compares model-based and robust SEs", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -549,6 +554,7 @@ test_that("compare_se_orm_vglm compares model-based and robust SEs", {
 
 describe("Small-sample adjustment", {
   it("separates HC1 and cluster corrections", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
 
     # Generate clustered data
@@ -634,6 +640,7 @@ describe("Small-sample adjustment", {
 })
 
 test_that("analytic scores and observed bread match independent differences", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   withr::local_seed(204)
@@ -690,6 +697,7 @@ test_that("analytic scores and observed bread match independent differences", {
 })
 
 test_that("logistic scores and observed bread match independent differences with weights or an offset", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   # Non-integer case weights, and an offset given as the `offset` argument
@@ -783,6 +791,7 @@ test_that("observed bread supports vector-valued inverse links", {
 })
 
 test_that("observed bread supports proportional-odds deviation geometries", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   withr::local_seed(205)
@@ -953,6 +962,7 @@ describe("Score bootstrap compatibility", {
 
 describe("Utility methods", {
   it("print and summary methods work", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
 
     # Generate test data
@@ -1034,6 +1044,7 @@ describe("robcov_vglm() stress tests", {
   })
 
   it("warns for few clusters and counts only the clusters present", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
 
     # Five clusters; three clusters for four coefficients, so the clustered
@@ -1101,6 +1112,7 @@ describe("robcov_vglm() stress tests", {
   })
 
   it("uses a stable PSD construction for ill-conditioned clustered fits", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 

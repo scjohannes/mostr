@@ -1,4 +1,5 @@
 test_that("avg_sops averages observed covariates overall and within groups", {
+  skip_on_cran()
   case <- make_observed_average_case()
   individual <- sops(case$model, times = case$times, absorb = case$absorb)
   for (by in list(TRUE, "tx")) {
@@ -34,6 +35,7 @@ test_that("avg_sops averages observed covariates overall and within groups", {
 })
 
 test_that("observed averages retain conditional and unconditional covariance", {
+  skip_on_cran()
   case <- make_observed_average_case()
   average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
   individual <- sops(case$model, times = case$times, absorb = case$absorb) |>
@@ -63,6 +65,7 @@ test_that("observed averages retain conditional and unconditional covariance", {
 })
 
 test_that("observed averages support both refit bootstrap methods", {
+  skip_on_cran()
   case <- make_observed_average_case()
   average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
   for (method in c("bootstrap", "fwb")) {

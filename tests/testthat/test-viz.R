@@ -59,6 +59,7 @@ expect_plotted_values <- function(plotted, expected, keys, columns, info) {
 }
 
 test_that("plot_sops plots empirical state proportions within each group", {
+  skip_on_cran()
   data <- data.frame(
     id = rep(1:4, each = 3),
     time = rep(1:3, 4),
@@ -186,6 +187,7 @@ make_avg_sops_plot_data <- function(with_draws = TRUE) {
 }
 
 test_that("plot_sops draws model-derived estimates and confidence limits", {
+  skip_on_cran()
   # Distinct estimates, so a value drawn at the wrong time, state or arm shows.
   distinct <- function(data) {
     data$estimate <- seq_len(nrow(data)) / 100
@@ -292,6 +294,7 @@ test_that("plot_sops respects stored y_levels for model-derived state order", {
 })
 
 test_that("plot_sops overlays a deterministic subset of avg_sops draws", {
+  skip_on_cran()
   data <- make_avg_sops_plot_data()
 
   plot <- plot_sops(data, geom = "bar", facet_var = "tx", n_draws = 3)
@@ -382,6 +385,7 @@ make_comparison_plot_data <- function(
 }
 
 test_that("plot_comparisons draws estimates on the difference and ratio scales", {
+  skip_on_cran()
   custom_colour <- make_comparison_plot_data(
     comparison = "ratio",
     with_time = FALSE

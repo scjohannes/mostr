@@ -374,6 +374,7 @@ test_that("get_draws() rejects plain data frames and joins draws on the keys the
 })
 
 test_that("get_draws() preserves covariates for individual SOP draws", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   skip_if_not_installed("mvtnorm")

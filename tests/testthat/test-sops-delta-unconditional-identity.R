@@ -95,6 +95,7 @@ expect_unconditional_identity <- function(point, values, coefficient, label) {
 }
 
 test_that("unconditional variance is conditional variance plus the patient terms", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 

@@ -1,4 +1,5 @@
 test_that("ordinary bootstrap stops when a resample lacks a `by` group", {
+  skip_on_cran()
   case <- make_comparisons_case()
   # With 60 patients, a resample misses both patients of the `rare` group
   # with probability (58/60)^60, about 0.13, so 40 resamples almost surely
@@ -42,6 +43,7 @@ test_that("ordinary bootstrap stops when a resample lacks a `by` group", {
 })
 
 test_that("ordinary bootstrap keeps groups that every resample contains", {
+  skip_on_cran()
   case <- make_comparisons_case()
   boot <- inferences(
     avg_sops(case$model, by = "marker", times = 1:2, absorb = 3),

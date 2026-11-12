@@ -18,6 +18,7 @@ native_reference_previous <- function(n, K) {
 }
 
 test_that("native logit updates match the reference and report crossed cut-points", {
+  skip_on_cran()
   set.seed(4102)
   n <- 4L
   K <- 5L
@@ -418,6 +419,7 @@ native_plan_fits <- local({
 })
 
 test_that("compiled first-order SOPs match the reference recursion", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   fits <- native_plan_fits()
@@ -463,6 +465,7 @@ native_second_order_data <- function(n_patients = 40L, seed = 4111) {
 }
 
 test_that("compiled second-order SOPs match the reference recursion", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   data <- native_second_order_data()

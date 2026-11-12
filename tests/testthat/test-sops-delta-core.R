@@ -83,6 +83,7 @@ central_sop_jacobian <- function(plan, model) {
 }
 
 test_that("VGLM analytical SOP Jacobians match raw-coefficient differences", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   case <- delta_vglm_case()
@@ -146,6 +147,7 @@ test_that("ORM analytical SOP Jacobians match raw-coefficient differences", {
 })
 
 test_that("effective coefficient maps exactly preserve named raw coefficients", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -230,6 +232,7 @@ test_that("effective coefficient maps exactly preserve named raw coefficients", 
 })
 
 test_that("absorbing states propagate probability and derivative mass", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   case <- delta_vglm_case()
@@ -260,6 +263,7 @@ test_that("absorbing states propagate probability and derivative mass", {
 })
 
 test_that("changing covariate units preserves analytical probabilities", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   for (case in list(delta_vglm_case(), delta_orm_case())) {
@@ -293,6 +297,7 @@ test_that("changing covariate units preserves analytical probabilities", {
 })
 
 test_that("grouped recursion retains only the required analytical state", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   case <- delta_vglm_case()
@@ -389,6 +394,7 @@ test_that("grouped recursion retains only the required analytical state", {
 })
 
 test_that("analytical SOP validation rejects unsupported model structures", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   local_reproducible_output(width = 80)
@@ -437,6 +443,7 @@ test_that("analytical SOP validation rejects unsupported model structures", {
 })
 
 test_that("crossed raw ordinal probabilities are rejected without clipping", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   local_reproducible_output(width = 80)
@@ -478,6 +485,7 @@ as.data.frame.delta_finalize_trap <- function(x, ...) {
 }
 
 test_that("analytical allocation guard is typed and configurable", {
+  skip_on_cran()
   local_reproducible_output(width = 80)
   object <- data.frame(time = 1, state = "1", estimate = 0.5)
   class(object) <- c("markov_avg_sops", "data.frame")

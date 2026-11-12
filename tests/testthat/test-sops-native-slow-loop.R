@@ -7,6 +7,7 @@
 # The file name keeps these tests in the native-safety CI jobs.
 
 test_that("sops() matches the readable loop on every model set-up", {
+  skip_on_cran()
   for (cell in grid_core_cells()) {
     fit <- grid_fit(cell)
     profiles <- grid_profiles(cell)
@@ -26,6 +27,7 @@ test_that("sops() matches the readable loop on every model set-up", {
 })
 
 test_that("sops() matches the loop with several absorbing states, inner ones included", {
+  skip_on_cran()
   absorb <- c(2L, grid_n_states)
   for (cell in grid_core_cells()) {
     fit <- grid_fit(cell)
@@ -45,6 +47,7 @@ test_that("sops() matches the loop with several absorbing states, inner ones inc
 })
 
 test_that("sops() matches the loop for gaps, explicit bases, numeric states and weights", {
+  skip_on_cran()
   cells <- list(
     grid_cell("orm", visit = "gap"),
     grid_cell("vglm", visit = "gap"),
@@ -73,6 +76,7 @@ test_that("sops() matches the loop for gaps, explicit bases, numeric states and 
 })
 
 test_that("avg_sops() matches averaging the loop, within groups and under each treatment", {
+  skip_on_cran()
   for (cell in grid_core_cells(times = c("linear", "factor"))) {
     fit <- grid_fit(cell)
     times <- grid_times(cell)
@@ -122,6 +126,7 @@ test_that("avg_sops() matches averaging the loop, within groups and under each t
 })
 
 test_that("sops() on the stored patients matches the loop on their baseline rows", {
+  skip_on_cran()
   for (cell in grid_core_cells(times = c("linear", "factor"))) {
     fit <- grid_fit(cell)
     times <- grid_times(cell)
@@ -143,6 +148,7 @@ test_that("sops() on the stored patients matches the loop on their baseline rows
 })
 
 test_that("second-order recursion on a first-order fit reproduces first-order SOPs", {
+  skip_on_cran()
   # A first-order model ignores the older state, so asking for second-order
   # recursion must change nothing.
   cells <- Filter(function(cell) cell$order == 1L, grid_core_cells())
@@ -165,6 +171,7 @@ test_that("second-order recursion on a first-order fit reproduces first-order SO
 })
 
 test_that("analytical derivatives match numerical differences of public results", {
+  skip_on_cran()
   # Analytical inference supports first-order, full proportional-odds fits.
   cells <- Filter(
     function(cell) cell$order == 1L && cell$odds == "full",

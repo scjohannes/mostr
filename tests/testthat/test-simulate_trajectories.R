@@ -26,6 +26,7 @@ exact_actt_control_occupancy <- function(parameters, days) {
 # The calls that sim_markov() refuses are rows S01 to S16 of test-refusals.R.
 
 test_that("sim_markov validates preset inputs", {
+  skip_on_cran()
   expect_snapshot(error = TRUE, sim_markov("actt2", n_patients = 0))
   expect_snapshot(error = TRUE, sim_markov("actt2", treatment_prob = 2))
   expect_snapshot(error = TRUE, sim_markov("actt2", treatment_effect = Inf))
@@ -37,6 +38,7 @@ test_that("sim_markov validates preset inputs", {
 })
 
 test_that("presets return reproducible trajectories with their default effect", {
+  skip_on_cran()
   actt_columns <- c("id", "time", "y", "yprev", "tx")
   # `follow_up_time = NULL` leaves the argument out, so the default of 28
   # days applies.
@@ -130,6 +132,7 @@ test_that("presets return reproducible trajectories with their default effect", 
 })
 
 test_that("ACTT-1 and ACTT-2 presets share their slopes and sample their own starting states", {
+  skip_on_cran() # The pass depends on the seed.
   actt1 <- mostr:::actt1_markov_parameters()
   actt2 <- mostr:::actt2_markov_parameters()
 

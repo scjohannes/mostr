@@ -23,6 +23,7 @@ streamed_builder_sops <- function(fit, profiles, args) {
 # readable loop on every grid set-up in test-sops-native-slow-loop.R, so
 # agreeing with sops() checks the streamed builder against that loop too.
 test_that("the streamed design builder matches sops() on every model set-up", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
@@ -255,6 +256,7 @@ test_that("the streamed design builder matches sops() on every model set-up", {
 })
 
 test_that("orm SOPs report a state count that differs from the fit and a missing absorbing state", {
+  skip_on_cran()
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6111)
@@ -371,6 +373,7 @@ test_that("orm fast path agrees with predict.orm for numeric previous state", {
 })
 
 test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("mvtnorm")
 
@@ -553,6 +556,7 @@ test_that("orm checks the size of an MVN covariance matrix and supports score-bo
 
 
 test_that("orm SOPs and design matrices do not require the outcome column in newdata", {
+  skip_on_cran()
   skip_if_not_installed("rms")
 
   data <- sim_markov("actt2", n_patients = 200, seed = 1)

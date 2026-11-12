@@ -1096,6 +1096,13 @@ against duplicated patients) using the checks in
 `tests/testthat/helper-grid-changes.R`; `tests/testthat/test-slow-grid-data-changes.R`
 runs them on the remaining set-ups with `MOSTR_RUN_SLOW=true`.
 
+Three tiers decide which tests run. On CRAN (`NOT_CRAN` unset or `false`) only
+fast tests that pass for any seed run; every other test starts with
+`skip_on_cran()`, and those whose pass depends on the seed say so in a comment.
+With `NOT_CRAN=true` (`devtools::test()`, CI) every test runs except the
+`test-slow-*.R` files, which also need `MOSTR_RUN_SLOW=true`. `AGENTS.md` gives
+the rule for the CRAN tier and its time budget.
+
 Inference is checked the same way, with few draws (MVN 20, refit bootstraps 3)
 and the checks in `tests/testthat/helper-grid-inference.R`: non-negative
 standard errors, ordered and nested limits, Wald centring and its agreement with

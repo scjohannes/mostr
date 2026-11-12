@@ -41,6 +41,7 @@ local_delta_orm_fit <- local({
 })
 
 test_that("explicit zero ORM penalties preserve unpenalized inference", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 2402)
   reference <- local_delta_orm_fit()
@@ -272,6 +273,7 @@ expect_patient_weight_refits_match <- function(oracle, patient_ids) {
 }
 
 test_that("patient clusters resolve explicitly or from stored fitting metadata", {
+  skip_on_cran()
   fit <- local_delta_vglm_fit()
   fitted_data <- attr(fit, "markov_data")
   explicit <- paste0("patient-", fitted_data$id)
@@ -318,6 +320,7 @@ test_that("patient clusters resolve explicitly or from stored fitting metadata",
 })
 
 test_that("explicit coefficient covariance has precedence and strict validation", {
+  skip_on_cran()
   fit <- local_delta_vglm_fit()
   attr(fit, "markov_data") <- NULL
   attr(fit, "markov_id_var") <- NULL
@@ -368,6 +371,7 @@ test_that("explicit coefficient covariance has precedence and strict validation"
 })
 
 test_that("vglm covariance and score components preserve backend conventions", {
+  skip_on_cran()
   fit <- local_delta_vglm_fit()
   fitted_data <- attr(fit, "markov_data")
   cluster_ids <- unique(as.character(fitted_data$id))
@@ -500,6 +504,7 @@ test_that("orm delta covariance recomputes after stored covariance mutation", {
 })
 
 test_that("vglm patient-weight refits independently validate unconditional covariance", {
+  skip_on_cran()
   fit <- local_delta_vglm_fit()
   fit_data <- attr(fit, "markov_data")
   profile_data <- attr(fit, "markov_starting_profile_data")
@@ -527,6 +532,7 @@ test_that("vglm patient-weight refits independently validate unconditional covar
 })
 
 test_that("orm patient-weight refits independently validate unconditional covariance", {
+  skip_on_cran()
   fit <- local_delta_orm_fit()
   fit_data <- attr(fit, "markov_data")
   profile_data <- attr(fit, "markov_starting_profile_data")
@@ -553,6 +559,7 @@ test_that("orm patient-weight refits independently validate unconditional covari
 })
 
 test_that("unconditional score machinery rejects partial proportional odds", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   data <- make_test_data(
     n_patients = 35,
