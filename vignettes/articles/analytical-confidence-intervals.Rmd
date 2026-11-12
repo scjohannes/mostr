@@ -545,16 +545,6 @@ quadruples the number of entries, so request only the rows you need. The
 option `mostr.delta_max_bytes`, 256 MiB by default, caps the largest memory
 allocations made by analytical inference and by `vcov()`.
 
-If you want to see the derivatives $\bar G$ themselves, the internal function
-below returns them for the selected estimates: one row per estimate and one
-column per coefficient. They enter both variances, but they do not include
-the patient-sampling part of the unconditional variance.
-
-```{r coefficient-derivatives}
-coefficient_derivatives <- mostr:::get_jacobian(avg_conditional, rows = rows)
-coefficient_derivatives
-```
-
 ## Supported models and comparisons
 
 Analytical confidence intervals are available for:

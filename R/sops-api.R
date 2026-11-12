@@ -627,47 +627,6 @@ summarize_posterior_draw_matrix <- function(
   )
 }
 
-summarize_posterior_draws_df <- function(
-  draws_df,
-  group_cols,
-  posterior_summary,
-  conf_level
-) {
-  alpha <- 1 - conf_level
-  split_key <- interaction(draws_df[, group_cols, drop = FALSE], drop = TRUE)
-  groups <- split(seq_len(nrow(draws_df)), split_key)
-  out <- draws_df[vapply(groups, `[`, integer(1), 1L), group_cols, drop = FALSE]
-  values <- lapply(groups, function(idx) draws_df$estimate[idx])
-  out$estimate <- vapply(
-    values,
-    function(x) {
-      switch(
-        posterior_summary,
-        mean = mean(x, na.rm = TRUE),
-        median = stats::median(x, na.rm = TRUE)
-      )
-    },
-    numeric(1)
-  )
-  out$conf.low <- vapply(
-    values,
-    stats::quantile,
-    numeric(1),
-    probs = alpha / 2,
-    na.rm = TRUE
-  )
-  out$conf.high <- vapply(
-    values,
-    stats::quantile,
-    numeric(1),
-    probs = 1 - alpha / 2,
-    na.rm = TRUE
-  )
-  out$std.error <- vapply(values, stats::sd, numeric(1), na.rm = TRUE)
-  rownames(out) <- NULL
-  out
-}
-
 sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
   meta_cols <- setdiff(
     names(result),

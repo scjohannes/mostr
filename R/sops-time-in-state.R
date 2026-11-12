@@ -257,7 +257,7 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     have already been propagated by [interpolate_sops()]. Tests from
 #'     `inferences(null = )` are dropped, because a null value for
 #'     probabilities does not apply to a total time.
-#'   \item **Input = Bootstrap DF:** A tibble with columns:
+#'   \item **Input = Bootstrap DF:** A data frame with columns:
 #'     \itemize{
 #'       \item `boot_id`: Bootstrap iteration
 #'       \item `SOP_tx`: Mean time in target state (Treatment)

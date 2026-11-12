@@ -91,25 +91,6 @@ left_join_preserve_order <- function(x, y, by) {
   as.data.frame(out)
 }
 
-matrix_to_long <- function(
-  mat,
-  id_name = "id",
-  time_name = "time",
-  value_name = "value"
-) {
-  ids <- rownames(mat) %||% seq_len(nrow(mat))
-  times <- colnames(mat) %||% seq_len(ncol(mat))
-
-  out <- data.frame(
-    rep(ids, each = ncol(mat)),
-    rep(times, times = nrow(mat)),
-    as.vector(t(mat)),
-    check.names = FALSE
-  )
-  names(out) <- c(id_name, time_name, value_name)
-  out
-}
-
 named_list_to_wide <- function(x, id = seq_along(x), id_name = "boot_id") {
   value_names <- unique(unlist(lapply(x, names), use.names = FALSE))
   out <- data.frame(id, check.names = FALSE)
@@ -128,31 +109,6 @@ named_list_to_wide <- function(x, id = seq_along(x), id_name = "boot_id") {
     )
   }
 
-  out
-}
-
-pivot_state_columns_long <- function(
-  data,
-  values_to = "probability",
-  names_to = "state",
-  names_prefix = "state_"
-) {
-  state_cols <- grep(paste0("^", names_prefix), names(data), value = TRUE)
-  id_cols <- setdiff(names(data), state_cols)
-
-  if (length(state_cols) == 0) {
-    mostr_abort("No state columns found.")
-  }
-
-  row_index <- rep(seq_len(nrow(data)), each = length(state_cols))
-  out <- data[row_index, id_cols, drop = FALSE]
-  rownames(out) <- NULL
-  out[[names_to]] <- sub(
-    paste0("^", names_prefix),
-    "",
-    rep(state_cols, times = nrow(data))
-  )
-  out[[values_to]] <- as.vector(t(as.matrix(data[, state_cols, drop = FALSE])))
   out
 }
 

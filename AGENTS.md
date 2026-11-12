@@ -122,6 +122,14 @@ Optional performance benchmark scripts and results belong in ignored
 require a broad benchmark grid for analytical inference. State the measured
 workflow and machine when reporting speedups.
 
+Time an installed build (`R CMD INSTALL` or `remotes::install_local()`), not code
+loaded with `devtools::load_all()`: `load_all()` compiles without the package's
+usual optimisation and can be several times slower, so its timings mislead. A
+change made only for speed must leave results unchanged. Show this by saving the
+outputs of a fixed set of calls before and after the change and comparing them
+with `identical()`, or by reporting their hashes (for example
+`rlang::hash()`); explain any difference within numerical tolerance.
+
 ## Experiments and Decisions
 Before a simulation, validation study, or benchmark runs, write down the claim it
 tests, what it measures, and what each possible outcome would mean: for example,

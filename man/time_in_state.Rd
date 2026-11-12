@@ -53,7 +53,7 @@ are retained in a \code{draws} attribute. Any draw-specific baseline anchors
 have already been propagated by \code{\link[=interpolate_sops]{interpolate_sops()}}. Tests from
 \code{inferences(null = )} are dropped, because a null value for
 probabilities does not apply to a total time.
-\item \strong{Input = Bootstrap DF:} A tibble with columns:
+\item \strong{Input = Bootstrap DF:} A data frame with columns:
 \itemize{
 \item \code{boot_id}: Bootstrap iteration
 \item \code{SOP_tx}: Mean time in target state (Treatment)
