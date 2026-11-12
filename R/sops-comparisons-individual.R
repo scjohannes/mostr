@@ -160,8 +160,8 @@ comparisons <- function(
   target_times = NULL,
   time_unit = NULL,
   id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
@@ -182,14 +182,24 @@ comparisons <- function(
   by <- resolve_by_choice(by)
   validate_comparison_times(times, "comparisons()")
   conf_level <- validate_conf_level(conf_level)
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(
+    model,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
+    time_covariates = time_covariates
+  )
   variables <- resolve_comparison_variables(
     variables,
     model = model,
     newdata = newdata,
     fn = "comparisons()",
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels
+    settings = settings
   )
   validate_avg_comparison_estimand(estimand, state_sets, comparison)
 
@@ -231,19 +241,12 @@ comparisons <- function(
     variables = variables,
     by = NULL,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     include_re = include_re
   )
   profile_cols <- comparison_profile_columns(
     setup$baseline_data,
-    time_var = time_var,
+    time_var = settings$time_var,
     estimand = estimand
   )
   # `sops()` below receives the counterfactual rows as supplied `newdata`, so
@@ -252,25 +255,18 @@ comparisons <- function(
     model,
     setup$newdata_orig,
     times,
-    time_var,
-    gap_var,
+    settings,
     setup$newdata_supplied
   )
 
   # Posterior comparisons are summarized from paired draws, so `blrm` SOP
   # draws are always needed here.
-  ind <- muffle_skipped_sop_visits(sops(
+  ind <- muffle_skipped_sop_visits(sops_impl(
     model = model,
     newdata = setup$newdata_pred,
+    variables = NULL,
     times = setup$times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = setup$id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = setup$settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -283,7 +279,7 @@ comparisons <- function(
   if (estimand != "time_benefit") {
     state_sets <- normalize_comparison_state_sets(
       state_sets,
-      attr(ind, "y_levels")
+      markov_result_settings(ind)$y_levels
     )
   }
 
@@ -459,7 +455,7 @@ profile_results_from_individual_sops <- function(
   if (real_time) {
     reduce_setup$times <- sort(unique(x$time))
   }
-  reduce_setup$y_levels <- attr(x, "y_levels")
+  reduce_setup$settings$y_levels <- markov_result_settings(x)$y_levels
 
   reduce <- function(data, value_col) {
     reducer$reduce_array(
@@ -574,7 +570,7 @@ individual_comparisons_from_array <- function(
     return(bind_rows_fill(pieces))
   }
 
-  state_labels <- as_state_labels(setup$y_levels)
+  state_labels <- as_state_labels(setup$settings$y_levels)
   for (set_i in seq_along(state_sets)) {
     occupancy <- state_set_occupancy(
       sops_array,
@@ -618,7 +614,7 @@ individual_times_from_array <- function(
 ) {
   n_cf <- dim(sops_array)[1]
   n_each <- dim(sops_array)[2]
-  state_labels <- as_state_labels(setup$y_levels)
+  state_labels <- as_state_labels(setup$settings$y_levels)
   pieces <- vector("list", length(state_sets))
   for (set_i in seq_along(state_sets)) {
     totals <- profile_time_totals(

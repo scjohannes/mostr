@@ -79,7 +79,18 @@
 #'   standard errors that allow for correlation between the transitions of one
 #'   patient, and the bootstrap resamples or reweights whole patients by it.
 #' @param time_var Name of the time column in `data`. It is used to find each
-#'   patient's starting row.
+#'   patient's starting row, and [sops()] and the other prediction functions
+#'   set this column to each requested visit.
+#' @param p_var Name of the column in `data` that holds each patient's state at
+#'   the previous visit, `"yprev"` by default. The prediction functions replace
+#'   it with each possible previous state as they move from visit to visit.
+#' @param p2_var For a second-order model, the name of the column that holds
+#'   each patient's state two visits back, for example `"ypprev"`. `NULL` (the
+#'   default) fits a first-order model, in which the next state depends only on
+#'   the previous one. Give it here, where the model is fitted: the prediction
+#'   functions then use second-order calculations without being told again.
+#'   Without it, a column with the older state in the formula would be held at
+#'   each patient's starting value.
 #' @param first_followup_time Time of the first visit after baseline. Each
 #'   patient's row at this time is their starting row for automatic
 #'   predictions. For numeric time, `NULL` (the default) uses 1, time may not
@@ -258,6 +269,8 @@ mostm <- function(
   engine = c("orm", "vglm", "blrm"),
   id_var,
   time_var = "time",
+  p_var = "yprev",
+  p2_var = NULL,
   first_followup_time = NULL,
   weights = NULL,
   subset = NULL,
@@ -330,6 +343,16 @@ mostm <- function(
       call. = FALSE
     )
   }
+  validate_mostm_previous_state_vars(p_var, p2_var, data)
+  if (!missing(p_var) && !p_var %in% names(data)) {
+    stop(
+      "The column `p_var = \"",
+      p_var,
+      "\"` is not in `data`. Set `p_var` to the column that holds each ",
+      "patient's previous state.",
+      call. = FALSE
+    )
+  }
   # Bootstrap refits use only the coefficients, so they skip the duplicate
   # check, the starting rows, and the patient-clustered covariance.
   coefficients_only <- markov_refit_coefficients_only()
@@ -390,6 +413,23 @@ mostm <- function(
     first_followup_time = first_followup_time,
     starting_profiles = !coefficients_only
   )
+  # The column names and model settings that every later call on the fit
+  # reads, built once here. A vglm fit to an unordered response records no
+  # state labels; calls on it then supply `y_levels`.
+  y_levels <- markov_model_ylevels_or_null(fitted$fit)
+  settings <- markov_settings(
+    engine = engine,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    first_followup_time = stored$starting_profile_metadata$first_followup_time,
+    from_fit = setdiff(
+      markov_settings_fit_fields(),
+      if (is.null(y_levels)) "y_levels"
+    )
+  )
   attach_data <- function(model) {
     model <- markov_attach_model_data(
       model,
@@ -401,6 +441,7 @@ mostm <- function(
       refit_args = refit_args,
       prior_weight_column = prior_weight_column
     )
+    model <- markov_set_settings(model, settings)
     markov_set_engine(model, engine)
   }
 

@@ -184,7 +184,6 @@ describe("SOP regression baselines", {
       times = 1:10,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates
     )
@@ -196,7 +195,6 @@ describe("SOP regression baselines", {
       times = 1:10,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates
     )
@@ -239,7 +237,6 @@ describe("SOP regression baselines", {
       times = 1:10,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates
     )
@@ -251,7 +248,6 @@ describe("SOP regression baselines", {
       times = 1:10,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates
     )
@@ -280,7 +276,6 @@ describe("SOP regression baselines", {
       times = 1:10,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates
     )
@@ -300,7 +295,6 @@ describe("SOP regression baselines", {
       times = 1:10,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates
     )

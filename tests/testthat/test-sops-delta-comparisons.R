@@ -489,7 +489,10 @@ test_that("analytical comparison scope rejects deferred estimands", {
   expect_snapshot(inferences(time_benefit, method = "delta"), error = TRUE)
 
   second_order <- base
-  attr(second_order, "p2_var") <- "yprev2"
+  attr(second_order, "settings") <- markov_settings_update(
+    markov_result_settings(second_order),
+    p2_var = "yprev2"
+  )
   expect_snapshot(
     inferences(
       second_order,
@@ -567,7 +570,7 @@ test_that("large SOP comparison grids avoid the dense operator allocation", {
     c(0.1, 0.2, 0.3, 0.4, 0.15, 0.15, 0.25, 0.45),
     each = 1100
   )
-  attr(avg, "y_levels") <- as.character(1:4)
+  attr(avg, "settings") <- markov_settings(y_levels = as.character(1:4))
   object <- expand.grid(time = seq_len(1100), state_set = as.character(1:4))
   object$comparison_level <- 1
   object$reference_level <- 0

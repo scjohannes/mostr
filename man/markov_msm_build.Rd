@@ -4,42 +4,22 @@
 \alias{markov_msm_build}
 \title{Build Fast Markov Simulation Components (Internal)}
 \usage{
-markov_msm_build(
-  model,
-  newdata = NULL,
-  data = NULL,
-  time_covariates = NULL,
-  times = NULL,
-  y_levels = 1:6,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL,
-  ...
-)
+markov_msm_build(model, newdata, times = NULL, settings)
 }
 \arguments{
-\item{model}{Fitted vglm model}
+\item{model}{Fitted vglm or orm model}
 
-\item{data}{Baseline data frame (one row per patient)}
-
-\item{time_covariates}{Time-dependent covariate lookup (optional)}
+\item{newdata}{Baseline data frame (one row per patient)}
 
 \item{times}{Time points to predict}
 
-\item{y_levels}{State labels}
-
-\item{absorb}{Absorbing state(s). These transition matrices are not needed
-because absorbing states keep their prior probability mass.}
-
-\item{time_var}{Name of time variable}
-
-\item{p_var}{Name of previous state variable}
-
-\item{gap_var}{Optional gap_var variable. With factor visit time, numeric gap_var values
-must be supplied in \code{time_covariates}.}
-
-\item{...}{Ignored}
+\item{settings}{The resolved settings of the call
+(\code{resolve_markov_settings()}): the state labels \code{y_levels}, the absorbing
+states \code{absorb} (their transition matrices are not needed, because
+absorbing states keep their prior probability mass), the columns
+\code{time_var}, \code{p_var} and \code{gap_var}, and the time-dependent covariate lookup
+\code{time_covariates}. With factor visit time, numeric \code{gap_var} values must
+be supplied in \code{time_covariates}.}
 }
 \value{
 A list containing pre-calculated matrices and metadata.

@@ -138,8 +138,9 @@ rows_match_values <- function(data, values) {
   keep
 }
 
-baseline_rows_for_anchor <- function(x, id_var) {
-  id_var <- id_var %||% attr(x, "id_var")
+baseline_rows_for_anchor <- function(x) {
+  settings <- markov_result_settings(x)
+  id_var <- settings$id_var
   newdata_orig <- attr(x, "newdata_orig")
   if (is.null(newdata_orig)) {
     stop(
@@ -156,7 +157,7 @@ baseline_rows_for_anchor <- function(x, id_var) {
     return(resolve_markov_prediction_data(
       newdata_orig,
       id_var = id_var,
-      time_var = attr(x, "time_var") %||% "time"
+      time_var = settings$time_var
     ))
   }
 
@@ -258,12 +259,14 @@ empirical_baseline_anchor_from_data <- function(
   baseline_time,
   weights = NULL
 ) {
-  p_var <- attr(x, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(x)$p_var
   if (!p_var %in% names(baseline)) {
     stop("Previous-state variable `", p_var, "` not found in baseline data.")
   }
 
-  states <- as_state_labels(attr(x, "y_levels") %||% unique(x$state))
+  states <- as_state_labels(
+    markov_result_settings(x)$y_levels %||% unique(x$state)
+  )
   avg_args <- attr(x, "avg_args")
   variables <- names(avg_args$variables %||% list())
   by <- avg_args$by %||% character()
@@ -291,7 +294,7 @@ empirical_baseline_anchor_from_data <- function(
 }
 
 empirical_baseline_anchor <- function(x, baseline_time) {
-  p_var <- attr(x, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(x)$p_var
   if (!"state" %in% names(x)) {
     stop("SOP output must contain a `state` column.")
   }
@@ -307,7 +310,7 @@ empirical_baseline_anchor <- function(x, baseline_time) {
         "` not found in `newdata_orig`."
       )
     }
-    baseline <- baseline_rows_for_anchor(x, attr(x, "avg_args")$id_var)
+    baseline <- baseline_rows_for_anchor(x)
     return(empirical_baseline_anchor_from_data(
       x = x,
       baseline = baseline,

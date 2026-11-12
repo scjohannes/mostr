@@ -41,9 +41,7 @@ resolve_comparison_variables <- function(
   model,
   newdata,
   fn,
-  p_var = NULL,
-  p2_var = NULL,
-  y_levels = NULL
+  settings
 ) {
   if (!missing(variables) && is.character(variables)) {
     if (length(variables) != 1L || is.na(variables) || !nzchar(variables)) {
@@ -59,28 +57,14 @@ resolve_comparison_variables <- function(
     )
   }
   variables <- validate_avg_comparison_variables(variables, fn)
-  match_previous_state_variables(
-    variables,
-    model = model,
-    newdata = newdata,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels
-  )
+  match_previous_state_variables(variables, model, newdata, settings)
 }
 
 # Turns bare variable names for predictions (`sops()`, `avg_sops()`,
 # `state_time()`, `avg_state_time()`) into a named list of values. Named
 # lists are kept, except that values of the previous-state columns are
 # matched to states by label (`match_previous_state_variables()`).
-resolve_prediction_variables <- function(
-  variables,
-  model,
-  newdata,
-  p_var = NULL,
-  p2_var = NULL,
-  y_levels = NULL
-) {
+resolve_prediction_variables <- function(variables, model, newdata, settings) {
   if (is.null(variables)) {
     return(variables)
   }
@@ -102,14 +86,7 @@ resolve_prediction_variables <- function(
       variables
     )
   }
-  match_previous_state_variables(
-    variables,
-    model = model,
-    newdata = newdata,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels
-  )
+  match_previous_state_variables(variables, model, newdata, settings)
 }
 
 # State labels are names: when `variables` sets the previous state (`p_var`)
@@ -126,19 +103,18 @@ match_previous_state_variables <- function(
   variables,
   model,
   newdata,
-  p_var = NULL,
-  p2_var = NULL,
-  y_levels = NULL
+  settings
 ) {
   if (!is.list(variables) || is.null(names(variables))) {
     return(variables)
   }
-  columns <- intersect(c(p_var, p2_var), names(variables))
+  p_var <- settings$p_var
+  columns <- intersect(c(p_var, settings$p2_var), names(variables))
   if (length(columns) == 0L) {
     return(variables)
   }
   states <- tryCatch(
-    as_state_labels(markov_model_ylevels(model, y_levels)),
+    as_state_labels(markov_model_ylevels(model, settings$y_levels)),
     error = function(e) NULL
   )
   for (column in columns) {
@@ -310,37 +286,26 @@ validate_avg_comparison_estimand <- function(estimand, state_sets, comparison) {
   invisible(NULL)
 }
 
+# The profiles of a comparison or time call, stacked once per value of
+# `variables`, with the resolved `settings` of the call.
 avg_comparison_setup <- function(
   model,
   newdata,
   variables,
   by,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  id_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   include_re,
   ...
 ) {
   validate_markov_model(model)
 
-  data_res <- resolve_markov_source_data(
-    model,
-    newdata,
-    p_var = p_var,
-    p2_var = p2_var,
-    absorb = absorb
-  )
+  data_res <- resolve_markov_source_data(model, newdata, settings)
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
 
-  id_var <- markov_require_id_var(model, id_var)
+  id_var <- markov_require_id_var(model, settings$id_var)
   if (inherits(model, "blrm") && isTRUE(include_re)) {
     validate_markov_id_var(id_var, newdata_orig, "newdata")
   }
@@ -367,7 +332,7 @@ avg_comparison_setup <- function(
     resolve_markov_prediction_data(
       newdata_orig,
       id_var = id_var,
-      time_var = time_var
+      time_var = settings$time_var
     )
   }
   validate_sops_by(by, baseline_data)
@@ -381,14 +346,7 @@ avg_comparison_setup <- function(
     variables = variables,
     by = by,
     times = times,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     newdata_orig = newdata_orig,
     refit_data = refit_data,
     newdata_supplied = newdata_supplied,
@@ -415,7 +373,6 @@ avg_comparison_setup_from_sops <- function(x) {
     variables = variables,
     by = avg_args$by,
     times = avg_args$times,
-    id_var = avg_args$id_var,
     newdata_orig = attr(x, "newdata_orig"),
     refit_data = attr(x, "refit_data"),
     newdata_supplied = isTRUE(attr(x, "newdata_supplied")),
@@ -429,30 +386,19 @@ avg_comparison_setup_from_sops <- function(x) {
     n_cf = nrow(grid),
     n_each = as.integer(n_each),
     call_args = attr(x, "call_args"),
-    time_var = attr(x, "time_var"),
-    p_var = attr(x, "p_var"),
-    p2_var = attr(x, "p2_var"),
-    y_levels = attr(x, "y_levels"),
-    absorb = attr(x, "absorb"),
-    gap_var = attr(x, "gap_var"),
-    time_covariates = attr(x, "time_covariates")
+    settings = markov_result_settings(x)
   )
 }
 
+# Average SOPs again with the settings stored on a result, for inference and
+# the reductions of comparisons and times.
 avg_comparison_replay_avg_sops <- function(
   model,
   newdata,
   variables,
   by,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  id_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   include_re,
   n_draws,
   seed,
@@ -467,18 +413,9 @@ avg_comparison_replay_avg_sops <- function(
       model = model,
       newdata = newdata,
       variables = variables,
-      # Stored averages keep `by = NULL` for the overall average, which
-      # `avg_sops()` spells `by = TRUE`.
-      by = by %||% TRUE,
+      by = by,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -490,9 +427,9 @@ avg_comparison_replay_avg_sops <- function(
   )
   # Inference replays the user's request, which already warned about `times`.
   if (!isTRUE(warn_skipped_visits)) {
-    return(muffle_skipped_sop_visits(do.call(avg_sops, args)))
+    return(muffle_skipped_sop_visits(do.call(avg_sops_impl, args)))
   }
-  do.call(avg_sops, args)
+  do.call(avg_sops_impl, args)
 }
 
 normalize_comparison_state_sets <- function(states, y_levels) {
@@ -557,8 +494,7 @@ set_avg_comparison_attrs <- function(
     avg_args = list(
       variables = setup$variables,
       by = setup$by,
-      times = setup$times,
-      id_var = setup$id_var
+      times = setup$times
     ),
     comparison_args = list(
       estimand = estimand,
@@ -582,27 +518,13 @@ set_avg_comparison_attrs <- function(
     comparison_baseline_data = setup$baseline_data,
     comparison_grid = setup$grid,
     comparison_n_each = setup$n_each,
-    id_var = setup$id_var
+    call_args = setup$call_args,
+    settings = setup$settings
   )
 
   for (nm in names(attrs)) {
     if (!is.null(attrs[[nm]])) {
       attr(result, nm) <- attrs[[nm]]
-    }
-  }
-
-  for (nm in c(
-    "call_args",
-    "time_var",
-    "p_var",
-    "p2_var",
-    "y_levels",
-    "absorb",
-    "gap_var",
-    "time_covariates"
-  )) {
-    if (!is.null(setup[[nm]])) {
-      attr(result, nm) <- setup[[nm]]
     }
   }
 

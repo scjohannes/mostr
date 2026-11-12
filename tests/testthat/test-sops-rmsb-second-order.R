@@ -234,8 +234,10 @@ test_that("compiled second-order ORM plans match the reference recursion", {
       model,
       baseline,
       times = 1:6,
-      y_levels = 1:3,
-      p2_var = "ypprev"
+      settings = markov_settings(
+        y_levels = 1:3,
+        p2_var = "ypprev"
+      )
     ),
     error = function(e) e
   )
@@ -249,8 +251,10 @@ test_that("compiled second-order ORM plans match the reference recursion", {
     model,
     baseline,
     times = 1:6,
-    y_levels = 1:3,
-    p2_var = "ypprev"
+    settings = markov_settings(
+      y_levels = 1:3,
+      p2_var = "ypprev"
+    )
   )
   actual <- mostr:::run_sop_execution_plan(
     plan,
@@ -260,8 +264,10 @@ test_that("compiled second-order ORM plans match the reference recursion", {
     model,
     baseline,
     times = 1:6,
-    y_levels = 1:3,
-    p2_var = "ypprev"
+    settings = markov_settings(
+      y_levels = 1:3,
+      p2_var = "ypprev"
+    )
   )
 
   expect_equal(plan$recursion_order, 2L)

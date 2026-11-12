@@ -62,11 +62,11 @@ inferences_delta_avg_time <- function(
   if (anyNA(time_weight)) {
     stop("Average-time visits do not align with the replayed average SOPs.")
   }
-  p_var <- attr(avg, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(avg)$p_var
   # Scenarios that set the starting state anchor at that state (a constant).
   set_start <- p_var %in% variables
   baseline <- if (integration$baseline != 0 && !set_start) {
-    baseline_rows_for_anchor(avg, avg_args$id_var)
+    baseline_rows_for_anchor(avg)
   } else {
     NULL
   }
@@ -134,7 +134,7 @@ inferences_delta_avg_time <- function(
     identical(propagated$analytical$representation, "influence") &&
       !is.null(baseline)
   ) {
-    ids <- delta_profile_ids(baseline, avg_args$id_var %||% attr(avg, "id_var"))
+    ids <- delta_profile_ids(baseline, markov_result_settings(avg)$id_var)
     profile_ids <- propagated$analytical$profile_ids
     index <- match(as.character(profile_ids), as.character(ids))
     if (anyNA(index) || length(ids) != length(profile_ids)) {

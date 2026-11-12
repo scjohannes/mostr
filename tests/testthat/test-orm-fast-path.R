@@ -4,12 +4,18 @@ add_test_age <- function(data) {
 }
 
 # SOPs from the streamed design builder, markov_msm_build() followed by
-# markov_msm_run(), which MVN draws and analytical inference use. The builder
-# takes the same arguments as sops() and ignores the ones it does not use.
+# markov_msm_run(), which MVN draws and analytical inference use. `args` are
+# the arguments of sops(), turned into settings as sops() does.
 streamed_builder_sops <- function(fit, profiles, args) {
-  components <- do.call(
-    mostr:::markov_msm_build,
-    c(list(model = fit, newdata = profiles), args)
+  settings <- do.call(
+    mostr:::resolve_markov_settings,
+    c(list(fit), args[setdiff(names(args), "times")])
+  )
+  components <- mostr:::markov_msm_build(
+    model = fit,
+    newdata = profiles,
+    times = args$times,
+    settings = settings
   )
   mostr:::markov_msm_run(
     components,
@@ -140,7 +146,6 @@ test_that("the streamed design builder matches sops() on every model set-up", {
       times = 1:8,
       y_levels = 1:6,
       absorb = "6",
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = time_covariates
     )
@@ -311,9 +316,12 @@ test_that("execution-plan budgets bound all retained first-order designs", {
   withr::local_options(mostr.execution_plan_max_bytes = 1)
   for (builder in c("batched", "streamed")) {
     condition <- tryCatch(
-      do.call(
-        mostr:::compile_sop_execution_plan,
-        c(args, list(builder = builder))
+      mostr:::compile_sop_execution_plan(
+        fit,
+        baseline,
+        times = 1:5,
+        settings = mostr:::resolve_markov_settings(fit, absorb = "6"),
+        builder = builder
       ),
       error = function(e) e
     )
@@ -578,7 +586,8 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
   second_fit <- mostm(
     y ~ tx + yprev + ypprev + rms::rcs(time, 4),
     data = second_data,
-    id_var = "id"
+    id_var = "id",
+    p2_var = "ypprev"
   )
   states <- function(values, data, column = "yprev") {
     factor(values, levels = levels(data[[column]]))
@@ -589,8 +598,7 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
       first_fit,
       newdata,
       times = 1:3,
-      y_levels = 1:8,
-      absorb = 8,
+      settings = mostr:::markov_settings(y_levels = 1:8, absorb = 8),
       builder = builder
     )
     mostr:::run_sop_execution_plan(plan, mostr::get_effective_coefs(first_fit))

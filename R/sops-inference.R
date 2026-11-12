@@ -825,13 +825,9 @@ inferences_simulation <- function(
   call_args <- attr(object, "call_args")
   avg_args <- attr(object, "avg_args")
 
-  time_var <- attr(object, "time_var")
-  p_var <- attr(object, "p_var")
-  p2_var <- attr(object, "p2_var")
-  y_levels <- attr(object, "y_levels")
-  absorb <- attr(object, "absorb")
-  gap_var <- attr(object, "gap_var")
-  time_covariates <- attr(object, "time_covariates")
+  settings <- markov_result_settings(object)
+  y_levels <- settings$y_levels
+  id_var <- settings$id_var
 
   # For avg_sops objects
   is_avg <- inherits(object, "markov_avg_sops")
@@ -840,13 +836,11 @@ inferences_simulation <- function(
     variables <- avg_args$variables
     by <- avg_args$by
     times <- avg_args$times
-    id_var <- avg_args$id_var
   } else {
     # For individual sops objects: one row per profile, never averaged
     times <- call_args$times
     variables <- NULL
     by <- NULL
-    id_var <- attr(object, "id_var") %||% markov_model_id_var(model)
   }
 
   if (is.null(model)) {
@@ -869,7 +863,7 @@ inferences_simulation <- function(
       baseline_data <- resolve_markov_prediction_data(
         newdata_orig,
         id_var = id_var,
-        time_var = time_var
+        time_var = settings$time_var
       )
       newdata_pred <- create_counterfactual_data(
         baseline_data,
@@ -953,14 +947,8 @@ inferences_simulation <- function(
       compile_sop_execution_plan(
         model = model_chk,
         newdata = newdata_pred,
-        time_covariates = time_covariates,
         times = times,
-        y_levels = y_levels,
-        absorb = absorb,
-        time_var = time_var,
-        p_var = p_var,
-        p2_var = p2_var,
-        gap_var = gap_var,
+        settings = settings,
         builder = "streamed",
         output = if (is_avg) "average" else "individual"
       ),
@@ -1047,7 +1035,7 @@ inferences_simulation <- function(
   }
 
   if (!use_fast_path) {
-    # --- SLOW PATH: Use soprob_markov with coefficient replacement ---
+    # --- SLOW PATH: predict with the coefficients replaced ---
     analysis_fn <- function(i) {
       baseline_weights <- NULL
       if (!is.null(baseline_weights_draws)) {
@@ -1059,17 +1047,11 @@ inferences_simulation <- function(
 
       # Compute SOPs
       sops_array <- tryCatch(
-        soprob_markov(
+        predict_markov_sops(
           model = model_i,
           newdata = newdata_pred,
           times = times,
-          y_levels = y_levels,
-          absorb = absorb,
-          time_var = time_var,
-          p_var = p_var,
-          p2_var = p2_var,
-          gap_var = gap_var,
-          time_covariates = time_covariates
+          settings = settings
         ),
         error = function(e) {
           rethrow_crossed_thresholds(e)
@@ -1139,12 +1121,7 @@ inferences_simulation <- function(
     "newdata_pred",
     "times",
     "y_levels",
-    "absorb",
-    "time_var",
-    "p_var",
-    "p2_var",
-    "gap_var",
-    "time_covariates",
+    "settings",
     "is_avg",
     "grid",
     "variables",

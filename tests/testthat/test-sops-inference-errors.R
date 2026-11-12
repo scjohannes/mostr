@@ -20,11 +20,12 @@ make_avg_sops_object <- function(model, newdata, by = NULL) {
     times = 1:2,
     id_var = "id"
   )
-  attr(out, "time_var") <- "time"
-  attr(out, "p_var") <- "yprev"
-  attr(out, "y_levels") <- 1:2
-  attr(out, "absorb") <- NULL
-  attr(out, "time_covariates") <- NULL
+  attr(out, "settings") <- markov_settings(
+    id_var = "id",
+    time_var = "time",
+    p_var = "yprev",
+    y_levels = 1:2
+  )
   out
 }
 
@@ -40,11 +41,12 @@ make_individual_sops_object <- function(model, newdata) {
   attr(out, "model") <- model
   attr(out, "newdata_orig") <- newdata
   attr(out, "call_args") <- list(times = 1:2)
-  attr(out, "time_var") <- "time"
-  attr(out, "p_var") <- "yprev"
-  attr(out, "y_levels") <- 1:2
-  attr(out, "absorb") <- NULL
-  attr(out, "time_covariates") <- NULL
+  attr(out, "settings") <- markov_settings(
+    id_var = "id",
+    time_var = "time",
+    p_var = "yprev",
+    y_levels = 1:2
+  )
   out
 }
 
@@ -177,7 +179,7 @@ test_that("inferences_simulation() falls back when fast-path setup fails", {
     validate_coef_vcov = function(beta, Sigma, arg = "vcov") Sigma,
     compile_sop_execution_plan = function(...) stop("build failed"),
     set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) {
+    predict_markov_sops = function(...) {
       array(
         c(
           0.8,
@@ -258,7 +260,7 @@ test_that("inferences_simulation() errors when all compiled-path or R-engine dra
       class = "mock_model",
       mocks = list(
         set_coef = function(model, new_coefs) model,
-        soprob_markov = function(...) stop("sop failed")
+        predict_markov_sops = function(...) stop("sop failed")
       ),
       seed = 4,
       vcov = diag(2),
@@ -320,11 +322,12 @@ test_that("score-bootstrap and FWB draw weights are normalized within by groups"
       times = 1,
       id_var = "id"
     )
-    attr(object, "time_var") <- "time"
-    attr(object, "p_var") <- "yprev"
-    attr(object, "y_levels") <- 1
-    attr(object, "absorb") <- NULL
-    attr(object, "time_covariates") <- NULL
+    attr(object, "settings") <- markov_settings(
+      id_var = "id",
+      time_var = "time",
+      p_var = "yprev",
+      y_levels = 1
+    )
     object
   }
   refit_data <- data.frame(
@@ -357,7 +360,7 @@ test_that("score-bootstrap and FWB draw weights are normalized within by groups"
           )
         },
         set_coef = function(model, new_coefs) model,
-        soprob_markov = sops
+        predict_markov_sops = sops
       ),
       run = function(object) {
         mostr:::inferences_simulation(
@@ -416,7 +419,7 @@ test_that("score-bootstrap and FWB draw weights are normalized within by groups"
             missing_states = character(0)
           )
         },
-        soprob_markov = sops
+        predict_markov_sops = sops
       ),
       run = function(object) {
         mostr:::inferences_bootstrap(
@@ -463,7 +466,6 @@ test_that("score-bootstrap and FWB individual sops attach each patient's draw we
     structure(list(coefficients = c(a = 0, b = 0)), class = "robcov_vglm"),
     data.frame(id = 1:2, yprev = c(1, 2), time = 1)
   )
-  attr(score_object, "id_var") <- "id"
   attr(score_object, "newdata_supplied") <- FALSE
 
   prediction_data <- data.frame(id = 1:2, time = 1, yprev = 1)
@@ -478,7 +480,6 @@ test_that("score-bootstrap and FWB individual sops attach each patient's draw we
     y = factor(c(1, 2, 1, 2), levels = 1:2),
     yprev = factor(c(1, 1, 1, 1), levels = 1:2)
   )
-  attr(fwb_object, "id_var") <- "id"
   attr(fwb_object, "newdata_supplied") <- FALSE
 
   cases <- list(
@@ -498,7 +499,7 @@ test_that("score-bootstrap and FWB individual sops attach each patient's draw we
           )
         },
         set_coef = function(model, new_coefs) model,
-        soprob_markov = individual_sops
+        predict_markov_sops = individual_sops
       ),
       run = function(object) {
         mostr:::inferences_simulation(
@@ -549,7 +550,7 @@ test_that("score-bootstrap and FWB individual sops attach each patient's draw we
             missing_states = character(0)
           )
         },
-        soprob_markov = individual_sops
+        predict_markov_sops = individual_sops
       ),
       run = function(object) {
         mostr:::inferences_bootstrap_sops_fwb(
@@ -616,7 +617,6 @@ test_that("inferences_simulation() rejects reserved score weight columns", {
     score_weight = c(10, 20)
   )
   object <- make_individual_sops_object(model, newdata)
-  attr(object, "id_var") <- "id"
   attr(object, "newdata_supplied") <- FALSE
 
   with_mocked_bindings(
@@ -742,11 +742,13 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
     id_var = "id"
   )
   attr(object, "call_args") <- list(times = 1:2)
-  attr(object, "time_var") <- "time"
-  attr(object, "p_var") <- "yprev"
-  attr(object, "y_levels") <- 1:3
-  attr(object, "absorb") <- 3
-  attr(object, "time_covariates") <- NULL
+  attr(object, "settings") <- markov_settings(
+    id_var = "id",
+    time_var = "time",
+    p_var = "yprev",
+    y_levels = 1:3,
+    absorb = 3
+  )
 
   no_data <- object
   attr(no_data, "refit_data") <- NULL
@@ -820,7 +822,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
         missing_states = 3
       )
     },
-    soprob_markov = function(...) {
+    predict_markov_sops = function(...) {
       sop_call <<- sop_call + 1
       if (sop_call == 2) {
         stop("sop failed")
@@ -943,7 +945,7 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
         missing_states = character(0)
       )
     },
-    soprob_markov = function(...) {
+    predict_markov_sops = function(...) {
       array(
         c(
           0.8,

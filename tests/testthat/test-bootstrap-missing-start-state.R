@@ -52,13 +52,14 @@ resample_without_state_2 <- function(case) {
 
 fit_case <- function(data, engine, order = 1L) {
   rhs <- paste(c("time", "tx", "yprev", if (order == 2L) "ypprev"), collapse = " + ")
+  p2_var <- if (order == 2L) "ypprev"
   suppressWarnings(
     if (engine == "orm") {
       mostm(stats::as.formula(paste("y ~", rhs)), data = data, id_var = "id",
-        first_followup_time = 1)
+        first_followup_time = 1, p2_var = p2_var)
     } else {
       mostm(stats::as.formula(paste("ordered(y) ~", rhs)), data = data,
-        id_var = "id", first_followup_time = 1, engine = "vglm",
+        id_var = "id", first_followup_time = 1, p2_var = p2_var, engine = "vglm",
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE))
     }
   )
@@ -319,10 +320,10 @@ test_that("dropped bootstrap draws are summed up in one warning", {
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   model <- fit_case(case$data, "vglm")
   est <- avg_sops(model, times = 1:2, absorb = 4)
-  real_soprob <- soprob_markov
+  real_soprob <- predict_markov_sops
   calls <- 0L
   local_mocked_bindings(
-    soprob_markov = function(...) {
+    predict_markov_sops = function(...) {
       calls <<- calls + 1L
       if (calls == 1L) stop("planted failure")
       real_soprob(...)

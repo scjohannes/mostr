@@ -13,45 +13,31 @@
 #' "heavy lifting" step that should be done ONCE before running thousands of
 #' simulation draws.
 #'
-#' @param model Fitted vglm model
-#' @param data Baseline data frame (one row per patient)
-#' @param time_covariates Time-dependent covariate lookup (optional)
+#' @param model Fitted vglm or orm model
+#' @param newdata Baseline data frame (one row per patient)
 #' @param times Time points to predict
-#' @param y_levels State labels
-#' @param absorb Absorbing state(s). These transition matrices are not needed
-#'   because absorbing states keep their prior probability mass.
-#' @param time_var Name of time variable
-#' @param p_var Name of previous state variable
-#' @param gap_var Optional gap_var variable. With factor visit time, numeric gap_var values
-#'   must be supplied in `time_covariates`.
-#' @param ... Ignored
+#' @param settings The resolved settings of the call
+#'   (`resolve_markov_settings()`): the state labels `y_levels`, the absorbing
+#'   states `absorb` (their transition matrices are not needed, because
+#'   absorbing states keep their prior probability mass), the columns
+#'   `time_var`, `p_var` and `gap_var`, and the time-dependent covariate lookup
+#'   `time_covariates`. With factor visit time, numeric `gap_var` values must
+#'   be supplied in `time_covariates`.
 #'
 #' @return A list containing pre-calculated matrices and metadata.
 #'
 #' @keywords internal
-markov_msm_build <- function(
-  model,
-  newdata = NULL,
-  data = NULL,
-  time_covariates = NULL,
-  times = NULL,
-  y_levels = 1:6,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL,
-  ...
-) {
-  data <- newdata %||% data
-  if (is.null(data)) {
-    stop("`newdata` must be supplied.")
-  }
+markov_msm_build <- function(model, newdata, times = NULL, settings) {
+  data <- newdata
+  y_levels <- settings$y_levels
+  time_var <- settings$time_var
+  p_var <- settings$p_var
   if (inherits(model, "robcov_vglm")) {
     model <- model$vglm_fit
   }
   n_pat <- nrow(data)
   ylevel_names <- as_state_labels(y_levels)
-  absorb_names <- as_state_labels(absorb)
+  absorb_names <- as_state_labels(settings$absorb)
   n_states <- length(ylevel_names)
   M <- n_states - 1
   absorb_idx <- if (length(absorb_names)) {
@@ -65,12 +51,12 @@ markov_msm_build <- function(
     data,
     times,
     time_var,
-    time_covariates = time_covariates,
+    time_covariates = settings$time_covariates,
     default = "fast"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
+  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   is_vglm <- inherits(model, "vglm")
   is_orm <- inherits(model, "orm")
@@ -138,11 +124,9 @@ markov_msm_build <- function(
   set_time <- function(d, time_idx) {
     assign_sop_visit(
       d,
-      time_var = time_var,
+      settings = settings,
       times = times,
       index = time_idx,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
       time_info = time_info
     )
   }
@@ -212,32 +196,26 @@ markov_msm_build <- function(
   )
 }
 
-markov_msm_build_batched <- function(
-  model,
-  newdata,
-  time_covariates = NULL,
-  times,
-  y_levels,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL
-) {
+# The same designs as `markov_msm_build()`, built for all previous states of a
+# visit at once.
+markov_msm_build_batched <- function(model, newdata, times, settings) {
+  y_levels <- settings$y_levels
+  p_var <- settings$p_var
   n_pat <- nrow(newdata)
   ylevel_names <- as_state_labels(y_levels)
-  absorb_idx <- which(ylevel_names %in% as_state_labels(absorb))
+  absorb_idx <- which(ylevel_names %in% as_state_labels(settings$absorb))
   non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)
   time_res <- resolve_sop_times(
     model,
     newdata,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
+    time_covariates = settings$time_covariates,
     default = "fast"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
+  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   Gamma <- get_effective_coefs(model)
   validate_sop_threshold_count(Gamma, y_levels)
@@ -257,24 +235,17 @@ markov_msm_build_batched <- function(
     return(markov_msm_build(
       model = model,
       newdata = newdata,
-      time_covariates = time_covariates,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      gap_var = gap_var
+      settings = settings
     ))
   }
 
   set_time <- function(d, time_idx) {
     assign_sop_visit(
       d,
-      time_var = time_var,
+      settings = settings,
       times = times,
       index = time_idx,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
       time_info = time_info
     )
   }

@@ -61,7 +61,6 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     times = times,
     y_levels = y_levels,
     absorb = absorb,
-    time_var = "time_lin",
     p_var = "yprev",
     time_covariates = time_covariates
   )[1, , ]
@@ -133,7 +132,6 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     times = times,
     y_levels = y_levels,
     absorb = absorb,
-    time_var = "time_lin",
     p_var = "yprev",
     time_covariates = time_covariates
   )[1, , ]
@@ -213,7 +211,6 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
     times = times,
     y_levels = y_levels,
     absorb = absorb,
-    time_var = "time_lin",
     p_var = "yprev",
     time_covariates = time_covariates
   )
@@ -307,18 +304,17 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
       times = times,
       y_levels = y_levels,
       absorb = absorb,
-      time_var = "time_lin",
-      p_var = "yprev",
       time_covariates = time_covariates
     )
 
     # --- MANUAL BUILD (markov_msm_build + markov_msm_run) ---
     components <- markov_msm_build(
       model = fit,
-      data = newdata,
-      time_covariates = time_covariates,
-      y_levels = y_levels,
-      p_var = "yprev"
+      newdata = newdata,
+      settings = markov_settings(
+        y_levels = y_levels,
+        time_covariates = time_covariates
+      )
     )
     Gamma_hat <- compute_Gamma(get_coef(fit), VGAM::constraints(fit))
     res_manual <- markov_msm_run(
@@ -333,11 +329,12 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
       model = fit,
       newdata = newdata,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = "time_lin",
-      p_var = "yprev",
-      time_covariates = time_covariates
+      settings = markov_settings(
+        y_levels = y_levels,
+        absorb = absorb,
+        time_var = "time_lin",
+        time_covariates = time_covariates
+      )
     )
     res_reference <- reference_first_order_plan_sops(
       plan,

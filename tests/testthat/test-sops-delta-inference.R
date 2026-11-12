@@ -19,15 +19,13 @@ make_delta_average_fixture <- function() {
     times = 1:3,
     id_var = "id"
   )
-  attr(out, "y_levels") <- c("1", "2")
+  attr(out, "settings") <- markov_settings(id_var = "id", y_levels = c("1", "2"))
   attr(out, "newdata_orig") <- data.frame(
     id = 1:4,
     tx = c(0, 0, 1, 1),
     yprev = c("1", "1", "2", "2")
   )
   attr(out, "newdata_supplied") <- TRUE
-  attr(out, "id_var") <- "id"
-  attr(out, "p_var") <- "yprev"
   out
 }
 
@@ -146,17 +144,18 @@ delta_public_unconditional_case <- local({
 
 replay_public_sops <- function(object, model) {
   args <- attr(object, "call_args")
+  settings <- markov_result_settings(object)
   sops(
     model = model,
     newdata = attr(object, "newdata_pred"),
     times = args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates")
+    y_levels = settings$y_levels,
+    absorb = settings$absorb,
+    time_var = settings$time_var,
+    p_var = settings$p_var,
+    p2_var = settings$p2_var,
+    gap_var = settings$gap_var,
+    time_covariates = settings$time_covariates
   )
 }
 
@@ -564,7 +563,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
   colnames(individual_values) <- cell_names
   rownames(average_jacobian) <- cell_names
   baseline <- newdata[seq_len(n_each), , drop = FALSE]
-  profile_ids <- delta_profile_ids(baseline, avg_args$id_var)
+  profile_ids <- delta_profile_ids(baseline, markov_result_settings(avg)$id_var)
   direct <- delta_stacked_influence(
     individual_values = individual_values,
     average_jacobian = average_jacobian,

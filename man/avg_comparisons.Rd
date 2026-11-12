@@ -20,8 +20,8 @@ avg_comparisons(
   target_times = NULL,
   time_unit = NULL,
   id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
@@ -96,7 +96,9 @@ order, for example \code{times = 1:30}. Each value is one transition, so
 leaving out visits does not skip time; see the section "Choosing visits"
 and \code{\link[=avg_sops]{avg_sops()}}.}
 
-\item{y_levels}{A vector of state levels. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{y_levels}{The states in fitted order. \code{NULL} (the default) uses the
+states of the fitted model; a different set of states is an error. See
+\code{\link[=sops]{sops()}}.}
 
 \item{absorb}{The absorbing state. See \code{\link[=avg_sops]{avg_sops()}}.}
 
@@ -119,14 +121,19 @@ only.}
 
 \item{time_unit}{Optional label stored in output.}
 
-\item{id_var}{Name of the patient ID variable. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{id_var}{Name of the patient ID column. \code{NULL} (the default) uses the
+\code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
 
-\item{time_var}{Name of the time variable in the model. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{time_var}{Name of the time column. \code{NULL} (the default) uses the
+\code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
 
-\item{p_var}{Name of the previous state variable in the model. See
-\code{\link[=avg_sops]{avg_sops()}}.}
+\item{p_var}{Name of the previous-state column. \code{NULL} (the default) uses
+the \code{p_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
 
-\item{p2_var}{Optional second previous-state variable. See \code{\link[=avg_sops]{avg_sops()}}.}
+\item{p2_var}{Name of the column with the state two visits back. \code{NULL}
+(the default) uses the \code{p2_var} given to \code{\link[=mostm]{mostm()}}, so a second-order
+fit is compared with a second-order recursion. A different name is an
+error. See \code{\link[=sops]{sops()}}.}
 
 \item{gap_var}{Optional name of the variable holding the time elapsed since
 the previous visit, if the model includes one. See \code{\link[=avg_sops]{avg_sops()}}.}

@@ -356,6 +356,21 @@ fit_refusals <- list(
     "F30", "orm with a link other than the logit",
     function() refusal_mostm(family = "probit"),
     "Only cumulative-logit models are supported"
+  ),
+  refusal(
+    "F31", "a `p2_var` column that is not in the data",
+    function() refusal_mostm(p2_var = "older"),
+    "given as `p2_var` is not in `data`"
+  ),
+  refusal(
+    "F32", "a `p2_var` that names the previous-state column",
+    function() refusal_mostm(p2_var = "yprev"),
+    "differs from the previous-state column"
+  ),
+  refusal(
+    "F33", "a `p_var` column that is not in the data",
+    function() refusal_mostm(p_var = "previous"),
+    "is not in `data`. Set `p_var`"
   )
 )
 
@@ -734,9 +749,14 @@ prediction_refusals <- list(
     "is no longer supported; use `baseline_time` instead."
   ),
   refusal(
-    "P49", "a `time_var` other than the one the starting profiles were stored with",
+    "P49", "a `time_var` other than the one given to `mostm()`",
     function() refusal_call(sops, time_var = "gap"),
-    "Automatic SOP prediction requested `time_var = \"gap\"`"
+    "`time_var = \"gap\"` does not match the fitted model"
+  ),
+  refusal(
+    "P53", "`p2_var` for a model fitted as first order",
+    function() refusal_call(sops, p2_var = "ypprev"),
+    "The model was fitted as a first-order model"
   )
 )
 

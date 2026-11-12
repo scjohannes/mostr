@@ -33,10 +33,8 @@ make_mock_avg_sops <- function(by = NULL, tx_levels = c(0, 1, 2)) {
     times = sort(unique(out$time)),
     id_var = "id"
   )
-  attr(out, "y_levels") <- c("1", "2")
+  attr(out, "settings") <- markov_settings(id_var = "id", y_levels = c("1", "2"))
   attr(out, "call_args") <- list(times = sort(unique(out$time)))
-  attr(out, "time_var") <- "time"
-  attr(out, "p_var") <- "yprev"
   attr(out, "newdata_orig") <- data.frame(
     id = 1:2,
     yprev = c("1", "2")
@@ -101,7 +99,7 @@ test_that("avg_comparisons() forms differences, ratios and by strata from averag
 
   for (case in cases) {
     out <- with_mocked_bindings(
-      avg_sops = function(...) case$avg,
+      avg_sops_impl = function(...) case$avg,
       do.call(avg_comparisons, c(list(model), case$args))
     )
     expect_true(inherits(out, "markov_avg_comparisons"), info = case$label)
@@ -126,7 +124,7 @@ test_that("avg_comparisons() uses real-time AUC for time-in-state", {
   avg <- make_mock_avg_sops(tx_levels = c(0, 1))
 
   with_mocked_bindings(
-    avg_sops = function(...) avg,
+    avg_sops_impl = function(...) avg,
     {
       out <- avg_comparisons(
         structure(list(), class = "mock_model", markov_id_var = "id"),
@@ -147,7 +145,7 @@ test_that("real-time comparisons use baseline support without integrating it", {
   avg <- make_mock_avg_sops(tx_levels = c(0, 1))
 
   with_mocked_bindings(
-    avg_sops = function(...) avg,
+    avg_sops_impl = function(...) avg,
     {
       explicit <- avg_comparisons(
         structure(list(), class = "mock_model", markov_id_var = "id"),
@@ -185,6 +183,7 @@ test_that("real-time comparisons use baseline support without integrating it", {
 })
 
 test_that("avg_comparisons() forwards model-structure arguments to the SOP call", {
+  # A model without stored settings, so the call's arguments are used as given.
   model <- structure(list(), class = "mock_model", markov_id_var = "id")
   structure_args <- list(
     time_var = "visit",
@@ -193,9 +192,9 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
     gap_var = "gap"
   )
 
-  # The time-benefit estimand pairs the profiles itself, so it calls `sops()`;
-  # the other estimands call `avg_sops()`. `forwarded` lists the arguments the
-  # mocked call must receive under exactly these names.
+  # The time-benefit estimand pairs the profiles itself, so it calls
+  # `sops_impl()`; the other estimands call `avg_sops_impl()`. `forwarded` lists
+  # the settings the mocked call must receive under exactly these names.
   cases <- list(
     list(
       label = "time in state, through avg_sops()",
@@ -203,8 +202,8 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
       run = function(captured, time_covariates) {
         avg <- make_mock_avg_sops(tx_levels = c(0, 1))
         with_mocked_bindings(
-          avg_sops = function(...) {
-            captured$args <- list(...)
+          avg_sops_impl = function(...) {
+            captured$settings <- list(...)$settings
             avg
           },
           do.call(
@@ -241,8 +240,8 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
         )
         with_mocked_bindings(
           validate_markov_model = function(object) NULL,
-          sops = function(model, newdata, times, ...) {
-            captured$args <- list(...)
+          sops_impl = function(model, newdata, variables, times, settings, ...) {
+            captured$settings <- settings
             out <- expand.grid(
               rowid = seq_len(nrow(newdata)),
               time = 1,
@@ -255,10 +254,10 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
             out$estimate <- c(0, 0, 1, 0, 1, 1, 0, 1)
             class(out) <- c("markov_sops", class(out))
             attr(out, "call_args") <- list(times = 1)
-            attr(out, "y_levels") <- c("1", "2")
-            attr(out, "time_var") <- captured$args[["time_var"]]
-            attr(out, "p_var") <- captured$args[["p_var"]]
-            attr(out, "p2_var") <- captured$args[["p2_var"]]
+            attr(out, "settings") <- markov_settings_update(
+              settings,
+              y_levels = c("1", "2")
+            )
             out
           },
           do.call(
@@ -295,7 +294,7 @@ test_that("avg_comparisons() forwards model-structure arguments to the SOP call"
       # `[[` matches names exactly, so a misnamed argument cannot pass by
       # partial matching.
       expect_equal(
-        captured$args[[name]],
+        captured$settings[[name]],
         forwarded[[name]],
         info = paste(case$label, name, sep = ": ")
       )
@@ -315,7 +314,7 @@ test_that("time-benefit array reducer keeps scenario blocks on visit and real-ti
         n_cf = 2,
         n_each = 2,
         variables = list(tx = c(0, 1)),
-        y_levels = c("1", "2"),
+        settings = markov_settings(y_levels = c("1", "2")),
         times = 1,
         by = NULL,
         baseline_data = data.frame(id = 1:2)
@@ -337,7 +336,7 @@ test_that("time-benefit array reducer keeps scenario blocks on visit and real-ti
         n_cf = 2,
         n_each = 1,
         variables = list(tx = c(0, 1)),
-        y_levels = c("1", "2"),
+        settings = markov_settings(id_var = "id", y_levels = c("1", "2")),
         times = 1:2,
         by = NULL,
         baseline_data = mapped_baseline,
@@ -348,9 +347,6 @@ test_that("time-benefit array reducer keeps scenario blocks on visit and real-ti
           list(tx = c(0, 1))
         ),
         grid = mapped_grid,
-        id_var = "id",
-        time_var = "time",
-        p_var = "yprev",
         newdata_supplied = TRUE
       ),
       sops_array = local({
@@ -446,10 +442,8 @@ test_that("time-benefit simulation inference uses real-time comparison scale", {
   attr(object, "comparison_baseline_data") <- baseline
   attr(object, "comparison_grid") <- grid
   attr(object, "comparison_n_each") <- 1L
-  attr(object, "call_args") <- list(times = 1:2, y_levels = c("1", "2"))
-  attr(object, "time_var") <- "time"
-  attr(object, "p_var") <- "yprev"
-  attr(object, "y_levels") <- c("1", "2")
+  attr(object, "call_args") <- list(times = 1:2)
+  attr(object, "settings") <- markov_settings(id_var = "id", y_levels = c("1", "2"))
 
   sops_array <- array(NA_real_, dim = c(2, 2, 2))
   sops_array[1, 1, ] <- c(0, 1)
@@ -461,7 +455,7 @@ test_that("time-benefit simulation inference uses real-time comparison scale", {
     get_coef = function(model) c(a = 0, b = 0),
     get_vcov_robust = function(model) diag(2) * 1e-8,
     set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) sops_array,
+    predict_markov_sops = function(...) sops_array,
     {
       withr::local_seed(1)
       out <- mostr:::inferences_avg_comparisons_time_benefit_simulation(
@@ -488,7 +482,7 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
   avg <- make_mock_avg_sops()
 
   with_mocked_bindings(
-    avg_sops = function(...) avg,
+    avg_sops_impl = function(...) avg,
     {
       expect_error(
         avg_comparisons(
@@ -537,7 +531,7 @@ test_that("comparison inference reduces paired draw-level SOPs", {
   attr(inferred_avg, "method") <- "mvn"
 
   with_mocked_bindings(
-    avg_sops = function(...) avg,
+    avg_sops_impl = function(...) avg,
     {
       cmp <- avg_comparisons(
         structure(list(), class = "mock_model", markov_id_var = "id"),
@@ -550,7 +544,7 @@ test_that("comparison inference reduces paired draw-level SOPs", {
   )
 
   with_mocked_bindings(
-    avg_sops = function(...) avg,
+    avg_sops_impl = function(...) avg,
     inferences_internal = function(...) inferred_avg,
     {
       out <- mostr:::inferences_avg_comparisons_linear(
@@ -595,7 +589,7 @@ test_that("comparison inference centers Wald intervals on point comparisons", {
 
   for (estimand in c("sop", "time_in_state")) {
     with_mocked_bindings(
-      avg_sops = function(...) avg,
+      avg_sops_impl = function(...) avg,
       {
         cmp <- avg_comparisons(
           structure(list(), class = "mock_model", markov_id_var = "id"),
@@ -608,7 +602,7 @@ test_that("comparison inference centers Wald intervals on point comparisons", {
     )
 
     with_mocked_bindings(
-      avg_sops = function(...) avg,
+      avg_sops_impl = function(...) avg,
       inferences_internal = function(...) inferred_avg,
       {
         out <- mostr:::inferences_avg_comparisons_linear(

@@ -12,8 +12,8 @@ plot_lp_difference(
   previous_states = NULL,
   y_levels = NULL,
   absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   line_width = 0.7
@@ -33,15 +33,19 @@ first value is the reference.}
 \item{previous_states}{Optional previous-state values to facet by. Defaults
 to all non-absorbing states in \code{y_levels}.}
 
-\item{y_levels}{Optional state levels. If omitted, levels are inferred from
-the model when possible.}
+\item{y_levels}{The states in fitted order. \code{NULL} (the default) uses the
+states of the fitted model. A supplied vector must hold the same states
+in the same order, otherwise it is an error.}
 
 \item{absorb}{Optional absorbing-state label excluded from the default
 previous-state grid.}
 
-\item{time_var}{Character name of the time column.}
+\item{time_var}{Name of the time column. \code{NULL} (the default) uses the
+\code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
 
-\item{p_var}{Character name of the previous-state column.}
+\item{p_var}{Name of the previous-state column. \code{NULL} (the default) uses
+the \code{p_var} given to \code{\link[=mostm]{mostm()}}, \code{"yprev"} unless set there; a different
+name is an error.}
 
 \item{gap_var}{Optional time-gap_var variable used by the fitted model.}
 

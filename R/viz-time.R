@@ -115,7 +115,11 @@ plot_time <- function(
 
   state_sets <- attr(x, "time_args")$state_sets
   if (identical(type, "bar") || identical(scale, "proportion")) {
-    plot_time_validate_partition(state_sets, attr(x, "y_levels"), scale)
+    plot_time_validate_partition(
+      state_sets,
+      markov_result_settings(x)$y_levels,
+      scale
+    )
   }
 
   data$state_set <- factor(

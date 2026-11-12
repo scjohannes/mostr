@@ -43,20 +43,9 @@ test_that("sops() validates inputs and supports stratified aggregation", {
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
-    soprob_markov = function(
-      object,
-      data,
-      times,
-      y_levels,
-      absorb,
-      time_var,
-      p_var,
-      gap,
-      time_covariates,
-      ...
-    ) {
+    predict_markov_sops = function(model, newdata, times, settings, ...) {
       expect_equal(times, c(1, 2))
-      expect_equal(y_levels, c(1, 2))
+      expect_equal(settings$y_levels, c(1, 2))
       sops_array
     },
     {
@@ -117,19 +106,8 @@ test_that("sops() infers y_levels from supported model containers", {
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
-    soprob_markov = function(
-      object,
-      data,
-      times,
-      y_levels,
-      absorb,
-      time_var,
-      p_var,
-      gap,
-      time_covariates,
-      ...
-    ) {
-      expect_equal(y_levels, c("1", "2"))
+    predict_markov_sops = function(model, newdata, times, settings, ...) {
+      expect_equal(settings$y_levels, c("1", "2"))
       sops_array
     },
     {
@@ -202,8 +180,8 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
-    sops = function(model, newdata, times, ...) {
-      captured$args <- list(...)
+    sops_impl = function(model, newdata, variables, times, settings, ...) {
+      captured$args <- c(list(...), list(settings = settings))
       out <- expand.grid(
         time = times,
         state = c(1, 2),
@@ -214,12 +192,7 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
       out$estimate <- seq_len(nrow(out)) / 100
       attr(out, "model") <- model
       attr(out, "call_args") <- list(times = times)
-      attr(out, "time_var") <- "time"
-      attr(out, "p_var") <- "yprev"
-      attr(out, "y_levels") <- c(1, 2)
-      attr(out, "absorb") <- NULL
-      attr(out, "gap") <- NULL
-      attr(out, "time_covariates") <- NULL
+      attr(out, "settings") <- markov_settings_update(settings, y_levels = c(1, 2))
       out
     },
     {
@@ -275,13 +248,13 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
 
   expect_true("subgroup" %in% names(result))
   expect_equal(attr(result, "avg_args")$by, "subgroup")
-  expect_equal(captured$args$y_levels, c(1, 2))
-  expect_equal(captured$args$absorb, 2)
-  expect_equal(captured$args$time_var, "visit")
-  expect_equal(captured$args$p_var, "prev")
-  expect_equal(captured$args$p2_var, "preprev")
-  expect_equal(captured$args$gap, "gap")
-  expect_equal(captured$args$time_covariates, time_covariates)
+  expect_equal(captured$args$settings$y_levels, c(1, 2))
+  expect_equal(captured$args$settings$absorb, 2)
+  expect_equal(captured$args$settings$time_var, "visit")
+  expect_equal(captured$args$settings$p_var, "prev")
+  expect_equal(captured$args$settings$p2_var, "preprev")
+  expect_equal(captured$args$settings$gap_var, "gap")
+  expect_equal(captured$args$settings$time_covariates, time_covariates)
 })
 
 test_that("avg_sops() reports missing grouping variables from individual SOPs", {
@@ -290,10 +263,11 @@ test_that("avg_sops() reports missing grouping variables from individual SOPs", 
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
-    sops = function(model, newdata, times, ...) {
+    sops_impl = function(model, newdata, variables, times, settings, ...) {
       out <- data.frame(time = 1, state = 1, tx = 0, estimate = 0.5)
       attr(out, "model") <- model
       attr(out, "call_args") <- list(times = times)
+      attr(out, "settings") <- settings
       out
     },
     {

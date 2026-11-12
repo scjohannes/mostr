@@ -641,7 +641,8 @@ test_that("markov_msm_build validates model classes and design alignment", {
       mocks = list(get_effective_coefs = coefs_named("(Intercept)")),
       args = list(
         structure(list(), class = "not_supported"),
-        data.frame(yprev = 1)
+        data.frame(yprev = 1),
+        settings = markov_settings(y_levels = 1:6)
       ),
       error = "supports only vglm and orm"
     ),
@@ -651,8 +652,11 @@ test_that("markov_msm_build validates model classes and design alignment", {
       args = list(
         structure(list(), class = "orm"),
         data.frame(yprev = 1),
-        time_covariates = data.frame(z = 1:2),
-        times = 1
+        times = 1,
+        settings = markov_settings(
+          y_levels = 1:6,
+          time_covariates = data.frame(z = 1:2)
+        )
       ),
       error = "one row per requested time point"
     ),
@@ -666,7 +670,7 @@ test_that("markov_msm_build validates model classes and design alignment", {
         structure(list(), class = "orm"),
         data.frame(id = 1, time = 2, yprev = 1),
         times = c(2, 3),
-        y_levels = 1:2
+        settings = markov_settings(y_levels = 1:2)
       ),
       error = "Design matrix columns missing"
     ),
@@ -675,9 +679,8 @@ test_that("markov_msm_build validates model classes and design alignment", {
       mocks = list(get_effective_coefs = coefs_named("missing_column")),
       args = list(
         model = vglm_fit,
-        data = data.frame(id = 1:2, x = c(0, 1)),
-        y_levels = 1:2,
-        p_var = "yprev"
+        newdata = data.frame(id = 1:2, x = c(0, 1)),
+        settings = markov_settings(y_levels = 1:2)
       ),
       error = "Could not construct a design matrix"
     )

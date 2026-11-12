@@ -485,7 +485,6 @@ describe("avg_sops() and inferences() pipeline", {
       times = 1:8,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates
     )
@@ -584,7 +583,6 @@ describe("avg_sops() and inferences() pipeline", {
       times = 1:8,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates,
       id_var = "id"
@@ -633,7 +631,6 @@ describe("avg_sops() and inferences() pipeline", {
       times = 1:8,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates,
       id_var = "id"
@@ -672,7 +669,6 @@ describe("avg_sops() and inferences() pipeline", {
       times = 1:8,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates,
       id_var = "id"
@@ -792,7 +788,6 @@ describe("avg_sops() and inferences() pipeline", {
       times = 1:8,
       y_levels = case$y_levels,
       absorb = case$absorb,
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = case$time_covariates,
       id_var = "id"
@@ -1016,7 +1011,6 @@ describe("avg_sops() and inferences() pipeline", {
       times = 1:12,
       y_levels = y_levels,
       absorb = "6",
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = time_covariates,
       id_var = "id"
@@ -1061,7 +1055,6 @@ describe("avg_sops() and inferences() pipeline", {
       times = 1:12,
       y_levels = y_levels,
       absorb = "6",
-      time_var = "time_lin",
       p_var = "yprev",
       time_covariates = time_covariates,
       id_var = "id"

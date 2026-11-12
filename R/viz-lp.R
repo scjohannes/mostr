@@ -21,12 +21,16 @@
 #' @param times Time values at which to evaluate the linear predictor.
 #' @param previous_states Optional previous-state values to facet by. Defaults
 #'   to all non-absorbing states in `y_levels`.
-#' @param y_levels Optional state levels. If omitted, levels are inferred from
-#'   the model when possible.
+#' @param y_levels The states in fitted order. `NULL` (the default) uses the
+#'   states of the fitted model. A supplied vector must hold the same states
+#'   in the same order, otherwise it is an error.
 #' @param absorb Optional absorbing-state label excluded from the default
 #'   previous-state grid.
-#' @param time_var Character name of the time column.
-#' @param p_var Character name of the previous-state column.
+#' @param time_var Name of the time column. `NULL` (the default) uses the
+#'   `time_var` given to [mostm()]; a different name is an error.
+#' @param p_var Name of the previous-state column. `NULL` (the default) uses
+#'   the `p_var` given to [mostm()], `"yprev"` unless set there; a different
+#'   name is an error.
 #' @param gap_var Optional time-gap_var variable used by the fitted model.
 #' @param time_covariates Optional time-varying covariate lookup table used by the fitted
 #'   model.
@@ -54,8 +58,8 @@ plot_lp_difference <- function(
   previous_states = NULL,
   y_levels = NULL,
   absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
   line_width = 0.7
@@ -80,11 +84,21 @@ plot_lp_difference <- function(
     stop("Variables not in profile: ", variable)
   }
   plot_validate_scalar(line_width, "line_width", lower = 0)
+  settings <- resolve_markov_settings(
+    model,
+    time_var = time_var,
+    p_var = p_var,
+    y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
+    time_covariates = time_covariates
+  )
+  time_var <- settings$time_var
 
-  y_levels <- markov_model_ylevels(model, y_levels)
+  y_levels <- markov_model_ylevels(model, settings$y_levels)
   ylevel_names <- as_state_labels(y_levels)
   previous_states <- previous_states %||%
-    setdiff(ylevel_names, as_state_labels(absorb))
+    setdiff(ylevel_names, as_state_labels(settings$absorb))
 
   data <- plot_lp_grid(
     model = model,
@@ -92,10 +106,7 @@ plot_lp_difference <- function(
     variables = variables,
     times = times,
     previous_states = previous_states,
-    time_var = time_var,
-    p_var = p_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates
+    settings = settings
   )
   eta <- markov_linear_predictor_matrix(model, data)
   lp_data <- plot_lp_difference_data(
@@ -104,7 +115,7 @@ plot_lp_difference <- function(
     variable = variable,
     values = variables[[1]],
     time_var = time_var,
-    p_var = p_var
+    p_var = settings$p_var
   )
 
   p <- ggplot2::ggplot(lp_data) +
@@ -139,23 +150,21 @@ plot_lp_grid <- function(
   variables,
   times,
   previous_states,
-  time_var,
-  p_var,
-  gap_var,
-  time_covariates
+  settings
 ) {
   variable <- names(variables)[1]
+  p_var <- settings$p_var
   time_res <- resolve_sop_times(
     model,
     profile,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
+    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
+  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   rows <- vector(
     "list",
@@ -176,11 +185,9 @@ plot_lp_grid <- function(
         )
         row <- assign_sop_visit(
           row,
-          time_var = time_var,
+          settings = settings,
           times = times,
           index = i,
-          time_covariates = time_covariates,
-          gap_var = gap_var,
           time_info = time_info
         )
         row$previous_state <- as.character(prev)

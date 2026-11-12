@@ -124,8 +124,7 @@ test_that("the R engine, which predicts with VGAM, also stops", {
       case$model,
       newdata = case$profiles,
       times = 1:3,
-      y_levels = 1:3,
-      absorb = 3
+      settings = markov_settings(y_levels = 1:3, absorb = 3)
     ),
     "cross for 1 of the 3 profiles at time 1",
     class = "mostr_crossed_thresholds"

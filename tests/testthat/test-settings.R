@@ -83,3 +83,47 @@ test_that("predictions use the fit's time column without `time_var`", {
   )
 })
 
+test_that("a setting that contradicts the fit is an error", {
+  second <- settings_second_order_fit()
+  first <- grid_fit(grid_cell("orm"))
+  day <- settings_day_fit()
+  expect_snapshot(error = TRUE, {
+    avg_sops(second, times = 1:4, absorb = 4, p2_var = "yprev")
+    avg_sops(first, times = 1:4, absorb = 4, p2_var = "ypprev")
+    avg_sops(first, times = 1:4, absorb = 4, p_var = "ypprev")
+    avg_sops(day, times = 1:4, absorb = 4, time_var = "time")
+    avg_sops(first, times = 1:4, absorb = 4, id_var = "age")
+    avg_sops(first, times = 1:4, absorb = 4, y_levels = c(1, 2, 4, 3))
+  })
+})
+
+test_that("`mostm()` records the settings and checks the previous-state columns", {
+  fit <- settings_second_order_fit()
+  settings <- markov_model_settings(fit)
+  expect_s3_class(settings, "markov_settings")
+  expect_identical(settings$id_var, "id")
+  expect_identical(settings$time_var, "time")
+  expect_identical(settings$p_var, "yprev")
+  expect_identical(settings$p2_var, "ypprev")
+  expect_identical(settings$order, 2L)
+  expect_identical(settings$engine, "orm")
+  expect_identical(as_state_labels(settings$y_levels), as.character(1:4))
+
+  vglm_fit <- grid_fit(grid_cell("vglm", order = 2L))
+  expect_identical(markov_model_settings(vglm_fit)$p2_var, "ypprev")
+  expect_identical(markov_model_settings(vglm_fit$vglm_fit)$p2_var, "ypprev")
+
+  data <- grid_data()
+  expect_snapshot(error = TRUE, {
+    mostm(y ~ time + yprev, data = data, id_var = "id", p2_var = "missing")
+    mostm(y ~ time + yprev, data = data, id_var = "id", p_var = "yprev", p2_var = "yprev")
+    mostm(y ~ time + yprev, data = data, id_var = "id", p_var = c("a", "b"))
+  })
+})
+
+test_that("bootstrap refits keep the fit's settings", {
+  fit <- settings_second_order_fit()
+  refit <- update_bootstrap_model(fit, markov_model_refit_data(fit))
+  expect_identical(markov_model_settings(refit)$p2_var, "ypprev")
+  expect_identical(markov_model_settings(refit)$time_var, "time")
+})

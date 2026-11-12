@@ -220,11 +220,11 @@ delta_comparison_block <- function(
     run_sop_delta_plan(plan, model_plan),
     n_profiles = n_each,
     n_times = n_times,
-    n_states = length(setup$y_levels)
+    n_states = length(setup$settings$y_levels)
   )
   n_coef <- length(result$coefficient_names)
-  state_labels <- as_state_labels(setup$y_levels)
-  start <- as.character(newdata[[setup$p_var]])
+  state_labels <- as_state_labels(setup$settings$y_levels)
+  start <- as.character(newdata[[setup$settings$p_var]])
 
   value <- jacobian <- vector("list", length(state_sets))
   for (set in seq_along(state_sets)) {

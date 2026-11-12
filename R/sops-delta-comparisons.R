@@ -69,14 +69,7 @@ delta_replay_average_comparison <- function(
     variables = avg_args$variables,
     by = avg_args$by,
     times = avg_args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    id_var = avg_args$id_var,
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates"),
+    settings = markov_result_settings(object),
     include_re = args$include_re,
     n_draws = args$n_draws,
     seed = args$seed,
@@ -184,7 +177,7 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
 
   state_sets <- normalize_comparison_state_sets(
     args$state_sets,
-    attr(avg, "y_levels")
+    markov_result_settings(avg)$y_levels
   )
   if (anyDuplicated(names(state_sets))) {
     stop("Analytical comparison state-set names must be unique.")
@@ -253,7 +246,7 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
   # the starting state instead anchor at that state, a constant that differs
   # between the compared scenarios.
   anchor <- numeric(n_result)
-  p_var <- attr(avg, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(avg)$p_var
   baseline_weight <- real_time_weights$baseline %||% 0
   if (identical(varname, p_var) && baseline_weight != 0) {
     for (i in seq_len(n_result)) {

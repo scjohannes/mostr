@@ -254,10 +254,20 @@ markov_model_variables <- function(model) {
   unique(c(variables, if (is.character(cluster)) cluster))
 }
 
+# A model derived from `source`, such as a refit or the inner vglm fit, keeps
+# its engine record and, when the derived model has none of its own, its
+# settings.
 markov_inherit_engine <- function(model, source) {
   engine <- markov_model_engine(source)
   if (is.null(engine)) {
     return(model)
+  }
+  settings <- markov_model_metadata_attr(source, "markov_settings")
+  if (
+    inherits(settings, "markov_settings") &&
+      is.null(attr(model, "markov_settings", exact = TRUE))
+  ) {
+    model <- markov_set_settings(model, settings)
   }
   markov_set_engine(model, engine)
 }
@@ -696,17 +706,12 @@ markov_align_model_data <- function(data, model_or_frame) {
 }
 
 # The data that SOP calls start from: the supplied `newdata`, or the starting
-# profiles stored by `mostm()`. With `absorb`, profiles that start in an
-# absorbing state are refused here, before anything is predicted, so the error
-# counts the user's profiles rather than the stacked prediction rows.
-resolve_markov_source_data <- function(
-  model,
-  newdata,
-  time_var = NULL,
-  p_var = NULL,
-  p2_var = NULL,
-  absorb = NULL
-) {
+# profiles stored by `mostm()`. With `settings$absorb`, profiles that start in
+# an absorbing state are refused here, before anything is predicted, so the
+# error counts the user's profiles rather than the stacked prediction rows.
+# Without `settings` (bare variable names look up values) nothing is checked.
+resolve_markov_source_data <- function(model, newdata, settings = NULL) {
+  time_var <- settings$time_var
   newdata_supplied <- !is.null(newdata)
   refit_data <- markov_model_refit_data(model)
   source_data <- if (newdata_supplied) {
@@ -729,23 +734,20 @@ resolve_markov_source_data <- function(
     }
     markov_validate_starting_profiles(
       model,
-      required_variables = c(time_var, p_var)
+      required_variables = c(time_var, settings$p_var)
     )
   }
 
   if (!is.data.frame(source_data)) {
     stop("`newdata` must be a data frame.")
   }
-  stop_absorbing_start(
-    source_data,
-    absorb = absorb,
-    p_var = p_var,
-    p2_var = p2_var,
-    source = if (newdata_supplied) "newdata" else "stored",
-    id_var = if (!newdata_supplied) {
-      markov_model_starting_profile_metadata(model)$id_var
-    }
-  )
+  if (!is.null(settings)) {
+    stop_absorbing_start(
+      source_data,
+      settings,
+      source = if (newdata_supplied) "newdata" else "stored"
+    )
+  }
 
   list(
     source_data = source_data,

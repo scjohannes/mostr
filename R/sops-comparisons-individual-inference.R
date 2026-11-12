@@ -190,7 +190,7 @@ profile_draw_reducer <- function(object, setup) {
   # columns would be copied into every interpolated row.
   slim_setup <- setup
   slim_setup$newdata_pred <- setup$newdata_pred[,
-    intersect(setup$p_var, names(setup$newdata_pred)),
+    intersect(setup$settings$p_var, names(setup$newdata_pred)),
     drop = FALSE
   ]
 
@@ -237,17 +237,11 @@ stacked_to_counterfactual_array <- function(sops_array, n_cf, n_each) {
 # Draws are reduced without their row labels, so first check that reducing
 # the fitted model's predictions reproduces the stored estimates.
 check_comparison_replay <- function(object, setup, reduce_draw, model) {
-  replayed <- reduce_draw(soprob_markov(
+  replayed <- reduce_draw(predict_markov_sops(
     model = model,
     newdata = setup$newdata_pred,
     times = setup$times,
-    y_levels = setup$y_levels,
-    absorb = setup$absorb,
-    time_var = setup$time_var,
-    p_var = setup$p_var,
-    p2_var = setup$p2_var,
-    gap_var = setup$gap_var,
-    time_covariates = setup$time_covariates
+    settings = setup$settings
   ))
   stored <- object$estimate
   same_missing <- identical(is.na(replayed), is.na(stored))
@@ -276,14 +270,8 @@ comparison_coefficient_predictor <- function(model, setup) {
       compile_sop_execution_plan(
         model = model_plan,
         newdata = setup$newdata_pred,
-        time_covariates = setup$time_covariates,
         times = setup$times,
-        y_levels = setup$y_levels,
-        absorb = setup$absorb,
-        time_var = setup$time_var,
-        p_var = setup$p_var,
-        p2_var = setup$p2_var,
-        gap_var = setup$gap_var,
+        settings = setup$settings,
         builder = "streamed",
         output = "individual"
       ),
@@ -302,17 +290,11 @@ comparison_coefficient_predictor <- function(model, setup) {
     }
   }
   function(beta) {
-    soprob_markov(
+    predict_markov_sops(
       model = set_coef(model, beta),
       newdata = setup$newdata_pred,
       times = setup$times,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
-      time_var = setup$time_var,
-      p_var = setup$p_var,
-      p2_var = setup$p2_var,
-      gap_var = setup$gap_var,
-      time_covariates = setup$time_covariates
+      settings = setup$settings
     )
   }
 }
@@ -339,7 +321,7 @@ comparison_simulation_draws <- function(
     vcov = vcov,
     cluster = cluster,
     baseline_data = setup$baseline_data,
-    id_var = setup$id_var,
+    id_var = setup$settings$id_var,
     newdata_supplied = setup$newdata_supplied,
     is_avg = FALSE,
     return_draws = return_draws,
@@ -411,12 +393,16 @@ comparison_fwb_draws <- function(
   return_draws
 ) {
   refit_data <- stored_refit_bootstrap_data(object, model)
-  validate_refit_bootstrap_data(refit_data, setup$id_var, setup$time_var)
+  validate_refit_bootstrap_data(
+    refit_data,
+    setup$settings$id_var,
+    setup$settings$time_var
+  )
   factor_cols <- bootstrap_state_columns(
     model,
     refit_data,
-    setup$p_var,
-    setup$p2_var
+    setup$settings$p_var,
+    setup$settings$p2_var
   )
 
   # The patient weights enter the comparisons only through the refits, but,
@@ -429,7 +415,7 @@ comparison_fwb_draws <- function(
       warn_fixed_profile_draw_weights("FWB")
     }
   } else {
-    validate_prediction_weight_ids(setup$baseline_data, setup$id_var)
+    validate_prediction_weight_ids(setup$baseline_data, setup$settings$id_var)
     validate_draw_weight_column_available(setup$newdata_pred, weight_col)
   }
 
@@ -439,8 +425,8 @@ comparison_fwb_draws <- function(
       model = model,
       factor_cols = factor_cols,
       original_data = refit_data,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
+      y_levels = setup$settings$y_levels,
+      absorb = setup$settings$absorb,
       use_coefstart = use_coefstart,
       fit_weights = boot_data$fwb_weight
     )
@@ -456,17 +442,15 @@ comparison_fwb_draws <- function(
       return(NULL)
     }
     sops_array <- tryCatch(
-      soprob_markov(
+      predict_markov_sops(
         model = boot_result$model,
         newdata = setup$newdata_pred,
         times = setup$times,
-        y_levels = factor(boot_result$ylevels %||% boot_result$y_levels),
-        absorb = boot_result$absorb,
-        time_var = setup$time_var,
-        p_var = setup$p_var,
-        p2_var = setup$p2_var,
-        gap_var = setup$gap_var,
-        time_covariates = setup$time_covariates
+        settings = markov_settings_update(
+          setup$settings,
+          y_levels = factor(boot_result$ylevels %||% boot_result$y_levels),
+          absorb = boot_result$absorb
+        )
       ),
       error = function(e) {
         rethrow_crossed_thresholds(e)
@@ -480,21 +464,25 @@ comparison_fwb_draws <- function(
     list(
       estimate = reduce_draw(sops_array),
       weight = if (!is.null(weight_col)) {
-        fwb_baseline_weights(fwb_weights, setup$baseline_data, setup$id_var)
+        fwb_baseline_weights(
+          fwb_weights,
+          setup$baseline_data,
+          setup$settings$id_var
+        )
       }
     )
   }
 
   fwb_samples <- generate_fwb_bootstrap_weights(
     data = refit_data,
-    id_var = setup$id_var,
+    id_var = setup$settings$id_var,
     n_boot = n_boot
   )
   results <- apply_to_fwb_bootstrap(
     fwb_samples = fwb_samples,
     analysis_fn = analysis_fn,
     data = refit_data,
-    id_var = setup$id_var,
+    id_var = setup$settings$id_var,
     workers = workers,
     packages = c("rms", "VGAM", "Hmisc", "stats"),
     globals = c(

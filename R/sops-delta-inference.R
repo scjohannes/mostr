@@ -14,7 +14,8 @@ sets_starting_state <- function(object) {
   ) {
     return(FALSE)
   }
-  state_vars <- c(attr(object, "p_var") %||% "yprev", attr(object, "p2_var"))
+  settings <- markov_result_settings(object)
+  state_vars <- c(settings$p_var, settings$p2_var)
   any(state_vars %in% names(attr(object, "avg_args")$variables %||% list()))
 }
 
@@ -133,7 +134,7 @@ delta_validate_sop_scope <- function(object, model, by) {
       call. = FALSE
     )
   }
-  if (!is.null(attr(object, "p2_var"))) {
+  if (!is.null(markov_result_settings(object)$p2_var)) {
     stop(
       "Analytical delta inference for second-order Markov models is not yet ",
       "supported.",
@@ -156,13 +157,9 @@ delta_compile_plan <- function(object, model_plan, newdata, times, output) {
     model = model_plan,
     newdata = newdata,
     times = times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    p2_var = NULL,
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates"),
+    # Only first-order models reach analytical inference
+    # (`delta_validate_target()`).
+    settings = markov_result_settings(object),
     builder = "streamed",
     output = output
   )
@@ -632,7 +629,7 @@ inferences_delta_sops <- function(
     stop("Stored SOP prediction data are required for delta inference.")
   }
   times <- if (is_average) avg_args$times else call_args$times
-  y_levels <- attr(object, "y_levels")
+  y_levels <- markov_result_settings(object)$y_levels
   if (is_average) {
     variables <- avg_args$variables
     grid <- create_counterfactual_grid(variables)
@@ -740,7 +737,7 @@ inferences_delta_sops <- function(
     }
     individual_values <- reduced$individual_values[, index, drop = FALSE]
     baseline_data <- newdata[seq_len(n_each), , drop = FALSE]
-    id_var <- avg_args$id_var %||% attr(object, "id_var")
+    id_var <- markov_result_settings(object)$id_var
     profile_ids <- delta_profile_ids(baseline_data, id_var)
     unconditional <- delta_unconditional_state(
       individual_values = individual_values,

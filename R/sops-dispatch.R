@@ -13,23 +13,31 @@
 #'   recursion takes one transition per value, so leaving out visits does not
 #'   skip time; see [sops()]. Unlike [sops()], this function does not warn
 #'   when `times` leaves out fitted visits.
-#' @param y_levels Ordered outcome-state levels. The number of levels must equal
-#'   the fitted threshold count plus one.
+#' @param y_levels Ordered outcome-state levels. `NULL` (the default) uses the
+#'   states of the fitted model in fitted order. A supplied vector must hold
+#'   the same states in the same order; its type sets the type of the state
+#'   labels.
 #' @param absorb Optional absorbing state levels: states that a patient can't
 #'   leave. A row of `newdata` whose `p_var` or `p2_var` value is absorbing
 #'   gives an error: such a patient can't move to another state, and the model
 #'   has no transitions out of an absorbing state to predict from.
-#' @param time_var Name of the model time variable.
-#' @param p_var Name of the previous-state variable.
-#' @param p2_var Optional second previous-state variable. A non-`NULL` value
-#'   selects second-order recursion.
+#' @param time_var Name of the model time variable. `NULL` (the default) uses
+#'   the `time_var` given to [mostm()]; a different name is an error.
+#' @param p_var Name of the previous-state variable. `NULL` (the default) uses
+#'   the `p_var` given to [mostm()]; a different name is an error.
+#' @param p2_var Name of the variable with the state two visits back. `NULL`
+#'   (the default) uses the `p2_var` given to [mostm()], so a model fitted
+#'   with `p2_var` uses second-order recursion and one fitted without it
+#'   first-order recursion. A different name is an error.
 #' @param gap_var Optional elapsed-time-gap variable.
 #' @param time_covariates Optional data frame with one row per requested visit
 #'   containing precomputed time-varying covariates.
 #' @param include_re For `blrm` fits, include fitted random-effect draws for
 #'   known IDs. Only `blrm` fits have random effects, so `TRUE` gives an error
 #'   for other fits.
-#' @param id_var ID column used for `blrm` random effects.
+#' @param id_var ID column used for `blrm` random effects. `NULL` (the
+#'   default) uses the `id_var` given to [mostm()]; a different name is an
+#'   error.
 #' @param n_draws Number of `blrm` posterior draws, or `NULL` for all draws.
 #' @param seed Optional seed used when selecting posterior draws.
 #' @param ... Reserved for internal posterior draw batching.
@@ -41,10 +49,10 @@ soprob_markov <- function(
   model,
   newdata,
   times = NULL,
-  y_levels,
+  y_levels = NULL,
   absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
@@ -55,31 +63,58 @@ soprob_markov <- function(
   ...
 ) {
   stop_include_re_without_blrm(model, include_re)
+  settings <- resolve_markov_settings(
+    model,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
+    time_covariates = time_covariates
+  )
+  if (is.null(settings$y_levels)) {
+    stop("`y_levels` cannot be NULL")
+  }
+  predict_markov_sops(
+    model,
+    newdata,
+    times = times,
+    settings = settings,
+    include_re = include_re,
+    n_draws = n_draws,
+    seed = seed,
+    ...
+  )
+}
+
+# The SOP array for `newdata` under resolved `settings` (from
+# `resolve_markov_settings()`). Package code calls this rather than
+# `soprob_markov()`, because its settings are already resolved and bootstrap
+# refits pass only the states present in their resample.
+predict_markov_sops <- function(
+  model,
+  newdata,
+  times,
+  settings,
+  include_re = FALSE,
+  n_draws = 100L,
+  seed = NULL,
+  ...
+) {
   dots <- list(...)
   # The public SOP functions already refused absorbing starts among the user's
   # profiles; this also covers direct calls and `variables` that set the
   # previous state.
-  stop_absorbing_start(
-    newdata,
-    absorb = absorb,
-    p_var = p_var,
-    p2_var = p2_var,
-    source = "rows"
-  )
+  stop_absorbing_start(newdata, settings, source = "rows")
   run_r_engine <- function() {
     soprob_markov_r_engine(
       model = model,
       newdata = newdata,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
-      id_var = id_var,
       n_draws = n_draws,
       seed = seed,
       ...
@@ -114,25 +149,14 @@ soprob_markov <- function(
   }
 
   validate_markov_model(model_fast)
-  validate_fast_previous_state_support(
-    model_fast,
-    p_var = p_var,
-    y_levels = y_levels,
-    absorb = absorb
-  )
+  validate_fast_previous_state_support(model_fast, settings)
   fallback_condition <- NULL
   plan <- tryCatch(
     compile_sop_execution_plan(
       model = model_fast,
       newdata = newdata,
-      time_covariates = time_covariates,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
+      settings = settings,
       builder = "batched",
       output = "array"
     ),
@@ -150,7 +174,7 @@ soprob_markov <- function(
   dimnames(out) <- list(
     rownames(newdata),
     resolved_times,
-    as_state_labels(y_levels)
+    as_state_labels(settings$y_levels)
   )
   out
 }
@@ -161,27 +185,28 @@ soprob_markov <- function(
 # models, rows whose state two visits back (`p2_var`) is: that history is
 # impossible, since the patient would still be in the absorbing state. States
 # are compared as labels, so factor, character and numeric columns all work.
+# The columns and absorbing states come from `settings`.
 #
 # `source` says where the rows come from, which sets the advice in the error:
 # - "newdata": the user's `newdata`, one starting profile per row.
 # - "stored": the starting profiles that `mostm()` stored, one per patient;
-#   `id_var` names their ID column.
+#   `settings$id_var` names their ID column.
 # - "rows": prediction rows given to `soprob_markov()`, which hold one copy of
 #   each profile for each combination of `variables`.
 stop_absorbing_start <- function(
   data,
-  absorb,
-  p_var,
-  p2_var = NULL,
-  source = c("newdata", "stored", "rows"),
-  id_var = NULL
+  settings,
+  source = c("newdata", "stored", "rows")
 ) {
   source <- match.arg(source)
+  absorb <- settings$absorb
+  p_var <- settings$p_var
+  id_var <- if (identical(source, "stored")) settings$id_var
   if (length(absorb) == 0L || !is.data.frame(data) || nrow(data) == 0L) {
     return(invisible(NULL))
   }
   absorb_labels <- as_state_labels(absorb)
-  for (column in c(p_var, p2_var)) {
+  for (column in c(p_var, settings$p2_var)) {
     if (!column %in% names(data)) {
       next
     }
@@ -260,12 +285,8 @@ stop_absorbing_start <- function(
   invisible(NULL)
 }
 
-validate_fast_previous_state_support <- function(
-  model,
-  p_var,
-  y_levels,
-  absorb
-) {
+validate_fast_previous_state_support <- function(model, settings) {
+  p_var <- settings$p_var
   model_data <- markov_model_data(model)
   if (
     is.null(model_data) ||
@@ -275,8 +296,8 @@ validate_fast_previous_state_support <- function(
     return(invisible(NULL))
   }
   observed <- unique(as.character(model_data[[p_var]]))
-  unsupported <- setdiff(as_state_labels(y_levels), observed)
-  unsupported <- setdiff(unsupported, as_state_labels(absorb))
+  unsupported <- setdiff(as_state_labels(settings$y_levels), observed)
+  unsupported <- setdiff(unsupported, as_state_labels(settings$absorb))
   if (length(unsupported) > 0L) {
     stop(
       "Model prediction requires transitions from state level(s) not ",

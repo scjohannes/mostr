@@ -143,18 +143,18 @@ test_that("sops() on the stored patients matches the loop on their baseline rows
 })
 
 test_that("second-order recursion on a first-order fit reproduces first-order SOPs", {
-  # A first-order model ignores the older state, so asking for second-order
-  # recursion must change nothing.
+  # A first-order model ignores the older state, so the same model fitted
+  # with `p2_var`, which makes the predictions use second-order recursion,
+  # must give the same SOPs.
   cells <- Filter(function(cell) cell$order == 1L, grid_core_cells())
   for (cell in cells) {
     fit <- grid_fit(cell)
+    second_fit <- grid_fit_to(cell, grid_cell_data(cell), p2_var = "ypprev")
     profiles <- grid_profiles(cell)
     args <- grid_public_args(cell)
     first <- do.call(sops, c(list(fit, newdata = profiles), args))
-    second <- do.call(
-      sops,
-      c(list(fit, newdata = profiles, p2_var = "ypprev"), args)
-    )
+    second <- do.call(sops, c(list(second_fit, newdata = profiles), args))
+    expect_identical(markov_model_settings(second_fit)$order, 2L)
 
     expect_lt(
       max(abs(first$estimate - second$estimate)),
