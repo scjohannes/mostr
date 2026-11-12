@@ -24,8 +24,12 @@ that every reference page containing equations loads the renderer.
 `.github/workflows/pkgdown.yaml` builds the site with R 4.6.1 on pull requests,
 pushes to `main`, and manual runs. Only pushes and manual runs publish, using the
 GitHub Pages artifact and deployment actions. In repository Settings > Pages,
-the source must be set to GitHub Actions. Local previews use
-`pkgdown::build_site()` with Pandoc available; this executes the vignette articles.
+the source must be set to GitHub Actions. pkgdown publishes every top-level `.md`
+file and has no option to skip one, so the workflow deletes `AGENTS.md` and
+`ARCHITECTURE.md` from its checkout before building and then checks that neither
+page was built. Local previews use `pkgdown::build_site()` with Pandoc available;
+this executes the vignette articles, and it does render those two developer notes
+into the ignored `docs/` folder.
 
 User documentation is organised by task. `?mostr` (`R/mostr-package.R`) lists
 every exported function under what a user wants to do, so a new export needs an
