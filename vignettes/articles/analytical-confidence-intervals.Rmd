@@ -1,14 +1,9 @@
 ---
 title: "Analytical Confidence Intervals for State Occupancy Probabilities"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{Analytical Confidence Intervals for State Occupancy Probabilities}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
-source("_setup.R", local = TRUE)
+source("../_setup.R", local = TRUE)
 ```
 
 State occupancy probabilities (SOPs), the probabilities of being in each state
@@ -35,7 +30,7 @@ Note that `method = "delta"` must be requested explicitly. The default,
 ## Fit a model
 
 We simulate 800 patients over 30 days with `sim_markov("actt2")`, which uses
-the eight-state NIAID scale described in `vignette("full-po-sops")`, and fit
+the eight-state NIAID scale described in [the proportional-odds article](full-po-sops.html), and fit
 a proportional-odds transition model with `mostm()`, which by default fits it
 with `rms::orm()` (`engine = "orm"`). `id_var = "id"` identifies the rows that
 belong to the same patient, which the variance calculations need.
@@ -340,7 +335,7 @@ dropping rows with missing outcomes. Therefore:
 For numeric time, `first_followup_time` defaults to 1, which must be the
 earliest scheduled time. If you set another value, it must still be the
 earliest. For factor or character time, you must set it explicitly; see
-`vignette("factor-time-orm-sops")`.
+[the article on time as a factor](factor-time-orm-sops.html).
 
 Neither variance corrects bias caused by missing observations whose
 missingness depends on unobserved outcomes.
@@ -421,7 +416,7 @@ treated as independent.
 
 `estimand = "time_in_state"` compares the expected time spent in a state
 instead, as in the plots above. For visits recorded as a factor, supply the
-elapsed time of each visit; `vignette("factor-time-orm-sops")` shows how, and
+elapsed time of each visit; [the article on time as a factor](factor-time-orm-sops.html) shows how, and
 how to include the observed baseline state.
 
 ## Comparisons for each patient
@@ -579,4 +574,4 @@ Analytical confidence intervals are available for:
 
 For other models, such as partial proportional-odds or second-order models,
 or for `estimand = "time_benefit"`, use simulation or the bootstrap; see
-`vignette("mvn-vs-bootstrap-orm-sops")`.
+[the article comparing MVN simulation and the bootstrap](mvn-vs-bootstrap-orm-sops.html).

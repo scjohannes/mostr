@@ -204,7 +204,7 @@ identifies patients, and attach rms and rmsb with \code{library()} so that
 straight-line effect of the ID number, so \code{mostm()} stops with an error. To
 include each patient's estimated random effect in predictions, use
 \code{include_re = TRUE} in \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}}; see
-\code{vignette("bayesian-rmsb-sops")}.
+\href{https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html}{the Bayesian article}.
 
 With \code{engine = "orm"} or \code{"vglm"}, \code{cluster()} and \code{mix_re()} terms are
 errors, although \code{\link[rms:orm]{rms::orm()}} can fit them from rms version 8.2 on. State

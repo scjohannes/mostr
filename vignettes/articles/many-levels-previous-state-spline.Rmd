@@ -1,14 +1,9 @@
 ---
 title: "Many Outcome Levels with a Previous-State Spline"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{Many Outcome Levels with a Previous-State Spline}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
-source("_setup.R", local = TRUE)
+source("../_setup.R", local = TRUE)
 ```
 
 Some outcomes have many ordered levels, such as a quality-of-life score from
@@ -96,7 +91,7 @@ fit_many
 
 ## Check the model against the data
 
-As in `vignette("full-po-sops")`, we compare the correlations between days
+As in [the proportional-odds article](full-po-sops.html), we compare the correlations between days
 in the observed data with those implied by the model, first as a matrix of
 all pairs of days and then as a variogram against the gap between days.
 Without an absorbing state, `absorb = NULL`. Some observed

@@ -501,7 +501,7 @@ test_that("mostm() refuses factor() written inside the formula unless the engine
           "`rms::orm()`",
           "column of `data`",
           "first_followup_time",
-          "vignette(\"factor-time-orm-sops\")"
+          "articles/factor-time-orm-sops.html"
         )
       ),
       list(

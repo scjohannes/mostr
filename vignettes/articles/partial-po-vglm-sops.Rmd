@@ -1,14 +1,9 @@
 ---
 title: "Partial Proportional-Odds SOPs with the vglm Engine"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{Partial Proportional-Odds SOPs with the vglm Engine}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
-source("_setup.R", local = TRUE)
+source("../_setup.R", local = TRUE)
 ```
 
 A proportional-odds model assumes that each covariate shifts the odds of
@@ -219,7 +214,7 @@ extra coefficients, which nearly cancels their improvement in fit.
 
 `avg_sops()` estimates, for each arm, the probability of each state on each
 day, averaged over the patients' observed starting states and covariates (see
-`vignette("full-po-sops")`). We compare both models' estimates with the
+[the proportional-odds article](full-po-sops.html)). We compare both models' estimates with the
 observed proportion of patients in each state, separately for each arm. Only
 point estimates are needed here, so we do not call `inferences()`.
 

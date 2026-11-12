@@ -97,17 +97,17 @@ articles:
       differ between states, when the state two visits back matters, or when
       the outcome has many levels.
     contents:
-      - full-po-sops
-      - partial-po-vglm-sops
-      - second-order-orm-sops
-      - many-levels-previous-state-spline
+      - articles/full-po-sops
+      - articles/partial-po-vglm-sops
+      - articles/second-order-orm-sops
+      - articles/many-levels-previous-state-spline
   - title: Visits that are not daily
     navbar: Visits that are not daily
     desc: >
       Model scheduled visits, such as days 3, 7, and 14, and convert the
       results to a scale of elapsed days.
     contents:
-      - factor-time-orm-sops
+      - articles/factor-time-orm-sops
   - title: Confidence intervals and treatment comparisons
     navbar: Confidence intervals
     desc: >
@@ -115,10 +115,10 @@ articles:
       variance), simulation, the bootstrap, and Bayesian posterior intervals,
       and compare treatments for all patients or for each patient.
     contents:
-      - analytical-confidence-intervals
-      - mvn-vs-bootstrap-orm-sops
-      - fractional-weighted-bootstrap-sops
-      - bayesian-rmsb-sops
+      - articles/analytical-confidence-intervals
+      - articles/mvn-vs-bootstrap-orm-sops
+      - articles/fractional-weighted-bootstrap-sops
+      - articles/bayesian-rmsb-sops
   - title: Help
     navbar: Help
     desc: >

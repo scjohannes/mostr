@@ -211,36 +211,36 @@ offers simulation (`method = "mvn"`, the default) and two kinds of bootstrap
 `?mostr` lists every function by task. The articles below go further.
 
 **How do I check that the model describes the data?**
-`vignette("full-po-sops")` compares observed and model-based transitions and
+[The proportional-odds article](https://scjohannes.github.io/mostr/articles/full-po-sops.html) compares observed and model-based transitions and
 correlations between days with `plot_transitions()`, `plot_correlation()`,
 and `plot_variogram()`.
 
 **What if a covariate's effect differs between states?**
-`vignette("partial-po-vglm-sops")` fits a partial proportional-odds model, in
+[The partial proportional-odds article](https://scjohannes.github.io/mostr/articles/partial-po-vglm-sops.html) fits a partial proportional-odds model, in
 which, for example, the effect of time on the odds of death differs from its
 effect on the odds of being in hospital.
 
 **What if today's state depends on more than yesterday's?**
-`vignette("second-order-orm-sops")` adds the state two days back.
+[The second-order article](https://scjohannes.github.io/mostr/articles/second-order-orm-sops.html) adds the state two days back.
 
 **What if the outcome has many levels, such as a score from 1 to 30?**
-`vignette("many-levels-previous-state-spline")` models the previous state with
+[The article on many outcome levels](https://scjohannes.github.io/mostr/articles/many-levels-previous-state-spline.html) models the previous state with
 a spline and compares arms by time benefit.
 
 **What if patients are seen at scheduled visits rather than every day?**
-`vignette("factor-time-orm-sops")` treats each visit as a category of time and
+[The article on time as a factor](https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html) treats each visit as a category of time and
 converts the results to days with `interpolate_sops()`.
 
 **Which confidence intervals should I use, and how are they calculated?**
-`vignette("analytical-confidence-intervals")` explains conditional and
+[The analytical confidence intervals article](https://scjohannes.github.io/mostr/articles/analytical-confidence-intervals.html) explains conditional and
 unconditional variance, compares treatments for each patient with
 `comparisons()`, and extracts covariances with `vcov()`.
-`vignette("mvn-vs-bootstrap-orm-sops")` and
-`vignette("fractional-weighted-bootstrap-sops")` cover simulation and the
+[The article comparing MVN simulation and the bootstrap](https://scjohannes.github.io/mostr/articles/mvn-vs-bootstrap-orm-sops.html) and
+[the fractional weighted bootstrap article](https://scjohannes.github.io/mostr/articles/fractional-weighted-bootstrap-sops.html) cover simulation and the
 bootstrap, including comparisons within subgroups.
 
 **How do I fit a Bayesian model?**
-`vignette("bayesian-rmsb-sops")` uses `engine = "blrm"`, whose results carry
+[The Bayesian article](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html) uses `engine = "blrm"`, whose results carry
 posterior intervals without an `inferences()` step.
 
 The package website answers

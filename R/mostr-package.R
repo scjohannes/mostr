@@ -74,7 +74,7 @@
 #'   covariates as given. **Unconditional variance** (`vcov = "unconditional"`,
 #'   the default for averages) also accounts for which patients happened to
 #'   be sampled and for their role in estimating the coefficients. See
-#'   `vignette("analytical-confidence-intervals")`.
+#'   [the analytical confidence intervals article](https://scjohannes.github.io/mostr/articles/analytical-confidence-intervals.html).
 #' * `method = "mvn"` (the default) draws coefficient vectors from a
 #'   multivariate normal distribution and recalculates the result for each
 #'   draw. It works for every frequentist model, including partial
@@ -82,11 +82,11 @@
 #' * `method = "bootstrap"` refits the model to patients resampled with
 #'   replacement, and `method = "fwb"` (fractional weighted bootstrap) refits
 #'   it with a random positive weight for every patient. See
-#'   `vignette("mvn-vs-bootstrap-orm-sops")` and
-#'   `vignette("fractional-weighted-bootstrap-sops")`.
+#'   [the article comparing MVN simulation and the bootstrap](https://scjohannes.github.io/mostr/articles/mvn-vs-bootstrap-orm-sops.html) and
+#'   [the fractional weighted bootstrap article](https://scjohannes.github.io/mostr/articles/fractional-weighted-bootstrap-sops.html).
 #'
 #' Results from `engine = "blrm"` already contain posterior intervals and need
-#' no [inferences()] step; see `vignette("bayesian-rmsb-sops")`.
+#' no [inferences()] step; see [the Bayesian article](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html).
 #'
 #' After [inferences()]:
 #'

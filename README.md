@@ -93,20 +93,19 @@ Read the [package website](https://scjohannes.github.io/mostr/) for
 tutorials and the function reference. `?mostr` lists the package’s
 functions by what you want to do.
 
-After installation, see:
+After installation, `vignette("mostr", package = "mostr")` opens the
+get-started guide. The other articles are on the website:
 
-``` r
-vignette("mostr", package = "mostr")
-vignette("full-po-sops", package = "mostr")
-vignette("analytical-confidence-intervals", package = "mostr")
-vignette("partial-po-vglm-sops", package = "mostr")
-vignette("second-order-orm-sops", package = "mostr")
-vignette("many-levels-previous-state-spline", package = "mostr")
-vignette("factor-time-orm-sops", package = "mostr")
-vignette("bayesian-rmsb-sops", package = "mostr")
-vignette("mvn-vs-bootstrap-orm-sops", package = "mostr")
-vignette("fractional-weighted-bootstrap-sops", package = "mostr")
-```
+- [State Occupancy Probabilities with Proportional-Odds Models](https://scjohannes.github.io/mostr/articles/full-po-sops.html)
+- [Analytical Confidence Intervals for State Occupancy Probabilities](https://scjohannes.github.io/mostr/articles/analytical-confidence-intervals.html)
+- [Partial Proportional-Odds SOPs with the vglm Engine](https://scjohannes.github.io/mostr/articles/partial-po-vglm-sops.html)
+- [Second-Order SOPs with the orm Engine](https://scjohannes.github.io/mostr/articles/second-order-orm-sops.html)
+- [Many Outcome Levels with a Previous-State Spline](https://scjohannes.github.io/mostr/articles/many-levels-previous-state-spline.html)
+- [Time as a Factor with the orm Engine](https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html)
+- [Bayesian SOPs with the blrm Engine](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html)
+- [MVN Simulation Versus Bootstrap with the orm Engine](https://scjohannes.github.io/mostr/articles/mvn-vs-bootstrap-orm-sops.html)
+- [Fractional Weighted Bootstrap for SOPs](https://scjohannes.github.io/mostr/articles/fractional-weighted-bootstrap-sops.html)
+- [Frequently asked questions](https://scjohannes.github.io/mostr/articles/faq.html)
 
 ## Methodological Foundations
 
@@ -117,7 +116,7 @@ use `mostr`, please consider citing the foundational paper:
 
 > Rohde MD, French B, Stewart TG, Harrell FE Jr (2024). “Bayesian
 > Transition Models for Ordinal Longitudinal Outcomes.” *Statistics in
-> Medicine*, 43(18), 3539â€“3561.
+> Medicine*, 43(18), 3539–3561.
 > [doi:10.1002/sim.10133](https://doi.org/10.1002/sim.10133)
 
 For a detailed introduction with worked case studies, see the chapter
@@ -138,7 +137,7 @@ you use `mostr`, please also consider citing `marginaleffects`:
 
 > Arel-Bundock V, Greifer N, Heiss A (2024). “How to Interpret
 > Statistical Models Using marginaleffects for R and Python.” *Journal
-> of Statistical Software*, 111(9), 1â€“32.
+> of Statistical Software*, 111(9), 1–32.
 > [doi:10.18637/jss.v111.i09](https://doi.org/10.18637/jss.v111.i09)
 
 ## Data Provenance
@@ -150,6 +149,6 @@ Frank Harrell based on the VIOLET trial ([Harrell,
 
 ## Funding
 
-This project has received funding from the European Unionâ€™s Horizon
+This project has received funding from the European Union’s Horizon
 Europe research and innovation program under grant agreement No
 101156304.

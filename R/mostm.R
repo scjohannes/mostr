@@ -158,7 +158,7 @@
 #' straight-line effect of the ID number, so `mostm()` stops with an error. To
 #' include each patient's estimated random effect in predictions, use
 #' `include_re = TRUE` in [sops()] or [avg_sops()]; see
-#' `vignette("bayesian-rmsb-sops")`.
+#' [the Bayesian article](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html).
 #'
 #' With `engine = "orm"` or `"vglm"`, `cluster()` and `mix_re()` terms are
 #' errors, although [rms::orm()] can fit them from rms version 8.2 on. State
@@ -661,8 +661,9 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
       paste0(
         " To use time as a factor, store it as a factor column of `data` ",
         "and set `first_followup_time` to the level of the first visit ",
-        "after baseline, for example `first_followup_time = \"1\"`. See ",
-        "`vignette(\"factor-time-orm-sops\")`."
+        "after baseline, for example `first_followup_time = \"1\"`. See the ",
+        "article on time as a factor: ",
+        "https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html"
       )
     },
     call. = FALSE

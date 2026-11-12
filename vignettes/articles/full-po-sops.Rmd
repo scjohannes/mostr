@@ -1,14 +1,9 @@
 ---
 title: "State Occupancy Probabilities with Proportional-Odds Models"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{State Occupancy Probabilities with Proportional-Odds Models}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r vignette-options, include = FALSE}
-source("_setup.R", local = TRUE)
+source("../_setup.R", local = TRUE)
 ```
 
 Many clinical trials record a patient's condition repeatedly on an ordered
@@ -190,7 +185,7 @@ The main arguments are:
 `method = "delta"` computes them analytically, which is fast and needs no
 random draws. `vcov = "unconditional"` makes the intervals account both for
 uncertainty in the model coefficients and for the particular patients who
-happened to enroll. See `vignette("analytical-confidence-intervals")` for
+happened to enroll. See [the analytical confidence intervals article](analytical-confidence-intervals.html) for
 details and alternatives.
 
 ```{r compute-sops}
@@ -405,7 +400,7 @@ td
 correlation between two days plotted against the number of days between them.
 If the observed correlations fall off more slowly than the model's, patients'
 earlier history matters more than a first-order model allows, and a
-second-order model (see `vignette("second-order-orm-sops")`) may fit better.
+second-order model (see [the second-order article](second-order-orm-sops.html)) may fit better.
 
 ```{r variogram-diagnostics}
 plot_variogram(
@@ -430,14 +425,14 @@ plot_variogram(
 
 ## Where to go next
 
-- `vignette("analytical-confidence-intervals")` explains the confidence
+- [The analytical confidence intervals article](analytical-confidence-intervals.html) explains the confidence
   intervals used here and how to compare arms directly with
   `avg_comparisons()`, or patient by patient with `comparisons()`.
-- `vignette("partial-po-vglm-sops")`, `vignette("second-order-orm-sops")`,
-  `vignette("factor-time-orm-sops")`, and
-  `vignette("many-levels-previous-state-spline")` show other model
+- [The partial proportional-odds article](partial-po-vglm-sops.html), [the second-order article](second-order-orm-sops.html),
+  [the article on time as a factor](factor-time-orm-sops.html), and
+  [the article on many outcome levels](many-levels-previous-state-spline.html) show other model
   specifications.
-- `vignette("mvn-vs-bootstrap-orm-sops")`,
-  `vignette("fractional-weighted-bootstrap-sops")`, and
-  `vignette("bayesian-rmsb-sops")` show simulation-based, resampling-based,
+- [The article comparing MVN simulation and the bootstrap](mvn-vs-bootstrap-orm-sops.html),
+  [the fractional weighted bootstrap article](fractional-weighted-bootstrap-sops.html), and
+  [the Bayesian article](bayesian-rmsb-sops.html) show simulation-based, resampling-based,
   and Bayesian uncertainty.

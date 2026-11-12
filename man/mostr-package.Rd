@@ -95,7 +95,7 @@ estimated model coefficients and treats the patients' starting states and
 covariates as given. \strong{Unconditional variance} (\code{vcov = "unconditional"},
 the default for averages) also accounts for which patients happened to
 be sampled and for their role in estimating the coefficients. See
-\code{vignette("analytical-confidence-intervals")}.
+\href{https://scjohannes.github.io/mostr/articles/analytical-confidence-intervals.html}{the analytical confidence intervals article}.
 \item \code{method = "mvn"} (the default) draws coefficient vectors from a
 multivariate normal distribution and recalculates the result for each
 draw. It works for every frequentist model, including partial
@@ -103,12 +103,12 @@ proportional-odds and second-order models.
 \item \code{method = "bootstrap"} refits the model to patients resampled with
 replacement, and \code{method = "fwb"} (fractional weighted bootstrap) refits
 it with a random positive weight for every patient. See
-\code{vignette("mvn-vs-bootstrap-orm-sops")} and
-\code{vignette("fractional-weighted-bootstrap-sops")}.
+\href{https://scjohannes.github.io/mostr/articles/mvn-vs-bootstrap-orm-sops.html}{the article comparing MVN simulation and the bootstrap} and
+\href{https://scjohannes.github.io/mostr/articles/fractional-weighted-bootstrap-sops.html}{the fractional weighted bootstrap article}.
 }
 
 Results from \code{engine = "blrm"} already contain posterior intervals and need
-no \code{\link[=inferences]{inferences()}} step; see \code{vignette("bayesian-rmsb-sops")}.
+no \code{\link[=inferences]{inferences()}} step; see \href{https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html}{the Bayesian article}.
 
 After \code{\link[=inferences]{inferences()}}:
 \itemize{

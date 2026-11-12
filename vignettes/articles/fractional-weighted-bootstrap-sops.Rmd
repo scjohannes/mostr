@@ -1,17 +1,12 @@
 ---
 title: "Fractional Weighted Bootstrap for SOPs"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{Fractional Weighted Bootstrap for SOPs}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
-source("_setup.R", local = TRUE)
+source("../_setup.R", local = TRUE)
 ```
 
-The ordinary patient bootstrap (`vignette("mvn-vs-bootstrap-orm-sops")`)
+The ordinary patient bootstrap ([the article comparing MVN simulation and the bootstrap](mvn-vs-bootstrap-orm-sops.html))
 draws patients with replacement, so each resample leaves out about a third of
 the patients and counts others several times. In small samples or subgroups,
 a resample can then lack patients in a rare state, and the model cannot be
@@ -37,7 +32,7 @@ these subgroups.
 ## Fit the model
 
 We simulate 160 patients over 10 days with `sim_markov("actt2")`, which uses
-the eight-state NIAID scale described in `vignette("full-po-sops")`. We record
+the eight-state NIAID scale described in [the proportional-odds article](full-po-sops.html). We record
 each patient's state at baseline, the value of `yprev` on day 1, in a new
 column `baseline_state`. Unlike `yprev`, which changes from day to day,
 `baseline_state` is fixed for each patient.
@@ -143,7 +138,7 @@ plot_sops(
 Time benefit summarizes the whole ordinal scale in one number: on each day,
 the probability that a patient would be in a better state under treatment
 than under control, minus the probability of a worse state, summed over days.
-See `vignette("many-levels-previous-state-spline")` for a fuller explanation.
+See [the article on many outcome levels](many-levels-previous-state-spline.html) for a fuller explanation.
 With `by = "baseline_state"`, it is reported separately for each baseline
 state.
 

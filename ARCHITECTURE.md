@@ -34,19 +34,29 @@ into the ignored `docs/` folder.
 User documentation is organised by task. `?mostr` (`R/mostr-package.R`) lists
 every exported function under what a user wants to do, so a new export needs an
 entry there and in a `_pkgdown.yml` reference section; every reference section
-has a `desc:`. `vignettes/mostr.Rmd` is the "Get started" article: one small
-`sim_markov()` to `mostm()` to `avg_sops()`, `avg_comparisons()` and
-`inferences(method = "delta")` example that knits in a few seconds, because
-CRAN rebuilds vignettes, followed by pointers to the other articles by
-question. The articles index groups vignettes by question rather than model
-type. `vignettes/articles/faq.Rmd` is a pkgdown-only article (the directory is
-in `.Rbuildignore`, so CRAN never builds it); it sources `../_setup.R` and
-runs small examples so its error and warning messages are the package's
-current ones. `README.md` is rendered from `README.Rmd` with
+has a `desc:`. `vignettes/mostr.Rmd` is the only vignette shipped with the
+package and the "Get started" article: one small `sim_markov()` to `mostm()`
+to `avg_sops()`, `avg_comparisons()` and `inferences(method = "delta")`
+example that knits in a few seconds, because CRAN rebuilds vignettes, followed
+by links to the other articles by question. Every other article lives in
+`vignettes/articles/`, which is in `.Rbuildignore`: pkgdown builds them for the
+website, and neither the package tarball nor CRAN sees them. Rebuilding the
+nine longer analyses took about 7 minutes in an `R CMD check --as-cran` run,
+more than CRAN's 10-minute budget allows once installation, examples and tests
+are added. Because these articles are not installed, `vignette("name")` cannot
+open them: help pages, the README, the shipped vignette and error messages link
+to their website URLs, and the articles link to each other with relative links
+such as `full-po-sops.html` (pkgdown puts all articles in one `articles/`
+folder). The articles source `../_setup.R` and are listed in `_pkgdown.yml` as
+`articles/<name>`; the articles index and navbar menu group them by question
+rather than model type. Packages that only these articles use belong in
+`Config/Needs/website` in `DESCRIPTION`, not in Suggests.
+`vignettes/articles/faq.Rmd` runs small examples so its error and warning
+messages are the package's current ones. `README.md` is rendered from `README.Rmd` with
 `devtools::build_readme()`, which writes its figures to `man/figures/README-*`.
 
-`man/figures/logo.png` supplies the README and pkgdown logo. All vignettes source
-`vignettes/_setup.R`, which keeps code and figures visible and wraps text output
+`man/figures/logo.png` supplies the README and pkgdown logo. The vignette and all
+articles source `vignettes/_setup.R`, which keeps code and figures visible and wraps text output
 longer than ten lines in native HTML `details` elements. Non-HTML output retains
 the usual knitr formatting. The website workflow sets
 `MOSTR_RUN_BAYESIAN_VIGNETTE=true` to execute the Bayesian model and its posterior
@@ -927,7 +937,8 @@ models. `cpp11` registers native routines. `mvtnorm` supports coefficient draws;
 `future`, `future.callr`, and `furrr` support parallel inference. `ggplot2`
 produces plots. `data.table` handles repeated row binding, ordered joins,
 grouped reductions, bootstrap row extraction, and baseline selection internally.
-`patchwork` is only suggested for vignette composition. Arrow,
+`patchwork` composes figures in two website articles only, so it is listed in
+`Config/Needs/website` rather than Suggests. Arrow,
 sdprisk, survival, and ordinal are not required.
 
 `sim_markov()` is the only exported generator. `preset` has no default: a

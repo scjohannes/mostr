@@ -8,7 +8,7 @@ source("../_setup.R", local = TRUE)
 
 This page answers questions that come up when using mostr, including the
 error messages that users run into most often. The examples use a small
-simulated trial, in the same form as in `vignette("mostr")`: eight states of
+simulated trial, in the same form as in [the get-started vignette](mostr.html): eight states of
 the ACTT-2 scale, of which state 8 (death) is absorbing.
 
 ```{r setup}
@@ -26,7 +26,7 @@ fit <- mostm(y ~ yprev + time + tx, data = model_data, id_var = "id")
 `?mostr` lists every function by what you want to do: fit a model, estimate
 state occupancy probabilities (SOPs) or time in states, compare treatments,
 add confidence intervals, simulate data, plot, and check the model.
-`vignette("mostr")` runs through a complete analysis.
+[The get-started vignette](mostr.html) runs through a complete analysis.
 
 ### Can I use a model that I fitted with `rms::orm()`, `VGAM::vglm()`, or `rmsb::blrm()`?
 
@@ -79,7 +79,7 @@ probabilities <- avg_sops(fit, times = c(1, 7, 14), absorb = "8")
 
 Request every visit, such as `times = 1:14`, and keep the rows you need. If
 your visits are scheduled at uneven intervals, see
-`vignette("factor-time-orm-sops")`.
+[the article on time as a factor](factor-time-orm-sops.html).
 
 ### What does the error about "state level(s) not represented in the fitted transition data" mean?
 
@@ -129,7 +129,7 @@ days
 ```
 
 For visits that are not daily, `time_map` gives the elapsed time of each
-visit; see `vignette("factor-time-orm-sops")`.
+visit; see [the article on time as a factor](factor-time-orm-sops.html).
 
 ### How do I estimate effects within subgroups?
 
@@ -137,7 +137,7 @@ Pass the grouping column to `by` in `avg_sops()`, `avg_state_time()` or
 `avg_comparisons()`, for example `by = "sex"`. Each group's estimate is the
 average over that group's patients. Analytical confidence intervals are not
 yet available with `by`; use `method = "mvn"` or `method = "fwb"` in
-`inferences()`. `vignette("fractional-weighted-bootstrap-sops")` shows an
+`inferences()`. [The fractional weighted bootstrap article](fractional-weighted-bootstrap-sops.html) shows an
 example.
 
 ## Confidence intervals
@@ -152,8 +152,8 @@ example.
 | `"fwb"` | Refits the model with a random positive weight for each patient | Averages, and results for each patient |
 
 `"delta"` is the fastest and gives the same answer every time.
-`vignette("analytical-confidence-intervals")` explains it, and
-`vignette("mvn-vs-bootstrap-orm-sops")` compares the other methods. Models
+[The analytical confidence intervals article](analytical-confidence-intervals.html) explains it, and
+[the article comparing MVN simulation and the bootstrap](mvn-vs-bootstrap-orm-sops.html) compares the other methods. Models
 fitted with `engine = "blrm"` already carry posterior intervals, so
 `inferences()` is not needed for them.
 
@@ -291,7 +291,7 @@ Draw the same summary from the observed trajectories and from the fitted
 model, and compare them. `plot_transitions()`, `plot_correlation()` and
 `plot_variogram()` accept either the observed trajectories or a fit from
 `mostm()`, and `plot_sops()` accepts either the observed trajectories or the
-result of `avg_sops()`; see `vignette("full-po-sops")`. If the observed correlations between days fall
+result of `avg_sops()`; see [the proportional-odds article](full-po-sops.html). If the observed correlations between days fall
 off more slowly than the model's, a second-order model
-(`vignette("second-order-orm-sops")`) may fit better. If effects seem to
-differ between states, see `vignette("partial-po-vglm-sops")`.
+([the second-order article](second-order-orm-sops.html)) may fit better. If effects seem to
+differ between states, see [the partial proportional-odds article](partial-po-vglm-sops.html).
