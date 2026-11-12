@@ -70,6 +70,51 @@ consolidation removes or merges tests, run the planted-bug checks in
 `benchmarks/local/mutation/` first and after: no planted bug may go from caught to
 missed.
 
+### Tests on CRAN
+
+CRAN allows about 10 minutes per check on Windows for installation, examples,
+tests and vignettes together, so only part of the suite runs there.
+`skip_on_cran()` as the first line of a test skips it on CRAN; the test still
+runs with `devtools::test()` and in CI, which set `NOT_CRAN=true`.
+
+- A test runs on CRAN only if it passes for any seed. Skip it on CRAN when its
+  pass depends on the particular random draw: values of MVN, bootstrap or
+  posterior draws (snapshots with `cran = TRUE` included), simulated data
+  compared with a tolerance, or a property of a seeded fixture that another
+  seed could lose, such as cut-points that cross only for the simulated data.
+  Write these as `skip_on_cran() # The pass depends on the seed.` A test that
+  compares two routes to one number with the same draws, or checks a limit
+  that holds for any data, passes for any seed and may stay.
+- Also skip on CRAN slow tests (over about 0.3 s here) that repeat checks a
+  faster CRAN test already makes. Keep on CRAN at least one comparison with the
+  readable loop (now the `blrm` loops in `test-sops-native-blrm-slow-loop.R`,
+  which use no random numbers), the limits checked on the CRAN grid cells in
+  `test-grid-consistency.R`, and the comparison with
+  `Hmisc::soprobMarkovOrdm()` in `test-sops.R`.
+- In a test that uses `expect_snapshot()`, put `skip_on_cran()` above the
+  set-up: testthat skips a snapshot on CRAN only when it reaches it, after the
+  set-up has run.
+- Budget: the tests take at most 60 seconds in CRAN mode on the development
+  machine (AMD Ryzen AI 9 HX 370, 12 cores, 24 threads; about 50 seconds in
+  November 2026, against 5.7 minutes before this rule). Measure after adding
+  tests:
+
+  ```powershell
+  $env:NOT_CRAN = 'false'
+  & 'C:\Program Files\R\R-4.6.1\bin\x64\Rscript.exe' -e "pkgload::load_all(quiet = TRUE); t <- system.time(r <- testthat::test_local(reporter = 'summary', stop_on_failure = FALSE)); print(t[['elapsed']]); r <- as.data.frame(r); print(utils::head(r[order(-r[['real']]), c('file', 'test', 'real', 'skipped')], 20))"
+  ```
+
+  `NOT_CRAN = 'false'` makes `skip_on_cran()` apply; without it,
+  `test_local()` sets `NOT_CRAN` to `"true"`. The first `load_all()` compiles
+  the package, so the printed time covers the tests only. The table lists the
+  slowest tests. The run may rewrite the line endings of `R/cpp11.R`,
+  `src/cpp11.cpp` and `tests/testthat/_snaps/`; `git restore` them. Shared
+  fixtures (`grid_fixture()`, `grid_fit()`) and package loading are paid by
+  the first test that uses them, so skipping one test can move its cost to the
+  next. Other R processes inflate the time: measure on a quiet
+  machine, or say how busy it was. The tests step of
+  `R CMD check --as-cran` on a built tarball also runs in CRAN mode.
+
 Optional performance benchmark scripts and results belong in ignored
 `benchmarks/local/`. Do not add performance benchmarks to package tests or
 require a broad benchmark grid for analytical inference. State the measured

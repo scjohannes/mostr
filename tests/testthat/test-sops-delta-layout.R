@@ -1,4 +1,5 @@
 test_that("analytical averaging checks scenario and starting-profile order", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   data <- make_test_data(n_patients = 48, follow_up_time = 6, seed = 2711)

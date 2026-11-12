@@ -17,6 +17,7 @@ mvn_cluster_case <- function() {
 describe("MVN Simulation-Based Inference for SOPs", {
   describe("set_coef()", {
     it("replaces coefficients of list, rms-style, robcov_vglm, vglm and orm models", {
+      skip_on_cran()
       skip_if_not_installed("VGAM")
       skip_if_not_installed("rms")
 
@@ -146,6 +147,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
     })
 
     it("returns robust (sandwich) vcov when cluster is NULL for vglm models", {
+      skip_on_cran()
       skip_if_not_installed("VGAM")
       skip_if_not_installed("rms")
 
@@ -208,6 +210,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
     })
 
     it("computes cluster-robust vcov from a cluster formula on the rows vglm used", {
+      skip_on_cran()
       skip_if_not_installed("VGAM")
       skip_if_not_installed("rms")
 
@@ -247,6 +250,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
 
   describe("inferences() with simulation method", {
     it("uses a supplied covariance matrix for the MVN draws", {
+      skip_on_cran()
       skip_if_not_installed("VGAM")
       skip_if_not_installed("rms")
       skip_if_not_installed("mvtnorm")
@@ -283,6 +287,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
 })
 
 test_that("seeded inference is invariant to outer worker count", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   skip_if_not_installed("mvtnorm")

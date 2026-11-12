@@ -69,6 +69,7 @@ inference_array_settings <- function(rows = seq_len(nrow(inference_array))) {
 inference_array_cran_rows <- c(1L, 8L, 12L, 22L)
 
 test_that("MVN and analytical inference hold their limits across the covering array", {
+  skip_on_cran()
   # L9, L10, L11, L13, L18, L21, L23, L24, R13, R14, N1, N4, N21.
   rows <- which(inference_array$method %in% c("mvn", "delta"))
   if (grid_on_cran()) {

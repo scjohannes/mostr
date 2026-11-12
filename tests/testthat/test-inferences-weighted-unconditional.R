@@ -34,6 +34,7 @@ build_weighted_case <- function(case) {
 }
 
 test_that("conditional variance still works for weighted fits", {
+  skip_on_cran()
   fits <- make_weighted_case()
   for (engine in names(fits)) {
     out <- inferences(

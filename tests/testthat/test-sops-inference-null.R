@@ -35,6 +35,7 @@ make_null_test_comparison <- function(model, comparison) {
 }
 
 test_that("default nulls are 0 for differences, 1 for ratios and none for SOPs and average times; an explicit null overrides them", {
+  skip_on_cran()
   model <- make_null_test_model()
   difference <- make_null_test_comparison(model, "difference")
 

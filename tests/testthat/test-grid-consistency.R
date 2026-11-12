@@ -97,6 +97,7 @@ test_that("avg_sops() is the mean of sops(), overall and within groups (R1)", {
 })
 
 test_that("contrasts are differences of the averaged summaries (R3)", {
+  skip_on_cran()
   for (cell in grid_consistency_cells()) {
     label <- grid_label(cell)
     average <- as.data.frame(grid_call(avg_sops, cell, variables = grid_treatments))
@@ -150,6 +151,7 @@ test_that("contrasts are differences of the averaged summaries (R3)", {
 })
 
 test_that("a state set is the sum of its members, with matching variance (R6)", {
+  skip_on_cran()
   sets <- list(low = c("1", "2"), one = "1", two = "2")
   for (cell in grid_consistency_cells()) {
     label <- grid_label(cell)
@@ -246,6 +248,7 @@ test_that("interpolated SOPs pass through the visits and the baseline distributi
 })
 
 test_that("analytical covariances give the standard errors and contrast variances (R13, R14)", {
+  skip_on_cran()
   for (cell in Filter(grid_has_delta, grid_consistency_cells())) {
     label <- grid_label(cell)
     time_map <- grid_time_map(cell)
@@ -349,6 +352,7 @@ test_that("restarting the first-order recursion part-way gives the same SOPs (R2
 })
 
 test_that("swapping the compared values flips the contrast (N1)", {
+  skip_on_cran()
   swapped <- list(tx = c(1, 0))
   for (cell in grid_consistency_cells()) {
     label <- grid_label(cell)
@@ -407,6 +411,7 @@ test_that("swapping the compared values flips the contrast (N1)", {
 })
 
 test_that("a variable that is not in the model changes nothing (N24)", {
+  skip_on_cran()
   markers <- list(marker = c(0, 1))
   for (cell in grid_consistency_cells()) {
     label <- grid_label(cell)
@@ -479,6 +484,7 @@ test_that("results at early visits do not depend on later visits (L28)", {
 })
 
 test_that("orm and vglm fits of the same proportional-odds model give the same results (R8)", {
+  skip_on_cran()
   # Both engines maximize the same likelihood, so results differ only by
   # convergence error. At the default convergence criteria the coefficients
   # differ by up to 4e-5 here (factor time), which moves SOPs by up to 2e-6

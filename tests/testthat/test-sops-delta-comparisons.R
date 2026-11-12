@@ -120,6 +120,7 @@ manual_factor_time_auc <- function(avg, case, states, level) {
 }
 
 test_that("joint average SOP Jacobians retain cross-arm covariance", {
+  skip_on_cran()
   case <- delta_comparison_factor_case()
   variables <- list(tx = c(0, 1, 2))
   state_sets <- list(lower = c("1", "2"))
@@ -204,6 +205,7 @@ test_that("joint average SOP Jacobians retain cross-arm covariance", {
 })
 
 test_that("factor-time ORM differences match public finite differences", {
+  skip_on_cran()
   case <- delta_comparison_factor_case()
   point <- delta_factor_time_point(case$fit, case)
   inferred <- inferences(
@@ -314,6 +316,7 @@ test_that("factor-time ORM differences match public finite differences", {
 })
 
 test_that("delta real-time weights include the baseline interval by default", {
+  skip_on_cran()
   # The weight of each visit in the area under the interpolated SOP curve.
   visits <- paste0("v", 1:4)
   time_map <- stats::setNames(c(3, 7, 14, 21), visits)
@@ -419,6 +422,7 @@ test_that("delta real-time weights include the baseline interval by default", {
 })
 
 test_that("unconditional comparisons retain transformed stacked influence", {
+  skip_on_cran()
   case <- delta_comparison_factor_case()
   point <- avg_comparisons(
     case$fit,
@@ -462,6 +466,7 @@ test_that("unconditional comparisons retain transformed stacked influence", {
 })
 
 test_that("analytical comparison scope rejects deferred estimands", {
+  skip_on_cran()
   case <- delta_comparison_factor_case()
   local_reproducible_output(width = 80)
   base <- avg_comparisons(
@@ -501,6 +506,7 @@ test_that("analytical comparison scope rejects deferred estimands", {
 })
 
 test_that("analytical comparisons reject partial proportional odds", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   case <- delta_comparison_factor_case()
   local_reproducible_output(width = 80)
@@ -562,6 +568,7 @@ test_that("compact comparison propagation matches dense products in both orienta
 })
 
 test_that("large SOP comparison grids avoid the dense operator allocation", {
+  skip_on_cran()
   avg <- expand.grid(time = seq_len(1100), state = as.character(1:4), tx = 0:1)
   avg$estimate <- rep(
     c(0.1, 0.2, 0.3, 0.4, 0.15, 0.15, 0.25, 0.45),

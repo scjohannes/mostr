@@ -39,6 +39,7 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
 })
 
 test_that("soprob_markov follows custom partial proportional-odds constraints and treatment interactions", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -146,6 +147,7 @@ test_that("soprob_markov follows custom partial proportional-odds constraints an
 })
 
 test_that("soprob_markov normalizes transitions when no state is absorbing", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   follow_up <- 10L
@@ -182,6 +184,7 @@ test_that("soprob_markov normalizes transitions when no state is absorbing", {
 })
 
 test_that("avg_sops() equals manual G-computation over individual SOPs", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 

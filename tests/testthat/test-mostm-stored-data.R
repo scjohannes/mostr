@@ -1,4 +1,5 @@
 test_that("each engine stores its fitting data and the patient ID column", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -80,6 +81,7 @@ test_that("each engine stores its fitting data and the patient ID column", {
 })
 
 test_that("the vglm engine forwards robust covariance corrections", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1019)
@@ -105,6 +107,7 @@ test_that("the vglm engine forwards robust covariance corrections", {
 })
 
 test_that("mostm() validates numeric first follow-up schedules", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
@@ -164,6 +167,7 @@ test_that("mostm() validates numeric first follow-up schedules", {
 })
 
 test_that("mostm() rejects former starting-profile arguments", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
@@ -184,6 +188,7 @@ test_that("mostm() rejects former starting-profile arguments", {
 })
 
 test_that("the vglm engine aligns stored fitting data after subset and NA drops", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1007)
@@ -250,6 +255,7 @@ test_that("the orm engine stores fitting data and applies robust covariance", {
 })
 
 test_that("the blrm engine stores fitting data without sampling when requested", {
+  skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("rmsb")
 
@@ -281,6 +287,7 @@ test_that("the blrm engine stores fitting data without sampling when requested",
 })
 
 test_that("automatic SOP prediction never substitutes a later profile row", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1003)
@@ -306,6 +313,7 @@ test_that("automatic SOP prediction never substitutes a later profile row", {
 })
 
 test_that("missing values leave complete starting profiles of the fitted patients", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -400,6 +408,7 @@ test_that("missing values leave complete starting profiles of the fitted patient
 })
 
 test_that("incomplete and duplicated starting profiles fail clearly", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
@@ -461,6 +470,7 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
 })
 
 test_that("factor and character time require explicit first follow-up values", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
@@ -533,6 +543,7 @@ test_that("factor and character time require explicit first follow-up values", {
 })
 
 test_that("SOP functions keep the stored refit data and number supplied newdata rows", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1014)
@@ -643,6 +654,7 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
 })
 
 test_that("FWB inference on SOPs for each profile works with every frequentist engine", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 

@@ -471,6 +471,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("seeded Markov avg_sops() and fast simulation inference remain stable", {
+    skip_on_cran() # The pass depends on the seed.
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
@@ -518,6 +519,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("numeric previous-state spline supports MVN, bootstrap and score-bootstrap inference", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
@@ -572,6 +574,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("avg_sops() supports standard bootstrap inference", {
+    skip_on_cran() # The pass depends on the seed.
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -621,6 +624,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("avg_sops() supports fractional weighted bootstrap inference", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -660,6 +664,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("avg_sops() supports score-bootstrap simulation on the fast path", {
+    skip_on_cran() # The pass depends on the seed.
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -707,6 +712,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("rerunning inference replaces baseline draws", {
+    skip_on_cran()
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
 
@@ -781,6 +787,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("inline rcs() and explicit basis agree for simulation inference", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
@@ -848,6 +855,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("full-PO vglm engine fit with inline rcs matches VGAM::vglm()", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -896,6 +904,7 @@ describe("avg_sops() and inferences() pipeline", {
   })
 
   test_that("vglm engine fit with constrained PPO matches explicit spline basis in fit and MVN inference", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")

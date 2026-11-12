@@ -25,6 +25,7 @@ make_plot_time_model <- function() {
 }
 
 test_that("plot_time stacks every state into bars spanning follow-up", {
+  skip_on_cran()
   model <- make_plot_time_model()
   by_arm <- avg_state_time(
     model,
@@ -146,6 +147,7 @@ test_that("plot_time stacks every state into bars spanning follow-up", {
 })
 
 test_that("plot_time pointrange draws confidence intervals per state", {
+  skip_on_cran()
   model <- make_plot_time_model()
   total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3) |>
     inferences(method = "delta")
@@ -209,6 +211,7 @@ test_that("plot_time skips labels on narrow segments", {
 })
 
 test_that("plot_time accepts or rejects its inputs", {
+  skip_on_cran()
   model <- make_plot_time_model()
   total <- avg_state_time(
     model,

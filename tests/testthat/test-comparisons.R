@@ -1,4 +1,5 @@
 test_that("comparisons() returns paired SOP differences for each profile", {
+  skip_on_cran()
   case <- make_comparisons_case()
   out <- comparisons(
     case$model,
@@ -209,6 +210,7 @@ test_that("per-profile and average summaries validate arguments before predictin
 })
 
 test_that("posterior comparisons summarize paired draws for each profile", {
+  skip_on_cran()
   coefficients <- rbind(
     c(0.5, -0.5, 0.4, 1.2),
     c(2, 1, -0.8, -1.1),
@@ -326,6 +328,7 @@ paired_sop_draws <- function(case, method, n_draws, seed, state = "1", ...) {
 }
 
 test_that("draw-based intervals reduce each draw to paired profile comparisons", {
+  skip_on_cran()
   case <- make_comparisons_case()
   cmp <- comparisons(
     case$model,
@@ -397,6 +400,7 @@ test_that("draw-based intervals reduce each draw to paired profile comparisons",
 })
 
 test_that("comparison intervals add null tests and replace earlier inference", {
+  skip_on_cran()
   case <- make_comparisons_case()
   cmp <- comparisons(
     case$model,
@@ -525,6 +529,7 @@ expect_comparisons_match_paired_sops <- function(case, ..., info = NULL) {
 }
 
 test_that("comparisons() matches paired sops() with factor visit times and second-order models", {
+  skip_on_cran()
   cases <- list(
     list(label = "factor visit times", case = make_factor_comparisons_case()),
     list(

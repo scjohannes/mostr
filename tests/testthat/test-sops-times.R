@@ -123,6 +123,7 @@ test_that("avg_sops() warns when `times` skips fitted visits", {
 })
 
 test_that("SOP functions warn when `times` skips fitted visits, and only then", {
+  skip_on_cran()
   daily <- make_daily_visit_case()
   daily_factor <- make_daily_visit_case(time_as_factor = TRUE)
   covariates <- make_time_covariate_visit_case()
@@ -359,6 +360,7 @@ test_that("SOP functions warn when `times` skips fitted visits, and only then", 
 })
 
 test_that("summaries warn about skipped visits once and not again during inference", {
+  skip_on_cran()
   case <- make_daily_visit_case()
   model <- case$model
   variables <- list(tx = c(0, 1))

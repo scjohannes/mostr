@@ -21,6 +21,7 @@ letter_case <- function() {
 }
 
 test_that("bootstrap results don't depend on whether states are numbers or letters", {
+  skip_on_cran()
   cases <- letter_case()
   numbers <- avg_sops(cases$numbers$model, times = 1:3, absorb = 3)
   letters <- avg_sops(cases$letters$model, times = 1:3, absorb = "c")
@@ -67,6 +68,7 @@ muffle_absent_absorbing_state <- function(expr) {
 }
 
 test_that("a resample that lacks a state is relabelled whatever the response is called", {
+  skip_on_cran()
   case <- make_comparisons_case()
   renamed <- case$data
   names(renamed)[names(renamed) == "y"] <- "state"
@@ -98,6 +100,7 @@ test_that("a resample that lacks a state is relabelled whatever the response is 
 # Covariate factors are not states: their levels must neither hide a missing
 # state nor be renumbered.
 test_that("bootstrap_model_coefs() relabels only the response and yprev", {
+  skip_on_cran()
   case <- make_comparisons_case()
   data <- case$data
   data$tx <- factor(data$tx)

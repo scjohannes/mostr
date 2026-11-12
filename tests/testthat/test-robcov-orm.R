@@ -92,6 +92,7 @@ test_that("orm robust covariance is preserved when time units change", {
 })
 
 test_that("orm bread validation rejects nonpositive and singular matrices", {
+  skip_on_cran()
   fit <- local_robcov_orm_case()$fit
   coefficient_names <- names(stats::coef(fit))
   fit$orig.var <- diag(length(coefficient_names))
@@ -109,6 +110,7 @@ test_that("orm bread validation rejects nonpositive and singular matrices", {
 })
 
 test_that("orm small-sample and cluster corrections count only represented rows and clusters", {
+  skip_on_cran()
   case <- local_robcov_orm_case()
 
   # Weighted case: two whole clusters and one further row get weight zero.

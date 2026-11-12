@@ -1,4 +1,5 @@
 test_that("delta intervals difference each profile's SOP derivatives", {
+  skip_on_cran()
   # Each case: a fit, the compared values of `tx`, and the state sets, given
   # as passed to `comparisons()` (`state_sets`) and as the states of each named
   # set in the result (`members`).
@@ -116,6 +117,7 @@ test_that("delta intervals difference each profile's SOP derivatives", {
 })
 
 test_that("averaged delta derivatives of each profile match the averages", {
+  skip_on_cran()
   case <- make_comparisons_case()
   factor_case <- make_factor_comparisons_case()
   starts <- factor(c("1", "2"), levels = levels(case$profiles$yprev))

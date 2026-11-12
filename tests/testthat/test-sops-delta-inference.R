@@ -287,6 +287,7 @@ test_that("low-rank analytical accessors select rows without dense storage", {
 })
 
 test_that("delta replay rejects stale estimates even when cell keys align", {
+  skip_on_cran()
   case <- delta_public_vglm_case()
   point <- avg_sops(
     case$model,
@@ -311,6 +312,7 @@ test_that("delta replay rejects stale estimates even when cell keys align", {
 })
 
 test_that("public delta workflow returns bounded SOP and Wald comparison intervals", {
+  skip_on_cran()
   case <- delta_public_vglm_case()
   avg <- avg_sops(
     case$model,
@@ -465,6 +467,7 @@ test_that("public fixed VGLM Jacobians match coefficient replay", {
 })
 
 test_that("public fixed ORM Jacobians match coefficient replay", {
+  skip_on_cran()
   case <- delta_public_orm_case()
   point <- sops(
     case$model,
@@ -515,6 +518,7 @@ test_that("public empirical ORM averages use complete named covariance", {
 })
 
 test_that("fitted-cohort unconditional averages expose stacked influence", {
+  skip_on_cran()
   case <- delta_public_unconditional_case()
   avg <- avg_sops(
     case$model,
@@ -611,6 +615,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
 })
 
 test_that("backend HC settings affect empirical but not unconditional inference", {
+  skip_on_cran()
   case <- delta_public_unconditional_case()
   raw <- case$model$vglm_fit
   data <- case$data
@@ -676,6 +681,7 @@ test_that("backend HC settings affect empirical but not unconditional inference"
 })
 
 test_that("public delta scope enforces fixed targets and patient clustering", {
+  skip_on_cran()
   local_reproducible_output(width = 80)
   case <- delta_public_vglm_case()
   fixed <- sops(
@@ -727,6 +733,7 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
 })
 
 test_that("delta vcov choices preserve calculations and select class defaults", {
+  skip_on_cran()
   case <- delta_public_unconditional_case()
   args <- list(
     model = case$model,
@@ -774,6 +781,7 @@ test_that("delta vcov choices preserve calculations and select class defaults", 
 })
 
 test_that("delta vcov validates strings and does not silently change targets", {
+  skip_on_cran()
   object <- make_delta_average_fixture()
   local_reproducible_output(width = 80)
   expect_snapshot(inferences(object, method = "delta"), error = TRUE)

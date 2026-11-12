@@ -28,6 +28,7 @@ delta_avg_time_case <- local({
 })
 
 test_that("average-time conditional variance agrees with numerical derivatives", {
+  skip_on_cran()
   case <- delta_avg_time_case(factor_time = TRUE)
   for (real_time in c(FALSE, TRUE)) {
     point <- function(model) {
@@ -78,6 +79,7 @@ test_that("average-time conditional variance agrees with numerical derivatives",
 })
 
 test_that("unconditional average time includes baseline sampling and joint covariance", {
+  skip_on_cran()
   case <- delta_avg_time_case()
   states <- list(
     lower = c("1", "2"),
@@ -168,6 +170,7 @@ test_that("unconditional average time includes baseline sampling and joint covar
 })
 
 test_that("real-time covariance respects omitted anchors and zero-length intervals", {
+  skip_on_cran()
   case <- delta_avg_time_case()
   # A grid of mapped visit times only never reaches the starting-state time, so
   # the result matches omitting the starting state altogether.
@@ -209,6 +212,7 @@ test_that("real-time covariance respects omitted anchors and zero-length interva
 })
 
 test_that("unconditional observed-cohort times agree with patient-weight refits", {
+  skip_on_cran()
   case <- delta_avg_time_case()
   point <- avg_state_time(
     case$fit,
@@ -270,6 +274,7 @@ test_that("unconditional observed-cohort times agree with patient-weight refits"
 })
 
 test_that("average-time analytical inference preserves restrictions and row alignment", {
+  skip_on_cran()
   case <- delta_avg_time_case()
   point <- avg_state_time(case$fit, times = case$times, absorb = 6)
   inferred <- inferences(point, method = "delta")
@@ -310,6 +315,7 @@ starting_state_manual_time <- function(case, state, target_states, target_times)
 }
 
 test_that("counterfactual starting states anchor the baseline at the set state", {
+  skip_on_cran()
   case <- delta_avg_time_case()
   levels <- levels(attr(
     avg_sops(case$fit, times = case$times, absorb = 6),
@@ -354,6 +360,7 @@ test_that("counterfactual starting states anchor the baseline at the set state",
 })
 
 test_that("counterfactual starting states allow only conditional variance", {
+  skip_on_cran()
   case <- delta_avg_time_case()
   levels <- levels(attr(
     avg_sops(case$fit, times = case$times, absorb = 6),
@@ -417,6 +424,7 @@ test_that("counterfactual starting states allow only conditional variance", {
 })
 
 test_that("interpolated SOP estimates and draws start at the set starting state", {
+  skip_on_cran()
   case <- delta_avg_time_case()
   levels <- levels(attr(
     avg_sops(case$fit, times = case$times, absorb = 6),

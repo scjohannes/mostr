@@ -43,6 +43,7 @@ test_that("sops() returns each profile's SOPs under each value of `variables`", 
 })
 
 test_that("per-profile functions and their avg_*() partners hand `by` to each other", {
+  skip_on_cran()
   case <- make_comparisons_case()
   model <- case$model
   tx <- list(tx = c(0, 1))
@@ -152,6 +153,7 @@ test_that("per-profile functions and their avg_*() partners hand `by` to each ot
 })
 
 test_that("bare variable names choose values like marginaleffects", {
+  skip_on_cran()
   case <- make_comparisons_case()
   sop_args <- list(case$model, times = 1:3, absorb = 3)
   comparison_args <- list(case$model, state_sets = "1", times = 1:4, absorb = 3)
@@ -303,6 +305,7 @@ test_that("bare variable names choose values like marginaleffects", {
 })
 
 test_that("averaging per-profile results reproduces the avg_*() result", {
+  skip_on_cran()
   case <- make_comparisons_case()
   starts <- factor(c("1", "2"), levels = levels(case$profiles$yprev))
   three <- list(tx = c(0, 1, 2))
@@ -422,6 +425,7 @@ test_that("averaging per-profile results reproduces the avg_*() result", {
 })
 
 test_that("draw weights let users average per-profile draws themselves", {
+  skip_on_cran()
   comparisons_case <- make_comparisons_case()
   observed_case <- make_observed_average_case()
   model <- comparisons_case$model

@@ -1,4 +1,5 @@
 test_that("the vglm engine supplies rms formula helpers and keeps %ia% semantics", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -218,6 +219,7 @@ test_that("the vglm engine records NA actions after dropping incomplete rows", {
 })
 
 test_that("the vglm engine aligns etastart with the rows it fits", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6110)

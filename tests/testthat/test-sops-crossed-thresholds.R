@@ -42,6 +42,7 @@ expect_crossed_threshold_error <- function(expr, info) {
 }
 
 test_that("the fixture's thresholds really cross at score = -20", {
+  skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
   fit <- case$model$vglm_fit
   probabilities <- VGAM::predict(fit, newdata = case$profiles, type = "response")
@@ -50,6 +51,7 @@ test_that("the fixture's thresholds really cross at score = -20", {
 })
 
 test_that("SOP calls stop when the fitted thresholds cross", {
+  skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
   base <- list(case$model, newdata = case$profiles, times = 1:3, absorb = 3)
   compare <- c(base, list(variables = list(tx = c(0, 1)), state_sets = "1"))
@@ -66,6 +68,7 @@ test_that("SOP calls stop when the fitted thresholds cross", {
 })
 
 test_that("the error says how many profiles cross, and when", {
+  skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
   err <- tryCatch(
     sops(case$model, newdata = case$profiles, times = 1:3, absorb = 3),
@@ -91,6 +94,7 @@ test_that("the error says how many profiles cross, and when", {
 })
 
 test_that("sops() agrees with the readable loop on both sides of the crossing", {
+  skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
   predict_transition <- slow_predictor(case$model)
   loop <- function(i) {
@@ -118,6 +122,7 @@ test_that("sops() agrees with the readable loop on both sides of the crossing", 
 })
 
 test_that("the R engine, which predicts with VGAM, also stops", {
+  skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
   expect_error(
     soprob_markov_r_engine(
@@ -153,6 +158,7 @@ test_that("rounding negatives are set to zero instead of stopping", {
 # At score = -6 the estimated cut-points don't cross, but they do for some
 # coefficient draws around the estimate and for some bootstrap refits.
 test_that("inference stops when cut-points cross in some draws or refits", {
+  skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
   profiles <- case$profiles[1:2, , drop = FALSE]
   profiles$score[2L] <- -6

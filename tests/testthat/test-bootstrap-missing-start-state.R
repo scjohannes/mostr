@@ -111,6 +111,7 @@ start_profiles <- function(case, without_state) {
 }
 
 test_that("supplied profiles in states the resample has are predicted from those states", {
+  skip_on_cran()
   case <- missing_state_case()
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   profiles <- start_profiles(case, without_state = 2)
@@ -131,6 +132,7 @@ test_that("supplied profiles in states the resample has are predicted from those
 })
 
 test_that("a supplied profile in a state some resample lacks is refused before refitting", {
+  skip_on_cran()
   case <- missing_state_case()
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   profiles <- start_profiles(case, without_state = 3)
@@ -154,6 +156,7 @@ test_that("a supplied profile in a state some resample lacks is refused before r
 })
 
 test_that("an orm refit of a resample without a middle state succeeds", {
+  skip_on_cran()
   case <- missing_state_case()
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   model <- fit_case(case$data, "orm")
@@ -171,6 +174,7 @@ test_that("an orm refit of a resample without a middle state succeeds", {
 })
 
 test_that("a refit without a middle state keeps a numeric previous state's numbers", {
+  skip_on_cran()
   # Five states, 5 absorbing. Without state 2 the previous states are 1, 3
   # and 4; renumbering them 1, 2, 3 would change the fitted linear yprev
   # effect, so the refit must see the original numbers.
@@ -211,6 +215,7 @@ test_that("a refit without a middle state keeps a numeric previous state's numbe
 })
 
 test_that("averages within `by` groups keep the labels of a resample without a middle state", {
+  skip_on_cran()
   case <- missing_state_case()
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   model <- fit_case(case$data, "vglm")
@@ -228,6 +233,7 @@ test_that("averages within `by` groups keep the labels of a resample without a m
 })
 
 test_that("the bootstrap refuses `variables` that set the state two visits back", {
+  skip_on_cran()
   case <- missing_state_case()
   model <- fit_case(case$data, "vglm", order = 2L)
   levels <- levels(case$data$ypprev)
@@ -265,6 +271,7 @@ test_that("the starting-state check also covers states that `variables` sets", {
 })
 
 test_that("bootstrap comparisons on supplied profiles use the resample's own states", {
+  skip_on_cran()
   case <- missing_state_case()
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   profiles <- start_profiles(case, without_state = 2)
@@ -289,6 +296,7 @@ test_that("bootstrap comparisons on supplied profiles use the resample's own sta
 })
 
 test_that("bootstrap time benefit checks and keeps the states of supplied profiles", {
+  skip_on_cran()
   case <- missing_state_case()
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   model <- fit_case(case$data, "vglm")
@@ -315,6 +323,7 @@ test_that("bootstrap time benefit checks and keeps the states of supplied profil
 })
 
 test_that("dropped bootstrap draws are summed up in one warning", {
+  skip_on_cran()
   case <- missing_state_case()
   local_mocked_bindings(fast_group_bootstrap = resample_without_state_2(case))
   model <- fit_case(case$data, "vglm")

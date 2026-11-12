@@ -34,6 +34,7 @@ inference_crossing_settings <- function() {
 }
 
 test_that("MVN and analytical inference hold their limits on every engine and time coding", {
+  skip_on_cran()
   # L9, L10, L11, L13, L18, L21, L23, L24, R13, R14, N4, N21.
   settings <- Filter(
     function(setting) !setting$method %in% c("bootstrap", "fwb"),
@@ -119,6 +120,7 @@ test_that("weighted profile draws of the fractional bootstrap reproduce the aver
 })
 
 test_that("`type` and `cadjust` change conditional but not unconditional variance (N6)", {
+  skip_on_cran()
   # `type` and `cadjust` set the small-sample correction of the patient-
   # clustered coefficient covariance, which conditional variance uses.
   # Unconditional variance computes its own covariance from each patient's

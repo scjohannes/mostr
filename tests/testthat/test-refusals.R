@@ -360,6 +360,7 @@ fit_refusals <- list(
 )
 
 test_that("mostm() refuses what it cannot fit", {
+  skip_on_cran()
   check_refusals(fit_refusals)
 })
 
@@ -741,6 +742,7 @@ prediction_refusals <- list(
 )
 
 test_that("SOP and summary functions refuse what they cannot compute", {
+  skip_on_cran()
   check_refusals(prediction_refusals)
 })
 
@@ -1080,6 +1082,7 @@ inference_refusals <- list(
   )
 )
 test_that("inferences() refuses what it cannot compute", {
+  skip_on_cran()
   check_refusals(inference_refusals)
 })
 

@@ -41,6 +41,7 @@ test_that("numbers set a factor previous state by its labels", {
 })
 
 test_that("character labels set a numeric previous state", {
+  skip_on_cran()
   case <- make_comparisons_case()
   model <- numeric_yprev_model(case)
   by_number <- avg_sops(model, variables = list(yprev = 1:2), times = 1:3, absorb = 3)

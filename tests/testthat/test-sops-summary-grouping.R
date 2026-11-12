@@ -13,6 +13,7 @@ profiles_with_unused_note <- function(case) {
 }
 
 test_that("a missing value in an unused profile column keeps the profile", {
+  skip_on_cran()
   case <- make_comparisons_case()
   plain <- case$profiles
   noted <- profiles_with_unused_note(case)
@@ -38,6 +39,7 @@ test_that("a missing value in an unused profile column keeps the profile", {
 })
 
 test_that("inferences(null = ) does not change interpolate_sops() or time_in_state() groups", {
+  skip_on_cran()
   case <- make_comparisons_case()
   averaged <- avg_sops(
     case$model,

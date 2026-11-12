@@ -97,6 +97,7 @@ delta_absorbing_sets <- list(
 )
 
 test_that("native delta recursion matches the reference on synthetic designs", {
+  skip_on_cran()
   case <- delta_synthetic_case()
 
   for (absorb in delta_absorbing_sets) {
@@ -117,6 +118,7 @@ test_that("native delta recursion matches the reference on synthetic designs", {
 })
 
 test_that("native delta recursion matches the reference for grouped averages", {
+  skip_on_cran()
   case <- delta_synthetic_case()
 
   grouped_sets <- delta_absorbing_sets[c("none", "first_and_last", "two_inner")]
@@ -299,6 +301,7 @@ expect_delta_plan_matches_reference <- function(plan, model) {
 }
 
 test_that("fitted orm and vglm delta plans match the independent reference", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   fits <- delta_reference_fits()
@@ -318,6 +321,7 @@ test_that("fitted orm and vglm delta plans match the independent reference", {
 })
 
 test_that("factor-time delta plans match the independent reference", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   data <- delta_factor_time_data()

@@ -7,6 +7,7 @@ score_draw_case <- function() {
 }
 
 test_that("score-bootstrap simulation adds CIs, metadata and draws for avg_sops", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -41,6 +42,7 @@ test_that("score-bootstrap simulation adds CIs, metadata and draws for avg_sops"
 })
 
 test_that("score-bootstrap treats supplied newdata as fixed profiles", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -77,6 +79,7 @@ test_that("score-bootstrap treats supplied newdata as fixed profiles", {
 })
 
 test_that("generate_score_bootstrap_draws returns valid dimensions and normalized weights", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -106,6 +109,7 @@ test_that("generate_score_bootstrap_draws returns valid dimensions and normalize
 })
 
 test_that("generate_score_bootstrap_draws is reproducible with a fixed seed", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -132,6 +136,7 @@ test_that("generate_score_bootstrap_draws is reproducible with a fixed seed", {
 })
 
 test_that("score bootstrap draws are invariant to working-memory chunks", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
@@ -160,6 +165,7 @@ test_that("score bootstrap draws are invariant to working-memory chunks", {
 })
 
 test_that("generate_score_bootstrap_draws rejects bare fits, unknown baseline ids and missing robust components", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 

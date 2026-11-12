@@ -171,6 +171,7 @@ describe("SOP regression baselines", {
   }
 
   test_that("generic Markov SOP signatures remain stable", {
+    skip_on_cran() # The pass depends on the seed.
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
     skip_if_not_installed("mvtnorm")
@@ -221,6 +222,7 @@ describe("SOP regression baselines", {
   })
 
   test_that("markov SOP signatures remain stable", {
+    skip_on_cran() # The pass depends on the seed.
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
@@ -267,6 +269,7 @@ describe("SOP regression baselines", {
   })
 
   test_that("inline and explicit spline SOPs from the R engine agree for interaction models", {
+    skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
 
