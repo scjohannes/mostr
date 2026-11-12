@@ -110,7 +110,7 @@ flowchart TD
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap (internal only, through `inferences_score_bootstrap()`) |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
 | Errors | `R/mostr-abort.R` | `mostr_abort` raises every package error with class `mostr_error`; `mostr_error_call` picks the exported function shown in the error |
-| Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
+| Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons (`plot_lp_difference`: previous states from `markov_fitted_previous_states()`, the rule SOP prediction applies, so a state never seen as a previous state, such as an absorbing one, is left out by default and refused when requested) |
 
 Longitudinal rows use `id`, `time`, `y`, `yprev`, and covariates such as `tx`.
 `mostm()` preserves the patient starting profiles used when `newdata` is omitted.
@@ -373,8 +373,12 @@ the coefficients: `update_bootstrap_model()` evaluates the refit inside
 the refit runs. `mostm()` then skips the duplicate ID-time warning, the starting
 profiles, and the patient-clustered covariance, so a `"vglm"` refit is a plain
 `vglm` fit. The flag is restored on exit, also in parallel workers, where the
-refit runs in the worker's own session. `suppress_expected_refit_warnings()`
-muffles the rms warning that its own bootstrap ignores weights. `mostm()` stores the values of the arguments the
+refit runs in the worker's own session. `suppress_orm_weights_warning()`
+(`R/bootstrap_helpers.R`) hides rms's orm warning that its own validation and
+bootstrap ignore weights, and only that warning: mostr never calls rms's
+`validate()` or `bootcov()`, and its own bootstrap keeps the weights.
+`mostm_fit_orm()` applies it to the fit and `suppress_expected_refit_warnings()`
+to bootstrap refits of orm models. `mostm()` stores the values of the arguments the
 user passed at fit time
 (`markov_capture_refit_args()`, read back with `markov_model_refit_args()`),
 and refits inline those values instead of re-evaluating the call's argument
@@ -845,6 +849,20 @@ profile, scenario, and draw identifiers. Two rules keep one group per series:
   `null`; `time_in_state()` drops them, because a null for probabilities
   does not apply to a total time.
 
+On delta SOPs (`markov_sops` or `markov_avg_sops` from
+`inferences(method = "delta")`), `time_in_state_delta()` keeps the uncertainty.
+Each total is a weighted sum of SOP rows (visit weights, or trapezoid weights
+from `delta_real_time_weights()` with `time_map`) plus a starting-state term, so
+its delta-method variance follows from what the result stores:
+`delta_propagate_comparison_state()`, shared with `avg_comparisons()`, applies
+the weights to how each SOP changes with each coefficient (conditional
+variance) and to the patient influence values (unconditional variance), and the
+starting-state term adds each patient's influence as in
+`inferences_delta_avg_time()`. No covariance for every pair of SOPs is formed.
+Rows are matched to the stored derivatives by row key, and the weights must
+reproduce the reported totals. Delta SOPs already passed through
+`interpolate_sops()` are refused.
+
 `sops(variables = ...)` predicts each profile once per combination of values,
 as marginaleffects' `predictions()`: `stack_prediction_profiles()` stacks the
 copies, renumbers `rowid` over them, and records the profile in `rowidcf`.
@@ -925,7 +943,12 @@ flowchart TD
   The profile's visit column is
   dropped because output times are prediction times. Bookkeeping columns that
   mostr adds to stored profiles (names starting with `.markov_`, such as
-  `.markov_source_row`) are dropped too.
+  `.markov_source_row`; `markov_internal_column()` in `R/markov-model-data.R`)
+  are dropped too, as they are from every result: `sops_impl()` removes them
+  from the prediction rows (`drop_markov_internal_columns()`), so they never
+  reach estimates, recomputations in `inferences()`, or draws. Results match
+  profiles to patients through the ID column and `rowid`; no code reads
+  `.markov_source_row`.
 - For `blrm`, every posterior draw is reduced to the same rows, and
   `summarize_posterior_draw_matrix()` summarizes them column by column, so
   estimates come from paired draws rather than from SOP summaries. Draws are

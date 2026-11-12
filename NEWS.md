@@ -175,6 +175,30 @@
 
 ## Bug fixes
 
+* `time_in_state()` on SOPs from `inferences(method = "delta")` now returns
+  `std.error`, `conf.low`, and `conf.high` for the totals, with conditional or
+  unconditional variance as chosen in `inferences()`. They match
+  `avg_state_time()` and `state_time()` with delta inference. Before, the
+  uncertainty was silently dropped. Delta SOPs that already went through
+  `interpolate_sops()` now give an error; pass `time_map` to
+  `time_in_state()` instead.
+
+* `plot_lp_difference()` no longer needs `absorb` for a fit made by `mostm()`:
+  by default it shows only the previous states that occur in the fitted data.
+  Before, it failed on vglm fits ("replacement has 72 rows, data has 96") and
+  drew empty panels for the absorbing state on orm fits. Asking for a state
+  that never occurs as a previous state through `previous_states` is now an
+  error that lists the valid states.
+
+* `sops()` on the patients stored by `mostm()` no longer returns the internal
+  column `.markov_source_row`, either in its estimates or in the results and
+  draws of `inferences()`.
+
+* `mostm()` no longer shows rms's warning "currently weights are ignored in
+  model validation and bootstrapping orm fits" for a weighted `"orm"` fit. The
+  warning concerns rms's own `validate()` and `bootcov()`, which mostr does not
+  use; mostr's bootstrap and fractional weighted bootstrap keep the weights.
+
 * The ordinary bootstrap (`inferences(method = "bootstrap")`) gave wrong
   results when a resample lacked a state other than the absorbing one. The
   refit renumbered the remaining states, for example 1, 3, 4 as 1, 2, 3, but
