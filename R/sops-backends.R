@@ -684,9 +684,10 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
     out <- suppressWarnings(as.integer(labels))
     if (anyNA(out) && any(!is.na(labels))) {
       mostr_abort(
-        "`y_levels` must be integer-compatible when `",
+        "The fitted states must be integer-compatible when the ",
+        "previous-state column `",
         p_var,
-        "` is an integer previous-state variable."
+        "` holds integers."
       )
     }
     return(out)
@@ -696,9 +697,10 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
     out <- suppressWarnings(as.numeric(labels))
     if (anyNA(out) && any(!is.na(labels))) {
       mostr_abort(
-        "`y_levels` must be numeric-compatible when `",
+        "The fitted states must be numeric-compatible when the ",
+        "previous-state column `",
         p_var,
-        "` is a numeric previous-state variable."
+        "` holds numbers."
       )
     }
     return(out)

@@ -372,7 +372,7 @@ match_state_indices <- function(values, ylevel_names, varname) {
     mostr_abort(
       "Values in `",
       varname,
-      "` are not among `y_levels`: ",
+      "` are not states of the fitted model: ",
       paste(utils::head(bad, 5), collapse = ", "),
       if (length(bad) > 5) " ..." else ""
     )
@@ -391,7 +391,7 @@ check_transition_probabilities <- function(probs, context) {
     ". This often happens when the SOP recursion asks for transitions from ",
     "a state level that is not represented in the fitted transition model. ",
     "If that level is absorbing, pass it via `absorb`; otherwise check that ",
-    "`data`, `y_levels`, and fitted factor levels agree."
+    "the states and factor levels in `data` are those of the fitted model."
   )
 }
 

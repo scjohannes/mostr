@@ -107,8 +107,8 @@ generate_score_bootstrap_draws <- function(
         "variable stored in robcov_vglm: ",
         paste(utils::head(missing_ids, 5), collapse = ", "),
         if (length(missing_ids) > 5) " ..." else "",
-        ". Ensure avg_sops(id_var = ...) matches the clustering used in ",
-        "robcov_vglm(cluster = ...)."
+        ". The `id_var` given to `mostm()` must name the column used for ",
+        "`robcov_vglm(cluster = ...)`."
       )
     }
     n_pat <- length(baseline_ids)
