@@ -150,9 +150,10 @@ plot_variogram(
 
 ## Estimate state occupancy probabilities
 
-`p_var = "yprev"` names the previous-state column. It is the default, shown
-here to make clear that mostr substitutes each possible previous state into
-this numeric column, and hence into the spline, when chaining predictions.
+`p_var = "yprev"` names the previous-state column. It is the default, taken
+from the fit, and is shown here to make clear that mostr substitutes each
+possible previous state into this numeric column, and hence into the spline,
+when chaining predictions.
 
 ```{r avg-sops}
 sop_many <- avg_sops(

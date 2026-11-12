@@ -17,11 +17,12 @@ who has just improved may be more likely to keep improving than one who has
 been stable. A *second-order* model captures this by including both previous
 states as predictors.
 
-This article fits a second-order model with `mostm()` and shows the one
-extra argument needed downstream: `p2_var`, which names the column holding
-the state two days back. Every function that computes model-based
-probabilities (`avg_sops()`, `avg_comparisons()`, and the diagnostic plots)
-needs it, so that it chains predictions through both previous states.
+This article fits a second-order model with `mostm()`. The one extra
+argument is `p2_var`, which names the column holding the state two days
+back. It is given once, to `mostm()`, which stores it with the fit. Every
+function that computes model-based probabilities (`avg_sops()`,
+`avg_comparisons()`, and the diagnostic plots) then chains predictions
+through both previous states without being told again.
 
 ## Data
 
@@ -74,12 +75,17 @@ head(model_data[c("id", "time", "tx", "ypprev", "yprev", "y")])
 The model includes both previous states as factors. It also lets the effect
 of each previous state change linearly over time through the `%ia%`
 interaction terms, rms's operator for restricted interactions.
+`p2_var = "ypprev"` tells `mostm()` that `ypprev` is the state two days
+back, so this is a second-order model. Without it, the prediction functions
+would treat `ypprev` like any other covariate and hold it at each patient's
+starting value instead of updating it from day to day.
 
 ```{r fit-model}
 fit_second <- mostm(
   y ~ tx + rcs(time, 4) + yprev + ypprev + time %ia% yprev + time %ia% ypprev,
   data = model_data,
   id_var = "id",
+  p2_var = "ypprev",
   opt_method = "LM",
   scale = TRUE,
   maxit = 100
@@ -90,8 +96,8 @@ fit_second
 
 ## Estimate state occupancy probabilities
 
-Passing `p2_var = "ypprev"` switches `avg_sops()` from the first-order to the
-second-order calculation described [below](#how-the-probabilities-are-calculated).
+Because the fit records `p2_var`, `avg_sops()` uses the second-order
+calculation described [below](#how-the-probabilities-are-calculated).
 Analytical confidence intervals are available only for first-order models, so
 we use simulation from the coefficients' multivariate normal distribution
 (`method = "mvn"`, the default). We use only 50 draws to keep the example
@@ -103,8 +109,7 @@ sop_second <- avg_sops(
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
   y_levels = fit_second$yunique,
-  absorb = ABSORB,
-  p2_var = "ypprev"
+  absorb = ABSORB
 ) |>
   inferences(n_draws = 50)
 
@@ -139,8 +144,7 @@ tis_second <- avg_comparisons(
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
   y_levels = fit_second$yunique,
-  absorb = ABSORB,
-  p2_var = "ypprev"
+  absorb = ABSORB
 ) |>
   inferences(n_draws = 100)
 
@@ -221,11 +225,12 @@ trajectories.
 ## Check the model against the data
 
 The diagnostics compare observed summaries with those implied by the model,
-as explained in `vignette("full-po-sops")`. The model-based plots also need
-`p2_var = "ypprev"`. Because a second-order model remembers more of each
-patient's history, it can reproduce correlations that persist over longer
-gaps than a first-order model allows; the variogram is the most direct place
-to see this. The transition heatmaps use at most sixteen evenly spaced days.
+as explained in `vignette("full-po-sops")`. The model-based plots also use
+the second-order calculation, because the fit records `p2_var`. Because a
+second-order model remembers more of each patient's history, it can
+reproduce correlations that persist over longer gaps than a first-order
+model allows; the variogram is the most direct place to see this. The
+transition heatmaps use at most sixteen evenly spaced days.
 
 ```{r diagnostics-transitions-observed, fig.width = 9, fig.height = 9}
 diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
@@ -245,7 +250,6 @@ plot_transitions(
   times = diagnostic_times,
   y_levels = fit_second$yunique,
   absorb = ABSORB,
-  p2_var = "ypprev",
   show_values = FALSE
 ) +
   labs(title = "Model-based transition proportions")
@@ -268,7 +272,6 @@ plot_correlation(
   times = seq_len(FOLLOW_UP),
   y_levels = fit_second$yunique,
   absorb = ABSORB,
-  p2_var = "ypprev",
   show_values = FALSE
 ) +
   labs(title = "Model-based state correlations")
@@ -287,8 +290,7 @@ plot_variogram(
   fit_second,
   times = seq_len(FOLLOW_UP),
   y_levels = fit_second$yunique,
-  absorb = ABSORB,
-  p2_var = "ypprev"
+  absorb = ABSORB
 ) +
   labs(title = "Model-based correlation variogram")
 ```

@@ -75,6 +75,7 @@ flowchart TD
 | Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`, `violet_baseline`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
+| Settings | `R/markov-settings.R` | `markov_settings` (validating constructor), `markov_model_settings` (a fit's settings), `resolve_markov_settings` (a public call's settings), `markov_result_settings` (a result's settings); see "Settings" below |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `R/sops-crossed-thresholds.R`, `src/sops.cpp` | Native propagation, with an engine in R for `blrm` and oversized designs; first- and second-order histories; errors for crossed thresholds |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
@@ -109,7 +110,7 @@ flowchart TD
     E --> H[Fit and aligned fitting rows]
     F --> H
     G --> H
-    H --> I[Stored refit data, starting profiles, refit argument values]
+    H --> I[Stored refit data, starting profiles, refit argument values, settings]
     I --> J[mostm call and markov_engine attribute]
     J --> K{orm or vglm, and not a bootstrap refit?}
     K -->|yes| L[robcov_orm or robcov_vglm]
@@ -118,12 +119,17 @@ flowchart TD
 ```
 
 - Shared arguments are named and handled once in `mostm()`: `id_var`,
-  `time_var`, `first_followup_time`, `weights`, `subset`, and the
-  patient-clustered covariance settings `type` and `cadjust`. `data` must be a
-  data frame. `id_var` has no default: a missing or `NULL` value stops with
-  `stop_missing_mostm_id_var()`, and `validate_markov_id_var()` requires one
-  column name present in `data`. The `time_var` column must also be present,
-  because every fit stores its starting profiles. Duplicate ID-time rows warn
+  `time_var`, `p_var`, `p2_var`, `first_followup_time`, `weights`, `subset`,
+  and the patient-clustered covariance settings `type` and `cadjust`. `data`
+  must be a data frame. `id_var` has no default: a missing or `NULL` value
+  stops with `stop_missing_mostm_id_var()`, and `validate_markov_id_var()`
+  requires one column name present in `data`. The `time_var` column must also
+  be present, because every fit stores its starting profiles. `p_var`
+  (default `"yprev"`) and `p2_var` (default `NULL`, a first-order model) name
+  the previous-state columns; `validate_mostm_previous_state_vars()` requires
+  single, distinct names, a supplied `p2_var` and an explicitly supplied
+  `p_var` must be columns of `data`, and the default `p_var` is not checked,
+  so fits without a `yprev` column still work. Duplicate ID-time rows warn
   (`warn_duplicate_markov_id_time()`).
 - For `"orm"` and `"blrm"`, `mostm_check_inline_factors()` stops before
   fitting when the right-hand side of the formula calls `factor()`,
@@ -433,6 +439,78 @@ called first in every public function with the argument (`sops()`,
 `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
 `avg_comparisons()`, and `soprob_markov()`) and stops for any other fit,
 instead of letting the frequentist paths ignore it.
+
+### Settings
+
+The column names and model settings that the prediction, comparison,
+inference and diagnostic code needs travel as one object of class
+`markov_settings` (`R/markov-settings.R`), not as separate arguments and
+result attributes.
+
+```mermaid
+flowchart LR
+    A["mostm()"] -->|markov_settings, from_fit| B[(fit attribute markov_settings)]
+    B --> C["resolve_markov_settings(model, id_var, time_var, p_var, p2_var, y_levels, absorb, gap_var, time_covariates)"]
+    D[Public call arguments] --> C
+    C --> E["internal functions: settings argument"]
+    E --> F[(result attribute settings)]
+    F --> G["markov_result_settings(): inference, replays, interpolation"]
+```
+
+- Fields: `engine`, `id_var`, `time_var`, `p_var`, `p2_var`, `order` (1 or
+  2, from `p2_var`), `y_levels`, `absorb`, `gap_var`, `time_covariates`,
+  `first_followup_time`, and `from_fit`, the names of the fields the fit
+  fixes. `markov_settings()` is the one constructor and validates the column
+  names (single non-empty strings, `p2_var` different from `p_var`);
+  `markov_settings_update()` replaces fields and validates again, for example
+  for the states present in a bootstrap resample.
+- Built once: `mostm()` stores the settings of every fit, including
+  coefficient-only bootstrap refits, with `markov_set_settings()` in the
+  `markov_settings` attribute. `engine`, `id_var`, `time_var`, `p_var`,
+  `p2_var` and `y_levels` (`markov_model_ylevels()` of the engine fit) are
+  fixed. `robcov_vglm()` and derived models (`bootstrap_refit_model()`,
+  `update_bootstrap_model()`) copy them through `markov_inherit_engine()`.
+  `markov_model_settings()` reads them, from the inner `vglm_fit` when needed.
+  Objects without stored settings, such as the hand-made `blrm` fits of
+  `fake_blrm()` in the tests or test models given a `markov_engine` attribute
+  by hand, get settings built from their `markov_engine` and `markov_id_var`
+  records with nothing fixed, so calls on them behave as they did before.
+- Each public function that predicts (`sops()`, `avg_sops()`, `state_time()`,
+  `avg_state_time()`, `comparisons()`, `avg_comparisons()`, `soprob_markov()`,
+  and the model-based plots through `plot_markov_settings()` in
+  `R/markov-plot-helpers.R`) calls `resolve_markov_settings()` once. Its
+  `id_var`, `time_var`, `p_var`, `p2_var` and `y_levels` default to `NULL`,
+  meaning the fit's value; a supplied value of a fixed field must agree, or
+  `stop_setting_contradicts_fit()` (or `stop_y_levels_contradict_fit()`, which
+  compares state labels) stops. A supplied `y_levels` that agrees is kept,
+  because its type sets the type of the result's `state` column. For a
+  first-order fit, `p2_var` is refused with advice to refit with
+  `mostm(..., p2_var = )`; a second-order fit therefore always predicts with
+  the second-order recursion, which before held the older state at each
+  profile's starting value when the user left `p2_var` out. Plots given a data
+  frame instead of a fit build settings with `markov_settings()` and the old
+  defaults.
+- Internal functions take the `settings` argument instead of the separate
+  names: `sops_impl()`, `avg_sops_impl()` (which the public pairs and every
+  replay, `avg_comparison_replay_avg_sops()`, call after resolving),
+  `sops_blrm()`, `avg_sops_blrm()`, `predict_markov_sops()` (the internal
+  form of `soprob_markov()`, used by every package caller),
+  `soprob_markov_r_engine()`, `compile_sop_execution_plan()`,
+  `markov_msm_build()`, `markov_msm_build_batched()`, `assign_sop_visit()`,
+  `stop_absorbing_start()`, `resolve_markov_source_data()`,
+  `resolve_prediction_variables()`, `resolve_comparison_variables()`,
+  `match_previous_state_variables()`, `warn_skipped_sop_visits()`,
+  `avg_comparison_setup()` (whose setup list carries `settings`), and the
+  diagnostic internals (`markov_transition_trace()`,
+  `plot_transition_model_setup()`, `plot_correlation_model_data()` and their
+  helpers).
+- Results store the call's settings in one `settings` attribute
+  (`set_sops_attrs()`, `set_avg_comparison_attrs()`), and
+  `markov_result_settings()` reads it back. `call_args` holds only the
+  resolved `times` and, for `blrm`, the posterior options, and `avg_args` no
+  longer holds `id_var`. Inference, replays, interpolation and the time
+  summaries read the stored settings, so they predict with exactly the
+  columns and states of the original call.
 
 ### Requested visit times
 
