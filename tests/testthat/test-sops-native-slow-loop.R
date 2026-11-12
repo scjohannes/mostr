@@ -7,8 +7,10 @@
 # The file name keeps these tests in the native-safety CI jobs.
 
 test_that("sops() matches the readable loop on every model set-up", {
-  skip_on_cran()
-  for (cell in grid_core_cells()) {
+  # On CRAN, check the four set-ups whose fits the consistency checks already
+  # cache, so that one comparison with the readable loop runs there cheaply.
+  cells <- if (grid_on_cran()) grid_consistency_cells() else grid_core_cells()
+  for (cell in cells) {
     fit <- grid_fit(cell)
     profiles <- grid_profiles(cell)
     result <- do.call(
