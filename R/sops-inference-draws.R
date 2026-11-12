@@ -116,9 +116,10 @@ apply_sop_simulation_draws <- function(
     mostr_abort("Package 'furrr' is required for parallel processing")
   }
 
-  old_plan <- future::plan()
+  # `plan(new)` returns the user's whole plan; `plan()` alone returns only its
+  # outer level, and restoring from that dropped any nested levels.
+  old_plan <- future::plan(future.callr::callr, workers = workers)
   on.exit(future::plan(old_plan), add = TRUE)
-  future::plan(future.callr::callr, workers = workers)
 
   results <- furrr::future_map(
     draw_ids,

@@ -12,6 +12,19 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-12: Keep the blrm options as separate arguments
+
+**Decided.** `n_draws`, `seed`, `include_re`, `return_draws` and `conf_level`
+stay separate arguments of the prediction functions instead of moving into
+one control list.
+
+**Why.** marginaleffects, whose interface mostr follows, keeps such options
+as separate arguments, and a list would hide them from autocompletion and
+from the help page's argument list.
+
+**Decided against.** A `blrm_control()` list: it would shorten the argument
+lists but make the options harder to find, for no gain in what users can do.
+
 ## 2026-11-12: Remove the column-name and state arguments from the prediction functions
 
 **Decided.** `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`,
@@ -119,6 +132,22 @@ retired, so its probability clipping gets no comment.
 **Why.** Changing global state inside a function, even temporarily, surprises
 users and interacts badly with their own parallel set-up; the backend switch
 rewrites the same code anyway.
+
+**Why `callr`.** The maintainer chose `future.callr::callr` over other future
+backends because with them parallel runs ran out of memory and workers did not
+shut down quickly enough; with `callr` this happened less. Not measured: this
+rests on the maintainer's experience.
+
+**Restoring the plan is CRAN-safe until then (checked 2026-11-12).** All three
+places that switch the plan (`apply_to_bootstrap()`, `apply_to_fwb_bootstrap()`
+and `apply_sop_simulation_draws()`) register `on.exit()` before running, so
+the plan is restored after an error inside a worker too. Tried with a
+sequential, a `multisession` (2 workers) and a `callr` (3 workers) plan, each
+with an error in one draw. One gap was found and fixed: they saved the plan
+with `plan()`, which returns only the outer level, so a nested plan such as
+`list(multisession, multisession)` came back with its inner level dropped.
+They now keep the value of `plan(callr, ...)`, which is the whole previous
+plan. Tests use at most 2 workers, within CRAN's limit.
 
 ## 2026-11-12: Ship one vignette; the other articles are website-only
 

@@ -190,6 +190,11 @@
 
 ## Bug fixes
 
+* Parallel bootstrap and simulation inference (`workers` greater than 1) now
+  restore every level of a nested future plan when they finish. Before, a
+  plan such as `future::plan(list(multisession, multisession))` came back with
+  only its outer level.
+
 * `time_in_state()` on SOPs from `inferences(method = "delta")` now returns
   `std.error`, `conf.low`, and `conf.high` for the totals, with conditional or
   unconditional variance as chosen in `inferences()`. They match

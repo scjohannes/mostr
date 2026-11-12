@@ -296,6 +296,57 @@ test_that("parallel bootstrap helpers return results and restore the future plan
   }
 })
 
+test_that("parallel helpers restore every level of a nested future plan after an error", {
+  skip_on_cran()
+  # `future::plan()` without arguments returns only the outer level, so
+  # restoring from it dropped the inner levels of the user's plan. Two
+  # sequential levels show this without starting extra workers.
+  user_plan <- list(future::sequential, future::sequential)
+  withr::defer(future::plan(future::sequential))
+
+  failing <- list(
+    bootstrap = function() {
+      apply_to_bootstrap(
+        boot_samples = list(
+          data.frame(original_id = 1, new_id = "1_1", boot_id = 1)
+        ),
+        analysis_fn = function(boot_data) stop("boom"),
+        data = data.frame(id = 1, y = 3),
+        id_var = "id",
+        workers = 2,
+        packages = character(0)
+      )
+    },
+    fwb = function() {
+      mostr:::apply_to_fwb_bootstrap(
+        fwb_samples = list(
+          data.frame(original_id = 1, fwb_weight = 1, boot_id = 1)
+        ),
+        analysis_fn = function(boot_data, fwb_weights) stop("boom"),
+        data = data.frame(id = 1, y = 3),
+        id_var = "id",
+        workers = 2,
+        packages = character(0)
+      )
+    },
+    simulation = function() {
+      mostr:::apply_sop_simulation_draws(
+        n_draws = 1,
+        analysis_fn = function(i) stop("boom"),
+        workers = 2,
+        globals = TRUE,
+        packages = character(0)
+      )
+    }
+  )
+
+  for (label in names(failing)) {
+    future::plan(user_plan)
+    expect_error(suppressWarnings(failing[[label]]()), info = label)
+    expect_length(future::plan("list"), 2L)
+  }
+})
+
 test_that("apply_to_bootstrap maps deprecated parallel argument to workers", {
   data <- data.frame(id = c(1, 2), y = c(3, 4))
   boot_samples <- list(

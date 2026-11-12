@@ -338,9 +338,10 @@ apply_to_bootstrap <- function(
 
   # Apply function to bootstrap samples
   if (use_parallel) {
-    old_plan <- plan()
+    # `plan(new)` returns the user's whole plan; `plan()` alone returns only
+    # its outer level, and restoring from that dropped any nested levels.
+    old_plan <- plan(callr, workers = workers)
     on.exit(plan(old_plan), add = TRUE)
-    plan(callr, workers = workers)
 
     results <- furrr::future_map(
       boot_samples,
@@ -389,9 +390,10 @@ apply_to_fwb_bootstrap <- function(
   }
 
   if (use_parallel) {
-    old_plan <- plan()
+    # `plan(new)` returns the user's whole plan; `plan()` alone returns only
+    # its outer level, and restoring from that dropped any nested levels.
+    old_plan <- plan(callr, workers = workers)
     on.exit(plan(old_plan), add = TRUE)
-    plan(callr, workers = workers)
 
     results <- furrr::future_map(
       fwb_samples,
