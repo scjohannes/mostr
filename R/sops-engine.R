@@ -18,21 +18,16 @@
 #'   variables this is a numeric vector. For factor-valued visit indices,
 #'   values are matched to the fitted factor levels; if `NULL`, all fitted
 #'   visit levels are used.
-#' @param y_levels A character vector defining the names of the outcome levels (states).
-#'   These must match the levels used in the fitted `object`.
-#' @param absorb (Optional) A character vector of absorbing states (states from which
-#'   transitions out are impossible). Defaults to \code{NULL}.
-#' @param time_var A character string specifying the name of the time variable in the
-#'   model formula. Defaults to \code{"time"}.
-#' @param p_var A character string specifying the name of the previous state variable
-#'   used in the model formula. Defaults to \code{"yprev"}.
-#' @param p2_var Optional character string specifying the second previous
-#'   state variable. `NULL` uses first-order recursion; any non-`NULL` value
-#'   uses second-order recursion with histories `(p2_var, p_var)`.
-#' @param gap_var (Optional) A character string specifying the name of the variable representing
-#'   the time gap_var (delta time) between observations, if used in the model. Defaults to \code{NULL}.
-#' @param time_covariates (Optional) A data frame used for explicit time-basis columns
-#'   or other time-varying covariates.
+#' @param settings The resolved settings of the call
+#'   (`resolve_markov_settings()`), holding:
+#'   `y_levels`, the outcome levels in fitted order; `absorb`, the absorbing
+#'   states; `time_var` and `p_var`, the time and previous-state columns;
+#'   `p2_var`, the column with the state two visits back (`NULL` uses
+#'   first-order recursion, otherwise second-order recursion with histories
+#'   `(p2_var, p_var)`); `gap_var`, the column with the time since the previous
+#'   visit; `id_var`, the ID column used when `include_re = TRUE`; and
+#'   `time_covariates`, a data frame for explicit time-basis columns or other
+#'   time-varying covariates:
 #'   \itemize{
 #'     \item **Structure:** The number of rows in \code{time_covariates} must exactly match the length of \code{times}.
 #'     \item **Columns:** Column names must match the specific basis variables used in the model formula (e.g., \code{t1}, \code{t2}).
@@ -46,8 +41,6 @@
 #'   fitted random-effect draws in posterior predictions. This does not
 #'   integrate over the random-effects distribution; it uses the fitted effects
 #'   for known IDs.
-#' @param id_var Character ID column used when `include_re = TRUE`. `NULL`
-#'   uses the `id_var` given to [mostm()].
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible `blrm` draw sampling.
@@ -112,21 +105,17 @@ soprob_markov_r_engine <- function(
   model,
   newdata,
   times = NULL,
-  y_levels,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
+  settings,
   include_re = FALSE,
-  id_var = NULL,
   n_draws = 100L,
   seed = NULL,
   ...
 ) {
   object <- model
   data <- newdata
+  y_levels <- settings$y_levels
+  p_var <- settings$p_var
+  p2_var <- settings$p2_var
   # --- 1. Initial Checks & Setup ---
   dots <- list(...)
   unknown_dots <- setdiff(
@@ -180,13 +169,13 @@ soprob_markov_r_engine <- function(
     object,
     data,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
+    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
+  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   draw_indices <- NULL
   if (ftype == "rmsb") {
@@ -204,7 +193,7 @@ soprob_markov_r_engine <- function(
         obj,
         d,
         include_re = include_re,
-        id_var = id_var,
+        id_var = settings$id_var,
         draw_indices = draw_indices,
         gamma_draws = gamma_draws_arg,
         prediction_cache = prediction_cache_arg
@@ -225,7 +214,7 @@ soprob_markov_r_engine <- function(
   n_pat <- nrow(data)
   n_times <- length(times)
   ylevel_names <- as_state_labels(y_levels)
-  absorb_names <- as_state_labels(absorb)
+  absorb_names <- as_state_labels(settings$absorb)
   n_states <- length(ylevel_names)
   absorb_idx <- which(ylevel_names %in% absorb_names)
   non_absorb_idx <- setdiff(seq_len(n_states), absorb_idx)
@@ -255,11 +244,9 @@ soprob_markov_r_engine <- function(
   # Update time variables for T1
   data <- assign_sop_visit(
     data,
-    time_var = time_var,
+    settings = settings,
     times = times,
     index = 1L,
-    time_covariates = time_covariates,
-    gap_var = gap_var,
     time_info = time_info
   )
 
@@ -284,11 +271,7 @@ soprob_markov_r_engine <- function(
       times = times,
       ylevel_names = ylevel_names,
       absorb_names = absorb_names,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       time_info = time_info
     ))
   }
@@ -318,11 +301,9 @@ soprob_markov_r_engine <- function(
   for (it in 2:n_times) {
     edata_base <- assign_sop_visit(
       edata_base,
-      time_var = time_var,
+      settings = settings,
       times = times,
       index = it,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
       time_info = time_info
     )
 
@@ -425,13 +406,11 @@ soprob_markov_second_order_run <- function(
   times,
   ylevel_names,
   absorb_names,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   time_info
 ) {
+  p_var <- settings$p_var
+  p2_var <- settings$p2_var
   n_pat <- nrow(data)
   n_times <- length(times)
   n_states <- length(ylevel_names)
@@ -488,11 +467,9 @@ soprob_markov_second_order_run <- function(
   for (it in 2:n_times) {
     data_time <- assign_sop_visit(
       data,
-      time_var = time_var,
+      settings = settings,
       times = times,
       index = it,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
       time_info = time_info
     )
 

@@ -98,6 +98,7 @@ build_second_order_comparisons_case <- function(case) {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    p2_var = "ypprev",
     engine = "vglm"
   )
   list(

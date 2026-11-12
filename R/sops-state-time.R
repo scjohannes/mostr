@@ -110,8 +110,8 @@ state_time <- function(
   target_times = NULL,
   time_unit = NULL,
   id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
@@ -175,13 +175,23 @@ state_time <- function(
     ))
   }
 
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(
+    model,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
+    time_covariates = time_covariates
+  )
   variables <- resolve_prediction_variables(
     variables,
     model,
     newdata,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels
+    settings
   )
   if (!is.null(state_sets)) {
     validate_avg_time_state_sets(state_sets)
@@ -192,19 +202,12 @@ state_time <- function(
     variables = variables,
     by = NULL,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     include_re = include_re
   )
   profile_cols <- profile_output_columns(
     setup$newdata_pred,
-    time_var = time_var,
+    time_var = settings$time_var,
     reserved = c(
       "state_set",
       if (!is.null(time_unit)) "time_unit",
@@ -220,25 +223,18 @@ state_time <- function(
     model,
     setup$newdata_orig,
     times,
-    time_var,
-    gap_var,
+    settings,
     setup$newdata_supplied
   )
 
   # Posterior totals are summarized from each draw's totals, so `blrm` SOP
   # draws are always needed here.
-  ind <- muffle_skipped_sop_visits(sops(
+  ind <- muffle_skipped_sop_visits(sops_impl(
     model = model,
     newdata = setup$newdata_pred,
+    variables = NULL,
     times = setup$times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = setup$id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = setup$settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -250,7 +246,7 @@ state_time <- function(
   setup <- copy_sops_attrs_to_setup(setup, ind)
   state_sets <- normalize_comparison_state_sets(
     state_sets,
-    attr(ind, "y_levels")
+    markov_result_settings(ind)$y_levels
   )
 
   reducer <- profile_array_reducer(

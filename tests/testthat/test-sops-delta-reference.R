@@ -312,8 +312,7 @@ test_that("fitted orm and vglm delta plans match the independent reference", {
         model = model,
         newdata = fits$baseline,
         times = 1:4,
-        y_levels = 1:6,
-        absorb = absorb
+        settings = markov_settings(y_levels = 1:6, absorb = absorb)
       )
       expect_delta_plan_matches_reference(plan, model)
     }
@@ -349,8 +348,7 @@ test_that("factor-time delta plans match the independent reference", {
         model = model,
         newdata = baseline,
         times = levels(data$time),
-        y_levels = seq_len(4),
-        absorb = absorb
+        settings = markov_settings(y_levels = seq_len(4), absorb = absorb)
       )
       expect_delta_plan_matches_reference(plan, model)
     }

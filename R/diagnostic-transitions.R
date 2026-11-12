@@ -3,13 +3,12 @@
 plot_transitions_empirical_data <- function(
   data,
   times,
-  time_var,
+  settings,
   y_var,
-  p_var,
-  facet_var,
-  y_levels
+  facet_var
 ) {
-  plot_validate_columns(data, c(time_var, y_var, p_var), "`data`")
+  time_var <- settings$time_var
+  plot_validate_columns(data, c(time_var, y_var, settings$p_var), "`data`")
   plot_validate_facets(data, facet_var)
   if (!is.null(times)) {
     keep <- as.character(data[[time_var]]) %in% as.character(times)
@@ -18,11 +17,9 @@ plot_transitions_empirical_data <- function(
 
   plot_transition_summary(
     data = data,
-    time_var = time_var,
+    settings = settings,
     y_var = y_var,
-    p_var = p_var,
-    facet_var = facet_var,
-    y_levels = y_levels
+    facet_var = facet_var
   )
 }
 
@@ -31,16 +28,9 @@ plot_transitions_model_data <- function(
   newdata,
   variables,
   times,
-  y_levels,
-  absorb,
   comparison,
-  time_var,
-  p_var,
-  p2_var,
-  id_var,
+  settings,
   facet_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws
 ) {
@@ -56,14 +46,7 @@ plot_transitions_model_data <- function(
     newdata = newdata,
     variables = variables,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    id_var = id_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates
+    settings = settings
   )
 
   facet_summary <- facet_var
@@ -75,10 +58,6 @@ plot_transitions_model_data <- function(
     model = model,
     setup = setup,
     facet_var = facet_summary,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws
   )
@@ -99,10 +78,6 @@ plot_transition_model_summary <- function(
   model,
   setup,
   facet_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws
 ) {
@@ -110,10 +85,6 @@ plot_transition_model_summary <- function(
     model = model,
     setup = setup,
     facet_var = facet_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
     return_kernels = FALSE,
@@ -263,16 +234,16 @@ plot_transition_finalize_summary <- function(
 
 plot_transition_summary <- function(
   data,
-  time_var,
+  settings,
   y_var,
-  p_var,
-  facet_var,
-  y_levels
+  facet_var
 ) {
+  time_var <- settings$time_var
+  p_var <- settings$p_var
   state_levels <- plot_transition_state_levels(
     data,
     vars = c(y_var, p_var),
-    y_levels = y_levels
+    y_levels = settings$y_levels
   )
   time_values <- plot_ordered_values(data[[time_var]])
   time_keys <- as.character(time_values)

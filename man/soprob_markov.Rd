@@ -8,10 +8,10 @@ soprob_markov(
   model,
   newdata,
   times = NULL,
-  y_levels,
+  y_levels = NULL,
   absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
@@ -35,20 +35,26 @@ recursion takes one transition per value, so leaving out visits does not
 skip time; see \code{\link[=sops]{sops()}}. Unlike \code{\link[=sops]{sops()}}, this function does not warn
 when \code{times} leaves out fitted visits.}
 
-\item{y_levels}{Ordered outcome-state levels. The number of levels must equal
-the fitted threshold count plus one.}
+\item{y_levels}{Ordered outcome-state levels. \code{NULL} (the default) uses the
+states of the fitted model in fitted order. A supplied vector must hold
+the same states in the same order; its type sets the type of the state
+labels.}
 
 \item{absorb}{Optional absorbing state levels: states that a patient can't
 leave. A row of \code{newdata} whose \code{p_var} or \code{p2_var} value is absorbing
 gives an error: such a patient can't move to another state, and the model
 has no transitions out of an absorbing state to predict from.}
 
-\item{time_var}{Name of the model time variable.}
+\item{time_var}{Name of the model time variable. \code{NULL} (the default) uses
+the \code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
 
-\item{p_var}{Name of the previous-state variable.}
+\item{p_var}{Name of the previous-state variable. \code{NULL} (the default) uses
+the \code{p_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error.}
 
-\item{p2_var}{Optional second previous-state variable. A non-\code{NULL} value
-selects second-order recursion.}
+\item{p2_var}{Name of the variable with the state two visits back. \code{NULL}
+(the default) uses the \code{p2_var} given to \code{\link[=mostm]{mostm()}}, so a model fitted
+with \code{p2_var} uses second-order recursion and one fitted without it
+first-order recursion. A different name is an error.}
 
 \item{gap_var}{Optional elapsed-time-gap variable.}
 
@@ -59,7 +65,9 @@ containing precomputed time-varying covariates.}
 known IDs. Only \code{blrm} fits have random effects, so \code{TRUE} gives an error
 for other fits.}
 
-\item{id_var}{ID column used for \code{blrm} random effects.}
+\item{id_var}{ID column used for \code{blrm} random effects. \code{NULL} (the
+default) uses the \code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an
+error.}
 
 \item{n_draws}{Number of \code{blrm} posterior draws, or \code{NULL} for all draws.}
 

@@ -172,7 +172,7 @@ test_that("transition traces preserve first- and second-order SOP marginals", {
         model,
         data = first_order,
         times = 1:3,
-        y_levels = 1:2
+        settings = markov_settings(id_var = "id", y_levels = 1:2)
       )
       sops_first <- soprob_markov(
         model,
@@ -184,8 +184,11 @@ test_that("transition traces preserve first- and second-order SOP marginals", {
         model,
         data = second_order,
         times = 1:3,
-        y_levels = 1:2,
-        p2_var = "ypprev"
+        settings = markov_settings(
+          id_var = "id",
+          p2_var = "ypprev",
+          y_levels = 1:2
+        )
       )
       sops_second <- soprob_markov(
         model,
@@ -253,6 +256,68 @@ test_that("plot_transitions computes second-order treatment differences", {
   expect_equal(plot$labels$fill, "Difference in transition proportion")
   expect_equal(diff_12, 1)
   expect_equal(diff_11, -1)
+})
+
+test_that("model-based plots take settings from the fit and refuse others", {
+  model <- markov_set_settings(
+    structure(list(), class = "vglm", markov_id_var = "id"),
+    markov_settings(
+      engine = "vglm",
+      id_var = "id",
+      p2_var = "ypprev",
+      y_levels = 1:2,
+      from_fit = markov_settings_fit_fields()
+    )
+  )
+  newdata <- data.frame(
+    id = 1:2,
+    time = 0,
+    ypprev = factor(c(1, 2), levels = 1:2),
+    yprev = factor(c(2, 1), levels = 1:2),
+    tx = 0
+  )
+
+  with_mocked_bindings(
+    validate_markov_model = function(object) NULL,
+    predict_vglm_response_markov = function(object, newdata) {
+      p2 <- ifelse(as.character(newdata$ypprev) == "2", 0.8, 0.3)
+      cbind("1" = 1 - p2, "2" = p2)
+    },
+    {
+      fitted_order <- plot_transitions(model, newdata = newdata, times = 1:3)
+      explicit <- plot_transitions(
+        model,
+        newdata = newdata,
+        times = 1:3,
+        p2_var = "ypprev"
+      )
+      expect_error(
+        plot_transitions(model, newdata = newdata, times = 1:3, p2_var = "y2"),
+        "does not match the fitted model"
+      )
+      expect_error(
+        plot_correlation(model, newdata = newdata, times = 1:3, time_var = "t"),
+        "does not match the fitted model"
+      )
+      expect_error(
+        plot_variogram(model, newdata = newdata, times = 1:3, id_var = "pid"),
+        "does not match the fitted model"
+      )
+      expect_error(
+        plot_lp_difference(
+          model,
+          profile = newdata[1, ],
+          variables = list(tx = c(0, 1)),
+          times = 1:3,
+          y_levels = 2:1
+        ),
+        "fitted order"
+      )
+    }
+  )
+
+  # Leaving `p2_var` out plots the fit's second-order recursion.
+  expect_equal(fitted_order$data, explicit$data)
 })
 
 test_that("plot_transitions carries absorbing states absent from yprev levels", {

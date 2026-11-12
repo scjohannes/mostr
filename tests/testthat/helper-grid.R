@@ -215,7 +215,13 @@ grid_fixture <- function(key, make) {
   grid_cache$fixtures[[key]]
 }
 
-grid_fit_to <- function(cell, data) {
+# `p2_var` names the column with the state two visits back that the fit
+# records; by default the column of second-order cells.
+grid_fit_to <- function(
+  cell,
+  data,
+  p2_var = if (cell$order == 2L) "ypprev"
+) {
   time_term <- switch(
     cell$time,
     rcs = "rms::rcs(time, 3)",
@@ -248,6 +254,7 @@ grid_fit_to <- function(cell, data) {
           data = data,
           id_var = "id",
           first_followup_time = first_followup,
+          p2_var = p2_var,
           weights = w
         )
       } else {
@@ -255,7 +262,8 @@ grid_fit_to <- function(cell, data) {
           formula,
           data = data,
           id_var = "id",
-          first_followup_time = first_followup
+          first_followup_time = first_followup,
+          p2_var = p2_var
         )
       }
     } else {
@@ -266,6 +274,7 @@ grid_fit_to <- function(cell, data) {
           data = data,
           id_var = "id",
           first_followup_time = first_followup,
+          p2_var = p2_var,
           engine = "vglm",
           family = family,
           weights = w
@@ -276,6 +285,7 @@ grid_fit_to <- function(cell, data) {
           data = data,
           id_var = "id",
           first_followup_time = first_followup,
+          p2_var = p2_var,
           engine = "vglm",
           family = family
         )

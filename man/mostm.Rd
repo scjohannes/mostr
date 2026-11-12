@@ -11,6 +11,8 @@ mostm(
   engine = c("orm", "vglm", "blrm"),
   id_var,
   time_var = "time",
+  p_var = "yprev",
+  p2_var = NULL,
   first_followup_time = NULL,
   weights = NULL,
   subset = NULL,
@@ -68,7 +70,20 @@ standard errors that allow for correlation between the transitions of one
 patient, and the bootstrap resamples or reweights whole patients by it.}
 
 \item{time_var}{Name of the time column in \code{data}. It is used to find each
-patient's starting row.}
+patient's starting row, and \code{\link[=sops]{sops()}} and the other prediction functions
+set this column to each requested visit.}
+
+\item{p_var}{Name of the column in \code{data} that holds each patient's state at
+the previous visit, \code{"yprev"} by default. The prediction functions replace
+it with each possible previous state as they move from visit to visit.}
+
+\item{p2_var}{For a second-order model, the name of the column that holds
+each patient's state two visits back, for example \code{"ypprev"}. \code{NULL} (the
+default) fits a first-order model, in which the next state depends only on
+the previous one. Give it here, where the model is fitted: the prediction
+functions then use second-order calculations without being told again.
+Without it, a column with the older state in the formula would be held at
+each patient's starting value.}
 
 \item{first_followup_time}{Time of the first visit after baseline. Each
 patient's row at this time is their starting row for automatic

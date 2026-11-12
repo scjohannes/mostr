@@ -11,16 +11,15 @@ warn_skipped_sop_visits <- function(
   model,
   data,
   times,
-  time_var,
-  gap_var,
+  settings,
   newdata_supplied
 ) {
   issue <- skipped_sop_visit_issue(
     model,
     data,
     times,
-    time_var,
-    gap_var,
+    settings$time_var,
+    settings$gap_var,
     newdata_supplied
   )
   if (!is.null(issue)) {

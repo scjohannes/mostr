@@ -618,7 +618,11 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
       info = case$label
     )
     expect_equal(nrow(attr(out, "refit_data")), nrow(data), info = case$label)
-    expect_equal(attr(out, "id_var"), "id", info = case$label)
+    expect_equal(
+      mostr:::markov_result_settings(out)$id_var,
+      "id",
+      info = case$label
+    )
     if (is.null(case$rowid)) {
       next
     }

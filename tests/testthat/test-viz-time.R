@@ -50,7 +50,7 @@ test_that("plot_time stacks every state into bars spanning follow-up", {
       estimate = by_sex_estimate
     ),
     class = c("markov_avg_state_time", "data.frame"),
-    y_levels = c("1", "2"),
+    settings = markov_settings(y_levels = c("1", "2")),
     time_args = list(state_sets = list("1" = "1", "2" = "2"))
   )
 
@@ -177,7 +177,7 @@ test_that("plot_time pointrange draws scenarios from black to lighter grays", {
       estimate = 1:8
     ),
     class = c("markov_avg_state_time", "data.frame"),
-    y_levels = "1",
+    settings = markov_settings(y_levels = "1"),
     time_args = list(state_sets = list("1" = "1"))
   )
 
@@ -200,7 +200,7 @@ test_that("plot_time skips labels on narrow segments", {
       estimate = c(0.1, 9.9, 5, 5)
     ),
     class = c("markov_avg_state_time", "data.frame"),
-    y_levels = c("1", "2"),
+    settings = markov_settings(y_levels = c("1", "2")),
     time_args = list(state_sets = list("1" = "1", "2" = "2"))
   )
 

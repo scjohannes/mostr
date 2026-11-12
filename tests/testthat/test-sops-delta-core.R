@@ -18,8 +18,7 @@ delta_vglm_case <- local({
         model = model,
         newdata = baseline,
         times = 1:5,
-        y_levels = y_levels,
-        absorb = max(y_levels)
+        settings = markov_settings(y_levels = y_levels, absorb = max(y_levels))
       )
       value <<- list(
         data = data,
@@ -56,8 +55,7 @@ delta_orm_case <- local({
         model = model,
         newdata = baseline,
         times = 1:4,
-        y_levels = model$yunique,
-        absorb = max(model$yunique)
+        settings = markov_settings(y_levels = model$yunique, absorb = max(model$yunique))
       )
       value <<- list(
         data = data,
@@ -433,8 +431,10 @@ test_that("analytical SOP validation rejects unsupported model structures", {
     model = partial_model,
     newdata = case$baseline,
     times = 1:3,
-    y_levels = seq_len(nrow(get_effective_coefs(partial_model)) + 1L),
-    absorb = max(case$y_levels)
+    settings = markov_settings(
+      y_levels = seq_len(nrow(get_effective_coefs(partial_model)) + 1L),
+      absorb = max(case$y_levels)
+    )
   )
   expect_snapshot(
     run_sop_delta_plan(partial_plan, partial_model),

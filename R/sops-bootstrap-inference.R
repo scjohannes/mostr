@@ -62,21 +62,16 @@ inferences_bootstrap <- function(
   call_args <- attr(object, "call_args")
   avg_args <- attr(object, "avg_args")
 
-  time_var <- attr(object, "time_var")
-  p_var <- attr(object, "p_var")
-  p2_var <- attr(object, "p2_var")
-  y_levels <- attr(object, "y_levels")
-  absorb <- attr(object, "absorb")
-  gap_var <- attr(object, "gap_var")
-  time_covariates <- attr(object, "time_covariates")
+  settings <- markov_result_settings(object)
+  y_levels <- settings$y_levels
 
   variables <- avg_args$variables
   by <- avg_args$by
   times <- avg_args$times
-  id_var <- avg_args$id_var
+  id_var <- settings$id_var
 
   refit_data <- stored_refit_bootstrap_data(object, model)
-  validate_refit_bootstrap_data(refit_data, id_var, time_var)
+  validate_refit_bootstrap_data(refit_data, id_var, settings$time_var)
 
   if (newdata_supplied && engine == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
@@ -87,7 +82,12 @@ inferences_bootstrap <- function(
   n_states <- length(y_levels)
 
   # --- 2. Identify State Columns ---
-  factor_cols <- bootstrap_state_columns(model, refit_data, p_var, p2_var)
+  factor_cols <- bootstrap_state_columns(
+    model,
+    refit_data,
+    settings$p_var,
+    settings$p2_var
+  )
 
   # --- 4. Define Analysis Function ---
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
@@ -111,7 +111,7 @@ inferences_bootstrap <- function(
       factor_cols = factor_cols,
       original_data = refit_data,
       y_levels = y_levels,
-      absorb = absorb,
+      absorb = settings$absorb,
       use_coefstart = use_coefstart,
       fit_weights = fit_weights
     )
@@ -147,7 +147,7 @@ inferences_bootstrap <- function(
         baseline_boot <- resolve_markov_prediction_data(
           boot_data,
           id_var = "new_id",
-          time_var = time_var,
+          time_var = settings$time_var,
           data_label = "bootstrap data"
         )
         baseline_weights <- NULL
@@ -155,7 +155,7 @@ inferences_bootstrap <- function(
         baseline_boot <- resolve_markov_prediction_data(
           boot_data,
           id_var = id_var,
-          time_var = time_var,
+          time_var = settings$time_var,
           data_label = "bootstrap data"
         )
         baseline_weights <- fwb_baseline_weights(
@@ -186,17 +186,15 @@ inferences_bootstrap <- function(
     # `check_bootstrap_starting_states()` has made sure that their starting
     # states are in every resample.
     sops_array <- tryCatch(
-      soprob_markov(
+      predict_markov_sops(
         model = m_boot,
         newdata = newdata_cf,
         times = times,
-        y_levels = state_factor(boot_ylevels),
-        absorb = boot_absorb,
-        time_var = time_var,
-        p_var = p_var,
-        p2_var = p2_var,
-        gap_var = gap_var,
-        time_covariates = time_covariates
+        settings = markov_settings_update(
+          settings,
+          y_levels = state_factor(boot_ylevels),
+          absorb = boot_absorb
+        )
       ),
       error = function(e) {
         rethrow_crossed_thresholds(e)
@@ -304,7 +302,7 @@ inferences_bootstrap <- function(
       starting_states = bootstrap_starting_states(
         profiles = if (newdata_supplied) prediction_data,
         variables = variables,
-        state_vars = c(p_var, p2_var)
+        state_vars = c(settings$p_var, settings$p2_var)
       )
     )
     # Supplied profiles are fixed and always contain every group. Otherwise
@@ -316,7 +314,7 @@ inferences_bootstrap <- function(
           resolve_markov_prediction_data(
             refit_data,
             id_var = id_var,
-            time_var = time_var,
+            time_var = settings$time_var,
             data_label = "refit data"
           ),
           variables,
@@ -342,12 +340,7 @@ inferences_bootstrap <- function(
         "variables",
         "times",
         "y_levels",
-        "absorb",
-        "p_var",
-        "p2_var",
-        "time_var",
-        "gap_var",
-        "time_covariates",
+        "settings",
         "n_times",
         "n_states",
         "factor_cols",
@@ -381,12 +374,7 @@ inferences_bootstrap <- function(
         "variables",
         "times",
         "y_levels",
-        "absorb",
-        "p_var",
-        "p2_var",
-        "time_var",
-        "gap_var",
-        "time_covariates",
+        "settings",
         "n_times",
         "n_states",
         "factor_cols",
@@ -482,23 +470,18 @@ inferences_bootstrap_sops_fwb <- function(
   newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
   call_args <- attr(object, "call_args")
 
-  time_var <- attr(object, "time_var")
-  p_var <- attr(object, "p_var")
-  p2_var <- attr(object, "p2_var")
-  y_levels <- attr(object, "y_levels")
-  absorb <- attr(object, "absorb")
-  gap_var <- attr(object, "gap_var")
-  time_covariates <- attr(object, "time_covariates")
+  settings <- markov_result_settings(object)
+  y_levels <- settings$y_levels
   times <- call_args$times
   if (is.null(model)) {
     stop("Model not stored in object. Cannot perform bootstrap.")
   }
-  id_var <- markov_require_id_var(model, attr(object, "id_var"))
+  id_var <- markov_require_id_var(model, settings$id_var)
   if (is.null(prediction_data)) {
     stop("Prediction data not stored. Cannot perform bootstrap.")
   }
   refit_data <- stored_refit_bootstrap_data(object, model)
-  validate_refit_bootstrap_data(refit_data, id_var, time_var)
+  validate_refit_bootstrap_data(refit_data, id_var, settings$time_var)
 
   prediction_data <- ensure_markov_rowid(prediction_data)
   if (!newdata_supplied) {
@@ -520,7 +503,12 @@ inferences_bootstrap_sops_fwb <- function(
     NULL
   }
 
-  factor_cols <- bootstrap_state_columns(model, refit_data, p_var, p2_var)
+  factor_cols <- bootstrap_state_columns(
+    model,
+    refit_data,
+    settings$p_var,
+    settings$p2_var
+  )
 
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
     fit_weights <- boot_data$fwb_weight
@@ -531,7 +519,7 @@ inferences_bootstrap_sops_fwb <- function(
       factor_cols = factor_cols,
       original_data = refit_data,
       y_levels = y_levels,
-      absorb = absorb,
+      absorb = settings$absorb,
       use_coefstart = use_coefstart,
       fit_weights = fit_weights
     )
@@ -554,17 +542,15 @@ inferences_bootstrap_sops_fwb <- function(
     }
 
     sops_array <- tryCatch(
-      soprob_markov(
+      predict_markov_sops(
         model = m_boot,
         newdata = prediction_data,
         times = times,
-        y_levels = factor(boot_ylevels),
-        absorb = boot_absorb,
-        time_var = time_var,
-        p_var = p_var,
-        p2_var = p2_var,
-        gap_var = gap_var,
-        time_covariates = time_covariates
+        settings = markov_settings_update(
+          settings,
+          y_levels = factor(boot_ylevels),
+          absorb = boot_absorb
+        )
       ),
       error = function(e) {
         rethrow_crossed_thresholds(e)
@@ -616,12 +602,7 @@ inferences_bootstrap_sops_fwb <- function(
       "refit_data",
       "times",
       "y_levels",
-      "absorb",
-      "p_var",
-      "p2_var",
-      "time_var",
-      "gap_var",
-      "time_covariates",
+      "settings",
       "factor_cols",
       "use_coefstart",
       "id_var",

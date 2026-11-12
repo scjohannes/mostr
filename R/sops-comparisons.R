@@ -59,7 +59,9 @@
 #'   order, for example `times = 1:30`. Each value is one transition, so
 #'   leaving out visits does not skip time; see the section "Choosing visits"
 #'   and [avg_sops()].
-#' @param y_levels A vector of state levels. See [avg_sops()].
+#' @param y_levels The states in fitted order. `NULL` (the default) uses the
+#'   states of the fitted model; a different set of states is an error. See
+#'   [sops()].
 #' @param absorb The absorbing state. See [avg_sops()].
 #' @param time_map Optional named numeric vector or data frame mapping visit
 #'   labels to real elapsed times. Used by `"time_in_state"` and
@@ -76,11 +78,16 @@
 #'   With `baseline_time = NULL`, the omitted grid is the mapped visit times
 #'   only.
 #' @param time_unit Optional label stored in output.
-#' @param id_var Name of the patient ID variable. See [avg_sops()].
-#' @param time_var Name of the time variable in the model. See [avg_sops()].
-#' @param p_var Name of the previous state variable in the model. See
-#'   [avg_sops()].
-#' @param p2_var Optional second previous-state variable. See [avg_sops()].
+#' @param id_var Name of the patient ID column. `NULL` (the default) uses the
+#'   `id_var` given to [mostm()]; a different name is an error.
+#' @param time_var Name of the time column. `NULL` (the default) uses the
+#'   `time_var` given to [mostm()]; a different name is an error.
+#' @param p_var Name of the previous-state column. `NULL` (the default) uses
+#'   the `p_var` given to [mostm()]; a different name is an error.
+#' @param p2_var Name of the column with the state two visits back. `NULL`
+#'   (the default) uses the `p2_var` given to [mostm()], so a second-order
+#'   fit is compared with a second-order recursion. A different name is an
+#'   error. See [sops()].
 #' @param gap_var Optional name of the variable holding the time elapsed since
 #'   the previous visit, if the model includes one. See [avg_sops()].
 #' @param time_covariates Optional time-varying covariate lookup table for explicit
@@ -162,8 +169,8 @@ avg_comparisons <- function(
   target_times = NULL,
   time_unit = NULL,
   id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
@@ -185,14 +192,24 @@ avg_comparisons <- function(
 
   validate_comparison_times(times, "avg_comparisons()")
   conf_level <- validate_conf_level(conf_level)
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(
+    model,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
+    time_covariates = time_covariates
+  )
   variables <- resolve_comparison_variables(
     variables,
     model = model,
     newdata = newdata,
     fn = "avg_comparisons()",
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels
+    settings = settings
   )
   validate_avg_comparison_estimand(estimand, state_sets, comparison)
 
@@ -238,14 +255,7 @@ avg_comparisons <- function(
       variables = variables,
       by = by,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       ...
     )
@@ -255,20 +265,12 @@ avg_comparisons <- function(
       model,
       setup$newdata_orig,
       times,
-      time_var,
-      gap_var,
+      settings,
       setup$newdata_supplied
     )
     tb <- muffle_skipped_sop_visits(avg_comparison_time_benefit_point(
       model = model,
       setup = setup,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -293,14 +295,7 @@ avg_comparisons <- function(
       variables = variables,
       by = observed_by(by, variables),
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -311,7 +306,7 @@ avg_comparisons <- function(
     )
     state_sets <- normalize_comparison_state_sets(
       state_sets,
-      attr(avg, "y_levels")
+      markov_result_settings(avg)$y_levels
     )
     result <- avg_comparison_from_avg_sops(
       avg,

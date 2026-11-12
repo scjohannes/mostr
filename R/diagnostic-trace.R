@@ -4,15 +4,8 @@ markov_transition_trace <- function(
   object,
   data,
   times = NULL,
-  y_levels,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
+  settings,
   include_re = FALSE,
-  id_var = NULL,
   n_draws = 100L,
   seed = NULL,
   return_kernels = FALSE,
@@ -51,6 +44,8 @@ markov_transition_trace <- function(
 
   validate_markov_model(object)
 
+  p_var <- settings$p_var
+  p2_var <- settings$p2_var
   if (!p_var %in% names(data)) {
     stop("Previous-state variable `", p_var, "` not found in `data`.")
   }
@@ -66,13 +61,13 @@ markov_transition_trace <- function(
     object,
     data,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
+    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
+  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   draw_indices <- NULL
   if (ftype == "rmsb") {
@@ -89,7 +84,7 @@ markov_transition_trace <- function(
         obj,
         d,
         include_re = include_re,
-        id_var = id_var,
+        id_var = settings$id_var,
         draw_indices = draw_indices,
         gamma_draws = gamma_draws_arg
       )
@@ -107,8 +102,8 @@ markov_transition_trace <- function(
 
   n_pat <- nrow(data)
   n_times <- length(times)
-  ylevel_names <- as_state_labels(y_levels)
-  absorb_names <- as_state_labels(absorb)
+  ylevel_names <- as_state_labels(settings$y_levels)
+  absorb_names <- as_state_labels(settings$absorb)
   n_states <- length(ylevel_names)
   absorb_idx <- which(ylevel_names %in% absorb_names)
   nd <- if (ftype == "rmsb" && length(object$draws)) {
@@ -199,11 +194,9 @@ markov_transition_trace <- function(
 
   data <- assign_sop_visit(
     data,
-    time_var = time_var,
+    settings = settings,
     times = times,
     index = 1L,
-    time_covariates = time_covariates,
-    gap_var = gap_var,
     time_info = time_info
   )
 
@@ -286,11 +279,7 @@ markov_transition_trace <- function(
       times = times,
       ylevel_names = ylevel_names,
       absorb_names = absorb_names,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       time_info = time_info,
       draw_indices = draw_indices
     ))
@@ -307,10 +296,7 @@ markov_transition_trace <- function(
     times = times,
     ylevel_names = ylevel_names,
     absorb_names = absorb_names,
-    time_var = time_var,
-    p_var = p_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     time_info = time_info,
     draw_indices = draw_indices
   )
@@ -386,13 +372,11 @@ markov_transition_trace_first_order <- function(
   times,
   ylevel_names,
   absorb_names,
-  time_var,
-  p_var,
-  gap_var,
-  time_covariates,
+  settings,
   time_info,
   draw_indices
 ) {
+  p_var <- settings$p_var
   n_pat <- nrow(data)
   n_times <- length(times)
   n_states <- length(ylevel_names)
@@ -420,11 +404,9 @@ markov_transition_trace_first_order <- function(
   for (it in 2:n_times) {
     edata_base <- assign_sop_visit(
       edata_base,
-      time_var = time_var,
+      settings = settings,
       times = times,
       index = it,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
       time_info = time_info
     )
 
@@ -511,14 +493,12 @@ markov_transition_trace_second_order <- function(
   times,
   ylevel_names,
   absorb_names,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   time_info,
   draw_indices
 ) {
+  p_var <- settings$p_var
+  p2_var <- settings$p2_var
   n_pat <- nrow(data)
   n_times <- length(times)
   n_states <- length(ylevel_names)
@@ -583,11 +563,9 @@ markov_transition_trace_second_order <- function(
   for (it in 2:n_times) {
     edata_base <- assign_sop_visit(
       edata_base,
-      time_var = time_var,
+      settings = settings,
       times = times,
       index = it,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
       time_info = time_info
     )
 

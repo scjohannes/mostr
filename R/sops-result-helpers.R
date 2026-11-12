@@ -19,58 +19,32 @@ validate_sops_by <- function(by, data, data_arg = "newdata") {
   invisible(NULL)
 }
 
-sops_call_args <- function(
-  times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
-  ...
-) {
-  c(
-    list(
-      times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates
-    ),
-    list(...)
-  )
+# The arguments of a SOP call that are not settings: the resolved visits and,
+# for blrm, the posterior options. The settings are stored separately, in the
+# result's `settings` attribute.
+sops_call_args <- function(times, ...) {
+  c(list(times = times), list(...))
 }
 
+# `settings` is the resolved settings object of the call
+# (`resolve_markov_settings()`), read back with `markov_result_settings()`.
 set_sops_attrs <- function(
   result,
   class_name,
   model,
   call_args,
-  time_var,
-  p_var,
-  p2_var,
-  y_levels,
-  absorb,
-  gap_var,
-  time_covariates,
+  settings,
   newdata_orig = NULL,
   avg_args = NULL,
   extra_attrs = list()
 ) {
+  if (!inherits(settings, "markov_settings")) {
+    stop("Internal SOP result settings are invalid.")
+  }
   result <- as.data.frame(result)
   attr(result, "model") <- model
   attr(result, "call_args") <- call_args
-  attr(result, "time_var") <- time_var
-  attr(result, "p_var") <- p_var
-  attr(result, "p2_var") <- p2_var
-  attr(result, "y_levels") <- y_levels
-  attr(result, "absorb") <- absorb
-  attr(result, "gap_var") <- gap_var
-  attr(result, "time_covariates") <- time_covariates
+  attr(result, "settings") <- settings
   attr(result, "newdata_orig") <- newdata_orig
   attr(result, "avg_args") <- avg_args
 
@@ -142,7 +116,8 @@ comparison_variable_unused <- function(x) {
   if (is.null(used)) {
     return(FALSE)
   }
-  !variable %in% c(used, attr(x, "p_var"), attr(x, "p2_var"))
+  settings <- markov_result_settings(x)
+  !variable %in% c(used, settings$p_var, settings$p2_var)
 }
 
 # A comparison that is exactly 0 by construction has no sampling uncertainty

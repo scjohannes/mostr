@@ -422,13 +422,6 @@ comparison_value <- function(hi, lo, comparison) {
 avg_comparison_time_benefit_point <- function(
   model,
   setup,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
   include_re,
   n_draws,
   seed,
@@ -442,18 +435,12 @@ avg_comparison_time_benefit_point <- function(
   time_unit,
   ...
 ) {
-  ind <- sops(
+  ind <- sops_impl(
     model = model,
     newdata = setup$newdata_pred,
+    variables = NULL,
     times = setup$times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = setup$id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = setup$settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -479,7 +466,7 @@ avg_comparison_time_benefit_point <- function(
   }
 
   setup$times <- sort(unique(ind$time))
-  setup$y_levels <- attr(ind, "y_levels")
+  setup$settings$y_levels <- markov_result_settings(ind)$y_levels
   point <- reduce_time_benefit_sops_df(
     data = as.data.frame(ind),
     setup = setup,
@@ -528,14 +515,8 @@ avg_comparison_time_benefit_point <- function(
 copy_sops_attrs_to_setup <- function(setup, x) {
   call_args <- attr(x, "call_args")
   setup$times <- call_args$times %||% setup$times
-  setup$y_levels <- attr(x, "y_levels") %||% setup$y_levels
   setup$call_args <- call_args %||% setup$call_args
-  setup$time_var <- attr(x, "time_var") %||% setup$time_var
-  setup$p_var <- attr(x, "p_var") %||% setup$p_var
-  setup$p2_var <- attr(x, "p2_var") %||% setup$p2_var
-  setup$absorb <- attr(x, "absorb") %||% setup$absorb
-  setup$gap_var <- attr(x, "gap_var") %||% setup$gap_var
-  setup$time_covariates <- attr(x, "time_covariates") %||% setup$time_covariates
+  setup$settings <- markov_result_settings(x)
   setup
 }
 
@@ -584,7 +565,7 @@ reduce_time_benefit_sops_df <- function(
 }
 
 counterfactual_array_from_tidy <- function(data, value_col, setup) {
-  states <- as_state_labels(setup$y_levels)
+  states <- as_state_labels(setup$settings$y_levels)
   times <- setup$times %||% sort(unique(data$time))
   n_states <- length(states)
   n_times <- length(times)

@@ -68,8 +68,10 @@ make_interpolation_case <- function() {
   )
 
   class(x) <- c("markov_avg_sops", class(x))
-  attr(x, "p_var") <- "yprev"
-  attr(x, "y_levels") <- factor(1:2)
+  attr(x, "settings") <- markov_settings(
+    p_var = "yprev",
+    y_levels = factor(1:2)
+  )
   attr(x, "avg_args") <- list(
     variables = list(tx = c(0, 1)),
     by = NULL,
@@ -355,8 +357,10 @@ test_that("interpolate_sops gives individual profiles one-hot baselines", {
   x$yprev <- factor(ifelse(x$id == 1, "1", "2"), levels = c("1", "2"))
   x$estimate <- 0.5
   class(x) <- c("markov_sops", class(x))
-  attr(x, "p_var") <- "yprev"
-  attr(x, "y_levels") <- factor(1:2)
+  attr(x, "settings") <- markov_settings(
+    p_var = "yprev",
+    y_levels = factor(1:2)
+  )
 
   out <- interpolate_sops(x, time_map = c(v1 = 3, v2 = 7))
   baseline <- out[out$time == 0, , drop = FALSE]
@@ -566,7 +570,7 @@ test_that("interpolate_sops does not extrapolate estimates or draws", {
     estimate = c(0.4, 0.8, 0.7, 0.6, 0.2)
   )
   class(x) <- c("markov_sops", "data.frame")
-  attr(x, "y_levels") <- c("1", "2")
+  attr(x, "settings") <- markov_settings(y_levels = c("1", "2"))
   attr(x, "conf_level") <- 0.8
   attr(x, "draws") <- do.call(
     rbind,
@@ -623,8 +627,10 @@ test_that("individual bootstrap weights propagate through baseline interpolation
   )
   x$estimate <- ifelse(x$state == "1", 0.6, 0.4)
   class(x) <- c("markov_sops", class(x))
-  attr(x, "p_var") <- "yprev"
-  attr(x, "y_levels") <- factor(c("1", "2"))
+  attr(x, "settings") <- markov_settings(
+    p_var = "yprev",
+    y_levels = factor(c("1", "2"))
+  )
   attr(x, "newdata_orig") <- profiles
   attr(x, "newdata_pred") <- profiles
 

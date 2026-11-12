@@ -36,20 +36,21 @@ local_spline_delta_orm_case <- local({
 
 replay_spline_avg_sops <- function(object, model) {
   avg_args <- attr(object, "avg_args")
+  settings <- markov_result_settings(object)
   avg_sops(
     model = model,
     variables = avg_args$variables,
     # Stored averages use `by = NULL` for the overall average.
     by = avg_args$by %||% TRUE,
     times = avg_args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    id_var = avg_args$id_var,
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates")
+    y_levels = settings$y_levels,
+    absorb = settings$absorb,
+    id_var = settings$id_var,
+    time_var = settings$time_var,
+    p_var = settings$p_var,
+    p2_var = settings$p2_var,
+    gap_var = settings$gap_var,
+    time_covariates = settings$time_covariates
   )
 }
 

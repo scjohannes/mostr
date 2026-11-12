@@ -93,7 +93,7 @@ test_that("per-profile and average summaries validate arguments before predictin
   case <- make_comparisons_case()
   model <- case$model
   local_mocked_bindings(
-    sops = function(...) {
+    sops_impl = function(...) {
       stop("Predictions should not run before argument validation.")
     },
     avg_comparison_replay_avg_sops = function(...) {
@@ -550,7 +550,11 @@ test_that("comparisons() matches paired sops() with factor visit times and secon
       info = row$label
     )
     if (!is.null(row$p2_var)) {
-      expect_identical(attr(cmp, "p2_var"), row$p2_var, info = row$label)
+      expect_identical(
+        mostr:::markov_result_settings(cmp)$p2_var,
+        row$p2_var,
+        info = row$label
+      )
       expect_error(
         inferences(cmp, method = "delta"),
         "second-order",

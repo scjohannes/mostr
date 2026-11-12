@@ -918,23 +918,17 @@ assign_sop_t_covs <- function(data, time_covariates, index) {
   data
 }
 
-assign_sop_visit <- function(
-  data,
-  time_var,
-  times,
-  index,
-  time_covariates,
-  gap_var,
-  time_info
-) {
-  data <- assign_sop_time(data, time_var, times[index], time_info)
+# Set the columns of visit `index` of `times`: the time column, the gap since
+# the previous visit, and the time-varying covariates, as named in `settings`.
+assign_sop_visit <- function(data, settings, times, index, time_info) {
+  data <- assign_sop_time(data, settings$time_var, times[index], time_info)
   data <- assign_sop_gap(
     data,
-    gap_var,
+    settings$gap_var,
     times,
     index,
-    time_covariates,
+    settings$time_covariates,
     time_info
   )
-  assign_sop_t_covs(data, time_covariates, index)
+  assign_sop_t_covs(data, settings$time_covariates, index)
 }

@@ -15,8 +15,8 @@
 #' contain the current time, current state, and previous-state columns named by
 #' `time_var`, `y_var`, and `p_var`. For model-based plots, pass a fitted
 #' Markov model and `times`; use `newdata` for explicit prediction profiles and
-#' pass `y_levels` or `absorb` when they are not inferable or absorbing-state
-#' behavior matters. Difference plots also require
+#' pass `absorb` when the model has absorbing states. The column names and
+#' states default to those of the fit. Difference plots also require
 #' `comparison = "difference"` and `variables = list(var = c(reference,
 #' comparison))`.
 #'
@@ -30,18 +30,32 @@
 #'   first value is the reference.
 #' @param times Optional current-time values to plot. Required for model-based
 #'   plots.
-#' @param y_levels Optional state levels. If omitted for model-based plots,
-#'   levels are inferred from the model when possible.
+#' @param y_levels The states in order. For a fitted model, `NULL` (the
+#'   default) uses the states of the model; a supplied vector must hold the
+#'   same states in the same order, otherwise it is an error. For trajectory
+#'   data, `NULL` uses the states found in the `y_var` and `p_var` columns,
+#'   in numeric order when they are numbers.
 #' @param absorb Optional absorbing-state label.
 #' @param comparison `"none"` for transition proportions or `"difference"` for
 #'   counterfactual differences in transition proportions.
-#' @param time_var Character name of the time column in trajectory data.
+#' @param time_var Name of the time column. For a fitted model, `NULL` (the
+#'   default) uses the `time_var` given to [mostm()]; a different name is an
+#'   error. For trajectory data, `NULL` means `"time"`.
 #' @param y_var Character name of the current-state column in trajectory data.
-#' @param p_var Character name of the previous-state column.
-#' @param p2_var Optional second previous-state column for second-order
-#'   model recursion.
-#' @param id_var Optional ID column used to extract one stored prediction row per
-#'   patient.
+#' @param p_var Name of the previous-state column. For a fitted model, `NULL`
+#'   (the default) uses the `p_var` given to [mostm()], `"yprev"` unless set
+#'   there; a different name is an error. For trajectory data, `NULL` means
+#'   `"yprev"`.
+#' @param p2_var Name of the column with the state two visits back, for
+#'   model-based plots. `NULL` (the default) uses the `p2_var` given to
+#'   [mostm()]: a model fitted with `p2_var` is plotted with a second-order
+#'   recursion, and one fitted without it with a first-order recursion. A
+#'   different name is an error, so to plot a second-order model, give
+#'   `p2_var` to [mostm()]. Not used for trajectory data.
+#' @param id_var Name of the patient ID column, used to take one starting row
+#'   per patient from the data stored on a fitted model. `NULL` (the default)
+#'   uses the `id_var` given to [mostm()]; a different name is an error. Not
+#'   used for trajectory data.
 #' @param facet_var Optional observed grouping variable. The plot always facets
 #'   by time; `facet_var` adds grouping to the time panels.
 #' @param gap_var Optional time-gap_var variable used by the fitted model.
@@ -80,9 +94,9 @@ plot_transitions <- function(
   y_levels = NULL,
   absorb = NULL,
   comparison = c("none", "difference"),
-  time_var = "time",
+  time_var = NULL,
   y_var = "y",
-  p_var = "yprev",
+  p_var = NULL,
   p2_var = NULL,
   id_var = NULL,
   facet_var = NULL,
@@ -110,21 +124,25 @@ plot_transitions <- function(
   }
 
   if (markov_supported_model(object)) {
+    settings <- plot_markov_settings(
+      object,
+      id_var = id_var,
+      time_var = time_var,
+      p_var = p_var,
+      p2_var = p2_var,
+      y_levels = y_levels,
+      absorb = absorb,
+      gap_var = gap_var,
+      time_covariates = time_covariates
+    )
     data <- plot_transitions_model_data(
       model = object,
       newdata = newdata,
       variables = variables,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
       comparison = comparison,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      id_var = id_var,
+      settings = settings,
       facet_var = facet_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
       seed = seed,
       n_draws = n_draws
     )
@@ -141,14 +159,20 @@ plot_transitions <- function(
     if (!identical(comparison, "none")) {
       stop("`comparison = \"difference\"` requires a fitted Markov model.")
     }
+    # Trajectory data use only the time and previous-state columns and the
+    # state levels; the other settings are ignored.
+    settings <- plot_markov_settings(
+      object,
+      time_var = time_var,
+      p_var = p_var,
+      y_levels = y_levels
+    )
     data <- plot_transitions_empirical_data(
       data = object,
       times = times,
-      time_var = time_var,
+      settings = settings,
       y_var = y_var,
-      p_var = p_var,
-      facet_var = facet_var,
-      y_levels = y_levels
+      facet_var = facet_var
     )
   }
 

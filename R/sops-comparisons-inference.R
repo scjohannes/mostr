@@ -89,14 +89,7 @@ inferences_avg_comparisons_linear <- function(
     variables = avg_args$variables,
     by = avg_args$by,
     times = avg_args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    id_var = avg_args$id_var,
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates"),
+    settings = markov_result_settings(object),
     include_re = args$include_re,
     n_draws = args$n_draws,
     seed = args$seed,
@@ -127,7 +120,7 @@ inferences_avg_comparisons_linear <- function(
 
   state_sets <- normalize_comparison_state_sets(
     args$state_sets,
-    attr(avg, "y_levels")
+    markov_result_settings(avg)$y_levels
   )
   result <- avg_comparison_from_avg_sops(
     avg,
@@ -209,7 +202,7 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
     vcov = vcov,
     cluster = cluster,
     baseline_data = setup$baseline_data,
-    id_var = setup$id_var,
+    id_var = setup$settings$id_var,
     newdata_supplied = newdata_supplied,
     is_avg = TRUE,
     return_draws = return_draws,
@@ -222,17 +215,11 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
   analysis_fn <- function(i) {
     model_i <- set_coef(model, beta_draws[i, ])
     sops_array <- tryCatch(
-      soprob_markov(
+      predict_markov_sops(
         model = model_i,
         newdata = setup$newdata_pred,
         times = setup$times,
-        y_levels = setup$y_levels,
-        absorb = setup$absorb,
-        time_var = setup$time_var,
-        p_var = setup$p_var,
-        p2_var = setup$p2_var,
-        gap_var = setup$gap_var,
-        time_covariates = setup$time_covariates
+        settings = setup$settings
       ),
       error = function(e) {
         rethrow_crossed_thresholds(e)
@@ -321,7 +308,11 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   refit_data <- stored_refit_bootstrap_data(object, model)
   newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
 
-  validate_refit_bootstrap_data(refit_data, setup$id_var, setup$time_var)
+  validate_refit_bootstrap_data(
+    refit_data,
+    setup$settings$id_var,
+    setup$settings$time_var
+  )
   if (newdata_supplied && engine == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
   }
@@ -329,8 +320,8 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   factor_cols <- bootstrap_state_columns(
     model,
     refit_data,
-    setup$p_var,
-    setup$p2_var
+    setup$settings$p_var,
+    setup$settings$p2_var
   )
 
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
@@ -340,8 +331,8 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       model = model,
       factor_cols = factor_cols,
       original_data = refit_data,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
+      y_levels = setup$settings$y_levels,
+      absorb = setup$settings$absorb,
       use_coefstart = use_coefstart,
       fit_weights = fit_weights
     )
@@ -358,7 +349,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       baseline_data <- resolve_markov_prediction_data(
         boot_result$data,
         id_var = "new_id",
-        time_var = setup$time_var,
+        time_var = setup$settings$time_var,
         data_label = "bootstrap data"
       )
       baseline_data <- ensure_markov_rowid(baseline_data)
@@ -371,8 +362,8 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
     } else {
       baseline_data <- resolve_markov_prediction_data(
         boot_result$data,
-        id_var = setup$id_var,
-        time_var = setup$time_var,
+        id_var = setup$settings$id_var,
+        time_var = setup$settings$time_var,
         data_label = "bootstrap data"
       )
       baseline_data <- ensure_markov_rowid(baseline_data)
@@ -384,22 +375,20 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       baseline_weights <- fwb_baseline_weights(
         fwb_weights = fwb_weights,
         baseline_data = baseline_data,
-        id_var = setup$id_var
+        id_var = setup$settings$id_var
       )
     }
 
     sops_array <- tryCatch(
-      soprob_markov(
+      predict_markov_sops(
         model = m_boot,
         newdata = newdata_cf,
         times = setup$times,
-        y_levels = state_factor(boot_result$ylevels),
-        absorb = boot_result$absorb,
-        time_var = setup$time_var,
-        p_var = setup$p_var,
-        p2_var = setup$p2_var,
-        gap_var = setup$gap_var,
-        time_covariates = setup$time_covariates
+        settings = markov_settings_update(
+          setup$settings,
+          y_levels = state_factor(boot_result$ylevels),
+          absorb = boot_result$absorb
+        )
       ),
       error = function(e) {
         rethrow_crossed_thresholds(e)
@@ -416,7 +405,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
     sops_array <- complete_comparison_sops_array_states(
       sops_array = sops_array,
       boot_ylevels = boot_result$ylevels,
-      y_levels = setup$y_levels
+      y_levels = setup$settings$y_levels
     )
     boot_setup <- setup
     boot_setup$baseline_data <- baseline_data
@@ -437,7 +426,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   if (engine == "standard") {
     boot_ids <- fast_group_bootstrap(
       data = refit_data,
-      id_var = setup$id_var,
+      id_var = setup$settings$id_var,
       n_boot = n_boot
     )
     # Supplied profiles keep their starting states in every refit, so each
@@ -445,12 +434,12 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
     check_bootstrap_starting_states(
       boot_ids,
       refit_data = refit_data,
-      id_var = setup$id_var,
+      id_var = setup$settings$id_var,
       state_cols = factor_cols,
       starting_states = bootstrap_starting_states(
         profiles = if (newdata_supplied) setup$newdata_pred,
         variables = setup$variables,
-        state_vars = c(setup$p_var, setup$p2_var)
+        state_vars = c(setup$settings$p_var, setup$settings$p2_var)
       )
     )
     # Supplied profiles are fixed and always contain every group.
@@ -458,7 +447,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       check_bootstrap_by_groups(
         boot_ids,
         baseline_data = setup$baseline_data,
-        id_var = setup$id_var,
+        id_var = setup$settings$id_var,
         by = setup$by
       )
     }
@@ -466,7 +455,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       boot_samples = boot_ids,
       analysis_fn = analysis_fn,
       data = refit_data,
-      id_var = setup$id_var,
+      id_var = setup$settings$id_var,
       workers = workers,
       packages = c("rms", "VGAM", "Hmisc", "stats"),
       globals = c(
@@ -487,14 +476,14 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   } else {
     fwb_samples <- generate_fwb_bootstrap_weights(
       data = refit_data,
-      id_var = setup$id_var,
+      id_var = setup$settings$id_var,
       n_boot = n_boot
     )
     boot_results <- apply_to_fwb_bootstrap(
       fwb_samples = fwb_samples,
       analysis_fn = analysis_fn,
       data = refit_data,
-      id_var = setup$id_var,
+      id_var = setup$settings$id_var,
       workers = workers,
       packages = c("rms", "VGAM", "Hmisc", "stats"),
       globals = c(
@@ -546,8 +535,6 @@ setup_from_avg_comparison_object <- function(object) {
     variables = avg_args$variables,
     by = avg_args$by,
     times = avg_args$times,
-    id_var = avg_args$id_var,
-    p2_var = attr(object, "p2_var"),
     newdata_orig = attr(object, "newdata_orig"),
     refit_data = attr(object, "refit_data"),
     newdata_supplied = isTRUE(attr(object, "newdata_supplied")),
@@ -557,13 +544,7 @@ setup_from_avg_comparison_object <- function(object) {
     n_cf = nrow(attr(object, "comparison_grid")),
     n_each = attr(object, "comparison_n_each"),
     call_args = call_args,
-    time_var = attr(object, "time_var") %||% call_args$time_var %||% "time",
-    p_var = attr(object, "p_var") %||% call_args$p_var %||% "yprev",
-    y_levels = attr(object, "y_levels") %||% call_args$y_levels,
-    absorb = attr(object, "absorb") %||% call_args$absorb,
-    gap_var = attr(object, "gap_var") %||% call_args$gap_var,
-    time_covariates = attr(object, "time_covariates") %||%
-      call_args$time_covariates
+    settings = markov_result_settings(object)
   )
 }
 
@@ -593,7 +574,7 @@ reduce_time_benefit_array_for_setup <- function(
     )
     real_setup <- setup
     real_setup$times <- sort(unique(ind$time))
-    real_setup$y_levels <- attr(ind, "y_levels")
+    real_setup$settings$y_levels <- markov_result_settings(ind)$y_levels
     out <- reduce_time_benefit_sops_df(
       data = as.data.frame(ind),
       setup = real_setup,
@@ -639,31 +620,14 @@ time_benefit_sops_from_array <- function(sops_array, setup) {
   out <- array_to_df_individual(
     sops_array = sops_array,
     times = setup$times,
-    y_levels = setup$y_levels,
+    y_levels = setup$settings$y_levels,
     newdata = newdata
   )
-  attr(out, "y_levels") <- setup$y_levels
-  attr(out, "call_args") <- setup$call_args %||%
-    list(
-      times = setup$times,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
-      time_var = setup$time_var,
-      p_var = setup$p_var,
-      p2_var = setup$p2_var,
-      gap_var = setup$gap_var,
-      time_covariates = setup$time_covariates
-    )
+  attr(out, "settings") <- setup$settings
+  attr(out, "call_args") <- setup$call_args %||% sops_call_args(setup$times)
   attr(out, "newdata_orig") <- setup$newdata_orig %||% setup$baseline_data
   attr(out, "newdata_pred") <- newdata
   attr(out, "newdata_supplied") <- setup$newdata_supplied
-  attr(out, "id_var") <- setup$id_var
-  attr(out, "time_var") <- setup$time_var
-  attr(out, "p_var") <- setup$p_var
-  attr(out, "p2_var") <- setup$p2_var
-  attr(out, "absorb") <- setup$absorb
-  attr(out, "gap_var") <- setup$gap_var
-  attr(out, "time_covariates") <- setup$time_covariates
   class(out) <- c("markov_sops", class(out))
   out
 }

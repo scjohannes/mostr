@@ -2,6 +2,20 @@
 
 ## Breaking changes
 
+* A second-order model is declared once, when it is fitted:
+  `mostm(..., p2_var = "ypprev")` names the column with the state two visits
+  back. `mostm()` also takes `p_var`, the previous-state column (`"yprev"` by
+  default). `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`,
+  `comparisons()`, `avg_comparisons()`, `soprob_markov()`, and the
+  model-based `plot_transitions()`, `plot_correlation()`, `plot_variogram()`,
+  and `plot_lp_difference()` now take `id_var`, `time_var`, `p_var`, `p2_var`,
+  and `y_levels` from the fit when these are left out (their defaults are now
+  `NULL`). A value that differs from the fit's is an error. Before, leaving
+  out `p2_var` for a second-order fit, or `time_var` with `newdata` for a fit
+  whose time column is not `"time"`, silently held that column at each
+  profile's starting value and gave wrong probabilities. To keep calls that
+  pass `p2_var` to the prediction functions working, pass it to `mostm()` too.
+
 * `mostm()` replaces `orm_markov()`, `vglm_markov()`, and `blrm_markov()`
   (#11). Choose the package that fits the model with `engine`: `"orm"` (the
   default) uses `rms::orm()`, `"vglm"` uses `VGAM::vglm()`, and `"blrm"` uses

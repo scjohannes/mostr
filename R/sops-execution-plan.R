@@ -95,36 +95,28 @@ validate_execution_plan_designs <- function(design_bytes, workspace_bytes) {
   invisible(NULL)
 }
 
+# A plan for the SOPs of `newdata` at `times`: the prediction designs of every
+# visit, built once, with the columns and states named in `settings`
+# (`resolve_markov_settings()`). `run_sop_execution_plan()` runs it for any
+# coefficients.
 compile_sop_execution_plan <- function(
   model,
   newdata,
   times,
-  y_levels,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
+  settings,
   builder = c("batched", "streamed"),
   output = "array"
 ) {
   builder <- match.arg(builder)
   validate_markov_model(model)
   Gamma_template <- get_effective_coefs(model)
-  validate_sop_threshold_count(Gamma_template, y_levels)
-  if (!is.null(p2_var)) {
+  validate_sop_threshold_count(Gamma_template, settings$y_levels)
+  if (!is.null(settings$p2_var)) {
     return(compile_second_order_execution_plan(
       model = model,
       newdata = newdata,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       output = output,
       Gamma = Gamma_template
     ))
@@ -133,8 +125,8 @@ compile_sop_execution_plan <- function(
     model,
     newdata,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
+    time_covariates = settings$time_covariates,
     default = "fast"
   )$times
   build <- if (identical(builder, "batched")) {
@@ -145,13 +137,8 @@ compile_sop_execution_plan <- function(
   components <- build(
     model = model,
     newdata = newdata,
-    time_covariates = time_covariates,
     times = resolved_times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    gap_var = gap_var
+    settings = settings
   )
   structure(
     list(
@@ -160,12 +147,12 @@ compile_sop_execution_plan <- function(
       link = "logit",
       recursion_order = 1L,
       times = resolved_times,
-      y_levels = as_state_labels(y_levels),
-      absorb = as_state_labels(absorb),
-      time_var = time_var,
-      p_var = p_var,
+      y_levels = as_state_labels(settings$y_levels),
+      absorb = as_state_labels(settings$absorb),
+      time_var = settings$time_var,
+      p_var = settings$p_var,
       p2_var = NULL,
-      gap_var = gap_var,
+      gap_var = settings$gap_var,
       output = output,
       workspace_bytes = components$workspace_bytes,
       design_bytes = components$design_bytes,
@@ -196,16 +183,14 @@ compile_second_order_execution_plan <- function(
   model,
   newdata,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   output,
   Gamma
 ) {
+  y_levels <- settings$y_levels
+  absorb <- settings$absorb
+  p_var <- settings$p_var
+  p2_var <- settings$p2_var
   if (!inherits(model, c("orm", "vglm")) || inherits(model, "blrm")) {
     stop("Compiled second-order plans require a frequentist orm or vglm model.")
   }
@@ -216,13 +201,13 @@ compile_second_order_execution_plan <- function(
     model,
     newdata,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
+    time_covariates = settings$time_covariates,
     default = "fast"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
+  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
   ylevel_names <- as_state_labels(y_levels)
   absorb_idx <- which(ylevel_names %in% as_state_labels(absorb))
   non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)
@@ -266,11 +251,9 @@ compile_second_order_execution_plan <- function(
   set_visit <- function(data, index) {
     assign_sop_visit(
       data,
-      time_var = time_var,
+      settings = settings,
       times = times,
       index = index,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
       time_info = time_info
     )
   }
@@ -321,10 +304,10 @@ compile_second_order_execution_plan <- function(
       times = times,
       y_levels = ylevel_names,
       absorb = as_state_labels(absorb),
-      time_var = time_var,
+      time_var = settings$time_var,
       p_var = p_var,
       p2_var = p2_var,
-      gap_var = gap_var,
+      gap_var = settings$gap_var,
       output = output,
       workspace_bytes = budget$workspace_bytes,
       design_bytes = design_bytes,

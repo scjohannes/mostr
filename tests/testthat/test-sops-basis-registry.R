@@ -165,9 +165,18 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
   args <- list(newdata = baseline, times = 1:8, y_levels = 1:6, absorb = 6)
 
   for (case in cases) {
+    internal_args <- list(
+      newdata = baseline,
+      times = 1:8,
+      settings = mostr:::resolve_markov_settings(
+        case$fit,
+        y_levels = 1:6,
+        absorb = 6
+      )
+    )
     reference <- do.call(
       mostr:::soprob_markov_r_engine,
-      c(list(case$fit), args)
+      c(list(case$fit), internal_args)
     )
     expect_equal(
       do.call(mostr::soprob_markov, c(list(case$fit), args)),
@@ -178,7 +187,7 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
 
     plan <- do.call(
       mostr:::compile_sop_execution_plan,
-      c(list(case$plan_model), args, list(builder = "batched"))
+      c(list(case$plan_model), internal_args, list(builder = "batched"))
     )
     expect_s3_class(plan, "markov_sop_exec_plan")
     planned <- mostr:::run_sop_execution_plan(

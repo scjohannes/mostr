@@ -161,8 +161,8 @@ avg_state_time <- function(
   target_times = NULL,
   time_unit = NULL,
   id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
+  time_var = NULL,
+  p_var = NULL,
   p2_var = NULL,
   gap_var = NULL,
   time_covariates = NULL,
@@ -225,13 +225,23 @@ avg_state_time <- function(
   # From here on, `by` holds the grouping columns, or `NULL` to average over
   # all profiles.
   by <- by_choice$by
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(
+    model,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
+    time_covariates = time_covariates
+  )
   variables <- resolve_prediction_variables(
     variables,
     model,
     newdata,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels
+    settings
   )
   stop_by_names_set_variable(by, variables, "avg_state_time()")
   reserved <- intersect(
@@ -249,20 +259,14 @@ avg_state_time <- function(
     validate_avg_time_state_sets(state_sets)
   }
   extra_args <- list(...)
+  conf_level <- validate_conf_level(conf_level)
   avg <- avg_comparison_replay_avg_sops(
     model = model,
     newdata = newdata,
     variables = variables,
     by = by,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -273,7 +277,7 @@ avg_state_time <- function(
   )
   state_sets <- normalize_comparison_state_sets(
     state_sets,
-    attr(avg, "y_levels")
+    markov_result_settings(avg)$y_levels
   )
   args <- list(
     state_sets = state_sets,
@@ -376,14 +380,7 @@ replay_avg_time_sops <- function(object, conf_level, return_draws = FALSE) {
     variables = avg_args$variables,
     by = avg_args$by,
     times = avg_args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var"),
-    p_var = attr(object, "p_var"),
-    id_var = avg_args$id_var,
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates"),
+    settings = markov_result_settings(object),
     include_re = args$include_re,
     n_draws = args$n_draws,
     seed = args$seed,

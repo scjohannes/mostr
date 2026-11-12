@@ -430,8 +430,10 @@ test_that("compiled first-order SOPs match the reference recursion", {
         model = model,
         newdata = fits$baseline,
         times = 1:5,
-        y_levels = 1:6,
-        absorb = absorb
+        settings = markov_settings(
+          y_levels = 1:6,
+          absorb = absorb
+        )
       )
       actual <- run_sop_execution_plan(plan, get_effective_coefs(model))
       expected <- reference_first_order_plan_sops(
@@ -499,9 +501,11 @@ test_that("compiled second-order SOPs match the reference recursion", {
         model,
         baseline[valid, , drop = FALSE],
         times = 1:5,
-        y_levels = 1:3,
-        absorb = absorb,
-        p2_var = "ypprev"
+        settings = markov_settings(
+          y_levels = 1:3,
+          absorb = absorb,
+          p2_var = "ypprev"
+        )
       )
       actual <- run_sop_execution_plan(plan, get_effective_coefs(model))
       expected <- reference_second_order_plan_sops(
