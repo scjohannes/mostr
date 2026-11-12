@@ -312,8 +312,9 @@ read from the model formula (`bootstrap_response_column()`, so
 comparison, and time-benefit bootstrap paths, or `yprev` in
 `bootstrap_model_coefs()`, which has no `p_var`. Factor covariates are never
 treated as states. The SOP paths pass the present labels to
-`soprob_markov()` as `state_factor(ylevels)`, a factor that keeps the state
-order (`factor()` would sort text labels), and pad the missing states with
+`predict_markov_sops()` in the refit's settings
+(`markov_settings_update(settings, y_levels = state_factor(ylevels))`), a
+factor that keeps the state order (`factor()` would sort text labels), and pad the missing states with
 probability 0 by label: positionally into the full state matrix in
 `inferences_bootstrap()`, by merging on `state` in
 `complete_bootstrap_sop_states()` for `by` groups, and by name in
@@ -483,8 +484,9 @@ result attributes.
 ```mermaid
 flowchart LR
     A["mostm()"] -->|markov_settings, from_fit| B[(fit attribute markov_settings)]
-    B --> C["resolve_markov_settings(model, id_var, time_var, p_var, p2_var, y_levels, absorb, gap_var, time_covariates)"]
-    D[Public call arguments] --> C
+    B --> C["resolve_markov_settings(model, absorb, gap_var, time_covariates)"]
+    D["Public call: absorb, gap_var, time_covariates"] --> C
+    P["Plots: also id_var, time_var, p_var, p2_var, y_levels"] -.->|checked against the fit| C
     C --> E["internal functions: settings argument"]
     E --> F[(result attribute settings)]
     F --> G["markov_result_settings(): inference, replays, interpolation"]
@@ -504,25 +506,38 @@ flowchart LR
   fixed. `robcov_vglm()` and derived models (`bootstrap_refit_model()`,
   `update_bootstrap_model()`) copy them through `markov_inherit_engine()`.
   `markov_model_settings()` reads them, from the inner `vglm_fit` when needed.
-  Objects without stored settings, such as the hand-made `blrm` fits of
-  `fake_blrm()` in the tests or test models given a `markov_engine` attribute
-  by hand, get settings built from their `markov_engine` and `markov_id_var`
-  records with nothing fixed, so calls on them behave as they did before.
-- Each public function that predicts (`sops()`, `avg_sops()`, `state_time()`,
+  The hand-made fits of the tests record settings the same way:
+  `with_fit_settings()` in `tests/testthat/helper-mocks.R` attaches a
+  `markov_settings` object with every field fixed, and `fake_blrm()` and the
+  test models given a `markov_engine` attribute by hand use it, with
+  `p2_var`, other column names, or other state labels where a test needs
+  them. Objects without stored settings get settings built from their
+  `markov_engine` and `markov_id_var` records and the default column names,
+  with nothing fixed.
+- The prediction functions (`sops()`, `avg_sops()`, `state_time()`,
   `avg_state_time()`, `comparisons()`, `avg_comparisons()`, `soprob_markov()`,
-  and the model-based plots through `plot_markov_settings()` in
-  `R/markov-plot-helpers.R`) calls `resolve_markov_settings()` once. Its
-  `id_var`, `time_var`, `p_var`, `p2_var` and `y_levels` default to `NULL`,
-  meaning the fit's value; a supplied value of a fixed field must agree, or
+  and `plot_lp_difference()`) have no `id_var`, `time_var`, `p_var`, `p2_var`
+  or `y_levels` argument: the columns, the Markov order and the states come
+  from the fit only, so a second-order fit always predicts with the
+  second-order recursion. Each calls `resolve_markov_settings(model, absorb =,
+  gap_var =, time_covariates =)` once. Their `...` would swallow a removed
+  argument silently, so each first calls `stop_removed_fit_arguments(...)`
+  (`R/markov-settings.R`), which names the argument and says that the fit
+  records it; `plot_lp_difference()` has no `...`, so R refuses the argument
+  itself. The `state` column of their results takes the type of the fit's
+  state labels. A fit without state labels stops with
+  `stop_no_fitted_states()`.
+- The diagnostic plots that also take observed data (`plot_transitions()`,
+  `plot_correlation()` and `plot_variogram()`, through
+  `plot_markov_settings()` in `R/markov-plot-helpers.R`) keep the five
+  arguments, because for a data frame nothing else names the columns; they
+  build settings with `markov_settings()` and the defaults. For a fit they
+  pass them to `resolve_markov_settings()`, where `NULL` means the fit's value
+  and a supplied value of a fixed field must agree, or
   `stop_setting_contradicts_fit()` (or `stop_y_levels_contradict_fit()`, which
-  compares state labels) stops. A supplied `y_levels` that agrees is kept,
-  because its type sets the type of the result's `state` column. For a
-  first-order fit, `p2_var` is refused with advice to refit with
-  `mostm(..., p2_var = )`; a second-order fit therefore always predicts with
-  the second-order recursion, which before held the older state at each
-  profile's starting value when the user left `p2_var` out. Plots given a data
-  frame instead of a fit build settings with `markov_settings()` and the old
-  defaults.
+  compares state labels and also refuses a different number of states)
+  stops. A supplied `y_levels` that agrees is kept. For a first-order fit,
+  `p2_var` is refused with advice to refit with `mostm(..., p2_var = )`.
 - Internal functions take the `settings` argument instead of the separate
   names: `sops_impl()`, `avg_sops_impl()` (which the public pairs and every
   replay, `avg_comparison_replay_avg_sops()`, call after resolving),

@@ -5,16 +5,26 @@
 * A second-order model is declared once, when it is fitted:
   `mostm(..., p2_var = "ypprev")` names the column with the state two visits
   back. `mostm()` also takes `p_var`, the previous-state column (`"yprev"` by
-  default). `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`,
-  `comparisons()`, `avg_comparisons()`, `soprob_markov()`, and the
-  model-based `plot_transitions()`, `plot_correlation()`, `plot_variogram()`,
-  and `plot_lp_difference()` now take `id_var`, `time_var`, `p_var`, `p2_var`,
-  and `y_levels` from the fit when these are left out (their defaults are now
-  `NULL`). A value that differs from the fit's is an error. Before, leaving
-  out `p2_var` for a second-order fit, or `time_var` with `newdata` for a fit
-  whose time column is not `"time"`, silently held that column at each
-  profile's starting value and gave wrong probabilities. To keep calls that
-  pass `p2_var` to the prediction functions working, pass it to `mostm()` too.
+  default). The fit records these with `id_var` and `time_var`, and its
+  states in fitted order, and every model-based function uses them. Before,
+  leaving out `p2_var` for a second-order fit, or `time_var` with `newdata`
+  for a fit whose time column is not `"time"`, silently held that column at
+  each profile's starting value and gave wrong probabilities.
+
+  `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, `soprob_markov()`, and `plot_lp_difference()` no
+  longer have the arguments `id_var`, `time_var`, `p_var`, `p2_var`, and
+  `y_levels`; passing one is an error. Drop them from these calls, and give
+  `p2_var`, `p_var`, and `time_var` to `mostm()` instead when they differ from
+  the defaults. The `state` column of the results now always holds the fitted
+  state labels (for example `"1"`, `"2"`, ...); before, it took the type of a
+  supplied `y_levels`, such as integers for `y_levels = 1:6`.
+
+  `plot_transitions()`, `plot_correlation()`, and `plot_variogram()` keep these
+  arguments, because they also plot observed data, where nothing else names
+  the columns. For a fitted model they default to the fit's values, and a
+  value that differs from the fit's is an error, now also a `y_levels` with a
+  different number of states.
 
 * `mostm()` replaces `orm_markov()`, `vglm_markov()`, and `blrm_markov()`
   (#11). Choose the package that fits the model with `engine`: `"orm"` (the

@@ -12,6 +12,39 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-12: Remove the column-name and state arguments from the prediction functions
+
+**Decided.** `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`,
+`comparisons()`, `avg_comparisons()`, `soprob_markov()` and
+`plot_lp_difference()` no longer have `id_var`, `time_var`, `p_var`, `p2_var`
+and `y_levels`. They take them from the settings that `mostm()` records on the
+fit, and passing one is an error that says so. `plot_transitions()`,
+`plot_correlation()` and `plot_variogram()` keep them, because they also plot
+observed data, where nothing else names the columns; for a fit they still
+default to the fit's values and refuse a contradiction, now also a `y_levels`
+with a different number of states.
+
+**Why.** Since the settings object, these arguments could only repeat what
+the fit records: every model-based function accepts only `mostm()` fits, and a
+different value was refused. Keeping them meant documentation, contradiction
+checks and argument threading for no choice the user could make. Removing them
+before the first CRAN release needs only a NEWS entry; after it, a deprecation
+cycle. The test fixtures that are not `mostm()` fits now record settings as
+`mostm()` does (`with_fit_settings()` in `tests/testthat/helper-mocks.R`).
+
+The 97 saved outputs of `benchmarks/local/settings-refactor/baseline.R`
+(before, on `6c4f0c4`) and of its translated copy
+`baseline-after-remove-args.R` are identical with `identical()`, except one:
+the call that passed `y_levels = 1:4` now returns the fit's state labels, a
+factor of `"1"` to `"4"`, in `state` instead of integers; its estimates and
+all other columns are identical (`compare-remove-args.R`).
+
+**Decided against.** Deprecating the arguments first: the package has no
+released users. Keeping `y_levels` for the type of the `state` column: the
+type can be changed after the call, and keeping one argument would keep the
+contradiction checks for it. Removing the arguments from the three data plots
+too: for observed data they are the only way to name the columns.
+
 ## 2026-11-12: Size limits measured; two defaults open
 
 **Decided.** The size limits stay as they are for now, with comments that
