@@ -102,12 +102,13 @@ A patient who has died cannot move to another state, so there is nothing to
 predict. Each profile in `newdata` must start outside the states in `absorb`;
 remove the others from `newdata` first.
 
-### Do I need to supply `y_levels`?
+### Do I need to tell the prediction functions the states or column names?
 
-Usually not. If `y_levels` is `NULL`, mostr reads the states from the fitted
-model. If you supply it, give one entry per state, in the order the model
-uses; a vector with the wrong number of states gives an error that states
-both numbers.
+No. `avg_sops()` and the other prediction functions read the states, in the
+order the model uses, from the fitted model, and the patient ID, time,
+previous-state and second-order columns from the `id_var`, `time_var`,
+`p_var` and `p2_var` given to `mostm()`. To use other columns, refit the
+model with `mostm()`.
 
 ### How do I get the expected time in a state instead of probabilities?
 

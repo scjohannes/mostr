@@ -144,7 +144,6 @@ avg_conditional <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 ) |> inferences(
   method = "delta",
@@ -159,7 +158,6 @@ time_conditional <- avg_state_time(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 ) |>
   inferences(
@@ -172,7 +170,6 @@ comp_conditional <- avg_comparisons(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB,
   estimand = "time_in_state",
   comparison = "difference"
@@ -237,7 +234,6 @@ avg_unconditional <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 ) |> inferences(
   method = "delta",
@@ -250,7 +246,6 @@ time_unconditional <- avg_state_time(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 ) |>
   inferences(
@@ -263,7 +258,6 @@ comp_unconditional <- avg_comparisons(
   fit,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB,
   estimand = "time_in_state",
   comparison = "difference"
@@ -398,7 +392,6 @@ sop_difference <- avg_comparisons(
   state_sets = c("1", "2"),
   comparison = "difference",
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 ) |>
   inferences(
@@ -441,7 +434,6 @@ patient_difference <- comparisons(
   estimand = "time_in_state",
   state_sets = c("1", "2"),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 ) |>
   inferences(method = "delta")
@@ -463,7 +455,6 @@ averaged <- comparisons(
   estimand = "time_in_state",
   state_sets = c("1", "2"),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB,
   by = TRUE
 )
@@ -508,7 +499,6 @@ comparisons(
   variables = list(tx = c(0, 1)),
   state_sets = c("1", "2"),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 ) |>
   inferences(method = "delta") |>

@@ -87,7 +87,6 @@ avg <- avg_sops(
   fit_orm,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit_orm$yunique,
   absorb = ABSORB
 )
 ```

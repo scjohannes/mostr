@@ -222,7 +222,6 @@ point estimates are needed here, so we do not call `inferences()`.
 sop_args <- list(
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = STATE_LEVELS,
   absorb = ABSORB
 )
 sop_po <- do.call(avg_sops, c(list(fit_po), sop_args))
@@ -436,7 +435,6 @@ tis_args <- list(
   estimand = "time_in_state",
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = STATE_LEVELS,
   absorb = ABSORB
 )
 

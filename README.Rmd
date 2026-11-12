@@ -64,7 +64,6 @@ sop <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
   times = 1:28,
-  y_levels = fit$yunique,
   absorb = "8"
 ) |> inferences(
   method = "delta"

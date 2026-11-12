@@ -145,18 +145,15 @@ plot_variogram(
 
 ## Estimate state occupancy probabilities
 
-`p_var = "yprev"` names the previous-state column. It is the default, taken
-from the fit, and is shown here to make clear that mostr substitutes each
-possible previous state into this numeric column, and hence into the spline,
-when chaining predictions.
+The previous-state column is `yprev`, the default `p_var` of `mostm()`, which
+the fit records. When chaining predictions, mostr substitutes each possible
+previous state into this numeric column, and hence into the spline.
 
 ```{r avg-sops}
 sop_many <- avg_sops(
   fit_many,
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  y_levels = fit_many$yunique,
-  p_var = "yprev"
+  times = seq_len(FOLLOW_UP)
 ) |>
   inferences(method = "delta", vcov = "unconditional")
 ```

@@ -97,7 +97,6 @@ sop_by_start <- avg_sops(
   variables = "tx",
   by = "baseline_state",
   times = seq_len(FOLLOW_UP),
-  y_levels = fit$yunique,
   absorb = ABSORB
 )
 

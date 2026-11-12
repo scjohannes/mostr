@@ -127,7 +127,6 @@ sop_blrm <- avg_sops(
   fit_blrm,
   variables = list(tx = c(0, 1)),
   times = seq_len(FOLLOW_UP),
-  y_levels = fit_blrm$ylevels,
   absorb = ABSORB,
   include_re = TRUE,
   n_draws = NULL,
