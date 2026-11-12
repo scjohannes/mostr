@@ -27,22 +27,22 @@ plot_correlation_input_data <- function(
   }
 
   if (!is.data.frame(object)) {
-    stop("`object` must be a data frame or a supported Markov model.")
+    mostr_abort("`object` must be a data frame or a supported Markov model.")
   }
   if (!is.null(newdata)) {
-    stop("`newdata` is only used for model-based plots.")
+    mostr_abort("`newdata` is only used for model-based plots.")
   }
   if (
     !is.null(settings$p2_var) ||
       !is.null(settings$gap_var) ||
       !is.null(settings$time_covariates)
   ) {
-    stop(
+    mostr_abort(
       "`p2_var`, `gap_var`, and `time_covariates` are only used for model-based plots."
     )
   }
   if (!is.null(seed)) {
-    stop("`seed` is only used for `blrm` model-based plots.")
+    mostr_abort("`seed` is only used for `blrm` model-based plots.")
   }
 
   data <- object
@@ -439,7 +439,7 @@ plot_second_order_anchor_step_array <- function(anchor_pair, kernel) {
       prob_sum <- rowSums(probs)
       reachable <- rowSums(mass) > 0
       if (any(reachable & prob_sum == 0)) {
-        stop(
+        mostr_abort(
           "Second-order model-implied correlation recursion encountered a ",
           "reachable previous-state pair with no transition probabilities."
         )
@@ -452,7 +452,7 @@ plot_second_order_anchor_step_array <- function(anchor_pair, kernel) {
   }
 
   if (abs(sum(out) - sum(anchor_pair)) > 1e-8 * max(1, n_states)) {
-    stop(
+    mostr_abort(
       "Second-order model-implied correlation recursion lost probability mass."
     )
   }
@@ -551,7 +551,7 @@ plot_state_time_matrix <- function(data, settings, y_var) {
 
   key <- paste(id_index, time_index, sep = "\r")
   if (anyDuplicated(key)) {
-    stop(
+    mostr_abort(
       "`data` must contain at most one row per `",
       id_var,
       "` and `",
@@ -579,7 +579,7 @@ plot_state_scores <- function(x, y_levels = NULL) {
     out <- match(as.character(x), ylevel_names)
     bad <- is.na(out) & !is.na(x)
     if (any(bad)) {
-      stop("`data` contains state values that are not in `y_levels`.")
+      mostr_abort("`data` contains state values that are not in `y_levels`.")
     }
     return(out)
   }

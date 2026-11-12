@@ -55,7 +55,7 @@ get_effective_coefs <- function(model, beta = NULL) {
     return(get_effective_coefs_orm(model, beta = beta))
   }
 
-  stop("get_effective_coefs only supports vglm and orm objects.")
+  mostr_abort("get_effective_coefs only supports vglm and orm objects.")
 }
 
 get_effective_coefs_vglm <- function(model, beta = NULL) {
@@ -118,16 +118,18 @@ get_effective_coefs_orm <- function(model, beta = NULL) {
   }
 
   if (is.null(model$non.slopes) || length(model$non.slopes) != 1) {
-    stop("Cannot determine the number of orm threshold coefficients.")
+    mostr_abort("Cannot determine the number of orm threshold coefficients.")
   }
 
   M <- model$non.slopes
   if (length(beta) < M) {
-    stop("Coefficient vector is shorter than the number of orm thresholds.")
+    mostr_abort(
+      "Coefficient vector is shorter than the number of orm thresholds."
+    )
   }
 
   if (length(beta) != length(stats::coef(model))) {
-    stop(
+    mostr_abort(
       "Length of beta (",
       length(beta),
       ") does not match number of model coefficients (",

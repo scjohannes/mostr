@@ -39,7 +39,7 @@ plot_transitions_model_data <- function(
     require_two = identical(comparison, "difference")
   )
   if (identical(comparison, "difference") && is.null(variables)) {
-    stop("`variables` is required when `comparison = \"difference\"`.")
+    mostr_abort("`variables` is required when `comparison = \"difference\"`.")
   }
   setup <- plot_transition_model_setup(
     model = model,
@@ -312,7 +312,7 @@ plot_transition_difference <- function(summary, variable, values, facet_var) {
   reference <- as.character(values[1])
   comparisons <- as.character(values[-1])
   if (!variable %in% names(summary)) {
-    stop("`variables` column not found in transition summary.")
+    mostr_abort("`variables` column not found in transition summary.")
   }
 
   key <- setdiff(

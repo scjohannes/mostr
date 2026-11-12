@@ -11,10 +11,9 @@ delta_unconditional_coefficients <- function(model) {
       any(names(beta) == "") ||
       anyDuplicated(names(beta))
   ) {
-    stop(
+    mostr_abort(
       "Analytical inference requires a finite coefficient vector with ",
-      "unique, non-missing names.",
-      call. = FALSE
+      "unique, non-missing names."
     )
   }
   beta
@@ -24,9 +23,8 @@ delta_unconditional_model <- function(model) {
   if (inherits(model, "robcov_vglm")) {
     fit <- model$vglm_fit
     if (is.null(fit) || !inherits(fit, "vglm")) {
-      stop(
-        "The `robcov_vglm` object does not contain its fitted vglm model.",
-        call. = FALSE
+      mostr_abort(
+        "The `robcov_vglm` object does not contain its fitted vglm model."
       )
     }
     return(fit)
@@ -38,17 +36,15 @@ delta_validate_full_po_model <- function(model) {
   fit <- delta_unconditional_model(model)
 
   if (inherits(fit, "blrm")) {
-    stop(
+    mostr_abort(
       "Analytical unconditional inference supports only frequentist full ",
-      "proportional-odds orm and vglm models; blrm models are not supported.",
-      call. = FALSE
+      "proportional-odds orm and vglm models; blrm models are not supported."
     )
   }
   if (!inherits(fit, c("orm", "vglm"))) {
-    stop(
+    mostr_abort(
       "Analytical unconditional inference supports only full proportional-odds ",
-      "orm and vglm models.",
-      call. = FALSE
+      "orm and vglm models."
     )
   }
 
@@ -73,11 +69,10 @@ delta_validate_full_po_model <- function(model) {
       logical(1)
     )
     if (length(is_common_slope) && !all(is_common_slope)) {
-      stop(
+      mostr_abort(
         "Analytical inference currently requires a full proportional-odds ",
         "vglm model (`parallel = TRUE`); partial or nonproportional-odds ",
-        "constraints are not supported.",
-        call. = FALSE
+        "constraints are not supported."
       )
     }
   }
@@ -99,15 +94,14 @@ delta_validate_named_matrix <- function(
   if (
     !is.matrix(value) || !is.numeric(value) || !identical(dim(value), c(q, q))
   ) {
-    stop(
+    mostr_abort(
       "`",
       label,
       "` must be a numeric [",
       q,
       " x ",
       q,
-      "] matrix with one row and column per raw model coefficient.",
-      call. = FALSE
+      "] matrix with one row and column per raw model coefficient."
     )
   }
   row_names <- rownames(value)
@@ -125,22 +119,21 @@ delta_validate_named_matrix <- function(
       !setequal(row_names, names) ||
       !setequal(column_names, names)
   ) {
-    stop(
+    mostr_abort(
       "Rows and columns of `",
       label,
-      "` must be uniquely named and match the complete raw coefficient vector.",
-      call. = FALSE
+      "` must be uniquely named and match the complete raw coefficient vector."
     )
   }
   value <- value[names, names, drop = FALSE]
   if (any(!is.finite(value))) {
-    stop("`", label, "` contains non-finite values.", call. = FALSE)
+    mostr_abort("`", label, "` contains non-finite values.")
   }
 
   scale <- max(abs(value))
   symmetry_error <- max(abs(value - t(value)))
   if (!is.finite(symmetry_error) || symmetry_error > 1e-8 * scale) {
-    stop("`", label, "` is not numerically symmetric.", call. = FALSE)
+    mostr_abort("`", label, "` is not numerically symmetric.")
   }
   value <- value / 2 + t(value) / 2
 
@@ -153,19 +146,17 @@ delta_validate_named_matrix <- function(
       positive_semidefinite &&
         min(eigenvalues) < -semidefinite_tolerance
     ) {
-      stop(
+      mostr_abort(
         "`",
         label,
-        "` is not numerically positive semidefinite.",
-        call. = FALSE
+        "` is not numerically positive semidefinite."
       )
     }
     if (positive_definite && min(eigenvalues) <= definite_tolerance) {
-      stop(
+      mostr_abort(
         "`",
         label,
-        "` is not numerically positive definite.",
-        call. = FALSE
+        "` is not numerically positive definite."
       )
     }
   }
@@ -176,10 +167,9 @@ delta_validate_named_matrix <- function(
 delta_fitting_row_count <- function(model) {
   if (inherits(model, "robcov_vglm")) {
     if (!is.matrix(model$scores)) {
-      stop(
+      mostr_abort(
         "The `robcov_vglm` object does not contain row-aligned score ",
-        "contributions. Refit it with `robcov_vglm()`.",
-        call. = FALSE
+        "contributions. Refit it with `robcov_vglm()`."
       )
     }
     return(nrow(model$scores))
@@ -200,17 +190,15 @@ delta_fitting_row_count <- function(model) {
     if (!is.null(n) && length(n) == 1L && is.finite(n)) {
       return(as.integer(n))
     }
-    stop(
+    mostr_abort(
       "Could not determine the fitted orm row count. Refit with ",
-      "`x = TRUE, y = TRUE`.",
-      call. = FALSE
+      "`x = TRUE, y = TRUE`."
     )
   }
 
-  stop(
+  mostr_abort(
     "Analytical unconditional inference supports only full proportional-odds ",
-    "orm and vglm models.",
-    call. = FALSE
+    "orm and vglm models."
   )
 }
 
@@ -224,40 +212,35 @@ delta_align_explicit_cluster <- function(model, cluster, n_rows) {
 
 delta_validate_cluster <- function(cluster, n_rows) {
   if (length(cluster) != n_rows) {
-    stop(
+    mostr_abort(
       "The patient cluster vector has length ",
       length(cluster),
       ", but the fitted model has ",
       n_rows,
-      " score rows.",
-      call. = FALSE
+      " score rows."
     )
   }
   if (is.list(cluster) || is.data.frame(cluster) || is.matrix(cluster)) {
-    stop(
-      "`cluster` must be a one-dimensional patient ID vector.",
-      call. = FALSE
+    mostr_abort(
+      "`cluster` must be a one-dimensional patient ID vector."
     )
   }
   if (anyNA(cluster)) {
-    stop(
+    mostr_abort(
       "The patient cluster vector contains missing values after alignment ",
-      "with the fitted rows.",
-      call. = FALSE
+      "with the fitted rows."
     )
   }
   cluster_character <- as.character(cluster)
   if (anyNA(cluster_character) || any(cluster_character == "")) {
-    stop(
-      "Patient cluster IDs must be non-missing and non-empty.",
-      call. = FALSE
+    mostr_abort(
+      "Patient cluster IDs must be non-missing and non-empty."
     )
   }
   ids <- unique(cluster_character)
   if (length(ids) < 2L) {
-    stop(
-      "Patient-cluster inference requires at least two independent patients.",
-      call. = FALSE
+    mostr_abort(
+      "Patient-cluster inference requires at least two independent patients."
     )
   }
   list(cluster = cluster, ids = ids)
@@ -276,20 +259,18 @@ resolve_delta_cluster <- function(model, cluster = NULL) {
     if (inherits(cluster, "formula")) {
       cluster_vars <- all.vars(cluster)
       if (length(cluster_vars) != 1L) {
-        stop(
+        mostr_abort(
           "A `cluster` formula must select exactly one patient ID column, ",
-          "for example `~ id`.",
-          call. = FALSE
+          "for example `~ id`."
         )
       }
       data <- markov_model_data(model)
       id_var <- cluster_vars[[1L]]
       if (is.null(data) || !is.data.frame(data) || !id_var %in% names(data)) {
-        stop(
+        mostr_abort(
           "Explicit cluster formula `~ ",
           id_var,
-          "` requires that column in the model's stored fitting data.",
-          call. = FALSE
+          "` requires that column in the model's stored fitting data."
         )
       }
       fit <- delta_unconditional_model(model)
@@ -304,21 +285,19 @@ resolve_delta_cluster <- function(model, cluster = NULL) {
     id_var <- markov_model_id_var(model)
     data <- markov_model_data(model)
     if (is.null(id_var) || !is.data.frame(data)) {
-      stop(
+      mostr_abort(
         "Analytical standard errors need the patient of each fitting row, ",
         "but the model does not record its fitting data and patient-ID ",
         "column. Refit it with `mostm(..., id_var = ...)`, or give the ",
         "patient of each fitting row in `cluster`. Rows are never treated as ",
-        "separate patients.",
-        call. = FALSE
+        "separate patients."
       )
     }
     if (!id_var %in% names(data)) {
-      stop(
+      mostr_abort(
         "Stored patient ID column `",
         id_var,
-        "` is absent from the stored fitting data.",
-        call. = FALSE
+        "` is absent from the stored fitting data."
       )
     }
     fit <- delta_unconditional_model(model)
@@ -452,14 +431,13 @@ delta_reject_weighted_unconditional <- function(model) {
     return(invisible(NULL))
   }
 
-  stop(
+  mostr_abort(
     "Models fitted with case weights (`weights` in `mostm()`) do not support ",
     "unconditional variance, because its calculation has not been checked ",
     "with weights. Unconditional variance is the default for averages; pass ",
     "`vcov = \"conditional\"` to `inferences()` for conditional variance, ",
     "which accounts for coefficient estimation and treats the patients' ",
-    "starting states and covariates as given.",
-    call. = FALSE
+    "starting states and covariates as given."
   )
 }
 
@@ -477,12 +455,11 @@ delta_reject_penalized_orm_unconditional <- function(model) {
     return(invisible(NULL))
   }
 
-  stop(
+  mostr_abort(
     "Unconditional delta inference does not currently support penalized ",
     "orm likelihoods because the patient scores and sensitivity have not ",
     "been shown to incorporate the penalty consistently. Ordinary spline ",
-    "transformations remain supported with `vcov = \"conditional\"`.",
-    call. = FALSE
+    "transformations remain supported with `vcov = \"conditional\"`."
   )
 }
 
@@ -618,13 +595,12 @@ delta_validate_scores <- function(scores, coefficient_names, n_rows) {
     !is.numeric(scores) ||
       !identical(dim(scores), c(n_rows, length(coefficient_names)))
   ) {
-    stop(
+    mostr_abort(
       "Row score contributions must be a numeric [",
       n_rows,
       " x ",
       length(coefficient_names),
-      "] matrix.",
-      call. = FALSE
+      "] matrix."
     )
   }
   score_names <- colnames(scores)
@@ -635,14 +611,13 @@ delta_validate_scores <- function(scores, coefficient_names, n_rows) {
       anyDuplicated(score_names) ||
       !setequal(score_names, coefficient_names)
   ) {
-    stop(
-      "Score columns must uniquely match the complete raw coefficient vector.",
-      call. = FALSE
+    mostr_abort(
+      "Score columns must uniquely match the complete raw coefficient vector."
     )
   }
   scores <- scores[, coefficient_names, drop = FALSE]
   if (any(!is.finite(scores))) {
-    stop("Row score contributions contain non-finite values.", call. = FALSE)
+    mostr_abort("Row score contributions contain non-finite values.")
   }
   scores
 }
@@ -723,11 +698,10 @@ get_delta_score_components <- function(model, cluster = NULL) {
 delta_validate_profile_matrix <- function(value, label) {
   value <- as.matrix(value)
   if (!is.numeric(value) || length(value) == 0L || any(!is.finite(value))) {
-    stop(
+    mostr_abort(
       "`",
       label,
-      "` must be a non-empty finite numeric matrix.",
-      call. = FALSE
+      "` must be a non-empty finite numeric matrix."
     )
   }
   value
@@ -750,23 +724,23 @@ delta_stacked_influence <- function(
   m <- ncol(values)
 
   if (n < 2L) {
-    stop(
-      "Stacked unconditional inference requires at least two profiles.",
-      call. = FALSE
+    mostr_abort(
+      "Stacked unconditional inference requires at least two profiles."
     )
   }
   if (length(profile_ids) != n || anyNA(profile_ids)) {
-    stop(
-      "`profile_ids` must contain one non-missing patient ID per profile row.",
-      call. = FALSE
+    mostr_abort(
+      "`profile_ids` must contain one non-missing patient ID per profile row."
     )
   }
   profile_ids <- as.character(profile_ids)
   if (any(profile_ids == "") || anyDuplicated(profile_ids)) {
-    stop("`profile_ids` must be non-empty and unique.", call. = FALSE)
+    mostr_abort("`profile_ids` must be non-empty and unique.")
   }
   if (!is.list(score_components)) {
-    stop("`score_components` must come from `get_delta_score_components()`.")
+    mostr_abort(
+      "`score_components` must come from `get_delta_score_components()`."
+    )
   }
   required <- c("ids", "scores", "Ainv", "n")
   missing_required <- required[vapply(
@@ -775,11 +749,10 @@ delta_stacked_influence <- function(
     logical(1)
   )]
   if (length(missing_required)) {
-    stop(
+    mostr_abort(
       "`score_components` is missing: ",
       paste(missing_required, collapse = ", "),
-      ".",
-      call. = FALSE
+      "."
     )
   }
 
@@ -791,7 +764,9 @@ delta_stacked_influence <- function(
       anyDuplicated(score_ids) ||
       nrow(scores) != length(score_ids)
   ) {
-    stop("Score-component IDs must be non-missing, unique, and row-aligned.")
+    mostr_abort(
+      "Score-component IDs must be non-missing, unique, and row-aligned."
+    )
   }
   if (
     length(score_components$n) != 1L ||
@@ -799,35 +774,32 @@ delta_stacked_influence <- function(
       is.na(score_components$n) ||
       score_components$n != length(score_ids)
   ) {
-    stop("`score_components$n` does not match its patient score rows.")
+    mostr_abort("`score_components$n` does not match its patient score rows.")
   }
 
   unmatched_scores <- setdiff(score_ids, profile_ids)
   unmatched_profiles <- setdiff(profile_ids, score_ids)
   if (length(unmatched_scores)) {
-    stop(
+    mostr_abort(
       "Likelihood-score patients are absent from the target profiles: ",
       paste(utils::head(unmatched_scores, 5L), collapse = ", "),
       if (length(unmatched_scores) > 5L) " ..." else "",
       ". Fitted-cohort unconditional inference requires every score patient to ",
-      "appear exactly once in `profile_ids`.",
-      call. = FALSE
+      "appear exactly once in `profile_ids`."
     )
   }
   if (length(unmatched_profiles)) {
-    stop(
+    mostr_abort(
       "Target-profile patients have no usable likelihood transition: ",
       paste(utils::head(unmatched_profiles, 5L), collapse = ", "),
       if (length(unmatched_profiles) > 5L) " ..." else "",
       ". Unconditional inference includes only fitted patients and does not ",
-      "insert zero patient-score rows.",
-      call. = FALSE
+      "insert zero patient-score rows."
     )
   }
   if (score_components$n != n) {
-    stop(
-      "The starting-profile and patient-score cohorts have different sizes.",
-      call. = FALSE
+    mostr_abort(
+      "The starting-profile and patient-score cohorts have different sizes."
     )
   }
 
@@ -838,7 +810,7 @@ delta_stacked_influence <- function(
       any(cell_names == "") ||
       anyDuplicated(cell_names)
   ) {
-    stop(
+    mostr_abort(
       "`individual_values` columns must have unique, non-missing cell names."
     )
   }
@@ -850,13 +822,12 @@ delta_stacked_influence <- function(
       anyDuplicated(jacobian_rows) ||
       !setequal(jacobian_rows, cell_names)
   ) {
-    stop(
-      "Jacobian row names must uniquely match all `individual_values` cells.",
-      call. = FALSE
+    mostr_abort(
+      "Jacobian row names must uniquely match all `individual_values` cells."
     )
   }
   if (nrow(G) != m) {
-    stop("`average_jacobian` must have one row per estimand cell.")
+    mostr_abort("`average_jacobian` must have one row per estimand cell.")
   }
   G <- G[cell_names, , drop = FALSE]
 
@@ -867,7 +838,9 @@ delta_stacked_influence <- function(
       any(coefficient_names == "") ||
       anyDuplicated(coefficient_names)
   ) {
-    stop("Score columns must have unique, non-missing coefficient names.")
+    mostr_abort(
+      "Score columns must have unique, non-missing coefficient names."
+    )
   }
   jacobian_columns <- colnames(G)
   if (
@@ -877,7 +850,7 @@ delta_stacked_influence <- function(
       anyDuplicated(jacobian_columns) ||
       !setequal(jacobian_columns, coefficient_names)
   ) {
-    stop("Score and Jacobian coefficient names do not match.", call. = FALSE)
+    mostr_abort("Score and Jacobian coefficient names do not match.")
   }
   G <- G[, coefficient_names, drop = FALSE]
   score_Ainv <- delta_validate_named_matrix(
@@ -887,7 +860,7 @@ delta_stacked_influence <- function(
     positive_definite = TRUE
   )
   if (any(!is.finite(scores))) {
-    stop("Patient score contributions contain non-finite values.")
+    mostr_abort("Patient score contributions contain non-finite values.")
   }
 
   score_order <- match(profile_ids, score_ids)
@@ -950,7 +923,7 @@ delta_empirical_covariance <- function(jacobian, covariance) {
       any(coefficient_names == "") ||
       anyDuplicated(coefficient_names)
   ) {
-    stop("`jacobian` columns must have unique raw-coefficient names.")
+    mostr_abort("`jacobian` columns must have unique raw-coefficient names.")
   }
   covariance <- delta_validate_named_matrix(
     covariance,

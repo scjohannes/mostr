@@ -109,7 +109,7 @@ plot_sops <- function(
       length(show_uncertainty) != 1 ||
       is.na(show_uncertainty)
   ) {
-    stop("`show_uncertainty` must be TRUE or FALSE.")
+    mostr_abort("`show_uncertainty` must be TRUE or FALSE.")
   }
 
   if (is.null(prob_var) && "estimate" %in% names(data)) {
@@ -506,13 +506,12 @@ plot_sops_validate_summary_keys <- function(
     "Include additional grouping variables in `facet_var`, "
   }
 
-  stop(
+  mostr_abort(
     "Model-derived SOP summary data has multiple rows for the same plotted ",
     "combination of ",
     paste(key_vars, collapse = ", "),
     ". ",
     guidance,
-    "aggregate before plotting, or filter to one scenario.",
-    call. = FALSE
+    "aggregate before plotting, or filter to one scenario."
   )
 }

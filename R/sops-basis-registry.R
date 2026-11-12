@@ -22,7 +22,7 @@ rms_basis_registry <- function() {
   extensions <- getOption("mostr.rms_basis_handlers", list())
   if (length(extensions) > 0L) {
     if (is.null(names(extensions)) || any(!nzchar(names(extensions)))) {
-      stop("Extended RMS basis handlers must be a named list.", call. = FALSE)
+      mostr_abort("Extended RMS basis handlers must be a named list.")
     }
     required <- c(
       "id",
@@ -36,17 +36,15 @@ rms_basis_registry <- function() {
       handler <- extensions[[name]]
       missing <- setdiff(required, names(handler))
       if (length(missing) > 0L || !is.function(handler$evaluate)) {
-        stop(
+        mostr_abort(
           "Extended RMS basis handler `",
           name,
-          "` is invalid.",
-          call. = FALSE
+          "` is invalid."
         )
       }
       if (!identical(handler$id, name)) {
-        stop(
-          "Extended RMS basis handler names must match their IDs.",
-          call. = FALSE
+        mostr_abort(
+          "Extended RMS basis handler names must match their IDs."
         )
       }
     }
@@ -58,7 +56,7 @@ rms_basis_registry <- function() {
 rms_basis_handler <- function(id) {
   handler <- rms_basis_registry()[[id]]
   if (is.null(handler)) {
-    stop("Unknown RMS basis handler: ", id, call. = FALSE)
+    mostr_abort("Unknown RMS basis handler: ", id)
   }
   handler
 }
@@ -100,12 +98,11 @@ new_compiled_rms_basis <- function(
   parameters <- as.numeric(parameters)
   columns <- as.character(columns)
   if (!length(variable) || length(variable) != 1L || !nzchar(variable)) {
-    stop("A compiled RMS basis requires one source variable.", call. = FALSE)
+    mostr_abort("A compiled RMS basis requires one source variable.")
   }
   if (!length(parameters) || anyNA(parameters) || any(!is.finite(parameters))) {
-    stop(
-      "A compiled RMS basis requires finite fitted parameters.",
-      call. = FALSE
+    mostr_abort(
+      "A compiled RMS basis requires finite fitted parameters."
     )
   }
   expected_columns <- length(parameters) + 1L
@@ -113,24 +110,22 @@ new_compiled_rms_basis <- function(
     expected_columns <- length(parameters) - 1L
   }
   if (length(columns) != expected_columns) {
-    stop(
+    mostr_abort(
       "Compiled ",
       handler$id,
       " basis expected ",
       expected_columns,
       " columns, got ",
       length(columns),
-      ".",
-      call. = FALSE
+      "."
     )
   }
   if (is.null(nonlinear)) {
     nonlinear <- c(FALSE, rep(TRUE, expected_columns - 1L))
   }
   if (length(nonlinear) != expected_columns || anyNA(nonlinear)) {
-    stop(
-      "RMS basis nonlinear metadata is not aligned with its columns.",
-      call. = FALSE
+    mostr_abort(
+      "RMS basis nonlinear metadata is not aligned with its columns."
     )
   }
   structure(
@@ -147,15 +142,15 @@ new_compiled_rms_basis <- function(
 
 evaluate_compiled_rms_basis <- function(basis, values) {
   if (!inherits(basis, "markov_rms_basis")) {
-    stop("`basis` must be a compiled RMS basis.", call. = FALSE)
+    mostr_abort("`basis` must be a compiled RMS basis.")
   }
   if (!is.numeric(values)) {
-    stop("RMS numeric bases require numeric prediction values.", call. = FALSE)
+    mostr_abort("RMS numeric bases require numeric prediction values.")
   }
   handler <- rms_basis_handler(basis$handler)
   out <- handler$evaluate(values, basis$parameters)
   if (!is.matrix(out) || ncol(out) != length(basis$columns)) {
-    stop("RMS basis handler returned an invalid matrix.", call. = FALSE)
+    mostr_abort("RMS basis handler returned an invalid matrix.")
   }
   colnames(out) <- basis$columns
   attr(out, "nonlinear") <- basis$nonlinear

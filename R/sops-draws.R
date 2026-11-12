@@ -32,7 +32,7 @@ compute_ci_from_draws <- function(
       is.na(conf_type) ||
       !conf_type %in% c("perc", "wald")
   ) {
-    stop("conf_type must be 'perc' or 'wald'")
+    mostr_abort("conf_type must be 'perc' or 'wald'")
   }
   alpha <- 1 - conf_level
 
@@ -82,7 +82,7 @@ compute_ci_from_draws <- function(
     work[stats::complete.cases(work)]
   }
   if (nrow(work) == 0L) {
-    stop("no rows to aggregate")
+    mostr_abort("no rows to aggregate")
   }
   summary_stats <- as.data.frame(work[,
     as.list(summarize_values(estimate)),
@@ -225,7 +225,7 @@ get_draws <- function(x) {
       )
     )
   ) {
-    stop(
+    mostr_abort(
       "get_draws() requires an object from inferences(). ",
       "Got: ",
       paste(class(x), collapse = ", ")
@@ -241,7 +241,7 @@ get_draws <- function(x) {
     if (!is.null(method)) {
       msg <- paste0(msg, " (Method used: '", method, "')")
     }
-    stop(msg)
+    mostr_abort(msg)
   }
 
   # 2. Prepare metadata from the original object

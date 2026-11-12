@@ -34,7 +34,9 @@ plot_validate_facets <- function(data, facet_var) {
     return(invisible(NULL))
   }
   if (!is.character(facet_var) || !length(facet_var) %in% c(1, 2)) {
-    stop("`facet_var` must be NULL or a character vector of length 1 or 2.")
+    mostr_abort(
+      "`facet_var` must be NULL or a character vector of length 1 or 2."
+    )
   }
   plot_validate_columns(data, facet_var, "`facet_var`")
 }
@@ -42,11 +44,10 @@ plot_validate_facets <- function(data, facet_var) {
 plot_validate_columns <- function(data, vars, arg) {
   missing_vars <- setdiff(vars, names(data))
   if (length(missing_vars) > 0) {
-    stop(
+    mostr_abort(
       arg,
       " column not found in `data`: ",
-      paste(missing_vars, collapse = ", "),
-      call. = FALSE
+      paste(missing_vars, collapse = ", ")
     )
   }
   invisible(NULL)
@@ -61,7 +62,7 @@ plot_validate_scalar <- function(x, arg, lower, upper = Inf) {
       x < lower ||
       x > upper
   ) {
-    stop(
+    mostr_abort(
       "`",
       arg,
       "` must be a numeric scalar between ",

@@ -29,22 +29,21 @@ markov_rms_model_frame <- function(
 
 validate_markov_id_var <- function(id_var, data, data_arg = "data") {
   if (!is.character(id_var) || length(id_var) != 1 || is.na(id_var)) {
-    stop("`id_var` must be a single column name.")
+    mostr_abort("`id_var` must be a single column name.")
   }
   if (!id_var %in% names(data)) {
-    stop("ID variable '", id_var, "' not found in ", data_arg, ".")
+    mostr_abort("ID variable '", id_var, "' not found in ", data_arg, ".")
   }
   id_var
 }
 
 stop_missing_mostm_id_var <- function() {
-  stop(
+  mostr_abort(
     "`mostm()` needs `id_var`, the name of the column in `data` that ",
     "identifies patients, for example `id_var = \"id\"`. Standard errors that ",
     "allow for correlation between the transitions of one patient, the ",
     "stored starting row of each patient, and the bootstrap all need to know ",
-    "which rows belong to the same patient.",
-    call. = FALSE
+    "which rows belong to the same patient."
   )
 }
 
@@ -127,16 +126,15 @@ markov_eval_prior_weights <- function(expr, data, eval_env) {
   }
   n_weights <- if (is.matrix(weights)) nrow(weights) else length(weights)
   if (!is.numeric(weights) || n_weights != nrow(data)) {
-    stop(
-      "`weights` must be numeric with one value per row of `data`.",
-      call. = FALSE
+    mostr_abort(
+      "`weights` must be numeric with one value per row of `data`."
     )
   }
   if (any(!is.finite(weights))) {
-    stop("`weights` must be finite.", call. = FALSE)
+    mostr_abort("`weights` must be finite.")
   }
   if (any(weights < 0)) {
-    stop("negative weights not allowed", call. = FALSE)
+    mostr_abort("negative weights not allowed")
   }
   weights
 }
@@ -189,7 +187,7 @@ markov_set_engine <- function(model, engine) {
       is.na(engine) ||
       !engine %in% markov_engines()
   ) {
-    stop("Internal Markov model engine provenance is invalid.")
+    mostr_abort("Internal Markov model engine provenance is invalid.")
   }
   attr(model, "markov_engine") <- engine
   model
@@ -314,10 +312,9 @@ markov_model_id_var <- function(model, id_var = NULL) {
 markov_require_id_var <- function(model, id_var = NULL) {
   id_var <- markov_model_id_var(model, id_var)
   if (is.null(id_var)) {
-    stop(
+    mostr_abort(
       "The model does not record which column of its data identifies ",
-      "patients. Refit it with `mostm(..., id_var = ...)`.",
-      call. = FALSE
+      "patients. Refit it with `mostm(..., id_var = ...)`."
     )
   }
   id_var
@@ -368,10 +365,9 @@ markov_validate_starting_profiles <- function(
   profiles <- markov_model_metadata_attr(model, "markov_starting_profile_data")
   metadata <- markov_model_starting_profile_metadata(model)
   if (is.null(profiles) || is.null(metadata)) {
-    stop(
+    mostr_abort(
       "Provide newdata: the model has no stored starting row for each ",
-      "patient. Fits made by `mostm()` store these rows.",
-      call. = FALSE
+      "patient. Fits made by `mostm()` store these rows."
     )
   }
 
@@ -384,19 +380,18 @@ markov_validate_starting_profiles <- function(
       any(fitted_ids == "") ||
       anyDuplicated(fitted_ids)
   ) {
-    stop("Stored starting-profile patient metadata is invalid.", call. = FALSE)
+    mostr_abort("Stored starting-profile patient metadata is invalid.")
   }
 
   profile_ids <- as.character(profiles[[id_var]])
   missing_ids <- setdiff(fitted_ids, profile_ids)
   if (length(missing_ids)) {
-    stop(
+    mostr_abort(
       "Fitted patient(s) lack a row at the designated starting visit `",
       as.character(metadata$first_followup_time),
       "`: ",
       markov_format_patient_ids(missing_ids),
-      ". A later likelihood row is not substituted for the starting profile.",
-      call. = FALSE
+      ". A later likelihood row is not substituted for the starting profile."
     )
   }
 
@@ -405,35 +400,32 @@ markov_validate_starting_profiles <- function(
       duplicated(profile_ids, fromLast = TRUE)
   ])
   if (length(duplicated_ids)) {
-    stop(
+    mostr_abort(
       "Fitted patient(s) have multiple rows at the designated starting visit ",
       "`",
       as.character(metadata$first_followup_time),
       "`: ",
       markov_format_patient_ids(duplicated_ids),
-      ". Exactly one starting profile is required per fitted patient.",
-      call. = FALSE
+      ". Exactly one starting profile is required per fitted patient."
     )
   }
 
   required <- unique(c(metadata$required_variables, required_variables))
   missing_variables <- setdiff(required, names(profiles))
   if (length(missing_variables)) {
-    stop(
+    mostr_abort(
       "Stored starting profiles are missing required prediction variables: ",
       paste(missing_variables, collapse = ", "),
-      ".",
-      call. = FALSE
+      "."
     )
   }
   incomplete <- !stats::complete.cases(profiles[, required, drop = FALSE])
   if (any(incomplete)) {
-    stop(
+    mostr_abort(
       "Fitted patient(s) have incomplete starting-profile predictors: ",
       markov_format_patient_ids(profile_ids[incomplete]),
       ". The transition response is not required, but ID, modeled predictors, ",
-      "time metadata, and the previous state must be complete.",
-      call. = FALSE
+      "time metadata, and the previous state must be complete."
     )
   }
 
@@ -449,26 +441,24 @@ markov_validate_starting_profiles <- function(
     supported <- unique(as.character(fitting_data[[variable]]))
     unsupported <- !as.character(profiles[[variable]]) %in% supported
     if (any(unsupported)) {
-      stop(
+      mostr_abort(
         "Fitted patient(s) have unsupported factor value(s) for starting ",
         "predictor `",
         variable,
         "`: ",
         markov_format_patient_ids(profile_ids[unsupported]),
-        ".",
-        call. = FALSE
+        "."
       )
     }
   }
 
   unexpected_ids <- setdiff(profile_ids, fitted_ids)
   if (length(unexpected_ids)) {
-    stop(
+    mostr_abort(
       "Stored starting profiles contain patient(s) with no usable likelihood ",
       "transition: ",
       markov_format_patient_ids(unexpected_ids),
-      ".",
-      call. = FALSE
+      "."
     )
   }
 
@@ -495,13 +485,12 @@ markov_reject_legacy_args <- function(dots) {
     return(invisible(NULL))
   }
 
-  stop(
+  mostr_abort(
     "mostm() does not accept the former starting-profile argument(s) ",
     paste0("`", legacy, "`", collapse = ", "),
     ". Use `first_followup_time` to select the stored starting profiles; ",
     "supply baseline and time-mapping arguments to downstream SOP summary ",
-    "functions.",
-    call. = FALSE
+    "functions."
   )
 }
 
@@ -509,25 +498,25 @@ markov_first_followup_time <- function(time, first_followup_time) {
   if (is.numeric(time)) {
     scheduled <- time[!is.na(time)]
     if (!length(scheduled)) {
-      stop("The numeric time variable has no non-missing scheduled values.")
+      mostr_abort(
+        "The numeric time variable has no non-missing scheduled values."
+      )
     }
     if (any(!is.finite(scheduled))) {
-      stop("The numeric time variable must contain only finite values.")
+      mostr_abort("The numeric time variable must contain only finite values.")
     }
     if (any(scheduled < 1)) {
-      stop(
+      mostr_abort(
         "The numeric time variable contains a value below 1; follow-up time ",
-        "must begin at 1 or later.",
-        call. = FALSE
+        "must begin at 1 or later."
       )
     }
 
     if (is.null(first_followup_time)) {
       if (!1 %in% scheduled) {
-        stop(
+        mostr_abort(
           "The default `first_followup_time = 1` is not observed in the ",
-          "numeric time variable.",
-          call. = FALSE
+          "numeric time variable."
         )
       }
       return(1)
@@ -538,60 +527,53 @@ markov_first_followup_time <- function(time, first_followup_time) {
         is.na(first_followup_time) ||
         !is.finite(first_followup_time)
     ) {
-      stop(
+      mostr_abort(
         "For numeric time, `first_followup_time` must be one finite numeric ",
-        "value.",
-        call. = FALSE
+        "value."
       )
     }
     if (!first_followup_time %in% scheduled) {
-      stop(
+      mostr_abort(
         "`first_followup_time = ",
         as.character(first_followup_time),
-        "` is not observed in the numeric time variable.",
-        call. = FALSE
+        "` is not observed in the numeric time variable."
       )
     }
     earliest <- min(scheduled)
     if (!identical(as.numeric(first_followup_time), as.numeric(earliest))) {
-      stop(
+      mostr_abort(
         "For numeric time, `first_followup_time` must equal the earliest ",
         "observed scheduled time (`",
         as.character(earliest),
-        "`).",
-        call. = FALSE
+        "`)."
       )
     }
     return(first_followup_time)
   }
 
   if (!is.factor(time) && !is.character(time)) {
-    stop(
-      "The time variable must be numeric, factor, or character.",
-      call. = FALSE
+    mostr_abort(
+      "The time variable must be numeric, factor, or character."
     )
   }
   if (is.null(first_followup_time)) {
-    stop(
-      "Factor and character time require an explicit `first_followup_time`.",
-      call. = FALSE
+    mostr_abort(
+      "Factor and character time require an explicit `first_followup_time`."
     )
   }
   if (length(first_followup_time) != 1L || is.na(first_followup_time)) {
-    stop(
-      "`first_followup_time` must contain one non-missing value.",
-      call. = FALSE
+    mostr_abort(
+      "`first_followup_time` must contain one non-missing value."
     )
   }
 
   resolved <- as.character(first_followup_time)
   observed <- unique(as.character(time[!is.na(time)]))
   if (!resolved %in% observed) {
-    stop(
+    mostr_abort(
       "`first_followup_time = ",
       resolved,
-      "` is not observed in the factor or character time variable.",
-      call. = FALSE
+      "` is not observed in the factor or character time variable."
     )
   }
   resolved
@@ -632,7 +614,7 @@ markov_prepare_stored_data <- function(
 
   fitted_ids <- unique(as.character(fit_data[[id_var]]))
   if (anyNA(fitted_ids) || any(fitted_ids == "")) {
-    stop("Fitted patient IDs must be non-missing and non-empty.", call. = FALSE)
+    mostr_abort("Fitted patient IDs must be non-missing and non-empty.")
   }
   at_start <- as.character(refit_data[[time_var]]) %in%
     as.character(scheduled_start)
@@ -723,13 +705,12 @@ resolve_markov_source_data <- function(model, newdata, settings = NULL) {
         !is.null(metadata$time_var) &&
         !identical(time_var, metadata$time_var)
     ) {
-      stop(
+      mostr_abort(
         "Automatic SOP prediction requested `time_var = \"",
         time_var,
         "\"`, but `mostm()` stored the starting profiles using `",
         metadata$time_var,
-        "`. Refit with the intended `time_var` or supply explicit `newdata`.",
-        call. = FALSE
+        "`. Refit with the intended `time_var` or supply explicit `newdata`."
       )
     }
     markov_validate_starting_profiles(
@@ -739,7 +720,7 @@ resolve_markov_source_data <- function(model, newdata, settings = NULL) {
   }
 
   if (!is.data.frame(source_data)) {
-    stop("`newdata` must be a data frame.")
+    mostr_abort("`newdata` must be a data frame.")
   }
   if (!is.null(settings)) {
     stop_absorbing_start(

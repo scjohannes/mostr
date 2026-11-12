@@ -3,7 +3,7 @@
     Code
       robcov_vglm(nonconverged)
     Condition
-      Error in `validate_vglm_convergence()`:
+      Error in `robcov_vglm()`:
       ! The vglm fit reached its IRLS iteration limit without convergence. Refit the model before computing a robust covariance.
 
 ---
@@ -19,7 +19,7 @@
     Code
       robcov_vglm(m, cluster = cluster, adjust = TRUE, cadjust = TRUE)
     Condition
-      Error in `resolve_vglm_corrections()`:
+      Error in `robcov_vglm()`:
       ! Supply only one of legacy `adjust` and `cadjust`, not both.
 
 # Utility methods / print and summary methods work

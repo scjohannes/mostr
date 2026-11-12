@@ -115,7 +115,7 @@ plot_correlation <- function(
   if (
     !is.logical(show_values) || length(show_values) != 1L || is.na(show_values)
   ) {
-    stop("`show_values` must be TRUE or FALSE.")
+    mostr_abort("`show_values` must be TRUE or FALSE.")
   }
   plot_validate_scalar(digits, "digits", lower = 0)
   settings <- plot_markov_settings(
@@ -190,7 +190,7 @@ plot_variogram <- function(
   method <- match.arg(method)
   object <- x
   if (!is.logical(smooth) || length(smooth) != 1L || is.na(smooth)) {
-    stop("`smooth` must be TRUE or FALSE.")
+    mostr_abort("`smooth` must be TRUE or FALSE.")
   }
   settings <- plot_markov_settings(
     object,

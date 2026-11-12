@@ -11,33 +11,30 @@ inferences_delta_profile_results <- function(
 ) {
   args <- attr(object, "comparison_args")
   if (is.null(args)) {
-    stop("Stored result arguments are required for delta inference.")
+    mostr_abort("Stored result arguments are required for delta inference.")
   }
   if (!identical(conf_type, "wald")) {
-    stop(
+    mostr_abort(
       "Analytical intervals for one row per profile require ",
-      "`conf_type = \"wald\"`.",
-      call. = FALSE
+      "`conf_type = \"wald\"`."
     )
   }
   is_time <- identical(profile_result_kind(object), "time")
   if (!is_time && !identical(args$comparison, "difference")) {
-    stop(
+    mostr_abort(
       "Analytical comparisons currently support differences only; ratios ",
-      "are not yet supported.",
-      call. = FALSE
+      "are not yet supported."
     )
   }
   if (!is_time && !args$estimand %in% c("sop", "time_in_state")) {
-    stop(
+    mostr_abort(
       "Analytical comparisons currently support `estimand = \"sop\"` or ",
-      "`\"time_in_state\"`; time benefit is not yet supported.",
-      call. = FALSE
+      "`\"time_in_state\"`; time benefit is not yet supported."
     )
   }
   model <- attr(object, "model")
   if (is.null(model)) {
-    stop("Model not stored in object. Cannot perform delta inference.")
+    mostr_abort("Model not stored in object. Cannot perform delta inference.")
   }
   model_plan <- delta_validate_sop_scope(object, model, by = NULL)
   setup <- setup_from_avg_comparison_object(object)
@@ -113,10 +110,9 @@ inferences_delta_profile_results <- function(
           1e-12 + 1e-10 * pmax(abs(estimate), abs(stored))
       )
   ) {
-    stop(
+    mostr_abort(
       "The analytical calculation did not reproduce the stored point ",
-      "estimates.",
-      call. = FALSE
+      "estimates."
     )
   }
 
@@ -155,7 +151,9 @@ delta_comparison_row_index <- function(object, setup, args) {
       any(index$profile < 1L | index$profile > setup$n_each) ||
       any(index$level < 2L)
   ) {
-    stop("Comparison rows do not align with the stored prediction profiles.")
+    mostr_abort(
+      "Comparison rows do not align with the stored prediction profiles."
+    )
   }
   index
 }
@@ -173,7 +171,7 @@ delta_time_row_index <- function(object, setup, args) {
       any(index$profile < 1L | index$profile > setup$n_each) ||
       any(index$scenario > setup$n_cf)
   ) {
-    stop("Time rows do not align with the stored prediction profiles.")
+    mostr_abort("Time rows do not align with the stored prediction profiles.")
   }
   index
 }

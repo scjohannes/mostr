@@ -4,15 +4,14 @@ validate_sop_threshold_count <- function(Gamma, y_levels) {
   expected <- length(y_levels) - 1L
   actual <- nrow(Gamma)
   if (!identical(actual, expected)) {
-    stop(
+    mostr_abort(
       "`y_levels` defines ",
       length(y_levels),
       " states, but the fitted model defines ",
       actual + 1L,
       " states through ",
       actual,
-      " threshold coefficients.",
-      call. = FALSE
+      " threshold coefficients."
     )
   }
   invisible(NULL)
@@ -26,9 +25,8 @@ execution_plan_max_bytes <- function() {
       is.na(value) ||
       value <= 0
   ) {
-    stop(
-      "Option `mostr.execution_plan_max_bytes` must be a positive number.",
-      call. = FALSE
+    mostr_abort(
+      "Option `mostr.execution_plan_max_bytes` must be a positive number."
     )
   }
   as.double(value)
@@ -42,19 +40,14 @@ stop_execution_plan_too_large <- function(required_bytes, max_bytes) {
     format(max_bytes, scientific = FALSE),
     " bytes."
   )
-  stop(structure(
-    list(
-      message = message,
-      call = NULL,
+  mostr_abort(
+    message,
+    class = "mostr_execution_plan_too_large",
+    data = list(
       required_bytes = required_bytes,
       max_bytes = max_bytes
-    ),
-    class = c(
-      "mostr_execution_plan_too_large",
-      "error",
-      "condition"
     )
-  ))
+  )
 }
 
 preflight_execution_plan_designs <- function(
@@ -165,7 +158,7 @@ compile_sop_execution_plan <- function(
 
 run_sop_execution_plan <- function(plan, Gamma) {
   if (!inherits(plan, "markov_sop_exec_plan") || plan$version != 1L) {
-    stop("Invalid or unsupported SOP execution plan.")
+    mostr_abort("Invalid or unsupported SOP execution plan.")
   }
   validate_sop_threshold_count(Gamma, plan$y_levels)
   if (identical(plan$recursion_order, 2L)) {
@@ -192,10 +185,12 @@ compile_second_order_execution_plan <- function(
   p_var <- settings$p_var
   p2_var <- settings$p2_var
   if (!inherits(model, c("orm", "vglm")) || inherits(model, "blrm")) {
-    stop("Compiled second-order plans require a frequentist orm or vglm model.")
+    mostr_abort(
+      "Compiled second-order plans require a frequentist orm or vglm model."
+    )
   }
   if (!all(c(p_var, p2_var) %in% names(newdata))) {
-    stop("Second-order prediction variables are missing from `newdata`.")
+    mostr_abort("Second-order prediction variables are missing from `newdata`.")
   }
   time_res <- resolve_sop_times(
     model,
@@ -241,7 +236,7 @@ compile_second_order_execution_plan <- function(
     }
     missing <- setdiff(colnames(Gamma), colnames(X))
     if (length(missing) > 0L) {
-      stop(
+      mostr_abort(
         "Second-order design is missing fitted columns: ",
         paste(missing, collapse = ", ")
       )

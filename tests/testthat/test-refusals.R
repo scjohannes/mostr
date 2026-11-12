@@ -59,6 +59,14 @@ check_refusals <- function(rows) {
         info = paste(info, "(class", row$class, ")")
       )
     }
+    # A mostr error names no internal function: either no call or the
+    # exported function that was called.
+    if (inherits(condition, "mostr_error")) {
+      expect_true(
+        error_call_name(condition) %in% c(NA, getNamespaceExports("mostr")),
+        info = paste(info, "(call", error_call_name(condition), ")")
+      )
+    }
   }
 }
 

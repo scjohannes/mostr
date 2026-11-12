@@ -7,20 +7,24 @@ markov_sandwich_adjustment <- function(
 ) {
   type <- match.arg(type)
   if (!is.logical(cadjust) || length(cadjust) != 1L || is.na(cadjust)) {
-    stop("`cadjust` must be TRUE or FALSE.")
+    mostr_abort("`cadjust` must be TRUE or FALSE.")
   }
 
   adjustment_factor <- 1
   if (type == "HC1") {
     if (n <= p) {
-      stop("`type = \"HC1\"` requires more observations than parameters.")
+      mostr_abort(
+        "`type = \"HC1\"` requires more observations than parameters."
+      )
     }
     adjustment_factor <- adjustment_factor * ((n - 1) / (n - p))
   }
   if (cadjust) {
     adjustment_clusters <- n_clusters %||% n
     if (adjustment_clusters < 2L) {
-      stop("`cadjust = TRUE` requires at least two independent clusters.")
+      mostr_abort(
+        "`cadjust = TRUE` requires at least two independent clusters."
+      )
     }
     adjustment_factor <- adjustment_factor *
       (adjustment_clusters / (adjustment_clusters - 1))
@@ -64,31 +68,30 @@ orm_case_weights <- function(model, n) {
     return(rep(1, n))
   }
   if (!is.numeric(weights) || length(weights) != n) {
-    stop(
+    mostr_abort(
       "Fitted orm case weights must be a numeric vector with one value per fitted row."
     )
   }
   if (any(!is.finite(weights)) || any(weights < 0)) {
-    stop("Fitted orm case weights must be finite and nonnegative.")
+    mostr_abort("Fitted orm case weights must be finite and nonnegative.")
   }
   as.numeric(weights)
 }
 
 stop_failed_orm_fit <- function() {
-  stop(
+  mostr_abort(
     "`rms::orm()` could not fit the model: its fitting algorithm stopped ",
     "without finding the coefficient estimates. You can try another ",
     "algorithm with `opt_method = \"LM\"`, scale the covariates with ",
     "`scale = TRUE`, allow more iterations with a larger `maxit`, or ",
     "simplify the model, for example by removing covariates that are ",
-    "nearly collinear.",
-    call. = FALSE
+    "nearly collinear."
   )
 }
 
 validate_robcov_orm_fit <- function(fit) {
   if (!inherits(fit, "orm")) {
-    stop("'fit' must be an orm object.")
+    mostr_abort("'fit' must be an orm object.")
   }
   if (isTRUE(fit$fail)) {
     stop_failed_orm_fit()
@@ -97,10 +100,12 @@ validate_robcov_orm_fit <- function(fit) {
     stop_unsupported_orm_random_effects()
   }
   if (!identical(fit$family, "logistic")) {
-    stop("`robcov_orm()` supports only ordinary ordinal logistic orm fits.")
+    mostr_abort(
+      "`robcov_orm()` supports only ordinary ordinal logistic orm fits."
+    )
   }
   if (is.null(fit$x) || is.null(fit$y)) {
-    stop(
+    mostr_abort(
       "orm robust covariance requires `x = TRUE, y = TRUE` in the fitted model."
     )
   }
@@ -115,7 +120,9 @@ validate_robcov_orm_fit <- function(fit) {
       anyDuplicated(names(coefficients)) ||
       any(!is.finite(coefficients))
   ) {
-    stop("orm coefficients must be finite and have unique, non-missing names.")
+    mostr_abort(
+      "orm coefficients must be finite and have unique, non-missing names."
+    )
   }
   coefficients
 }
@@ -138,11 +145,10 @@ orm_model_bread <- function(fit) {
     (!is.null(fit$var.from.info.matrix) || requested_sandwich)
 
   if (sandwich_penalty && is.null(fit$var.from.info.matrix)) {
-    stop(
+    mostr_abort(
       "The penalized orm fit used `var.penalty = \"sandwich\"` but does not ",
       "retain the required inverse-sensitivity matrix in ",
-      "`var.from.info.matrix`.",
-      call. = FALSE
+      "`var.from.info.matrix`."
     )
   }
 
@@ -162,7 +168,7 @@ orm_model_bread <- function(fit) {
     }
   }
   if (is.null(bread)) {
-    stop(
+    mostr_abort(
       "Could not obtain the full model-based covariance for the orm fit. ",
       "Refit with `x = TRUE, y = TRUE`."
     )
@@ -173,19 +179,18 @@ orm_model_bread <- function(fit) {
     validate_coef_vcov(coefficients, bread, arg = "orm model bread"),
     error = function(error) {
       if (sandwich_penalty) {
-        stop(
+        mostr_abort(
           "The penalized orm inverse-sensitivity matrix stored in ",
           "`var.from.info.matrix` is invalid: ",
-          conditionMessage(error),
-          call. = FALSE
+          conditionMessage(error)
         )
       }
-      stop(error)
+      mostr_abort(error)
     }
   )
   symmetry_error <- max(abs(bread - t(bread))) / max(1, max(abs(bread)))
   if (!is.finite(symmetry_error) || symmetry_error > 1e-8) {
-    stop(
+    mostr_abort(
       if (sandwich_penalty) {
         "The penalized orm `var.from.info.matrix` is not numerically symmetric."
       } else {
@@ -204,7 +209,7 @@ orm_model_bread <- function(fit) {
   }
   tolerance <- max(1, max(abs(eigenvalues))) * length(coefficients) * 1e-10
   if (min(eigenvalues) <= tolerance) {
-    stop(
+    mostr_abort(
       if (sandwich_penalty) {
         "The penalized orm `var.from.info.matrix` must be positive definite."
       } else {
@@ -249,7 +254,9 @@ robcov_orm <- function(
   n <- nrow(fit$x)
   p <- length(coefficients)
   if (!identical(length(fit$y), n)) {
-    stop("Stored orm `x` and `y` components have inconsistent row counts.")
+    mostr_abort(
+      "Stored orm `x` and `y` components have inconsistent row counts."
+    )
   }
 
   scores <- compute_scores_orm(fit)
@@ -259,14 +266,14 @@ robcov_orm <- function(
       !identical(colnames(scores), names(coefficients)) ||
       any(!is.finite(scores))
   ) {
-    stop("Observation-level orm scores are incomplete or misaligned.")
+    mostr_abort("Observation-level orm scores are incomplete or misaligned.")
   }
   weights <- orm_case_weights(fit, n)
   weighted <- any(weights != 1)
   represented <- weights > 0
   n_represented <- sum(represented)
   if (n_represented == 0L) {
-    stop(
+    mostr_abort(
       "orm robust covariance requires at least one positive-weight fitted row."
     )
   }
@@ -274,7 +281,7 @@ robcov_orm <- function(
   if (!is.null(cluster)) {
     cluster <- align_cluster_orm(fit, cluster, n)
     if (anyNA(cluster)) {
-      stop(
+      mostr_abort(
         "'cluster' contains missing values after alignment with the fitted data."
       )
     }
@@ -287,7 +294,7 @@ robcov_orm <- function(
     )
     n_clusters <- nrow(sandwich_scores)
     if (n_clusters < 2L) {
-      stop(
+      mostr_abort(
         "Cluster-robust covariance requires at least two clusters represented ",
         "by positive-weight rows."
       )
@@ -300,7 +307,7 @@ robcov_orm <- function(
     cadjust <- !is.null(cluster)
   }
   if (!is.logical(cadjust) || length(cadjust) != 1L || is.na(cadjust)) {
-    stop("`cadjust` must be TRUE or FALSE.")
+    mostr_abort("`cadjust` must be TRUE or FALSE.")
   }
 
   bread_result <- orm_model_bread(fit)

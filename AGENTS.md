@@ -39,6 +39,8 @@ Follow tidyverse-oriented R style: 2-space indentation, `|>` pipes, and explicit
 
 When a line exists because of a bug, a measurement, or a statistical subtlety, give it a comment that says so: what goes wrong without it, the measured value it rests on, or the statistical reason. A reader should not have to guess why a tolerance, a fallback, a refusal, or an unusual order of operations is there. Keep the reason and drop the history; point to an issue, a commit, or a `dev/decisions.md` entry when more detail helps.
 
+Raise errors with `mostr_abort()` (`R/mostr-abort.R`), never `stop()`. It takes message parts like `stop()`, adds class `mostr_error`, and shows the exported function the user called instead of an internal name; pass `class` for errors that callers catch and `data` for fields they read. Messages are used literally, so braces and `%` need no escaping. To re-raise a caught error, use `mostr_abort(e)`.
+
 ## Writing for Package Users
 - Write help pages and vignettes for readers who know neither the implementation nor prior discussions. Explain what they can calculate, which arguments to use, what the output means, and any restrictions that affect their choices.
 - Make explanations standalone. Do not rely on an inaccessible manuscript, internal design notes, or development history to define a method or justify its behavior.

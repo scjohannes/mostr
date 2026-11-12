@@ -182,7 +182,7 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
   return_draws
 ) {
   if (engine %in% c("standard", "fwb")) {
-    stop(
+    mostr_abort(
       "`engine = \"",
       engine,
       "\"` is only used when `method = \"bootstrap\"`."
@@ -264,7 +264,7 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
 
   draw_results <- Filter(Negate(is.null), draw_results)
   if (length(draw_results) == 0L) {
-    stop("All simulation draws failed.")
+    mostr_abort("All simulation draws failed.")
   }
   draws_df <- bind_rows_fill(draw_results)
   finalize_avg_comparison_draw_inference(
@@ -611,7 +611,7 @@ reduce_time_benefit_array_for_setup <- function(
 time_benefit_sops_from_array <- function(sops_array, setup) {
   newdata <- setup$newdata_pred
   if (is.null(newdata)) {
-    stop(
+    mostr_abort(
       "`setup$newdata_pred` is required for real-time time-benefit inference."
     )
   }

@@ -5,11 +5,11 @@ validate_sops_by <- function(by, data, data_arg = "newdata") {
     return(invisible(NULL))
   }
   if (!is.character(by)) {
-    stop("'by' must be a character vector of variable names.")
+    mostr_abort("'by' must be a character vector of variable names.")
   }
   missing_vars <- setdiff(by, names(data))
   if (length(missing_vars) > 0) {
-    stop(
+    mostr_abort(
       "Variables specified in 'by' not found in ",
       data_arg,
       ": ",
@@ -39,7 +39,7 @@ set_sops_attrs <- function(
   extra_attrs = list()
 ) {
   if (!inherits(settings, "markov_settings")) {
-    stop("Internal SOP result settings are invalid.")
+    mostr_abort("Internal SOP result settings are invalid.")
   }
   result <- as.data.frame(result)
   attr(result, "model") <- model
@@ -140,7 +140,7 @@ add_null_test <- function(x, null, warn = TRUE) {
     return(order_estimate_columns(x))
   }
   if (!is.numeric(null) || length(null) != 1L || !is.finite(null)) {
-    stop("`null` must be a single finite numeric value.")
+    mostr_abort("`null` must be a single finite numeric value.")
   }
   if (!"std.error" %in% names(x)) {
     if (warn) {
@@ -163,7 +163,7 @@ with_local_seed <- function(seed, code) {
     return(force(code))
   }
   if (!is.numeric(seed) || length(seed) != 1L || !is.finite(seed)) {
-    stop("`seed` must be a single finite number or NULL.")
+    mostr_abort("`seed` must be a single finite number or NULL.")
   }
   had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
   if (had_seed) {
@@ -198,9 +198,8 @@ resolve_by_choice <- function(by) {
   if (is.character(by) && length(by) > 0L && !anyNA(by) && all(nzchar(by))) {
     return(list(average = TRUE, by = by))
   }
-  stop(
-    "`by` must be `FALSE`, `TRUE`, or a character vector of column names.",
-    call. = FALSE
+  mostr_abort(
+    "`by` must be `FALSE`, `TRUE`, or a character vector of column names."
   )
 }
 
@@ -285,7 +284,7 @@ stop_missing_by_values <- function(profiles, by, variables = NULL) {
       next
     }
     n_profiles <- nrow(profiles)
-    stop(
+    mostr_abort(
       "`by` names `",
       observed_by_label(column),
       "`, which is missing for ",
@@ -295,8 +294,7 @@ stop_missing_by_values <- function(profiles, by, variables = NULL) {
       " profiles being averaged. A profile with a missing `by` value belongs ",
       "to no group, so it would be left out of every average. Drop or impute ",
       "those patients first, for example by removing them from `newdata` or ",
-      "from the data given to `mostm()`.",
-      call. = FALSE
+      "from the data given to `mostm()`."
     )
   }
   invisible(NULL)
@@ -311,7 +309,7 @@ stop_by_names_set_variable <- function(by, variables, fn) {
     return(invisible(NULL))
   }
   name <- clash[1L]
-  stop(
+  mostr_abort(
     "`by` names `",
     name,
     "`, which `variables` also sets. In the result of `",
@@ -329,8 +327,7 @@ stop_by_names_set_variable <- function(by, variables, fn) {
     name,
     "`, and use `by = \"observed_",
     name,
-    "\"`.",
-    call. = FALSE
+    "\"`."
   )
 }
 
@@ -380,7 +377,7 @@ create_counterfactual_data <- function(
 stack_prediction_profiles <- function(profiles, variables) {
   missing_vars <- setdiff(names(variables), names(profiles))
   if (length(missing_vars) > 0L) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+    mostr_abort("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
   grid <- create_counterfactual_grid(variables)
   stacked <- create_counterfactual_data(profiles, grid, variables)
@@ -408,7 +405,7 @@ validate_sops_weights <- function(weights, n, arg = "weights") {
       anyNA(weights) ||
       any(weights < 0)
   ) {
-    stop(
+    mostr_abort(
       "`",
       arg,
       "` must be a non-negative numeric vector of length ",
@@ -418,7 +415,7 @@ validate_sops_weights <- function(weights, n, arg = "weights") {
   }
   weight_sum <- sum(weights)
   if (!is.finite(weight_sum) || weight_sum <= 0) {
-    stop("`", arg, "` must have a positive finite sum.")
+    mostr_abort("`", arg, "` must have a positive finite sum.")
   }
   weights
 }
@@ -444,7 +441,10 @@ aggregate_sops_estimates <- function(result, group_cols, weight_col = NULL) {
   result <- as.data.frame(result)
   missing_vars <- setdiff(group_cols, names(result))
   if (length(missing_vars) > 0) {
-    stop("Grouping variables missing: ", paste(missing_vars, collapse = ", "))
+    mostr_abort(
+      "Grouping variables missing: ",
+      paste(missing_vars, collapse = ", ")
+    )
   }
 
   if (is.null(weight_col)) {
@@ -452,7 +452,7 @@ aggregate_sops_estimates <- function(result, group_cols, weight_col = NULL) {
   }
 
   if (!weight_col %in% names(result)) {
-    stop("Weight column '", weight_col, "' not found in result.")
+    mostr_abort("Weight column '", weight_col, "' not found in result.")
   }
 
   work <- data.table::as.data.table(
@@ -472,7 +472,7 @@ aggregate_sops_estimates <- function(result, group_cols, weight_col = NULL) {
 
 validate_prediction_weight_ids <- function(prediction_data, id_var) {
   if (is.null(id_var) || !id_var %in% names(prediction_data)) {
-    stop(
+    mostr_abort(
       "Prediction data must contain unique `id_var` values before bootstrap ",
       "draw weights can be attached."
     )
@@ -480,7 +480,7 @@ validate_prediction_weight_ids <- function(prediction_data, id_var) {
 
   ids <- as.character(prediction_data[[id_var]])
   if (anyNA(ids) || anyDuplicated(ids)) {
-    stop(
+    mostr_abort(
       "Prediction data must contain exactly one non-missing row per `id_var` ",
       "before bootstrap draw weights can be attached."
     )
@@ -494,12 +494,11 @@ validate_draw_weight_column_available <- function(newdata, weight_col) {
     return(invisible(NULL))
   }
   if (weight_col %in% names(newdata)) {
-    stop(
+    mostr_abort(
       "Prediction data already contains a column named `",
       weight_col,
       "`, which is reserved for bootstrap draw weights. Rename this column ",
-      "before calling inferences().",
-      call. = FALSE
+      "before calling inferences()."
     )
   }
   invisible(NULL)
@@ -542,10 +541,10 @@ marginalize_sops_array <- function(
 
   if (!is.null(by)) {
     if (is.null(newdata) || !is.data.frame(newdata)) {
-      stop("`newdata` must be supplied when `by` is used.")
+      mostr_abort("`newdata` must be supplied when `by` is used.")
     }
     if (nrow(newdata) != n_cf * n_each) {
-      stop("`newdata` is not aligned with the counterfactual SOP array.")
+      mostr_abort("`newdata` is not aligned with the counterfactual SOP array.")
     }
     validate_sops_by(by, newdata)
 

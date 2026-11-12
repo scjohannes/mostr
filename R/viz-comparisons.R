@@ -80,7 +80,7 @@ plot_comparisons <- function(
       length(show_uncertainty) != 1 ||
       is.na(show_uncertainty)
   ) {
-    stop("`show_uncertainty` must be TRUE or FALSE.")
+    mostr_abort("`show_uncertainty` must be TRUE or FALSE.")
   }
 
   plot_comparisons_validate_data(data, estimate_var)
@@ -212,7 +212,7 @@ plot_comparisons <- function(
 
 plot_comparisons_validate_data <- function(data, estimate_var) {
   if (!is.data.frame(data)) {
-    stop(
+    mostr_abort(
       "`data` must be a data frame returned by `avg_comparisons()` or ",
       "`comparisons()`."
     )
@@ -220,34 +220,31 @@ plot_comparisons_validate_data <- function(data, estimate_var) {
   required <- c("estimand", "comparison", "contrast", estimate_var)
   missing_vars <- setdiff(required, names(data))
   if (length(missing_vars) > 0) {
-    stop(
+    mostr_abort(
       "`data` is missing required comparison column(s): ",
-      paste(missing_vars, collapse = ", "),
-      call. = FALSE
+      paste(missing_vars, collapse = ", ")
     )
   }
   comparison <- unique(as.character(data$comparison))
   comparison <- comparison[!is.na(comparison)]
   if (length(comparison) != 1 || !comparison %in% c("difference", "ratio")) {
-    stop(
+    mostr_abort(
       "`plot_comparisons()` requires one comparison scale: ",
-      "`difference` or `ratio`.",
-      call. = FALSE
+      "`difference` or `ratio`."
     )
   }
   # `comparisons()` results identify their profiles by `rowid`; lines and
   # intervals would otherwise join estimates of different profiles.
   n_profiles <- if ("rowid" %in% names(data)) length(unique(data$rowid)) else 1L
   if (n_profiles > 1L) {
-    stop(
+    mostr_abort(
       "`plot_comparisons()` shows one estimate per time, state set, and ",
       "contrast, but `x` holds comparisons for ",
       n_profiles,
       " profiles (see its `rowid` column), as returned by `comparisons()`. ",
       "Plot one profile with `subset(x, rowid == 1)`, average the profiles ",
       "with `comparisons(by = TRUE)` or `avg_comparisons()`, or plot the data ",
-      "frame directly with ggplot2.",
-      call. = FALSE
+      "frame directly with ggplot2."
     )
   }
   invisible(NULL)

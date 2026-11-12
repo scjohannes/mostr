@@ -105,17 +105,15 @@ delta_analytical <- function(x) {
       )
     )
   ) {
-    stop(
-      "Analytical accessors require a SOP, average-time, or comparison object.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical accessors require a SOP, average-time, or comparison object."
     )
   }
   analytical <- attr(x, "analytical", exact = TRUE)
   if (is.null(analytical)) {
-    stop(
+    mostr_abort(
       "No analytical inference state found. Run `inferences(method = ",
-      "\"delta\")` first.",
-      call. = FALSE
+      "\"delta\")` first."
     )
   }
   analytical
@@ -128,14 +126,16 @@ delta_resolve_rows <- function(analytical, rows = NULL) {
   }
   if (is.logical(rows)) {
     if (length(rows) != n || anyNA(rows)) {
-      stop("Logical `rows` must be non-missing and match the result length.")
+      mostr_abort(
+        "Logical `rows` must be non-missing and match the result length."
+      )
     }
     return(which(rows))
   }
   if (is.character(rows)) {
     index <- match(rows, analytical$row_key)
     if (anyNA(index)) {
-      stop("Some requested analytical row keys were not found.")
+      mostr_abort("Some requested analytical row keys were not found.")
     }
     return(index)
   }
@@ -147,11 +147,11 @@ delta_resolve_rows <- function(analytical, rows = NULL) {
         any(rows < 1L) ||
         any(rows > n)
     ) {
-      stop("Numeric `rows` must contain valid positive row indices.")
+      mostr_abort("Numeric `rows` must contain valid positive row indices.")
     }
     return(as.integer(rows))
   }
-  stop("`rows` must be NULL, numeric, logical, or analytical row keys.")
+  mostr_abort("`rows` must be NULL, numeric, logical, or analytical row keys.")
 }
 
 # Internal inspection helper: the unconditional Jacobian contains only the
@@ -161,7 +161,7 @@ get_jacobian <- function(x, rows = NULL) {
   index <- delta_resolve_rows(analytical, rows)
   jacobian <- analytical$jacobian %||% analytical$average_jacobian
   if (is.null(jacobian)) {
-    stop("The analytical result does not contain an average Jacobian.")
+    mostr_abort("The analytical result does not contain an average Jacobian.")
   }
   required <- as.double(length(index)) * as.double(ncol(jacobian)) * 8
   delta_assert_bytes(required, "The requested Jacobian block")
@@ -178,7 +178,7 @@ delta_vcov <- function(object, rows = NULL) {
   if (identical(analytical$representation, "influence")) {
     n <- nrow(analytical$influence)
     if (n < 2L) {
-      stop(
+      mostr_abort(
         "Unconditional analytical covariance requires at least two patients."
       )
     }

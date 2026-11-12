@@ -47,28 +47,26 @@ markov_settings <- function(
           is.na(value) ||
           !nzchar(value))
     ) {
-      stop("`", arg, "` must be a single column name.", call. = FALSE)
+      mostr_abort("`", arg, "` must be a single column name.")
     }
   }
   if (is.null(time_var) || is.null(p_var)) {
-    stop(
+    mostr_abort(
       "`",
       if (is.null(time_var)) "time_var" else "p_var",
-      "` must be a single column name.",
-      call. = FALSE
+      "` must be a single column name."
     )
   }
   if (identical(p2_var, p_var)) {
-    stop(
+    mostr_abort(
       "`p2_var` must name the column with the state two visits back, which ",
       "differs from the previous-state column `p_var = \"",
       p_var,
-      "\"`.",
-      call. = FALSE
+      "\"`."
     )
   }
   if (!is.null(engine) && !engine %in% markov_engines()) {
-    stop("Internal Markov model engine provenance is invalid.")
+    mostr_abort("Internal Markov model engine provenance is invalid.")
   }
   from_fit <- intersect(from_fit, markov_settings_fit_fields())
   structure(
@@ -107,7 +105,7 @@ markov_settings_update <- function(settings, ...) {
 
 markov_set_settings <- function(model, settings) {
   if (!inherits(settings, "markov_settings")) {
-    stop("Internal Markov model settings are invalid.")
+    mostr_abort("Internal Markov model settings are invalid.")
   }
   attr(model, "markov_settings") <- settings
   model
@@ -134,10 +132,9 @@ markov_model_settings <- function(model) {
 markov_result_settings <- function(object) {
   settings <- attr(object, "settings", exact = TRUE)
   if (!inherits(settings, "markov_settings")) {
-    stop(
+    mostr_abort(
       "The result does not record the settings of the call that made it. ",
-      "Recompute it with the current version of mostr.",
-      call. = FALSE
+      "Recompute it with the current version of mostr."
     )
   }
   settings
@@ -234,7 +231,7 @@ stop_setting_contradicts_fit <- function(arg, value, fitted) {
       ")`."
     )
   }
-  stop(
+  mostr_abort(
     "`",
     arg,
     " = ",
@@ -244,19 +241,17 @@ stop_setting_contradicts_fit <- function(arg, value, fitted) {
     " = ",
     format_setting_value(fitted),
     "`. ",
-    advice,
-    call. = FALSE
+    advice
   )
 }
 
 stop_y_levels_contradict_fit <- function(value, fitted) {
-  stop(
+  mostr_abort(
     "`y_levels` must be the fitted model's states in fitted order (",
     paste(as_state_labels(fitted), collapse = ", "),
     "), but it is ",
     paste(as_state_labels(value), collapse = ", "),
-    ". Leave `y_levels` out to use the fitted states.",
-    call. = FALSE
+    ". Leave `y_levels` out to use the fitted states."
   )
 }
 
@@ -274,25 +269,23 @@ validate_mostm_previous_state_vars <- function(p_var, p2_var, data) {
         is.na(value) ||
         !nzchar(value)
     ) {
-      stop("`", arg, "` must be a single column name.", call. = FALSE)
+      mostr_abort("`", arg, "` must be a single column name.")
     }
   }
   if (identical(p_var, p2_var)) {
-    stop(
+    mostr_abort(
       "`p2_var` must name the column with the state two visits back, which ",
       "differs from the previous-state column `p_var = \"",
       p_var,
-      "\"`.",
-      call. = FALSE
+      "\"`."
     )
   }
   if (!is.null(p2_var) && !p2_var %in% names(data)) {
-    stop(
+    mostr_abort(
       "The column `",
       p2_var,
       "` given as `p2_var` is not in `data`. Set `p2_var` to the column ",
-      "that holds each patient's state two visits back.",
-      call. = FALSE
+      "that holds each patient's state two visits back."
     )
   }
   invisible(NULL)

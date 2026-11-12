@@ -50,7 +50,7 @@ set_coef <- function(model, new_coefs) {
 set_coef.default <- function(model, new_coefs) {
   # Default method for S3 objects with $coefficients
   if (is.null(model$coefficients)) {
-    stop(
+    mostr_abort(
       "Model does not have a 'coefficients' element. ",
       "set_coef() may not support this model class: ",
       class(model)[1]
@@ -58,7 +58,7 @@ set_coef.default <- function(model, new_coefs) {
   }
 
   if (length(new_coefs) != length(model$coefficients)) {
-    stop(
+    mostr_abort(
       "Length of new_coefs (",
       length(new_coefs),
       ") does not match ",
@@ -120,7 +120,7 @@ set_coef.robcov_vglm <- function(model, new_coefs) {
 set_coef.vglm <- function(model, new_coefs) {
   # S4 object - use @ for slot access
   if (length(new_coefs) != length(model@coefficients)) {
-    stop(
+    mostr_abort(
       "Length of new_coefs (",
       length(new_coefs),
       ") does not match ",
@@ -293,7 +293,7 @@ get_vcov_robust <- function(
   if (inherits(cluster, "formula")) {
     cluster_var <- all.vars(cluster)
     if (length(cluster_var) != 1) {
-      stop(
+      mostr_abort(
         "cluster formula must specify exactly one variable (e.g., ~id). ",
         "Got: ",
         deparse(cluster)
@@ -361,7 +361,7 @@ get_vcov_robust <- function(
     if (!is.null(model_data) && cluster_var %in% names(model_data)) {
       cluster <- align_cluster(model_data[[cluster_var]], model_data)
     } else {
-      stop(
+      mostr_abort(
         "Cluster variable '",
         cluster_var,
         "' not found.\n",
@@ -402,7 +402,7 @@ get_vcov_robust <- function(
   } else if (inherits(model, "lrm")) {
     return(rms::robcov(model, cluster = cluster)$var)
   } else {
-    stop(
+    mostr_abort(
       "Unsupported model class for robust vcov: ",
       class(model)[1],
       "\n",
@@ -417,11 +417,11 @@ validate_coef_vcov <- function(beta, Sigma, arg = "vcov") {
   }
 
   if (!is.matrix(Sigma)) {
-    stop("`", arg, "` must be a matrix.")
+    mostr_abort("`", arg, "` must be a matrix.")
   }
 
   if (length(beta) != nrow(Sigma) || length(beta) != ncol(Sigma)) {
-    stop(
+    mostr_abort(
       "Dimension mismatch: coefficients (",
       length(beta),
       ") vs ",
@@ -443,7 +443,7 @@ validate_coef_vcov <- function(beta, Sigma, arg = "vcov") {
       !is.null(Sigma_names) &&
       !identical(beta_names, Sigma_names)
   ) {
-    stop(
+    mostr_abort(
       "Coefficient names do not match row names of `",
       arg,
       "`. Expected: ",
@@ -460,7 +460,7 @@ validate_coef_vcov <- function(beta, Sigma, arg = "vcov") {
       !is.null(Sigma_colnames) &&
       !identical(beta_names, Sigma_colnames)
   ) {
-    stop(
+    mostr_abort(
       "Coefficient names do not match column names of `",
       arg,
       "`."

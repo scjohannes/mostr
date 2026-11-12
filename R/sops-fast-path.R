@@ -61,7 +61,7 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
   is_vglm <- inherits(model, "vglm")
   is_orm <- inherits(model, "orm")
   if (!is_vglm && !is_orm) {
-    stop("markov_msm_build() supports only vglm and orm models.")
+    mostr_abort("markov_msm_build() supports only vglm and orm models.")
   }
 
   # Need Gamma structure to know which columns to keep
@@ -140,14 +140,14 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
   )
   X_init <- get_X(d_init)
   if (is.null(X_init)) {
-    stop("Could not construct a design matrix for the fitted model.")
+    mostr_abort("Could not construct a design matrix for the fitted model.")
   }
   col_names <- colnames(X_init)
 
   align_X <- function(X) {
     missing_cols <- setdiff(col_names, colnames(X))
     if (length(missing_cols) > 0) {
-      stop(
+      mostr_abort(
         "Design matrix columns missing during fast path build: ",
         paste(missing_cols, collapse = ", ")
       )
@@ -227,7 +227,7 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
   )
 
   if (!p_var %in% names(newdata)) {
-    stop("Previous-state variable `", p_var, "` not found in `newdata`.")
+    mostr_abort("Previous-state variable `", p_var, "` not found in `newdata`.")
   }
 
   rows_per_visit <- n_pat * length(non_absorb_idx)
@@ -275,7 +275,7 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
     }
     missing_cols <- setdiff(colnames(Gamma), colnames(X))
     if (length(missing_cols) > 0L) {
-      stop(
+      mostr_abort(
         "Design matrix columns missing during batched build: ",
         paste(missing_cols, collapse = ", ")
       )
@@ -386,7 +386,7 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
         built_origins <- components$transition_origins %||% non_absorb_idx
         origin_positions <- match(non_absorb_idx, built_origins)
         if (anyNA(origin_positions)) {
-          stop("Transition design is missing a required origin state.")
+          mostr_abort("Transition design is missing a required origin state.")
         }
         if (!identical(origin_positions, seq_along(built_origins))) {
           block_rows <- unlist(lapply(origin_positions, function(position) {
@@ -397,7 +397,7 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
         }
       }
       if (!is.matrix(X_visit)) {
-        stop("Missing transition design for SOP visit ", t_idx, ".")
+        mostr_abort("Missing transition design for SOP visit ", t_idx, ".")
       }
       if (is.null(po)) {
         logits <- calc_lp(X_visit)

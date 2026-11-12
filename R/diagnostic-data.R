@@ -9,7 +9,7 @@ plot_transition_model_setup <- function(
 ) {
   validate_markov_model(model)
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied for model-based plots.")
+    mostr_abort("`times` must be supplied for model-based plots.")
   }
   time_var <- settings$time_var
   time_covariates <- settings$time_covariates
@@ -41,7 +41,10 @@ plot_transition_model_setup <- function(
   if (!is.null(variables)) {
     missing_vars <- setdiff(names(variables), names(baseline_data))
     if (length(missing_vars) > 0) {
-      stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+      mostr_abort(
+        "Variables not in data: ",
+        paste(missing_vars, collapse = ", ")
+      )
     }
     grid <- do.call(
       expand.grid,
@@ -67,7 +70,7 @@ plot_transition_model_setup <- function(
     !is.null(time_covariates) &&
       nrow(time_covariates) != length(recursion_times)
   ) {
-    stop(
+    mostr_abort(
       "`time_covariates` must have one row per recursion time point for model-based ",
       "plots. Sparse plot times are expanded to the full recursion grid; ",
       "expected ",

@@ -387,10 +387,9 @@ inferences <- function(
   use_coefstart = FALSE
 ) {
   if (identical(method, "score_bootstrap")) {
-    stop(
+    mostr_abort(
       "`method = \"score_bootstrap\"` is no longer offered by `inferences()`. ",
-      "Use `method = \"mvn\"`, `\"delta\"`, `\"bootstrap\"`, or `\"fwb\"`.",
-      call. = FALSE
+      "Use `method = \"mvn\"`, `\"delta\"`, `\"bootstrap\"`, or `\"fwb\"`."
     )
   }
   method <- match.arg(method, choices = inferences_public_methods())
@@ -513,7 +512,7 @@ inferences_impl <- function(
       )
     )
   ) {
-    stop(
+    mostr_abort(
       "inferences() requires a 'markov_avg_sops', 'markov_sops', ",
       "'markov_avg_state_time', 'markov_state_time', 'markov_avg_comparisons', ",
       "or 'markov_comparisons' object. ",
@@ -555,12 +554,14 @@ inferences_impl <- function(
   }
 
   if (!identical(method, "delta") && is.character(vcov)) {
-    stop(
+    mostr_abort(
       "Character `vcov` choices are only available with `method = \"delta\"`."
     )
   }
   if (!identical(method, "delta") && identical(conf_type, "logit")) {
-    stop("`conf_type = \"logit\"` is only available with `method = \"delta\"`.")
+    mostr_abort(
+      "`conf_type = \"logit\"` is only available with `method = \"delta\"`."
+    )
   }
 
   if (!inherits(attr(x, "model"), "blrm")) {
@@ -569,11 +570,10 @@ inferences_impl <- function(
 
   if (identical(method, "delta")) {
     if (inherits(attr(x, "model"), "blrm")) {
-      stop(
+      mostr_abort(
         "Analytical delta inference is not available for `blrm` models; ",
         "use the posterior intervals returned by `sops()`, `avg_sops()`, ",
-        "`avg_comparisons()`, or `avg_state_time()`.",
-        call. = FALSE
+        "`avg_comparisons()`, or `avg_state_time()`."
       )
     }
     covariance <- delta_resolve_vcov(x, vcov)
@@ -735,7 +735,9 @@ inferences_impl <- function(
 # ratios. Other objects have no natural null, so `"auto"` skips the test.
 resolve_inference_null <- function(null, x) {
   if (is.character(null) && !identical(null, "auto")) {
-    stop("`null` must be \"auto\", NULL, or a single finite numeric value.")
+    mostr_abort(
+      "`null` must be \"auto\", NULL, or a single finite numeric value."
+    )
   }
   comparison <- if (
     inherits(x, c("markov_avg_comparisons", "markov_comparisons"))
@@ -752,7 +754,7 @@ resolve_inference_null <- function(null, x) {
     ))
   }
   if (identical(comparison, "ratio") && is.numeric(null) && isTRUE(null == 0)) {
-    stop("Ratio comparisons cannot be tested against `null = 0`.")
+    mostr_abort("Ratio comparisons cannot be tested against `null = 0`.")
   }
   null
 }
@@ -844,7 +846,9 @@ inferences_simulation <- function(
   }
 
   if (is.null(model)) {
-    stop("Model not stored in object. Cannot perform simulation inference.")
+    mostr_abort(
+      "Model not stored in object. Cannot perform simulation inference."
+    )
   }
 
   # --- 2. Prepare Prediction Data (COMPUTED ONCE) ---
@@ -855,7 +859,9 @@ inferences_simulation <- function(
     if (!is.null(newdata_pred_stored)) {
       newdata_pred <- newdata_pred_stored
       if (nrow(newdata_pred) %% n_cf != 0L) {
-        stop("Stored prediction data is not aligned with counterfactual grid.")
+        mostr_abort(
+          "Stored prediction data is not aligned with counterfactual grid."
+        )
       }
       n_each <- nrow(newdata_pred) / n_cf
       baseline_data <- newdata_pred[seq_len(n_each), , drop = FALSE]
@@ -1150,14 +1156,16 @@ inferences_simulation <- function(
   sim_results <- sim_results[successful_ids]
 
   if (length(sim_results) == 0) {
-    stop("All simulation draws failed.")
+    mostr_abort("All simulation draws failed.")
   }
 
   draw_values <- do.call(rbind, lapply(sim_results, `[[`, "estimate"))
   weight_values <- NULL
   has_weights <- vapply(sim_results, function(x) !is.null(x$weight), logical(1))
   if (any(has_weights) && !all(has_weights)) {
-    stop("Simulation draw weights are not aligned across successful draws.")
+    mostr_abort(
+      "Simulation draw weights are not aligned across successful draws."
+    )
   }
   if (all(has_weights)) {
     weight_values <- do.call(rbind, lapply(sim_results, `[[`, "weight"))
@@ -1217,14 +1225,18 @@ inferences_simulation <- function(
 sop_draw_cell_key <- function(data, group_cols) {
   missing <- setdiff(group_cols, names(data))
   if (length(missing)) {
-    stop("SOP draw cells are missing: ", paste(missing, collapse = ", "), ".")
+    mostr_abort(
+      "SOP draw cells are missing: ",
+      paste(missing, collapse = ", "),
+      "."
+    )
   }
   key <- do.call(
     paste,
     c(lapply(data[, group_cols, drop = FALSE], as.character), sep = "\r")
   )
   if (anyDuplicated(key)) {
-    stop("SOP draw cell identifiers are not unique.")
+    mostr_abort("SOP draw cell identifiers are not unique.")
   }
   key
 }
@@ -1239,7 +1251,7 @@ pack_sop_draw_result <- function(
   result_keys <- sop_draw_cell_key(result, group_cols)
   index <- match(object_keys, result_keys)
   if (anyNA(index)) {
-    stop("A simulation draw did not return every requested SOP cell.")
+    mostr_abort("A simulation draw did not return every requested SOP cell.")
   }
   list(
     estimate = result$estimate[index],

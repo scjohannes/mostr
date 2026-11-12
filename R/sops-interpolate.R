@@ -2,7 +2,7 @@
 
 standardize_time_map <- function(time_map) {
   if (is.null(time_map)) {
-    stop("`time_map` must be supplied.")
+    mostr_abort("`time_map` must be supplied.")
   }
 
   if (is.data.frame(time_map)) {
@@ -16,13 +16,13 @@ standardize_time_map <- function(time_map) {
       visit <- time_map[[1]]
       real_time <- time_map[[2]]
     } else {
-      stop("`time_map` data frames must have at least two columns.")
+      mostr_abort("`time_map` data frames must have at least two columns.")
     }
   } else if (is.atomic(time_map) && !is.null(names(time_map))) {
     visit <- names(time_map)
     real_time <- time_map
   } else {
-    stop(
+    mostr_abort(
       "`time_map` must be a named numeric vector or a data frame with ",
       "visit and real-time columns."
     )
@@ -35,11 +35,11 @@ standardize_time_map <- function(time_map) {
     is.na(real_time) |
     !is.finite(real_time)
   if (any(bad)) {
-    stop("`time_map` contains missing or non-finite visit/time values.")
+    mostr_abort("`time_map` contains missing or non-finite visit/time values.")
   }
   if (anyDuplicated(visit)) {
     dup <- unique(visit[duplicated(visit)])
-    stop(
+    mostr_abort(
       "`time_map` contains duplicate visit entries: ",
       paste(dup, collapse = ", ")
     )
@@ -53,7 +53,7 @@ map_sop_time_values <- function(times, time_map) {
   idx <- match(labels, time_map$visit)
   if (anyNA(idx)) {
     missing <- unique(labels[is.na(idx)])
-    stop(
+    mostr_abort(
       "`time_map` is missing entries for visit value(s): ",
       paste(missing, collapse = ", ")
     )
@@ -67,10 +67,10 @@ validate_sop_xout <- function(target_times, lower, upper) {
       anyNA(target_times) ||
       any(!is.finite(target_times))
   ) {
-    stop("`target_times` must be a finite numeric vector.")
+    mostr_abort("`target_times` must be a finite numeric vector.")
   }
   if (any(target_times < lower | target_times > upper)) {
-    stop(
+    mostr_abort(
       "`target_times` must stay within the supported time range [",
       lower,
       ", ",
@@ -143,7 +143,7 @@ baseline_rows_for_anchor <- function(x) {
   id_var <- settings$id_var
   newdata_orig <- attr(x, "newdata_orig")
   if (is.null(newdata_orig)) {
-    stop(
+    mostr_abort(
       "`baseline_time` requires SOP output with stored `newdata_orig` ",
       "attributes."
     )
@@ -201,7 +201,9 @@ state_distribution_anchor <- function(
       ]
     }
     if (nrow(baseline_i) == 0) {
-      stop("No baseline rows are available for an empirical baseline anchor.")
+      mostr_abort(
+        "No baseline rows are available for an empirical baseline anchor."
+      )
     }
 
     probs <- if (p_var %in% names(combo)) {
@@ -216,7 +218,7 @@ state_distribution_anchor <- function(
       }
       weight_total <- sum(weights_i)
       if (!is.finite(weight_total) || weight_total <= 0) {
-        stop("Baseline-anchor weights must have a positive finite sum.")
+        mostr_abort("Baseline-anchor weights must have a positive finite sum.")
       }
       vapply(
         seq_along(states),
@@ -261,7 +263,11 @@ empirical_baseline_anchor_from_data <- function(
 ) {
   p_var <- markov_result_settings(x)$p_var
   if (!p_var %in% names(baseline)) {
-    stop("Previous-state variable `", p_var, "` not found in baseline data.")
+    mostr_abort(
+      "Previous-state variable `",
+      p_var,
+      "` not found in baseline data."
+    )
   }
 
   states <- as_state_labels(
@@ -296,15 +302,15 @@ empirical_baseline_anchor_from_data <- function(
 empirical_baseline_anchor <- function(x, baseline_time) {
   p_var <- markov_result_settings(x)$p_var
   if (!"state" %in% names(x)) {
-    stop("SOP output must contain a `state` column.")
+    mostr_abort("SOP output must contain a `state` column.")
   }
   if (!"estimate" %in% names(x)) {
-    stop("SOP output must contain an `estimate` column.")
+    mostr_abort("SOP output must contain an `estimate` column.")
   }
 
   if (inherits(x, "markov_avg_sops")) {
     if (!p_var %in% names(attr(x, "newdata_orig"))) {
-      stop(
+      mostr_abort(
         "Previous-state variable `",
         p_var,
         "` not found in `newdata_orig`."
@@ -321,7 +327,11 @@ empirical_baseline_anchor <- function(x, baseline_time) {
   # Per-profile SOPs keep each profile's starting state, which anchors that
   # profile's own SOPs.
   if (!p_var %in% names(x)) {
-    stop("Previous-state variable `", p_var, "` not found in SOP output.")
+    mostr_abort(
+      "Previous-state variable `",
+      p_var,
+      "` not found in SOP output."
+    )
   }
   value_cols <- c(sop_measure_cols(x), sop_test_cols(x))
   meta_cols <- setdiff(names(x), c("time", value_cols, ".sop_real_time"))
@@ -617,7 +627,7 @@ combine_baseline_anchor_draws <- function(anchors, draw_ids) {
     return(NULL)
   }
   if (!all(has_anchor)) {
-    stop("Baseline anchors are not aligned across successful draws.")
+    mostr_abort("Baseline anchors are not aligned across successful draws.")
   }
   bind_rows_fill(lapply(seq_along(anchors), function(i) {
     anchor <- anchors[[i]]
@@ -816,10 +826,10 @@ interpolate_sops <- function(
   normalize = TRUE
 ) {
   if (!inherits(x, c("markov_sops", "markov_avg_sops"))) {
-    stop("`x` must be a `markov_sops` or `markov_avg_sops` object.")
+    mostr_abort("`x` must be a `markov_sops` or `markov_avg_sops` object.")
   }
   if (!all(c("time", "state") %in% names(x))) {
-    stop("`x` must contain `time` and `state` columns.")
+    mostr_abort("`x` must contain `time` and `state` columns.")
   }
 
   time_map <- standardize_time_map(time_map)
@@ -834,10 +844,14 @@ interpolate_sops <- function(
         is.na(baseline_time) ||
         !is.finite(baseline_time)
     ) {
-      stop("`baseline_time` must be a single finite numeric value or `NULL`.")
+      mostr_abort(
+        "`baseline_time` must be a single finite numeric value or `NULL`."
+      )
     }
     if (baseline_time >= mapped_range[1L]) {
-      stop("`baseline_time` must be earlier than the earliest mapped SOP time.")
+      mostr_abort(
+        "`baseline_time` must be earlier than the earliest mapped SOP time."
+      )
     }
   }
 
@@ -871,7 +885,9 @@ interpolate_sops <- function(
 
   value_cols <- sop_measure_cols(work)
   if (length(value_cols) == 0) {
-    stop("`x` must contain an `estimate` or `draw` column to interpolate.")
+    mostr_abort(
+      "`x` must contain an `estimate` or `draw` column to interpolate."
+    )
   }
   group_cols <- setdiff(names(work), c("time", value_cols, ".sop_real_time"))
   result <- interpolate_sop_table_matrix(

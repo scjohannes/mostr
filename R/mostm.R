@@ -292,30 +292,27 @@ mostm <- function(
 
   if (engine == "blrm") {
     if (!missing(type) || !is.null(cadjust)) {
-      stop(
+      mostr_abort(
         "`type` and `cadjust` set the patient-clustered standard errors of the ",
         "\"orm\" and \"vglm\" engines. `engine = \"blrm\"` takes its ",
-        "uncertainty from the posterior draws.",
-        call. = FALSE
+        "uncertainty from the posterior draws."
       )
     }
     if (!is.null(model_call$weights)) {
-      stop(
+      mostr_abort(
         "`weights` is not available for `engine = \"blrm\"`, because ",
-        "`rmsb::blrm()` does not accept row weights.",
-        call. = FALSE
+        "`rmsb::blrm()` does not accept row weights."
       )
     }
     if (!requireNamespace("rmsb", quietly = TRUE)) {
-      stop(
-        "Package 'rmsb' is required for `engine = \"blrm\"`.",
-        call. = FALSE
+      mostr_abort(
+        "Package 'rmsb' is required for `engine = \"blrm\"`."
       )
     }
   }
   type <- match.arg(type)
   if (missing(data) || !is.data.frame(data)) {
-    stop("`data` must be supplied as a data frame.", call. = FALSE)
+    mostr_abort("`data` must be supplied as a data frame.")
   }
   if (terms_has_offset(stats::terms(formula, specials = "offset", data = data))) {
     stop_unsupported_offset()
@@ -335,22 +332,20 @@ mostm <- function(
       is.na(time_var) ||
       !time_var %in% names(data)
   ) {
-    stop(
+    mostr_abort(
       "The time column `",
       format(time_var),
       "` is not in `data`. Set `time_var` to the column that holds the ",
-      "visit time; `mostm()` uses it to find each patient's starting row.",
-      call. = FALSE
+      "visit time; `mostm()` uses it to find each patient's starting row."
     )
   }
   validate_mostm_previous_state_vars(p_var, p2_var, data)
   if (!missing(p_var) && !p_var %in% names(data)) {
-    stop(
+    mostr_abort(
       "The column `p_var = \"",
       p_var,
       "\"` is not in `data`. Set `p_var` to the column that holds each ",
-      "patient's previous state.",
-      call. = FALSE
+      "patient's previous state."
     )
   }
   # Bootstrap refits use only the coefficients, so they skip the duplicate
@@ -581,9 +576,8 @@ vglm_categorical_control <- function() {
 mostm_check_engine_args <- function(engine, dots, values) {
   supplied <- names(dots)
   if (length(dots) && (is.null(supplied) || any(supplied == ""))) {
-    stop(
-      "Arguments passed to the engine through `...` must be named.",
-      call. = FALSE
+    mostr_abort(
+      "Arguments passed to the engine through `...` must be named."
     )
   }
   markov_reject_legacy_args(dots)
@@ -592,12 +586,11 @@ mostm_check_engine_args <- function(engine, dots, values) {
   }
   kept <- intersect(supplied, c("x", "y", "x.arg", "y.arg"))
   if (length(kept)) {
-    stop(
+    mostr_abort(
       "`mostm()` always keeps the design matrix and response on the fit; ",
       "remove ",
       paste0("`", kept, "`", collapse = ", "),
-      ".",
-      call. = FALSE
+      "."
     )
   }
 
@@ -632,13 +625,12 @@ mostm_check_engine_args <- function(engine, dots, values) {
       },
       character(1)
     )
-    stop(
+    mostr_abort(
       "Not an argument of `engine = \"",
       engine,
       "\"`: ",
       paste(described, collapse = ", "),
-      ". See `?mostm` for the arguments each engine accepts.",
-      call. = FALSE
+      ". See `?mostm` for the arguments each engine accepts."
     )
   }
 
@@ -647,11 +639,10 @@ mostm_check_engine_args <- function(engine, dots, values) {
       !is.null(values$family) &&
       !is.character(values$family)
   ) {
-    stop(
+    mostr_abort(
       "For `engine = \"orm\"`, `family` names the link function of ",
       "`rms::orm()`, such as \"logistic\". VGAM family objects apply to ",
-      "`engine = \"vglm\"`.",
-      call. = FALSE
+      "`engine = \"vglm\"`."
     )
   }
   invisible(NULL)
@@ -683,7 +674,7 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
   converts_time <- is.character(time_var) &&
     any(vapply(calls, function(call) any(time_var %in% all.vars(call)), TRUE))
 
-  stop(
+  mostr_abort(
     fitter,
     " cannot fit ",
     if (several) {
@@ -706,8 +697,7 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
         "article on time as a factor: ",
         "https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html"
       )
-    },
-    call. = FALSE
+    }
   )
 }
 
@@ -732,7 +722,7 @@ mostm_check_random_effects <- function(formula, engine) {
   formatted <- format_sop_visit_list(paste0("`", labels, "`"))
 
   if (engine == "blrm") {
-    stop(
+    mostr_abort(
       "`rmsb::blrm()` would fit ",
       formatted,
       if (several) {
@@ -742,12 +732,11 @@ mostm_check_random_effects <- function(formula, engine) {
       },
       "For a random intercept for each patient, write `cluster(id)` without ",
       "a package prefix and attach rms and rmsb with `library()`. Other ",
-      "random-effect terms, such as `mix_re()`, are not available.",
-      call. = FALSE
+      "random-effect terms, such as `mix_re()`, are not available."
     )
   }
 
-  stop(
+  mostr_abort(
     "`engine = \"",
     engine,
     "\"` does not support random effects, so remove ",
@@ -766,8 +755,7 @@ mostm_check_random_effects <- function(formula, engine) {
     },
     "`id_var` already gives standard errors that allow for correlation ",
     "between the transitions of one patient. For a random intercept for each ",
-    "patient, use `engine = \"blrm\"` with `cluster(id)` in the formula.",
-    call. = FALSE
+    "patient, use `engine = \"blrm\"` with `cluster(id)` in the formula."
   )
 }
 

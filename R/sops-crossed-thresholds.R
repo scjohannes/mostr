@@ -97,19 +97,18 @@ stop_crossed_thresholds <- function(
     "). State occupancy probabilities aren't defined there. ",
     crossed_threshold_advice()
   )
-  stop(structure(
-    list(
-      message = message,
-      call = NULL,
+  mostr_abort(
+    message,
+    class = "mostr_crossed_thresholds",
+    data = list(
       profiles = profiles,
       n_profiles = n_profiles,
       time = time,
       minimum_probability = minimum,
       draws = draws,
       n_draws = n_draws
-    ),
-    class = c("mostr_crossed_thresholds", "error", "condition")
-  ))
+    )
+  )
 }
 
 crossed_threshold_advice <- function() {
@@ -125,7 +124,7 @@ crossed_threshold_advice <- function() {
 # error handler so the error reaches the loop driver, which counts the draws.
 rethrow_crossed_thresholds <- function(condition) {
   if (inherits(condition, "mostr_crossed_thresholds")) {
-    stop(condition)
+    mostr_abort(condition)
   }
   invisible(NULL)
 }
@@ -180,14 +179,13 @@ stop_crossed_threshold_draws <- function(results, unit, unit_one) {
     ". ",
     crossed_threshold_advice()
   )
-  stop(structure(
-    list(
-      message = message,
-      call = NULL,
+  mostr_abort(
+    message,
+    class = "mostr_crossed_thresholds",
+    data = list(
       draws = length(crossed),
       n_draws = length(results),
       first = first
-    ),
-    class = c("mostr_crossed_thresholds", "error", "condition")
-  ))
+    )
+  )
 }

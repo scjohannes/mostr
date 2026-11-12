@@ -116,7 +116,7 @@ bootstrap_model_coefs <- function(
 
   # Check model class
   if (!inherits(model, c("orm", "vglm", "robcov_vglm"))) {
-    stop(
+    mostr_abort(
       "model must be an orm object (rms package) or vglm object (VGAM package)."
     )
   }
@@ -124,15 +124,14 @@ bootstrap_model_coefs <- function(
 
   data <- markov_model_refit_data(model)
   if (is.null(data)) {
-    stop(
-      "The model has no stored data to resample. Fit it with `mostm()`.",
-      call. = FALSE
+    mostr_abort(
+      "The model has no stored data to resample. Fit it with `mostm()`."
     )
   }
 
   id_var <- markov_require_id_var(model)
   if (!id_var %in% names(data)) {
-    stop("id_var '", id_var, "' not found in the stored model data")
+    mostr_abort("id_var '", id_var, "' not found in the stored model data")
   }
 
   # The state columns whose factor levels lose a state that a resample lacks:

@@ -14,7 +14,7 @@ markov_transition_trace <- function(
   dots <- list(...)
   unknown_dots <- setdiff(names(dots), c(".draw_indices", ".gamma_draws"))
   if (length(unknown_dots) > 0) {
-    stop("Unused arguments: ", paste(unknown_dots, collapse = ", "))
+    mostr_abort("Unused arguments: ", paste(unknown_dots, collapse = ", "))
   }
   draw_indices_arg <- dots$.draw_indices
   gamma_draws_arg <- dots$.gamma_draws
@@ -39,7 +39,7 @@ markov_transition_trace <- function(
   ftype <- ftypes[cl]
 
   if (is.na(ftype)) {
-    stop("Object class not supported")
+    mostr_abort("Object class not supported")
   }
 
   validate_markov_model(object)
@@ -47,10 +47,10 @@ markov_transition_trace <- function(
   p_var <- settings$p_var
   p2_var <- settings$p2_var
   if (!p_var %in% names(data)) {
-    stop("Previous-state variable `", p_var, "` not found in `data`.")
+    mostr_abort("Previous-state variable `", p_var, "` not found in `data`.")
   }
   if (!is.null(p2_var) && !p2_var %in% names(data)) {
-    stop(
+    mostr_abort(
       "Second previous-state variable `",
       p2_var,
       "` not found in `data`."
@@ -91,7 +91,7 @@ markov_transition_trace <- function(
     },
     robcov = function(obj, d) {
       if (is.null(obj$vglm_fit)) {
-        stop(
+        mostr_abort(
           "robcov_vglm object does not contain the original vglm fit. ",
           "Please re-run robcov_vglm() with the latest version of the package."
         )

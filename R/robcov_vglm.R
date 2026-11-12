@@ -180,7 +180,7 @@ robcov_vglm <- function(
   cadjust = NULL
 ) {
   if (!inherits(fit, "vglm")) {
-    stop("'fit' must be a vglm object")
+    mostr_abort("'fit' must be a vglm object")
   }
 
   bread_type <- match.arg(bread)
@@ -205,10 +205,10 @@ robcov_vglm <- function(
       any(names(coefficients) == "") ||
       anyDuplicated(names(coefficients))
   ) {
-    stop("vglm coefficients must have unique, non-missing names.")
+    mostr_abort("vglm coefficients must have unique, non-missing names.")
   }
   if (any(!is.finite(coefficients))) {
-    stop("vglm coefficients must all be finite.")
+    mostr_abort("vglm coefficients must all be finite.")
   }
 
   # Use VGAM's covariance-scale bread. For cumulative proportional-odds
@@ -231,16 +231,18 @@ robcov_vglm <- function(
   # Validate scores dimensions
 
   if (nrow(scores) != n) {
-    stop("Number of score rows does not match number of observations")
+    mostr_abort("Number of score rows does not match number of observations")
   }
   if (ncol(scores) != p) {
-    stop("Number of score columns does not match number of parameters")
+    mostr_abort("Number of score columns does not match number of parameters")
   }
   if (!identical(colnames(scores), names(coefficients))) {
-    stop("Score columns must exactly match vglm coefficient names and order.")
+    mostr_abort(
+      "Score columns must exactly match vglm coefficient names and order."
+    )
   }
   if (any(!is.finite(scores))) {
-    stop("Observation-level vglm scores must all be finite.")
+    mostr_abort("Observation-level vglm scores must all be finite.")
   }
 
   convergence <- validate_vglm_convergence(fit, scores, model_vcov)
@@ -279,7 +281,7 @@ robcov_vglm <- function(
     cluster <- align_cluster_vglm(fit, cluster, n)
 
     if (anyNA(cluster)) {
-      stop(
+      mostr_abort(
         "'cluster' contains missing values after alignment with the fitted ",
         "data."
       )
@@ -295,7 +297,7 @@ robcov_vglm <- function(
     n_clusters <- nrow(scores_clustered)
 
     if (n_clusters < 2L) {
-      stop("Cluster-robust covariance requires at least two clusters.")
+      mostr_abort("Cluster-robust covariance requires at least two clusters.")
     }
     if (n_clusters < 30L) {
       warning(
@@ -481,7 +483,7 @@ robcov_vglm <- function(
 #' @keywords internal
 compute_scores_vglm <- function(fit) {
   if (!inherits(fit, "vglm")) {
-    stop("'fit' must be a vglm object")
+    mostr_abort("'fit' must be a vglm object")
   }
 
   # Get dimensions
@@ -493,7 +495,7 @@ compute_scores_vglm <- function(fit) {
   # wt_info$deriv is an n x M matrix containing d(log L)/d(eta_m) for each obs
   wt_info <- VGAM::weights(fit, type = "working", deriv.arg = TRUE)
   if (!is.list(wt_info) || is.null(wt_info$deriv)) {
-    stop(
+    mostr_abort(
       "Could not extract d logLik / d eta from ",
       "VGAM::weights(..., deriv.arg = TRUE)."
     )
@@ -504,7 +506,7 @@ compute_scores_vglm <- function(fit) {
     deriv_eta <- matrix(deriv_eta, nrow = n)
   }
   if (nrow(deriv_eta) != n || ncol(deriv_eta) != M) {
-    stop(
+    mostr_abort(
       "Unexpected derivative dimensions: got [",
       nrow(deriv_eta),
       " x ",
@@ -521,7 +523,7 @@ compute_scores_vglm <- function(fit) {
   X_vlm <- stats::model.matrix(fit, type = "vlm")
 
   if (nrow(X_vlm) != n * M || ncol(X_vlm) != p) {
-    stop(
+    mostr_abort(
       "Unexpected VLM model matrix dimensions: got [",
       nrow(X_vlm),
       " x ",
@@ -534,7 +536,7 @@ compute_scores_vglm <- function(fit) {
     )
   }
   if (!identical(colnames(X_vlm), names(coef(fit)))) {
-    stop(
+    mostr_abort(
       "VLM model-matrix columns must exactly match vglm coefficient names ",
       "and order."
     )
@@ -568,12 +570,12 @@ resolve_vglm_corrections <- function(
   has_cadjust <- !cadjust_missing && !is.null(cadjust)
 
   if (has_adjust && has_cadjust) {
-    stop("Supply only one of legacy `adjust` and `cadjust`, not both.")
+    mostr_abort("Supply only one of legacy `adjust` and `cadjust`, not both.")
   }
 
   validate_flag <- function(x, arg) {
     if (!is.logical(x) || length(x) != 1L || is.na(x)) {
-      stop("`", arg, "` must be TRUE or FALSE.")
+      mostr_abort("`", arg, "` must be TRUE or FALSE.")
     }
     x
   }
@@ -600,26 +602,26 @@ validate_vglm_matrix <- function(
 ) {
   p <- length(coefficient_names)
   if (!is.matrix(x) || !is.numeric(x) || !identical(dim(x), c(p, p))) {
-    stop("`", label, "` must be a numeric [", p, " x ", p, "] matrix.")
+    mostr_abort("`", label, "` must be a numeric [", p, " x ", p, "] matrix.")
   }
   if (
     !identical(rownames(x), coefficient_names) ||
       !identical(colnames(x), coefficient_names)
   ) {
-    stop(
+    mostr_abort(
       "Rows and columns of `",
       label,
       "` must exactly match vglm coefficient names and order."
     )
   }
   if (any(!is.finite(x))) {
-    stop("`", label, "` contains non-finite values.")
+    mostr_abort("`", label, "` contains non-finite values.")
   }
 
   scale <- max(1, max(abs(x)))
   symmetry_error <- max(abs(x - t(x))) / scale
   if (!is.finite(symmetry_error) || symmetry_error > 1e-8) {
-    stop("`", label, "` is not numerically symmetric.")
+    mostr_abort("`", label, "` is not numerically symmetric.")
   }
 
   if (positive_definite || positive_semidefinite) {
@@ -635,13 +637,13 @@ validate_vglm_matrix <- function(
       positive_definite &&
         min(eigenvalues) <= positive_definite_tolerance
     ) {
-      stop("`", label, "` is not numerically positive definite.")
+      mostr_abort("`", label, "` is not numerically positive definite.")
     }
     if (
       positive_semidefinite &&
         min(eigenvalues) < -positive_semidefinite_tolerance
     ) {
-      stop("`", label, "` is not numerically positive semidefinite.")
+      mostr_abort("`", label, "` is not numerically positive semidefinite.")
     }
   }
 
@@ -659,7 +661,7 @@ validate_vglm_convergence <- function(fit, scores, model_vcov) {
       is.finite(maxit) &&
       iter >= maxit
   ) {
-    stop(
+    mostr_abort(
       "The vglm fit reached its IRLS iteration limit without convergence. ",
       "Refit the model before computing a robust covariance."
     )
@@ -670,7 +672,7 @@ validate_vglm_convergence <- function(fit, scores, model_vcov) {
     is.logical(regularity) && length(regularity) == 1L && !is.na(regularity)
   ) {
     if (!regularity) {
-      stop(
+      mostr_abort(
         "VGAM reports that maximum-likelihood regularity conditions were ",
         "violated; robust covariance estimation is not reliable."
       )
@@ -687,7 +689,7 @@ validate_vglm_convergence <- function(fit, scores, model_vcov) {
   }
   score_tolerance <- max(1e-3, sqrt(epsilon))
   if (!is.finite(score_norm) || score_norm > score_tolerance) {
-    stop(
+    mostr_abort(
       "The standardized norm of the summed vglm scores is ",
       format(score_norm, digits = 4),
       ", exceeding the convergence tolerance ",
@@ -713,7 +715,7 @@ vglm_score_evaluator <- function(fit) {
   X_vlm <- stats::model.matrix(fit, type = "vlm")
 
   if (!identical(colnames(X_vlm), names(beta_hat))) {
-    stop(
+    mostr_abort(
       "VLM model-matrix columns must exactly match vglm coefficient names ",
       "and order."
     )
@@ -727,7 +729,7 @@ vglm_score_evaluator <- function(fit) {
   )
   predictor_offset <- fit@predictors - fitted_linear_predictors
   if (any(!is.finite(predictor_offset))) {
-    stop("The fitted vglm predictor offset contains non-finite values.")
+    mostr_abort("The fitted vglm predictor offset contains non-finite values.")
   }
 
   evaluate <- function(beta) {
@@ -878,7 +880,7 @@ compute_observed_bread_vglm <- function(fit) {
     }
 
     if (is.null(derivative) || any(!is.finite(derivative))) {
-      stop(
+      mostr_abort(
         "Could not compute a valid central score derivative for coefficient `",
         names(beta)[j],
         "` after adaptive step reduction. The fitted model may be too close ",
@@ -892,7 +894,7 @@ compute_observed_bread_vglm <- function(fit) {
   jacobian_scale <- max(1, max(abs(jacobian)))
   jacobian_asymmetry <- max(abs(jacobian - t(jacobian))) / jacobian_scale
   if (!is.finite(jacobian_asymmetry) || jacobian_asymmetry > 1e-5) {
-    stop(
+    mostr_abort(
       "The numerical score Jacobian is materially asymmetric (relative ",
       "asymmetry ",
       format(jacobian_asymmetry, digits = 4),
@@ -916,7 +918,7 @@ compute_observed_bread_vglm <- function(fit) {
     any(!is.finite(information_eigenvalues)) ||
       min(information_eigenvalues) <= information_tolerance
   ) {
-    stop(
+    mostr_abort(
       "The observed vglm information is singular or not positive definite. ",
       "Use `bread = \"vglm\"` only if working-information inference is ",
       "acceptable."
@@ -957,7 +959,7 @@ align_cluster_vglm <- function(fit, cluster, n) {
     return(cluster[-na_action])
   }
 
-  stop(
+  mostr_abort(
     "Length of 'cluster' must equal nobs(fit, type = \"lm\") = ",
     n,
     ", or must be the original pre-NA vector from which fit@na.action ",

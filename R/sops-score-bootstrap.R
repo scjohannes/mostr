@@ -38,7 +38,7 @@ generate_score_bootstrap_draws <- function(
   return_baseline_weights = TRUE
 ) {
   if (!inherits(model, "robcov_vglm") && !inherits(model, "orm")) {
-    stop(
+    mostr_abort(
       "`method = \"score_bootstrap\"` requires a 'robcov_vglm' model, which ",
       "`mostm(engine = \"vglm\")` returns, or an 'orm' model with patient ",
       "clusters supplied as `cluster` to `inferences()`."
@@ -49,10 +49,10 @@ generate_score_bootstrap_draws <- function(
 
   if (isTRUE(return_baseline_weights)) {
     if (is.null(baseline_data) || !is.data.frame(baseline_data)) {
-      stop("`baseline_data` must be supplied as a data frame.")
+      mostr_abort("`baseline_data` must be supplied as a data frame.")
     }
     if (!id_var %in% names(baseline_data)) {
-      stop("ID variable '", id_var, "' not found in baseline data.")
+      mostr_abort("ID variable '", id_var, "' not found in baseline data.")
     }
   }
 
@@ -63,13 +63,13 @@ generate_score_bootstrap_draws <- function(
   cluster <- components$cluster
 
   if (!is.matrix(scores)) {
-    stop("`model$scores` must be a matrix for score bootstrap.")
+    mostr_abort("`model$scores` must be a matrix for score bootstrap.")
   }
   if (!is.matrix(bread)) {
-    stop("`model$bread` must be a matrix for score bootstrap.")
+    mostr_abort("`model$bread` must be a matrix for score bootstrap.")
   }
   if (length(cluster) != nrow(scores)) {
-    stop(
+    mostr_abort(
       "Length of `model$cluster` (",
       length(cluster),
       ") does not match ",
@@ -79,7 +79,7 @@ generate_score_bootstrap_draws <- function(
     )
   }
   if (length(beta_hat) != ncol(scores)) {
-    stop(
+    mostr_abort(
       "Coefficient length (",
       length(beta_hat),
       ") does not match ",
@@ -102,7 +102,7 @@ generate_score_bootstrap_draws <- function(
     cluster_idx <- match(baseline_ids, cluster_ids)
     if (anyNA(cluster_idx)) {
       missing_ids <- unique(baseline_ids[is.na(cluster_idx)])
-      stop(
+      mostr_abort(
         "Some baseline IDs used in avg_sops() were not found in the cluster ",
         "variable stored in robcov_vglm: ",
         paste(utils::head(missing_ids, 5), collapse = ", "),
@@ -148,7 +148,7 @@ generate_score_bootstrap_draws <- function(
       patient_weights <- multipliers[, cluster_idx, drop = FALSE]
       totals <- rowSums(patient_weights)
       if (any(!is.finite(totals)) || any(totals <= 0)) {
-        stop("Invalid baseline weights generated for score bootstrap.")
+        mostr_abort("Invalid baseline weights generated for score bootstrap.")
       }
       baseline_weights[rows, ] <- patient_weights / totals
     }
@@ -166,7 +166,7 @@ score_bootstrap_components <- function(model, cluster = NULL) {
       logical(1)
     )]
     if (length(missing_required) > 0) {
-      stop(
+      mostr_abort(
         "The supplied robcov_vglm model is missing required components for ",
         "score bootstrap: ",
         paste(missing_required, collapse = ", "),
@@ -183,11 +183,13 @@ score_bootstrap_components <- function(model, cluster = NULL) {
   }
 
   if (!inherits(model, "orm")) {
-    stop("score_bootstrap_components() supports robcov_vglm and orm models.")
+    mostr_abort(
+      "score_bootstrap_components() supports robcov_vglm and orm models."
+    )
   }
 
   if (is.null(cluster)) {
-    stop(
+    mostr_abort(
       "`cluster` is required for orm score-bootstrap inference. ",
       "Supply the row-level patient ID vector used to fit the orm model, ",
       "for example `cluster = data$id`."
@@ -208,10 +210,10 @@ score_bootstrap_components <- function(model, cluster = NULL) {
 
 compute_scores_orm <- function(model) {
   if (!inherits(model, "orm")) {
-    stop("'model' must be an orm object.")
+    mostr_abort("'model' must be an orm object.")
   }
   if (is.null(model$x) || is.null(model$y)) {
-    stop(
+    mostr_abort(
       "orm score calculations require the model to be fitted with ",
       "`x = TRUE, y = TRUE`."
     )
@@ -230,7 +232,7 @@ compute_scores_orm <- function(model) {
   y_levels <- as_state_labels(model$yunique)
   y_idx <- match(as_state_labels(model$y), y_levels)
   if (anyNA(y_idx)) {
-    stop("Could not match orm response values to fitted outcome levels.")
+    mostr_abort("Could not match orm response values to fitted outcome levels.")
   }
 
   n <- nrow(X)
@@ -265,7 +267,7 @@ compute_scores_orm <- function(model) {
 
 align_cluster_orm <- function(model, cluster, n_scores) {
   if (inherits(cluster, "formula")) {
-    stop("`cluster` for orm score bootstrap must be a row-level vector.")
+    mostr_abort("`cluster` for orm score bootstrap must be a row-level vector.")
   }
 
   if (length(cluster) == n_scores) {
@@ -281,7 +283,7 @@ align_cluster_orm <- function(model, cluster, n_scores) {
     }
   }
 
-  stop(
+  mostr_abort(
     "Length of `cluster` (",
     length(cluster),
     ") does not match the number of orm score rows (",

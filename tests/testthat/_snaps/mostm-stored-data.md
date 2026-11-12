@@ -4,7 +4,7 @@
       mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
         parallel = TRUE), data = no_one, id_var = "id", engine = "vglm")
     Condition
-      Error:
+      Error in `mostm()`:
       ! The default `first_followup_time = 1` is not observed in the numeric time variable.
 
 ---
@@ -13,7 +13,7 @@
       mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
         parallel = TRUE), data = below_one, id_var = "id", engine = "vglm")
     Condition
-      Error:
+      Error in `mostm()`:
       ! The numeric time variable contains a value below 1; follow-up time must begin at 1 or later.
 
 ---
@@ -23,7 +23,7 @@
         parallel = TRUE), data = data, id_var = "id", first_followup_time = 2,
       engine = "vglm")
     Condition
-      Error:
+      Error in `mostm()`:
       ! For numeric time, `first_followup_time` must equal the earliest observed scheduled time (`1`).
 
 # mostm() rejects former starting-profile arguments
@@ -33,7 +33,7 @@
         parallel = TRUE), data = data, id_var = "id", start_time = 1, origin_time = 0,
       time_map = 1:6, engine = "vglm")
     Condition
-      Error:
+      Error in `mostm()`:
       ! mostm() does not accept the former starting-profile argument(s) `start_time`, `origin_time`, `time_map`. Use `first_followup_time` to select the stored starting profiles; supply baseline and time-mapping arguments to downstream SOP summary functions.
 
 # automatic SOP prediction never substitutes a later profile row
@@ -41,7 +41,7 @@
     Code
       sops(fit, times = 1:3, y_levels = 1:6, absorb = 6)
     Condition
-      Error:
+      Error in `sops()`:
       ! Fitted patient(s) lack a row at the designated starting visit `1`: 1. A later likelihood row is not substituted for the starting profile.
 
 # incomplete and duplicated starting profiles fail clearly
@@ -50,7 +50,7 @@
       avg_sops(incomplete_fit, variables = list(tx = c(0, 1)), times = 1:2, y_levels = 1:
         6, absorb = 6)
     Condition
-      Error:
+      Error in `avg_sops()`:
       ! Fitted patient(s) have incomplete starting-profile predictors: 1. The transition response is not required, but ID, modeled predictors, time metadata, and the previous state must be complete.
 
 ---
@@ -59,7 +59,7 @@
       avg_sops(duplicated_fit, variables = list(tx = c(0, 1)), times = 1:2, y_levels = 1:
         6, absorb = 6)
     Condition
-      Error:
+      Error in `avg_sops()`:
       ! Fitted patient(s) have multiple rows at the designated starting visit `1`: 1. Exactly one starting profile is required per fitted patient.
 
 # factor and character time require explicit first follow-up values
@@ -68,7 +68,7 @@
       mostm(ordered(y) ~ time + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
         parallel = TRUE), data = data, id_var = "id", engine = "vglm")
     Condition
-      Error:
+      Error in `mostm()`:
       ! Factor and character time require an explicit `first_followup_time`.
 
 ---
@@ -77,7 +77,7 @@
       mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
         parallel = TRUE), data = data, id_var = "id", time_var = "visit", engine = "vglm")
     Condition
-      Error:
+      Error in `mostm()`:
       ! Factor and character time require an explicit `first_followup_time`.
 
 ---
@@ -87,6 +87,6 @@
         parallel = TRUE), data = data, id_var = "id", first_followup_time = "v7",
       engine = "vglm")
     Condition
-      Error:
+      Error in `mostm()`:
       ! `first_followup_time = v7` is not observed in the factor or character time variable.
 

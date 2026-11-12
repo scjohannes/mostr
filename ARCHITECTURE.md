@@ -109,6 +109,7 @@ flowchart TD
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
 | Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap (internal only, through `inferences_score_bootstrap()`) |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
+| Errors | `R/mostr-abort.R` | `mostr_abort` raises every package error with class `mostr_error`; `mostr_error_call` picks the exported function shown in the error |
 | Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
 
 Longitudinal rows use `id`, `time`, `y`, `yprev`, and covariates such as `tx`.
@@ -1015,6 +1016,7 @@ models. `cpp11` registers native routines. `mvtnorm` supports coefficient draws;
 `future`, `future.callr`, and `furrr` support parallel inference. `ggplot2`
 produces plots. `data.table` handles repeated row binding, ordered joins,
 grouped reductions, bootstrap row extraction, and baseline selection internally.
+`rlang` raises errors (see "Errors" below).
 `patchwork` composes figures in two website articles only, so it is listed in
 `Config/Needs/website` rather than Suggests. Arrow,
 sdprisk, survival, and ordinal are not required.
@@ -1113,6 +1115,41 @@ Reproducible local timing scripts, original implementations, and measured result
 are in ignored `benchmarks/local/`. Benchmarks include data-frame conversion and
 output ordering, check old/new equivalence before timing, and distinguish helper
 speedups from whole model fitting or inference performance.
+
+### Errors
+
+Every error the R code raises goes through `mostr_abort()` in
+`R/mostr-abort.R`, a wrapper around `rlang::abort()`; `R/` has no `stop()`
+calls, and a test in `tests/testthat/test-errors.R` fails if one appears. The
+contract:
+
+- Message parts are pasted without a separator, as `stop()` does, so a call
+  converted from `stop()` keeps its wording. The text is used literally
+  (`use_cli_format = FALSE`): braces and `%` are not interpolated and there are
+  no cli bullets, so the package does not depend on cli.
+- Every error has class `mostr_error`. `class` adds classes in front of it
+  (`mostr_crossed_thresholds`, `mostr_delta_too_large`,
+  `mostr_execution_plan_too_large`, `mostr_unsupported_link` and the
+  `mostr_delta_*` classes of `sop_delta_condition()`), and `data` stores named
+  fields in the condition, such as `required_bytes` or `draws`. Handlers that
+  catch one kind of error test these classes, never the message.
+- The call in "Error in `f()`:" is the exported function the user called,
+  never an internal one. `mostr_error_call()` walks the call stack for frames
+  running an exported function and takes the innermost one called from outside
+  the package, so `inferences(sops(fit))` reports `sops()` when the error comes
+  from `sops()`. When all such frames were called from package code (test files
+  run inside the namespace), it takes the outermost one; with none, as in a
+  parallel worker or a direct call of an internal function, no call is shown. A
+  `call` argument threaded from every exported function was rejected: about 600
+  call sites sit in internal functions several levels below the export, and
+  each would need the argument.
+- `mostr_abort(condition)` inside an error handler re-raises a caught condition
+  unchanged, adding class `mostr_error` when it lacks it.
+
+Errors raised in C++ with `cpp11::stop()` (36 in `src/sops.cpp`) are plain
+`simpleError`s without a call. They check internal invariants (dimensions,
+indices, probability mass) that the R code validates first, so users normally
+meet the R error. Warnings still use `warning()`.
 
 ## Validation
 
@@ -1226,7 +1263,8 @@ pairwise in a 27-row covering array whose coverage a test re-checks; pairs the
 package refuses are left to the refusal table. Every refusal is one row of the
 table in `tests/testthat/test-refusals.R`, grouped into fitting, prediction,
 inference, simulation (`sim_markov()`) and robust variance (`robcov_vglm()`):
-a call, and the phrase or condition class its error must have. Other test files
+a call, and the phrase or condition class its error must have; a `mostr_error`
+must also show no call or an exported function. Other test files
 check a refusal only where the table cannot: an error-text snapshot whose wording
 is longer than the table's phrase, a warning or state after the error, or an
 internal validator called directly.
