@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`mostr` is an R package. Core source code lives in `R/` (for example, `R/sops-api.R`, `R/simulate-markov.R`, `R/bootstrap_helpers.R`, `R/sops-inference.R`). Tests are in `tests/testthat/` with a package entrypoint at `tests/testthat.R`. Generated documentation is in `man/`, long-form analyses are in `vignettes/`, and reusable datasets are in `data/` with creation scripts in `data-raw/`. Keep architecture notes in `ARCHITECTURE.md` aligned with code changes.
+`mostr` is an R package. Core source code lives in `R/` (for example, `R/sops-api.R`, `R/simulate-markov.R`, `R/bootstrap_helpers.R`, `R/sops-inference.R`). Tests are in `tests/testthat/` with a package entrypoint at `tests/testthat.R`. Generated documentation is in `man/`, long-form analyses are in `vignettes/`, and reusable datasets are in `data/` with creation scripts in `data-raw/`. Keep architecture notes in `ARCHITECTURE.md` aligned with code changes. Decisions and their reasons are recorded in `dev/decisions.md`, which is tracked by git and left out of the built package.
 
 ## Architecture Documentation
 When making code changes, update `ARCHITECTURE.md` in the same work so it stays aligned with the package design. Use the `describe-design` skill for architecture updates, especially when changes affect module boundaries, public APIs, data contracts, model backends, inference workflows, simulation behavior, endpoint summaries, or diagnostic workflows.
@@ -36,6 +36,8 @@ By default, skip vignette building when running package checks because it takes 
 
 ## Coding Style & Naming Conventions
 Follow tidyverse-oriented R style: 2-space indentation, `|>` pipes, and explicit namespaces for non-base calls (for example `dplyr::mutate`, `stats::predict`). Use `snake_case` for functions and variables. Preserve project naming for state-model fields (`id`, `time`, `y`, `yprev`, `tx`). Exported functions require roxygen2 docs with `@export`; add `@importFrom` tags as needed. If you use NSE column names in dplyr/ggplot2, register them in `R/globals.R`.
+
+When a line exists because of a bug, a measurement, or a statistical subtlety, give it a comment that says so: what goes wrong without it, the measured value it rests on, or the statistical reason. A reader should not have to guess why a tolerance, a fallback, a refusal, or an unusual order of operations is there. Keep the reason and drop the history; point to an issue, a commit, or a `dev/decisions.md` entry when more detail helps.
 
 ## Writing for Package Users
 - Write help pages and vignettes for readers who know neither the implementation nor prior discussions. Explain what they can calculate, which arguments to use, what the output means, and any restrictions that affect their choices.
@@ -72,6 +74,25 @@ Optional performance benchmark scripts and results belong in ignored
 `benchmarks/local/`. Do not add performance benchmarks to package tests or
 require a broad benchmark grid for analytical inference. State the measured
 workflow and machine when reporting speedups.
+
+## Experiments and Decisions
+Before a simulation, validation study, or benchmark runs, write down the claim it
+tests, what it measures, and what each possible outcome would mean: for example,
+the acceptance bands and what you will conclude if a result falls outside them.
+Put this at the top of the script or in its README before the first full run; a
+pilot run may only estimate the run time. If the plan changes after a result,
+add the change with its date instead of rewriting the original.
+
+Record decisions in `dev/decisions.md`: a short dated entry, newest first, saying
+what was decided, why, and which options were rejected and why. If nobody wrote
+the reason down, say "reason not recorded" rather than guessing one. Results that
+a decision rests on, such as acceptance bands passed or a measured speedup, go in
+the entry with their numbers.
+
+Reasoning kept only in the gitignored folders `design/`, `benchmarks/local/`, and
+`scripts/` stays on one machine, out of reach of co-authors and cloud agents.
+Scripts and raw results may stay there, but their conclusions belong in
+`dev/decisions.md`.
 
 ## Commit & Pull Request Guidelines
 Recent history favors short, imperative commit messages (often prefixed with `//`). Keep commits focused and include regenerated docs when interfaces change. Pull requests should include: a brief problem/solution summary, linked issue (if available), affected files/modules, and evidence of validation (`devtools::test()` and, for larger changes, `devtools::check(vignettes = FALSE)`).
