@@ -1,0 +1,248 @@
+---
+title: "Get started with mostr"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Get started with mostr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r vignette-options, include = FALSE}
+source("_setup.R", local = TRUE)
+```
+
+mostr analyses outcomes that are recorded repeatedly on an ordered scale, such
+as a hospitalized patient's condition on each day, from "at home" to "dead".
+It fits a *transition model*, an ordinal regression that predicts each day's
+state from the previous day's state, time, treatment, and other covariates.
+From the fitted model it calculates quantities that are easy to report:
+
+- the **state occupancy probability** (SOP), the probability of being in each
+  state on each day;
+- the **expected time** spent in a state, or a group of states, during
+  follow-up; and
+- **treatment comparisons** of either, with confidence intervals.
+
+This article runs through one small analysis from start to finish. At the
+end, a list of questions points to the articles that go further.
+
+## The data
+
+`sim_markov()` simulates daily states from models of published trials. The
+`"actt2"` model is based on the ACTT-2 trial of hospitalized adults with
+COVID-19 and uses its eight-point scale:
+
+| State | Meaning |
+|---|---|
+| 1, 2 | Outside hospital (1: no limitation of activities) |
+| 3 to 7 | In hospital, from no oxygen needed (3) to invasive ventilation (7) |
+| 8 | Dead |
+
+We simulate 250 patients followed for 28 days. `treatment_effect = log(0.7)`
+means that, on any day, treated patients have 0.7 times the odds of being in
+a worse state than control patients who started the day in the same state.
+
+```{r data}
+library(mostr)
+
+trial <- sim_markov(
+  "actt2",
+  n_patients = 250,
+  follow_up_time = 28,
+  treatment_effect = log(0.7),
+  seed = 2026
+)
+head(trial, 4)
+```
+
+The data have one row per patient and day: the patient (`id`), the day
+(`time`), the state on that day (`y`), the state on the previous day
+(`yprev`), and the treatment (`tx`, 0 for control and 1 for treatment). These
+are the column names that mostr's functions expect by default.
+
+Death is an *absorbing* state: a patient who dies stays dead.
+`prepare_markov_data()` removes the rows after death, which carry no
+information about transitions, and turns `y` and `yprev` into factors so that
+each previous state gets its own coefficient.
+
+```{r prepare}
+model_data <- prepare_markov_data(trial, absorbing_state = 8)
+```
+
+## Fit a transition model
+
+`mostm()` fits the model. The formula predicts the state from the previous
+state, a smooth function of time (a restricted cubic spline with three knots,
+`rms::rcs(time, 3)`), and treatment. `id_var = "id"` tells mostr which rows
+belong to the same patient: it uses this to compute standard errors that
+allow for the correlation between one patient's transitions, and to store
+each patient's starting state for later predictions.
+
+```{r fit}
+fit <- mostm(
+  y ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
+  id_var = "id"
+)
+
+exp(coef(fit)["tx"])
+```
+
+By default `mostm()` fits a proportional-odds model with `rms::orm()`. The
+treatment coefficient, shown here as an odds ratio, is close to the simulated
+0.7. It describes a single day's transition for patients who start that day
+in the same state, which is hard to communicate. The quantities below
+translate the model into the probabilities and times that patients and
+clinicians care about.
+
+## State occupancy probabilities
+
+`avg_sops()` asks: what would the probability of each state be on each day if
+every patient had received control, and if every patient had received
+treatment? For each patient it sets `tx` to each value in `variables`, starts
+from the patient's observed state before day 1, and chains the model's
+one-day predictions forward. It then averages over the patients. Because both
+arms are averaged over the same patients, the difference between them is due
+to treatment alone.
+
+- `variables = list(tx = c(0, 1))` gives the values to set;
+- `times = 1:28` gives the days. SOPs are calculated one day after the other,
+  so request every day, even if you only need some of them;
+- `absorb = "8"` names the absorbing state.
+
+```{r avg-sops}
+probabilities <- avg_sops(
+  fit,
+  variables = list(tx = c(0, 1)),
+  times = 1:28,
+  absorb = "8"
+)
+probabilities[probabilities$time == 28, ]
+```
+
+The result has one row per day, state, and treatment value; `estimate` is the
+probability. On day 28, `r day28 <- probabilities[probabilities$time == 28 & probabilities$state == "1", ]; round(100 * day28$estimate[day28$tx == 0])`% of
+patients would be outside hospital with no limitation of activities (state 1)
+under control, and `r round(100 * day28$estimate[day28$tx == 1])`% under
+treatment. The probabilities of the eight states add up to 1 on each day and
+in each arm. `sops()` takes the same arguments and gives the probabilities of
+each patient instead of their average.
+
+## Compare treatments
+
+`avg_comparisons()` compares the treatment values directly. The first value in
+`variables` is the reference. `estimand = "time_in_state"` compares the
+expected number of days spent in the states given by `state_sets`; here the
+two states outside hospital. A named list labels the set in the output.
+
+```{r compare}
+days_outside <- avg_comparisons(
+  fit,
+  variables = list(tx = c(0, 1)),
+  estimand = "time_in_state",
+  state_sets = list(outside_hospital = c("1", "2")),
+  times = 1:28,
+  absorb = "8"
+)
+days_outside
+```
+
+`estimate` is the expected number of days outside hospital during the 28
+days under treatment minus the number under control. With
+`estimand = "sop"`, the default, `avg_comparisons()` compares the
+probabilities on each day instead, and `comparison = "ratio"` gives ratios
+instead of differences.
+
+## Confidence intervals
+
+`inferences()` adds standard errors and confidence intervals to any of these
+results. `method = "delta"` calculates them from formulas (the delta method),
+without random draws, so it is fast and gives the same answer every time.
+
+```{r intervals}
+days_outside_ci <- inferences(days_outside, method = "delta")
+days_outside_ci[, c("estimate", "std.error", "conf.low", "conf.high", "p.value")]
+```
+
+`conf.low` and `conf.high` are the limits of the 95% confidence interval. For
+comparisons, `inferences()` also tests whether the difference is 0 and
+reports the p-value.
+
+The `vcov` argument of `inferences()` chooses which uncertainty the interval
+describes:
+
+- **Unconditional variance**, `vcov = "unconditional"`, is the default for
+  averages. It accounts for the uncertainty in the estimated model
+  coefficients and also for which patients happened to be sampled, and for
+  their role in estimating the coefficients. The interval describes the
+  average in the population that the patients come from.
+- **Conditional variance**, `vcov = "conditional"`, accounts for the
+  uncertainty in the coefficients but treats the patients' starting states
+  and covariates as given. The interval describes the average for these
+  particular patients.
+
+The point estimate is the same either way. Here the two intervals are almost
+identical; they differ more for SOPs early in follow-up, which depend
+strongly on the patients' starting states.
+
+```{r conditional}
+inferences(days_outside, method = "delta", vcov = "conditional")[
+  , c("estimate", "std.error", "conf.low", "conf.high")
+]
+```
+
+The same call adds intervals to the probabilities, and `plot_sops()` draws
+them. Each panel is one state; the line type shows the treatment.
+
+```{r plot-sops, fig.height = 5.5, fig.alt = "Eight panels, one per state, each showing the probability of that state on days 1 to 28 with a solid line for control, a dotted line for treatment and shaded 95% confidence bands. The probability of state 1 rises over follow-up and is higher under treatment, while the probabilities of the hospital states fall faster under treatment."}
+probabilities_ci <- inferences(probabilities, method = "delta")
+
+plot_sops(probabilities_ci, facet_var = "state", linetype_var = "tx") +
+  ggplot2::labs(x = "Day", y = "State occupancy probability")
+```
+
+The delta method is available for first-order, proportional-odds models
+fitted with `engine = "orm"` or `"vglm"`. For other models, `inferences()`
+offers simulation (`method = "mvn"`, the default) and two kinds of bootstrap
+(`method = "bootstrap"` and `method = "fwb"`).
+
+## Where to go next
+
+`?mostr` lists every function by task. The articles below go further.
+
+**How do I check that the model describes the data?**
+`vignette("full-po-sops")` compares observed and model-based transitions and
+correlations between days with `plot_transitions()`, `plot_correlation()`,
+and `plot_variogram()`.
+
+**What if a covariate's effect differs between states?**
+`vignette("partial-po-vglm-sops")` fits a partial proportional-odds model, in
+which, for example, the effect of time on the odds of death differs from its
+effect on the odds of being in hospital.
+
+**What if today's state depends on more than yesterday's?**
+`vignette("second-order-orm-sops")` adds the state two days back.
+
+**What if the outcome has many levels, such as a score from 1 to 30?**
+`vignette("many-levels-previous-state-spline")` models the previous state with
+a spline and compares arms by time benefit.
+
+**What if patients are seen at scheduled visits rather than every day?**
+`vignette("factor-time-orm-sops")` treats each visit as a category of time and
+converts the results to days with `interpolate_sops()`.
+
+**Which confidence intervals should I use, and how are they calculated?**
+`vignette("analytical-confidence-intervals")` explains conditional and
+unconditional variance, compares treatments for each patient with
+`comparisons()`, and extracts covariances with `vcov()`.
+`vignette("mvn-vs-bootstrap-orm-sops")` and
+`vignette("fractional-weighted-bootstrap-sops")` cover simulation and the
+bootstrap, including comparisons within subgroups.
+
+**How do I fit a Bayesian model?**
+`vignette("bayesian-rmsb-sops")` uses `engine = "blrm"`, whose results carry
+posterior intervals without an `inferences()` step.
+
+The package website answers
+[frequently asked questions](https://scjohannes.github.io/mostr/articles/faq.html),
+including common error messages.

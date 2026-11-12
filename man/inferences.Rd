@@ -392,7 +392,7 @@ ind_boot <- sops(
   inferences(method = "fwb", n_draws = 500)
 
 # Extract draws for custom analyses
-get_draws(ind_result)
+draws <- get_draws(result_sim)
 
 # Compute treatment effect on time in state
 library(dplyr)

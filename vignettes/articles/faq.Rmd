@@ -1,0 +1,297 @@
+---
+title: "Frequently asked questions"
+---
+
+```{r vignette-options, include = FALSE}
+source("../_setup.R", local = TRUE)
+```
+
+This page answers questions that come up when using mostr, including the
+error messages that users run into most often. The examples use a small
+simulated trial, in the same form as in `vignette("mostr")`: eight states of
+the ACTT-2 scale, of which state 8 (death) is absorbing.
+
+```{r setup}
+library(mostr)
+
+trial <- sim_markov("actt2", n_patients = 150, follow_up_time = 14, seed = 1)
+model_data <- prepare_markov_data(trial, absorbing_state = 8)
+fit <- mostm(y ~ yprev + time + tx, data = model_data, id_var = "id")
+```
+
+## Getting started
+
+### Which function do I need?
+
+`?mostr` lists every function by what you want to do: fit a model, estimate
+state occupancy probabilities (SOPs) or time in states, compare treatments,
+add confidence intervals, simulate data, plot, and check the model.
+`vignette("mostr")` runs through a complete analysis.
+
+### Can I use a model that I fitted with `rms::orm()`, `VGAM::vglm()`, or `rmsb::blrm()`?
+
+No. Fit the model with `mostm()` instead, and choose the package with
+`engine = "orm"`, `"vglm"`, or `"blrm"`. `mostm()` stores each patient's
+starting row and the data the other functions need, which a model fitted
+directly lacks. Supplying `newdata` does not help:
+
+```{r direct-fit, error = TRUE}
+direct <- rms::orm(y ~ yprev + time + tx, data = model_data, x = TRUE, y = TRUE)
+avg_sops(direct, newdata = model_data[model_data$time == 1, ], times = 1:14, absorb = "8")
+```
+
+Arguments of the engine's own fitting function can be passed to `mostm()`,
+for example `maxit` for `rms::orm()` or `family` and `constraints` for
+`VGAM::vglm()`; see `?mostm`.
+
+### Do I need an rms `datadist`?
+
+No. mostr does not use one. Set one with `options(datadist = ...)` only if
+you also want rms's own summaries of an `"orm"` fit, such as
+`summary(fit)`.
+
+### Why does `mostm()` refuse `factor()` in the formula?
+
+For the `"orm"` and `"blrm"` engines, categorical predictors must be factor
+or character columns of the data, because mostr rebuilds the model's design
+for new visits and patients from those columns:
+
+```{r factor-formula, error = TRUE}
+mostm(y ~ factor(yprev) + time + tx, data = model_data, id_var = "id")
+```
+
+Create the factor as a column, as `prepare_markov_data()` does for `yprev`,
+and use the column in the formula.
+
+## Estimating probabilities and times
+
+### Why are my probabilities for days 7, 14 and 28 not the probabilities on those days?
+
+SOPs are calculated one visit after another: the first value of `times` is
+the first transition from the starting state, and each further value is one
+more transition. With daily visits, `times = c(1, 7, 14)` gives the
+probabilities after 1, 2 and 3 transitions, labelled 1, 7 and 14. mostr warns
+about this:
+
+```{r skipped-times, warning = TRUE}
+probabilities <- avg_sops(fit, times = c(1, 7, 14), absorb = "8")
+```
+
+Request every visit, such as `times = 1:14`, and keep the rows you need. If
+your visits are scheduled at uneven intervals, see
+`vignette("factor-time-orm-sops")`.
+
+### What does the error about "state level(s) not represented in the fitted transition data" mean?
+
+Usually that `absorb` is missing. `prepare_markov_data()` removed the rows
+after death, so the model never sees a transition out of state 8 and cannot
+predict one. Name the absorbing states in `absorb`, and mostr keeps the
+probability of being in them instead of predicting transitions out of them:
+
+```{r missing-absorb, error = TRUE}
+avg_sops(fit, times = 1:14)
+```
+
+```{r with-absorb}
+probabilities <- avg_sops(fit, times = 1:14, absorb = "8")
+```
+
+### Why does `newdata` with a patient in an absorbing state give an error?
+
+A patient who has died cannot move to another state, so there is nothing to
+predict. Each profile in `newdata` must start outside the states in `absorb`;
+remove the others from `newdata` first.
+
+### Do I need to supply `y_levels`?
+
+Usually not. If `y_levels` is `NULL`, mostr reads the states from the fitted
+model. If you supply it, give one entry per state, in the order the model
+uses; a vector with the wrong number of states gives an error that states
+both numbers.
+
+### How do I get the expected time in a state instead of probabilities?
+
+Use `avg_state_time()` for the expected number of days in each state, or in a
+group of states given by `state_sets`, and `avg_comparisons()` with
+`estimand = "time_in_state"` to compare treatments. The time is the sum of the
+SOPs over the requested days, so over `times = 1:14` the times of all states
+add up to 14 days:
+
+```{r state-time}
+days <- avg_state_time(
+  fit,
+  variables = list(tx = c(0, 1)),
+  state_sets = list(outside_hospital = c("1", "2")),
+  times = 1:14,
+  absorb = "8"
+)
+days
+```
+
+For visits that are not daily, `time_map` gives the elapsed time of each
+visit; see `vignette("factor-time-orm-sops")`.
+
+### How do I estimate effects within subgroups?
+
+Pass the grouping column to `by` in `avg_sops()`, `avg_state_time()` or
+`avg_comparisons()`, for example `by = "sex"`. Each group's estimate is the
+average over that group's patients. Analytical confidence intervals are not
+yet available with `by`; use `method = "mvn"` or `method = "fwb"` in
+`inferences()`. `vignette("fractional-weighted-bootstrap-sops")` shows an
+example.
+
+## Confidence intervals
+
+### Which method should I use in `inferences()`?
+
+| `method` | What it does | Use it for |
+|---|---|---|
+| `"delta"` | Calculates intervals from formulas, without random draws | First-order, full proportional-odds models from the `"orm"` or `"vglm"` engine |
+| `"mvn"` (default) | Draws coefficients from a multivariate normal distribution and recalculates the results for each draw | Any frequentist model |
+| `"bootstrap"` | Refits the model to patients resampled with replacement | Averages from `avg_sops()`, `avg_state_time()` and `avg_comparisons()` |
+| `"fwb"` | Refits the model with a random positive weight for each patient | Averages, and results for each patient |
+
+`"delta"` is the fastest and gives the same answer every time.
+`vignette("analytical-confidence-intervals")` explains it, and
+`vignette("mvn-vs-bootstrap-orm-sops")` compares the other methods. Models
+fitted with `engine = "blrm"` already carry posterior intervals, so
+`inferences()` is not needed for them.
+
+### Why does `inferences(method = "delta")` stop with an error?
+
+The analytical method does not yet cover every model and result. It stops
+with an error, rather than giving a different kind of interval, for
+
+- partial proportional-odds models and second-order models;
+- ratios (`comparison = "ratio"`) and `estimand = "time_benefit"`;
+- results averaged within groups (`by`); and
+- Bayesian models from `engine = "blrm"`.
+
+For these, use `method = "mvn"`, `"bootstrap"` or `"fwb"`.
+
+### Should I use conditional or unconditional variance?
+
+Both are chosen through `vcov` in `inferences(method = "delta")` and give the
+same estimates with different intervals.
+
+- **Conditional variance** (`vcov = "conditional"`) accounts for the
+  uncertainty in the estimated model coefficients, and treats the patients'
+  starting states and covariates as given. It describes the average for these
+  particular patients.
+- **Unconditional variance** (`vcov = "unconditional"`) also accounts for
+  which patients happened to be sampled, and for their role in estimating the
+  coefficients. It describes the average in the population the patients come
+  from. It is the default for averages.
+
+Results for each patient, from `sops()`, `state_time()` and `comparisons()`,
+support only conditional variance, because they do not average over sampled
+patients.
+
+### Why is unconditional variance not available for my results?
+
+Unconditional variance needs the patients stored with the fit, so it is not
+available when you average over your own `newdata`:
+
+```{r newdata-unconditional, error = TRUE}
+starting_rows <- model_data[model_data$time == 1, ]
+avg_sops(fit, newdata = starting_rows, variables = list(tx = c(0, 1)),
+         times = 1:14, absorb = "8") |>
+  inferences(method = "delta")
+```
+
+It is also not available for fits with `weights`, for penalized `"orm"` fits,
+or when `variables` sets the previous state (for example
+`variables = list(yprev = c("4", "5"))`). In all these cases pass
+`vcov = "conditional"`.
+
+### Why are the standard error and confidence interval `NA`?
+
+There are two common reasons.
+
+- You compared a variable that the model does not use. Setting it cannot
+  change any prediction, so the difference is exactly 0 (or the ratio exactly
+  1) and has no uncertainty. Check the spelling of the variable in
+  `variables` and in the model formula.
+- An estimated probability is exactly 0 or 1, for example after rounding. The
+  analytical intervals for probabilities are formed on the log-odds scale,
+  which is undefined at 0 and 1, so those limits are `NA` and `inferences()`
+  warns. `conf_type = "wald"` gives limits from the estimate plus or minus a
+  multiple of the standard error instead.
+
+### Why do my simulation or bootstrap intervals change every time?
+
+They are based on random draws. Pass `seed` to `inferences()` to get the same
+draws, and the same intervals, every time. Increasing `n_draws` makes the
+intervals less variable from run to run.
+
+### Why does the ordinary bootstrap stop with an error?
+
+A resample drawn with replacement can leave out every patient who was ever in
+a rare state, or every patient of a small group in `by`. The model refitted to
+that resample cannot predict for those states or groups, so
+`inferences(method = "bootstrap")` stops and says why. For the same reason,
+it is not available for results for each patient from `sops()`,
+`state_time()` and `comparisons()`. Use
+`method = "fwb"`, which keeps every patient in every refit.
+
+### How can I use the draws for my own summaries?
+
+`inferences()` stores the simulation or bootstrap draws by default
+(`return_draws = TRUE`). `get_draws()` returns them as a data frame with one
+row per draw and estimate; the `draw` column holds the value in that draw.
+
+### How do I get the covariance between two estimates?
+
+After `inferences(method = "delta")`, `vcov()` returns the covariance matrix
+of the estimates; the square roots of its diagonal are the standard errors.
+The matrix has one row and column per estimate, so it can be large. Pass
+`rows` to request only the estimates you need:
+
+```{r vcov}
+probabilities_ci <- inferences(probabilities, method = "delta")
+covariance <- vcov(probabilities_ci, rows = 1:3)
+unname(sqrt(diag(covariance)))
+probabilities_ci$std.error[1:3]
+```
+
+The option `mostr.delta_max_bytes` caps the memory that these calculations
+may use. `vcov()` is not available after simulation or bootstrap; use
+`get_draws()` instead.
+
+### How can I make the bootstrap faster?
+
+Pass `workers` to `inferences()`, or to `bootstrap_model_coefs()`, to refit
+the model in several R processes at once. With `engine = "vglm"`,
+`use_coefstart = TRUE` starts each refit from the original coefficients,
+which can shorten the fitting.
+
+## Fitting problems
+
+### `mostm()` says the covariance of the coefficients cannot be computed
+
+This happens when the fitting algorithm has not converged, or when some
+coefficients grow without bound because a transition never occurs in the
+data, for example from a rare state to death. For the `"orm"` engine,
+the arguments `opt_method = "LM"`, `scale = TRUE` and a larger `maxit`, which
+are passed on to `rms::orm()`, often help it converge. If a transition never
+occurs, simplify the model, for example by combining rare states.
+
+### A weighted `"orm"` fit warns that "weights are ignored in model validation and bootstrapping"
+
+This warning comes from `rms::orm()` and refers to rms's own validation and
+bootstrap functions, which mostr does not use. mostr's bootstrap keeps each
+row's weight when it resamples patients. Note that the weights are used only
+to fit the model: `avg_sops()` and the other averaging functions give every
+patient the same weight, and `inferences(method = "delta")` offers only
+conditional variance for a weighted fit.
+
+### How do I check that the model describes the data?
+
+Draw the same summary from the observed trajectories and from the fitted
+model, and compare them. `plot_transitions()`, `plot_correlation()` and
+`plot_variogram()` accept either the observed trajectories or a fit from
+`mostm()`, and `plot_sops()` accepts either the observed trajectories or the
+result of `avg_sops()`; see `vignette("full-po-sops")`. If the observed correlations between days fall
+off more slowly than the model's, a second-order model
+(`vignette("second-order-orm-sops")`) may fit better. If effects seem to
+differ between states, see `vignette("partial-po-vglm-sops")`.
