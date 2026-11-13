@@ -908,6 +908,18 @@ Rows are matched to the stored derivatives by row key, and the weights must
 reproduce the reported totals. Delta SOPs already passed through
 `interpolate_sops()` are refused.
 
+Other tidy SOPs get the limits of their totals from stored draws
+(`time_in_state_tidy_inference()` reduces each draw and calls
+`compute_ci_from_draws()`). SOPs with `conf.low`, `conf.high`, or `std.error`
+but no draw table (`sop_has_draw_table()`), such as posterior SOPs with
+`return_draws = FALSE` or SOPs from `inferences(return_draws = FALSE)`, go
+through `time_in_state_without_draws()`: the totals keep those columns as `NA`
+and a warning names `return_draws = TRUE`, because limits of a sum cannot be
+computed from the limits of its terms. With `time_map`, such SOPs lose their
+interval columns (`sop_point_estimates()`) before `interpolate_sops()`, so its
+warning about interpolating interval endpoints is not raised for values that
+would be discarded.
+
 `sops(variables = ...)` predicts each profile once per combination of values,
 as marginaleffects' `predictions()`: `stack_prediction_profiles()` stacks the
 copies, renumbers `rowid` over them, and records the profile in `rowidcf`.

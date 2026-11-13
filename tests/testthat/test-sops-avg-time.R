@@ -508,3 +508,74 @@ test_that("posterior average times keep the requested state-set order", {
   )
   expect_identical(comparison$state_set, c("zeta", "alpha"))
 })
+
+test_that("time_in_state() keeps blrm point totals without draws, with NA limits and a warning naming `return_draws = TRUE`", {
+  # Posterior SOPs computed with the default `return_draws = FALSE` carry
+  # `conf.low`, `conf.high` and `std.error` but no draws. Limits of a total
+  # cannot be summed from the limits of its SOPs, so they need the draws;
+  # time_in_state() used to drop the columns without a word.
+  coefficients <- rbind(
+    c(0.5, -0.5, 0, 1.2),
+    c(2, 1, 0, -1.1),
+    c(-0.4, -2, 0, 0.2)
+  )
+  colnames(coefficients) <- c("y>=2", "y>=3", "tx", "time")
+  model <- fake_blrm(coefficients)
+  profiles <- data.frame(
+    id = c("a", "b"),
+    tx = c(0, 1),
+    yprev = factor(c(1, 2), levels = 1:3),
+    time = 1
+  )
+  local_mocked_bindings(blrm_design_matrix = fake_blrm_design(c("tx", "time")))
+
+  for (fn in c("sops", "avg_sops")) {
+    predict <- get(fn)
+    args <- list(model, newdata = profiles, times = 1:3, n_draws = 3, seed = 9325)
+    with_draws <- do.call(predict, c(args, return_draws = TRUE))
+    without_draws <- do.call(predict, args)
+    expect_true(
+      all(c("conf.low", "conf.high", "std.error") %in% names(without_draws)),
+      info = fn
+    )
+    expect_null(attr(without_draws, "draws"))
+
+    warnings <- character()
+    totals <- withCallingHandlers(
+      time_in_state(without_draws, target_states = 1),
+      warning = function(w) {
+        warnings <<- c(warnings, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }
+    )
+    expect_true(
+      any(grepl("return_draws = TRUE", warnings, fixed = TRUE)),
+      info = fn
+    )
+    expected <- time_in_state(with_draws, target_states = 1)
+    expect_equal(totals$total_time, expected$total_time, info = fn)
+    # The same columns as with draws, so that code reading them works either
+    # way.
+    expect_identical(names(totals), names(expected), info = fn)
+    for (column in c("conf.low", "conf.high", "std.error")) {
+      expect_true(all(is.na(totals[[column]])), info = paste(fn, column))
+    }
+  }
+
+  # state_time() and avg_state_time() keep the SOP draws internally, so their
+  # totals keep their limits without `return_draws = TRUE`.
+  for (fn in c("state_time", "avg_state_time")) {
+    expect_no_warning(
+      totals <- get(fn)(
+        model,
+        newdata = profiles,
+        times = 1:3,
+        n_draws = 3,
+        seed = 9325
+      )
+    )
+    for (column in c("conf.low", "conf.high", "std.error")) {
+      expect_false(anyNA(totals[[column]]), info = paste(fn, column))
+    }
+  }
+})

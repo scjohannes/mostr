@@ -241,6 +241,17 @@
 
 ## Bug fixes
 
+* `time_in_state()` on SOPs that have confidence limits but no stored draws
+  (posterior SOPs from `sops()` or `avg_sops()` with the default
+  `return_draws = FALSE`, or SOPs from `inferences(return_draws = FALSE)`)
+  now returns `conf.low`, `conf.high`, and `std.error` as `NA`, with a
+  warning naming `return_draws = TRUE`. The limits of a total cannot be
+  computed from the limits of its SOPs. Before, the columns were dropped
+  without a word, and with `time_map` the only warning, from
+  `interpolate_sops()`, said that interval endpoints would be interpolated.
+  The totals themselves are unchanged. `state_time()` and `avg_state_time()`
+  were not affected.
+
 * The robust variance of `"vglm"` fits now accepts or refuses a nearly
   singular covariance by the same rule as `"orm"` fits: it checks the
   correlation matrix, so the units of the covariates no longer matter. Before,

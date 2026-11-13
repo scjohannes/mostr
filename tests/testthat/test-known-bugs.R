@@ -99,62 +99,6 @@ test_that("known bug: a profile value that is not a fitted level gives a mostr_e
   }
 })
 
-test_that("known bug: time_in_state() keeps blrm point totals without draws, with NA limits and a warning naming `return_draws = TRUE`", {
-  # Posterior SOPs computed with the default `return_draws = FALSE` carry
-  # `conf.low` and `conf.high` but no draws. time_in_state() drops both
-  # columns without a word: limits of a total cannot be summed from the limits
-  # of its SOPs, so they need the draws.
-  coefficients <- rbind(
-    c(0.5, -0.5, 0, 1.2),
-    c(2, 1, 0, -1.1),
-    c(-0.4, -2, 0, 0.2)
-  )
-  colnames(coefficients) <- c("y>=2", "y>=3", "tx", "time")
-  model <- fake_blrm(coefficients)
-  profiles <- data.frame(
-    id = c("a", "b"),
-    tx = c(0, 1),
-    yprev = factor(c(1, 2), levels = 1:3),
-    time = 1
-  )
-  local_mocked_bindings(blrm_design_matrix = fake_blrm_design(c("tx", "time")))
-
-  for (fn in c("sops", "avg_sops")) {
-    predict <- get(fn)
-    args <- list(model, newdata = profiles, times = 1:3, n_draws = 3, seed = 9325)
-    with_draws <- do.call(predict, c(args, return_draws = TRUE))
-    without_draws <- do.call(predict, args)
-    expect_true(
-      all(c("conf.low", "conf.high") %in% names(without_draws)),
-      info = fn
-    )
-    expect_null(attr(without_draws, "draws"))
-
-    warnings <- character()
-    totals <- withCallingHandlers(
-      time_in_state(without_draws, target_states = 1),
-      warning = function(w) {
-        warnings <<- c(warnings, conditionMessage(w))
-        invokeRestart("muffleWarning")
-      }
-    )
-    expect_true(
-      any(grepl("return_draws = TRUE", warnings, fixed = TRUE)),
-      info = fn
-    )
-    expect_equal(
-      totals$total_time,
-      time_in_state(with_draws, target_states = 1)$total_time,
-      info = fn
-    )
-    expect_true(all(c("conf.low", "conf.high") %in% names(totals)), info = fn)
-    if (all(c("conf.low", "conf.high") %in% names(totals))) {
-      expect_true(all(is.na(totals$conf.low)), info = fn)
-      expect_true(all(is.na(totals$conf.high)), info = fn)
-    }
-  }
-})
-
 test_that("known bug: a profile with a missing covariate gives a mostr_error naming the column for every engine", {
   # vglm builds the design with stats::model.matrix(), which drops the row
   # with NA. With two profiles, the probabilities of the other profile are
