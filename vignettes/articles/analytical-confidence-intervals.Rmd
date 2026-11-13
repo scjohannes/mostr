@@ -533,7 +533,8 @@ Without `rows`, `vcov()` returns a covariance for every pair of estimates.
 This can use a lot of memory, because doubling the number of estimates
 quadruples the number of entries, so request only the rows you need. The
 option `mostr.delta_max_bytes`, 256 MiB by default, caps the largest memory
-allocations made by analytical inference and by `vcov()`.
+allocations made by analytical inference and by `vcov()` (see
+[`?mostr_options`](../reference/mostr_options.html)).
 
 ## Supported models and comparisons
 

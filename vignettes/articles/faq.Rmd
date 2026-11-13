@@ -256,7 +256,8 @@ probabilities_ci$std.error[1:3]
 ```
 
 The option `mostr.delta_max_bytes` caps the memory that these calculations
-may use. `vcov()` is not available after simulation or bootstrap; use
+may use; [`?mostr_options`](../reference/mostr_options.html) describes it and
+the other options that limit memory use. `vcov()` is not available after simulation or bootstrap; use
 `get_draws()` instead.
 
 ### How can I make the bootstrap faster?

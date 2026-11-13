@@ -39,7 +39,7 @@ reference:
       - time_in_state
       - interpolate_sops
       - vcov.markov_sops
-      - mostr.delta_max_bytes
+      - mostr_options
       - soprob_markov
   - title: Plot results and diagnose models
     desc: >

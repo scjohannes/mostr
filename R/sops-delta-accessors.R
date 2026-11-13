@@ -1,33 +1,5 @@
 # Analytical SOP result accessors.
 
-#' Analytical Delta-Method Memory Limit
-#'
-#' `mostr.delta_max_bytes` limits the size of guarded allocations used by
-#' analytical delta-method SOP inference. The default is `256 * 1024^2` bytes
-#' (256 MiB, or 268,435,456 bytes).
-#'
-#' The limit is checked for the SOP Jacobian and recursion workspace, retained
-#' low-rank analytical state, standard-error workspaces, and covariance or
-#' Jacobian blocks requested through [stats::vcov()] or internal accessors. Sizes
-#' are measured in bytes. The checks estimate the principal numeric allocations
-#' and are not a guarantee of total process memory use. Existing models and
-#' prediction data, design matrices, temporary R copies, and allocation overhead
-#' can require additional memory. A calculation can therefore use more memory
-#' than this option even when every check passes.
-#'
-#' Increase the option only after confirming that the reported allocation and
-#' additional R overhead fit comfortably in available memory. Restore the prior
-#' option after a temporary override.
-#'
-#' @name mostr.delta_max_bytes
-#' @seealso [inferences()], [stats::vcov()]
-#' @examples
-#' old_options <- options(
-#'   mostr.delta_max_bytes = 512 * 1024^2 # 512 MiB
-#' )
-#' options(old_options)
-NULL
-
 delta_row_key_frame <- function(x) {
   key_cols <- setdiff(names(x), inference_columns())
   out <- as.data.frame(x)[, key_cols, drop = FALSE]

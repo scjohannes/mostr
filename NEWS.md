@@ -180,7 +180,16 @@
   names the mostr function you called, such as `sops()`, instead of an
   internal helper. The messages themselves are unchanged.
 
+* Large predictions use less memory and are faster: the options
+  `mostr.max_batched_design_rows` (now `5e4` rows per visit, was `2e6`) and
+  `mostr.second_order_working_bytes` (now 32 MiB, was 256 MiB) have smaller
+  defaults. They change only how the work is split, not the results.
+
 ## Documentation
+
+* The new help page `?mostr_options` describes the options that limit memory
+  use, their defaults, and when to change them. It replaces
+  `?mostr.delta_max_bytes`, which now opens the same page.
 
 * The help pages of `avg_sops()`, `avg_state_time()`, `avg_comparisons()`,
   and `mostm()` now say that the averages give every profile the same weight:

@@ -514,7 +514,8 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #' stored `conf_level` times the standard error, as in [avg_state_time()] and
 #' [state_time()] with `method = "delta"`, which give the same results. The
 #' calculation uses only the weighted sums, never the covariance of every pair
-#' of SOPs, within the memory limit [mostr.delta_max_bytes].
+#' of SOPs, within the memory limit `mostr.delta_max_bytes` (see
+#' [mostr_options]).
 #'
 #' Pass the result of [inferences()] unchanged. `time_in_state()` stops with
 #' an error, instead of returning totals without uncertainty, for delta

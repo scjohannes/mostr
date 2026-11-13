@@ -232,11 +232,12 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
 
   rows_per_visit <- n_pat * length(non_absorb_idx)
   # Above this many rows per visit, markov_msm_build() builds the same designs
-  # one origin state at a time. 2e6 was never measured: in Nov 2026 (orm, 11
-  # design columns, Ryzen AI 9 HX 370) the batched build was faster only below
-  # about 25k rows; at 2e6 it took 8.6 s and 0.93 GB against 5.2 s and 0.51 GB
-  # (benchmarks/local/thresholds/). See dev/decisions.md before changing it.
-  if (rows_per_visit > getOption("mostr.max_batched_design_rows", 2e6)) {
+  # one origin state at a time, with identical results. Measured Nov 2026 (orm,
+  # 11 design columns, Ryzen AI 9 HX 370): the batched build is faster only
+  # below about 25k rows; from 50k it is 1.3 to 1.9 times slower with up to 1.8
+  # times the peak memory (at 2e6, 8.6 s and 0.93 GB against 5.2 s and
+  # 0.51 GB). The default was 2e6 until then. See dev/decisions.md.
+  if (rows_per_visit > getOption("mostr.max_batched_design_rows", 5e4)) {
     return(markov_msm_build(
       model = model,
       newdata = newdata,

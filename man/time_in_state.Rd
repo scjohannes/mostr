@@ -110,7 +110,8 @@ Confidence limits are the total plus and minus the normal quantile for the
 stored \code{conf_level} times the standard error, as in \code{\link[=avg_state_time]{avg_state_time()}} and
 \code{\link[=state_time]{state_time()}} with \code{method = "delta"}, which give the same results. The
 calculation uses only the weighted sums, never the covariance of every pair
-of SOPs, within the memory limit \link{mostr.delta_max_bytes}.
+of SOPs, within the memory limit \code{mostr.delta_max_bytes} (see
+\link{mostr_options}).
 
 Pass the result of \code{\link[=inferences]{inferences()}} unchanged. \code{time_in_state()} stops with
 an error, instead of returning totals without uncertainty, for delta

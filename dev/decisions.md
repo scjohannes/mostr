@@ -86,6 +86,20 @@ scripts and tables in `benchmarks/local/thresholds/`):
 **Decided against.** Changing defaults inside a comment-only change: a changed
 default needs its own check that results are identical.
 
+**Update 2026-11-13.** The maintainer decided to change both:
+`mostr.max_batched_design_rows` is now `5e4` and
+`mostr.second_order_working_bytes` 32 MiB. All the size options are now
+documented on one help page, `?mostr_options` (before, only
+`mostr.delta_max_bytes` had a page); the blrm chunk sizes stay undocumented
+because they only tune speed. Check (`benchmarks/local/thresholds/identical-defaults.R`,
+saved before and after the change): a first-order orm call with 1e5 design rows
+per visit (batched before, one previous state at a time after), a 1e4-row
+control, and delta and MVN inference on the large call gave `identical()`
+outputs. A second-order orm call forced to the R engine with 20,000 profiles
+(36 state pairs per chunk before, 11 after) differed by at most 5.6e-17, about
+one rounding step of a double, because the sums over state pairs are added in
+another order.
+
 ## 2026-11-12: Recommend `"LM"` only with `maxit = 100`
 
 **Decided.** When `rms::orm()` fails, the error suggests

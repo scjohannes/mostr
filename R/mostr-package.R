@@ -94,8 +94,9 @@
 #'   summaries of your own.
 #' * [vcov()][vcov.markov_sops] returns the covariance matrix of the estimates
 #'   after `method = "delta"`. Its `rows` argument selects the estimates, which
-#'   saves memory; the option [mostr.delta_max_bytes] caps the memory that
-#'   these calculations may use.
+#'   saves memory; the option `mostr.delta_max_bytes` caps the memory that
+#'   these calculations may use. [mostr_options] describes it and the other
+#'   options that limit memory use.
 #'
 #' @section Plot results:
 #' * [plot_sops()] plots SOPs over time, as lines or stacked bars, from

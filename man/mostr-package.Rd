@@ -116,8 +116,9 @@ After \code{\link[=inferences]{inferences()}}:
 summaries of your own.
 \item \link[=vcov.markov_sops]{vcov()} returns the covariance matrix of the estimates
 after \code{method = "delta"}. Its \code{rows} argument selects the estimates, which
-saves memory; the option \link{mostr.delta_max_bytes} caps the memory that
-these calculations may use.
+saves memory; the option \code{mostr.delta_max_bytes} caps the memory that
+these calculations may use. \link{mostr_options} describes it and the other
+options that limit memory use.
 }
 }
 
