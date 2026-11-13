@@ -30,7 +30,7 @@ violet_baseline
 \description{
 The joint distribution of the starting state, age, and SOFA score of the
 1,351 patients in the
-\href{https://doi.org/10.1056/NEJMoa1911124}{VIOLET trial} of early high-dose
+VIOLET trial (\doi{10.1056/NEJMoa1911124}) of early high-dose
 vitamin D3 versus placebo in critically ill adults. Each row is one
 combination of the three characteristics, and \code{n} is the number of VIOLET
 patients who had it. \code{sim_markov("violet")} samples simulated patients from

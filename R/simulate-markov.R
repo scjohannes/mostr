@@ -259,7 +259,7 @@ sim_markov <- function(
 #' @description
 #' `sim_markov("actt2")` generates synthetic daily health states from a
 #' first-order Markov proportional-odds model based on data from the
-#' [Adaptive COVID-19 Treatment Trial 2 (ACTT-2)](https://doi.org/10.1056/NEJMoa2031994),
+#' Adaptive COVID-19 Treatment Trial 2 (ACTT-2; \doi{10.1056/NEJMoa2031994}),
 #' which compared Baricitinib plus Remdesivir with placebo plus Remdesivir in
 #' adults hospitalized with COVID-19 (Kalil et al., 2021). States follow the
 #' trial's
@@ -360,7 +360,7 @@ NULL
 #' @description
 #' `sim_markov("actt1")` generates synthetic daily health states for a
 #' population like that of the
-#' [Adaptive COVID-19 Treatment Trial 1 (ACTT-1)](https://doi.org/10.1056/NEJMoa2007764),
+#' Adaptive COVID-19 Treatment Trial 1 (ACTT-1; \doi{10.1056/NEJMoa2007764}),
 #' which compared Remdesivir with placebo in adults hospitalized with COVID-19
 #' (Beigel et al., 2020). It uses the ACTT-2 transition model described in
 #' [actt2_preset], with the same eight states, and changes two things:
@@ -431,7 +431,7 @@ NULL
 #'
 #' @description
 #' `sim_markov("violet")` simulates daily 4-state trajectories resembling the
-#' [VIOLET trial](https://doi.org/10.1056/NEJMoa1911124) of early high-dose
+#' VIOLET trial (\doi{10.1056/NEJMoa1911124}) of early high-dose
 #' vitamin D3 versus placebo in critically ill adults with vitamin D deficiency.
 #' The transition model is the partial proportional-odds Markov model that
 #' Frank Harrell fitted to the VIOLET data to simulate his large `simlongord`

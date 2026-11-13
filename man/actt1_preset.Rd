@@ -6,7 +6,7 @@
 \description{
 \code{sim_markov("actt1")} generates synthetic daily health states for a
 population like that of the
-\href{https://doi.org/10.1056/NEJMoa2007764}{Adaptive COVID-19 Treatment Trial 1 (ACTT-1)},
+Adaptive COVID-19 Treatment Trial 1 (ACTT-1; \doi{10.1056/NEJMoa2007764}),
 which compared Remdesivir with placebo in adults hospitalized with COVID-19
 (Beigel et al., 2020). It uses the ACTT-2 transition model described in
 \link{actt2_preset}, with the same eight states, and changes two things:
