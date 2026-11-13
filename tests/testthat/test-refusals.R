@@ -14,9 +14,7 @@
 # are in the blrm group.
 #
 # Error-text snapshots elsewhere (`_snaps/`) keep the full wording where it
-# matters; this table checks that each refusal still happens. Rows marked
-# "(internal)" reach code that the public functions no longer offer, such as
-# the score bootstrap, through `mostr:::inferences_score_bootstrap()`.
+# matters; this table checks that each refusal still happens.
 
 # ---- The table machinery ----
 
@@ -915,16 +913,6 @@ inference_refusals <- list(
     "Setting the starting state with `variables` supports only conditional"
   ),
   refusal(
-    "I07", "the score bootstrap (internal) with a set starting state",
-    function() {
-      mostr:::inferences_score_bootstrap(
-        refusal_set_start(avg_state_time),
-        n_draws = 2
-      )
-    },
-    "Setting the starting state with `variables` supports only conditional"
-  ),
-  refusal(
     "I08", "delta inference with percentile intervals for average comparisons",
     function() inferences(refusal_contrast(), method = "delta", conf_type = "perc"),
     "Analytical average comparisons require `conf_type = \"wald\"`."
@@ -966,9 +954,9 @@ inference_refusals <- list(
     "Ratio comparisons cannot be tested against `null = 0`."
   ),
   refusal(
-    "I15", "the score bootstrap through inferences()",
+    "I15", "the removed score bootstrap through inferences()",
     function() inferences(refusal_average(), method = "score_bootstrap"),
-    "`method = \"score_bootstrap\"` is no longer offered by `inferences()`."
+    "The score bootstrap (`method = \"score_bootstrap\"`) was removed from mostr."
   ),
   refusal(
     "I16", "an object that is not a mostr result",
@@ -1082,23 +1070,6 @@ inference_refusals <- list(
       inferences(refusal_call(comparisons, variables = grid_treatments), n_draws = 5, seed = 1)
     },
     "Inference for one row per profile would keep"
-  ),
-  refusal(
-    "I34", "the score bootstrap (internal) of an orm fit without clusters",
-    function() mostr:::inferences_score_bootstrap(refusal_average(), n_draws = 2),
-    "`cluster` is required for orm score-bootstrap inference."
-  ),
-  refusal(
-    "I35", "the score bootstrap (internal) with a covariance matrix",
-    function() {
-      fit <- grid_fit(refusal_vglm)
-      mostr:::inferences_score_bootstrap(
-        refusal_average(refusal_vglm),
-        n_draws = 2,
-        vcov = stats::vcov(fit)
-      )
-    },
-    "`vcov` cannot be supplied when `method = \"score_bootstrap\"`"
   ),
   refusal(
     "I49", "starting refits from the original coefficients on an orm fit",

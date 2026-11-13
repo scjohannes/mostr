@@ -455,31 +455,6 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   expect_equal(mvn_scaled$conf.low, mvn_default$conf.low, tolerance = 1e-8)
   expect_equal(mvn_scaled$conf.high, mvn_default$conf.high, tolerance = 1e-8)
 
-  withr::local_seed(61052)
-  score_default <- mostr:::inferences_score_bootstrap(
-    avg_default,
-    cluster = data$id,
-    n_draws = 2,
-    return_draws = TRUE
-  )
-  withr::local_seed(61052)
-  score_scaled <- mostr:::inferences_score_bootstrap(
-    avg_scaled,
-    cluster = data$id,
-    n_draws = 2,
-    return_draws = TRUE
-  )
-  expect_equal(
-    score_scaled$conf.low,
-    score_default$conf.low,
-    tolerance = 1e-8
-  )
-  expect_equal(
-    score_scaled$conf.high,
-    score_default$conf.high,
-    tolerance = 1e-8
-  )
-
   bootstrap_full <- function(fit) {
     full <- mostr::avg_sops(
       fit,
@@ -504,7 +479,7 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   expect_equal(boot_scaled$conf.high, boot_default$conf.high, tolerance = 1e-6)
 })
 
-test_that("orm checks the size of an MVN covariance matrix and supports score-bootstrap inference", {
+test_that("orm checks the size of an MVN covariance matrix", {
   skip_if_not_installed("rms")
   skip_if_not_installed("mvtnorm")
 
@@ -535,17 +510,6 @@ test_that("orm checks the size of an MVN covariance matrix and supports score-bo
     ),
     "Dimension mismatch"
   )
-
-  withr::local_seed(61032)
-  score <- mostr:::inferences_score_bootstrap(
-    avg,
-    cluster = data$id,
-    n_draws = 2,
-    return_draws = TRUE
-  )
-  expect_equal(attr(score, "method"), "score_bootstrap")
-  expect_equal(attr(score, "n_successful"), 2L)
-  expect_true(any(score$std.error > 0))
 })
 
 

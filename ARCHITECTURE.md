@@ -107,7 +107,7 @@ flowchart TD
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `R/sops-crossed-thresholds.R`, `src/sops.cpp` | Native propagation, with an engine in R for `blrm` and oversized designs; first- and second-order histories; errors for crossed thresholds |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
-| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap (internal only, through `inferences_score_bootstrap()`) |
+| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
 | Errors | `R/mostr-abort.R` | `mostr_abort` raises every package error with class `mostr_error`; `mostr_error_call` picks the exported function shown in the error |
 | Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons (`plot_lp_difference`: previous states from `markov_fitted_previous_states()`, the rule SOP prediction applies, so a state never seen as a previous state, such as an absorbing one, is left out by default and refused when requested) |
@@ -455,17 +455,13 @@ so results differ from duplicating patients according to their weights; their
 help pages and `mostm()`'s `weights` say so.
 
 `inferences()` offers `method = "mvn"`, `"delta"`, `"bootstrap"`, and `"fwb"`
-(`inferences_public_methods()`) and refuses `"score_bootstrap"` with an error.
-The score bootstrap is kept: `inferences()` hands every call to the unexported
-`inferences_internal()`, which accepts all five methods and runs
-`inferences_impl()` inside the seed and fallback-notification scopes, and
-`inferences_score_bootstrap()` calls it with `method = "score_bootstrap"`.
-Tests reach the score bootstrap through `mostr:::inferences_score_bootstrap()`
-(or the test helper `run_inferences_method()` in
-`tests/testthat/helper-simulation.R` when looping over methods). Internal
-replays that pass the outer method on, `inferences_avg_time()` and
-`inferences_avg_comparisons_linear()`, call `inferences_internal()` so that a
-score-bootstrap call keeps working through them.
+(`inferences_public_methods()`) and refuses `"score_bootstrap"`, which was
+removed from the package, with an error that names the remaining methods.
+`inferences()` hands every call to the unexported `inferences_internal()`,
+which runs `inferences_impl()` inside the seed and fallback-notification
+scopes. Internal replays that pass the outer method on,
+`inferences_avg_time()` and `inferences_avg_comparisons_linear()`, call
+`inferences_internal()` directly.
 
 `include_re = TRUE` is meaningful only for `rmsb::blrm()` fits, the only fits
 with random effects. `stop_include_re_without_blrm()` (`R/sops-backends.R`) is
@@ -752,8 +748,8 @@ operators then add the baseline weight times that constant anchor (which
 differs between compared starting states) before checking stored estimates.
 Because a set starting state has no sampling distribution in the observed
 cohort, `sets_starting_state()` makes `delta_resolve_vcov()` reject
-unconditional variance and `inferences_impl()` reject score bootstrap,
-bootstrap, and FWB for such averages; conditional delta and MVN remain
+unconditional variance and `inferences_impl()` reject bootstrap and FWB for
+such averages; conditional delta and MVN remain
 available. Only `p_var` defines the anchor; `p2_var` does not. A scenario
 that sets `p2_var` still fixes every patient's history, so
 `sets_starting_state()` treats it like one that sets `p_var` and the same
@@ -798,8 +794,8 @@ observed copy, `observed_by()` and `observed_by_column()`
 (`.mostr_observed_<variable>`), before replaying `avg_sops()`; that internal
 `by` is what `avg_args$by` stores, so every replay groups the same way.
 `create_counterfactual_data(by = )` copies the observed value into that
-column before setting the variable, which covers `avg_sops()`, the MVN and
-score-bootstrap draws (`inferences_simulation()`), and the bootstrap and FWB
+column before setting the variable, which covers `avg_sops()`, the MVN draws
+(`inferences_simulation()`), and the bootstrap and FWB
 refits (`inferences_bootstrap_sops_fwb()`, whose `check_bootstrap_by_groups()`
 labels the copy by its variable's name). `empirical_baseline_anchor_from_data()`
 adds the copy to the baseline rows with `add_observed_by_columns()`, so with
@@ -836,11 +832,10 @@ this: `sops()` and `sops_blrm()` (`R/sops-api.R`) and
 `array_to_df_individual()` (`R/sops-result-helpers.R`) build per-profile rows
 only; `inferences_simulation()` (`R/sops-inference.R`) and
 `inferences_bootstrap_sops_fwb()` (`R/sops-bootstrap-inference.R`) match draws
-to rows by `rowid`, `time`, and `state`, attach score-bootstrap or FWB patient
-weights for stored profiles, and build no baseline-anchor draws, because each
-profile's anchor is its own fixed starting state. `generate_sop_coefficient_draws()`
-(`R/sops-inference-draws.R`) uses only `is_avg` to decide between averaging
-with the patient weights and attaching them to the draws.
+to rows by `rowid`, `time`, and `state`, attach FWB patient weights for stored
+profiles, and build no baseline-anchor draws, because each profile's anchor is
+its own fixed starting state. MVN draws (`generate_sop_coefficient_draws()` in
+`R/sops-inference-draws.R`) carry no patient weights.
 In `R/sops-interpolate.R`, `empirical_baseline_anchor()` anchors per-profile
 SOPs at each row's `p_var` value and errors if that column is missing, while
 `empirical_baseline_anchor_from_data()` and `baseline_rows_for_anchor()` serve
@@ -881,8 +876,8 @@ reproduce the reported totals. Delta SOPs already passed through
 `sops(variables = ...)` predicts each profile once per combination of values,
 as marginaleffects' `predictions()`: `stack_prediction_profiles()` stacks the
 copies, renumbers `rowid` over them, and records the profile in `rowidcf`.
-Score-bootstrap and FWB draw weights are drawn and validated on one row per
-patient (`prediction_weight_profiles()`) and given to every copy by `rowidcf`.
+FWB draw weights are drawn and validated on one row per patient
+(`prediction_weight_profiles()`) and given to every copy by `rowidcf`.
 
 Bare variable names are resolved before other validation, with values read
 from the model's stored refit data, or `newdata` when there is none
@@ -978,8 +973,8 @@ inference dispatch on those classes. `inferences()` returns `blrm` results
 unchanged and sends frequentist ones to `inferences_profile_results()`
 (`R/sops-comparisons-individual-inference.R`):
 
-- `method = "mvn"` and `"score_bootstrap"` draw coefficients with
-  `generate_sop_coefficient_draws()`, as for individual `sops()`, and predict
+- `method = "mvn"` draws coefficients with
+  `generate_sop_coefficient_draws()`, as for individual `sops()`, and predicts
   the stacked profiles through the compiled execution plan
   (`comparison_coefficient_predictor()`, with the `soprob_markov()` fallback).
   `method = "fwb"` refits with `bootstrap_analysis_wrapper()` on the stored
@@ -987,10 +982,9 @@ unchanged and sends frequentist ones to `inferences_profile_results()`
   bootstrap is rejected, as for individual `sops()`. `sets_starting_state()`
   covers only averaged classes, so a set starting state keeps these methods:
   no patient average is formed.
-- The comparisons are not averaged, but for stored profiles the score-bootstrap
-  and FWB patient weights of each draw are kept (`baseline_weights_draws`, or
-  `fwb_baseline_weights()` per refit) and returned with the draws as
-  `score_weight` or `fwb_weight`, matched to rows by profile
+- The comparisons are not averaged, but for stored profiles the FWB patient
+  weights of each draw are kept (`fwb_baseline_weights()` per refit) and
+  returned with the draws as `fwb_weight`, matched to rows by profile
   (`profile_index()`: `rowidcf` when present, else `rowid`), with the same
   `draw_weights_attached`, `draw_weight_col`, and
   `draw_weight_omission_reason` metadata as `sops()`. The weighted mean of a

@@ -12,6 +12,23 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-13: Remove the score bootstrap
+
+**Decided.** The score bootstrap, hidden from `inferences()` since 2026-11-09,
+is deleted with its tests: the internal `inferences_score_bootstrap()`,
+`generate_score_bootstrap_draws()`, and the `score_weight` draw column. MVN
+draws no longer carry patient weights. `inferences(method = "score_bootstrap")`
+still stops, with an error that says the method was removed and names the
+remaining ones. This carries out the retirement decided on 2026-11-12 in
+"Leave the user's parallel plan alone; retire the score bootstrap".
+
+**Why.** The maintainer was never sure that the score bootstrap has a sound
+theoretical basis, or where it would fail and where it would not, so it was
+never planned for release.
+
+**Decided against.** Keeping the code as an unexported function, as it was
+from 2026-11-09. Reason not recorded beyond the doubts above.
+
 ## 2026-11-12: Keep the blrm options as separate arguments
 
 **Decided.** `n_draws`, `seed`, `include_re`, `return_draws` and `conf_level`

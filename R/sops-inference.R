@@ -244,8 +244,8 @@
 #' [avg_comparisons()] draws. `avg_sops()` uses the weights internally and
 #' returns already averaged draws.
 #' Prediction data for such per-profile draw output must not already contain a
-#' column named `fwb_weight` or `score_weight`, because those names are reserved
-#' for bootstrap draw weights.
+#' column named `fwb_weight`, because that name is reserved for bootstrap draw
+#' weights.
 #'
 #' For marginal `avg_sops()` objects built from user-supplied `newdata`, the
 #' supplied patients' starting states and covariates are treated as given.
@@ -383,8 +383,8 @@ inferences <- function(
 ) {
   if (identical(method, "score_bootstrap")) {
     mostr_abort(
-      "`method = \"score_bootstrap\"` is no longer offered by `inferences()`. ",
-      "Use `method = \"mvn\"`, `\"delta\"`, `\"bootstrap\"`, or `\"fwb\"`."
+      "The score bootstrap (`method = \"score_bootstrap\"`) was removed from ",
+      "mostr. Use `method = \"mvn\"`, `\"delta\"`, `\"bootstrap\"`, or `\"fwb\"`."
     )
   }
   method <- match.arg(method, choices = inferences_public_methods())
@@ -409,8 +409,7 @@ inferences_public_methods <- function() {
   c("mvn", "delta", "bootstrap", "fwb")
 }
 
-# Internal entry point to every inference method, including the score
-# bootstrap, which `inferences()` no longer offers. Package code that runs
+# Internal entry point to every inference method. Package code that runs
 # inference on an intermediate result (for example, the SOPs behind an
 # average time) calls this so that the method of the outer call is kept.
 inferences_internal <- function(
@@ -444,40 +443,6 @@ inferences_internal <- function(
       )
     })
   })
-}
-
-# One-step score bootstrap: coefficient draws from score perturbations with
-# exponential patient-cluster multipliers (see `generate_score_bootstrap_draws()`).
-# It is kept and tested, but not offered by `inferences()`; call it as
-# `mostr:::inferences_score_bootstrap()`. Arguments are those of
-# `inferences()`. With orm fits, `cluster` is the row-aligned cluster vector.
-inferences_score_bootstrap <- function(
-  x,
-  n_draws = 1000,
-  vcov = NULL,
-  cluster = NULL,
-  workers = NULL,
-  seed = NULL,
-  conf_level = 0.95,
-  conf_type = "auto",
-  null = "auto",
-  return_draws = TRUE,
-  use_coefstart = FALSE
-) {
-  inferences_internal(
-    x = x,
-    method = "score_bootstrap",
-    n_draws = n_draws,
-    vcov = vcov,
-    cluster = cluster,
-    workers = workers,
-    seed = seed,
-    conf_level = conf_level,
-    conf_type = conf_type,
-    null = null,
-    return_draws = return_draws,
-    use_coefstart = use_coefstart
-  )
 }
 
 inferences_impl <- function(
@@ -521,7 +486,7 @@ inferences_impl <- function(
   null <- resolve_inference_null(null, x)
   method <- match.arg(
     method,
-    choices = c("mvn", "delta", "score_bootstrap", "bootstrap", "fwb")
+    choices = c("mvn", "delta", "bootstrap", "fwb")
   )
 
   conf_type <- match.arg(
@@ -627,13 +592,13 @@ inferences_impl <- function(
   }
 
   if (
-    method %in% c("score_bootstrap", "bootstrap", "fwb") &&
+    method %in% c("bootstrap", "fwb") &&
       sets_starting_state(x)
   ) {
     stop_starting_state_conditional_only()
   }
 
-  internal_method <- if (method %in% c("mvn", "score_bootstrap")) {
+  internal_method <- if (identical(method, "mvn")) {
     "simulation"
   } else {
     "bootstrap"
@@ -641,7 +606,6 @@ inferences_impl <- function(
   engine <- switch(
     method,
     mvn = "mvn",
-    score_bootstrap = "score_bootstrap",
     bootstrap = "standard",
     fwb = "fwb"
   )
@@ -665,7 +629,6 @@ inferences_impl <- function(
       method = method,
       n_draws = n_draws,
       vcov = vcov,
-      cluster = cluster,
       workers = workers,
       conf_level = conf_level,
       conf_type = conf_type,
@@ -677,7 +640,6 @@ inferences_impl <- function(
       object = x,
       method = internal_method,
       engine = engine,
-      score_weight_dist = "exponential",
       n_draws = n_draws,
       vcov = vcov,
       cluster = cluster,
@@ -690,11 +652,8 @@ inferences_impl <- function(
   } else if (internal_method == "simulation") {
     result <- inferences_simulation(
       object = x,
-      engine = engine,
-      score_weight_dist = "exponential",
       n_draws = n_draws,
       vcov = vcov,
-      cluster = cluster,
       conf_level = conf_level,
       conf_type = conf_type,
       workers = workers,
@@ -766,7 +725,6 @@ normalize_inference_result <- function(
   draws <- attr(x, "draws")
   attr(x, "draws") <- NULL
   attr(x, "engine") <- NULL
-  attr(x, "score_weight_dist") <- NULL
   attr(x, "method") <- method
   attr(x, "n_draws") <- n_draws
   attr(x, "conf_level") <- conf_level
@@ -788,11 +746,8 @@ normalize_inference_result <- function(
 #' at the point estimates with the (robust) variance-covariance matrix.
 #'
 #' @param object A `markov_avg_sops` or `markov_sops` object.
-#' @param engine Simulation engine (`"mvn"` or `"score_bootstrap"`).
-#' @param score_weight_dist Cluster weight distribution for score bootstrap.
 #' @param n_draws Number of simulation draws.
 #' @param vcov Custom variance-covariance matrix (optional, overrides model vcov).
-#' @param cluster Row-level cluster vector for orm score bootstrap.
 #' @param conf_level Confidence level.
 #' @param conf_type Type of confidence interval ("perc" or "wald").
 #' @param workers Number of parallel workers. If NULL or 1, uses sequential
@@ -804,11 +759,8 @@ normalize_inference_result <- function(
 #' @keywords internal
 inferences_simulation <- function(
   object,
-  engine,
-  score_weight_dist,
   n_draws,
   vcov,
-  cluster,
   conf_level,
   conf_type,
   workers,
@@ -818,7 +770,6 @@ inferences_simulation <- function(
   model <- attr(object, "model")
   newdata_orig <- attr(object, "newdata_orig")
   newdata_pred_stored <- attr(object, "newdata_pred")
-  newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
   call_args <- attr(object, "call_args")
   avg_args <- attr(object, "avg_args")
 
@@ -859,7 +810,6 @@ inferences_simulation <- function(
         )
       }
       n_each <- nrow(newdata_pred) / n_cf
-      baseline_data <- newdata_pred[seq_len(n_each), , drop = FALSE]
     } else {
       baseline_data <- resolve_markov_prediction_data(
         newdata_orig,
@@ -880,47 +830,14 @@ inferences_simulation <- function(
     grid <- NULL
     n_cf <- 1
     n_each <- nrow(newdata_pred)
-    # Patient weights are drawn once per patient, even when `variables`
-    # repeats each patient's profile.
-    baseline_data <- if (newdata_supplied) {
-      NULL
-    } else {
-      prediction_weight_profiles(newdata_pred)
-    }
   }
 
   # --- 3. Generate Coefficient Draws ---
-  simulation_draws <- generate_sop_coefficient_draws(
+  beta_draws <- generate_sop_coefficient_draws(
     model = model,
-    engine = engine,
-    score_weight_dist = score_weight_dist,
     n_draws = n_draws,
-    vcov = vcov,
-    cluster = cluster,
-    baseline_data = baseline_data,
-    id_var = id_var,
-    newdata_supplied = newdata_supplied,
-    is_avg = is_avg,
-    return_draws = return_draws,
-    prediction_data = newdata_pred
+    vcov = vcov
   )
-  beta_draws <- simulation_draws$beta_draws
-  baseline_weights_draws <- simulation_draws$baseline_weights_draws
-  if (
-    !is_avg &&
-      !is.null(baseline_weights_draws) &&
-      "rowidcf" %in% names(newdata_pred)
-  ) {
-    # Every copy of a patient's profile carries that patient's weight.
-    baseline_weights_draws <- baseline_weights_draws[,
-      match(newdata_pred$rowidcf, baseline_data$rowidcf),
-      drop = FALSE
-    ]
-  }
-  draw_weight_col <- simulation_draws$draw_weight_col
-  draw_weights_attached <- simulation_draws$draw_weights_attached
-  draw_weight_omission_reason <-
-    simulation_draws$draw_weight_omission_reason
 
   n_times <- length(times)
   n_states <- length(y_levels)
@@ -962,11 +879,6 @@ inferences_simulation <- function(
     if (!is.null(execution_plan)) {
       # Define fast analysis function
       analysis_fn <- function(i) {
-        baseline_weights <- NULL
-        if (!is.null(baseline_weights_draws)) {
-          baseline_weights <- baseline_weights_draws[i, ]
-        }
-
         # Compute effective coefficients from beta draw
         Gamma_i <- get_effective_coefs(model_chk, beta = beta_draws[i, ])
 
@@ -994,7 +906,6 @@ inferences_simulation <- function(
             variables = variables,
             n_cf = n_cf,
             n_each = n_each,
-            weights = baseline_weights,
             by = by,
             newdata = newdata_pred
           )
@@ -1004,30 +915,11 @@ inferences_simulation <- function(
             sops_array,
             times,
             y_levels,
-            newdata_pred,
-            weights = baseline_weights,
-            weight_col = draw_weight_col
+            newdata_pred
           )
         }
 
-        baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
-          empirical_baseline_anchor_from_data(
-            x = object,
-            baseline = baseline_data,
-            baseline_time = 0,
-            weights = baseline_weights
-          )
-        } else {
-          NULL
-        }
-
-        pack_sop_draw_result(
-          result,
-          group_cols,
-          object_keys,
-          draw_weight_col,
-          baseline_anchor = baseline_anchor
-        )
+        pack_sop_draw_result(result, group_cols, object_keys)
       }
     } else {
       # Fast path build failed, fall back to slow path
@@ -1038,11 +930,6 @@ inferences_simulation <- function(
   if (!use_fast_path) {
     # --- SLOW PATH: predict with the coefficients replaced ---
     analysis_fn <- function(i) {
-      baseline_weights <- NULL
-      if (!is.null(baseline_weights_draws)) {
-        baseline_weights <- baseline_weights_draws[i, ]
-      }
-
       # Replace coefficients
       model_i <- set_coef(model, beta_draws[i, ])
 
@@ -1075,7 +962,6 @@ inferences_simulation <- function(
           variables = variables,
           n_cf = n_cf,
           n_each = n_each,
-          weights = baseline_weights,
           by = by,
           newdata = newdata_pred
         )
@@ -1085,40 +971,19 @@ inferences_simulation <- function(
           sops_array,
           times,
           y_levels,
-          newdata_pred,
-          weights = baseline_weights,
-          weight_col = draw_weight_col
+          newdata_pred
         )
       }
 
-      baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
-        empirical_baseline_anchor_from_data(
-          x = object,
-          baseline = baseline_data,
-          baseline_time = 0,
-          weights = baseline_weights
-        )
-      } else {
-        NULL
-      }
-
-      pack_sop_draw_result(
-        result,
-        group_cols,
-        object_keys,
-        draw_weight_col,
-        baseline_anchor = baseline_anchor
-      )
+      pack_sop_draw_result(result, group_cols, object_keys)
     }
   }
 
   # --- 6. Apply Across All Draws ---
   globals_list <- c(
     "model",
-    "object",
     "model_chk",
     "beta_draws",
-    "baseline_data",
     "newdata_pred",
     "times",
     "y_levels",
@@ -1128,8 +993,6 @@ inferences_simulation <- function(
     "variables",
     "n_cf",
     "n_each",
-    "baseline_weights_draws",
-    "draw_weight_col",
     "group_cols",
     "object_keys",
     "use_fast_path",
@@ -1154,21 +1017,7 @@ inferences_simulation <- function(
     mostr_abort("All simulation draws failed.")
   }
 
-  draw_values <- do.call(rbind, lapply(sim_results, `[[`, "estimate"))
-  weight_values <- NULL
-  has_weights <- vapply(sim_results, function(x) !is.null(x$weight), logical(1))
-  if (any(has_weights) && !all(has_weights)) {
-    mostr_abort(
-      "Simulation draw weights are not aligned across successful draws."
-    )
-  }
-  if (all(has_weights)) {
-    weight_values <- do.call(rbind, lapply(sim_results, `[[`, "weight"))
-  }
-  baseline_anchor_draws <- combine_baseline_anchor_draws(
-    lapply(sim_results, `[[`, "baseline_anchor"),
-    successful_ids
-  )
+  draw_values <- do.call(rbind, sim_results)
 
   # --- 7. Compute Confidence Intervals ---
   summary_stats <- summarize_sop_draw_matrix(
@@ -1190,28 +1039,14 @@ inferences_simulation <- function(
   attr(final_result, "n_successful") <- length(sim_results)
   attr(final_result, "conf_level") <- conf_level
   attr(final_result, "conf_type") <- conf_type
-  attr(final_result, "method") <- engine
-  if (engine == "score_bootstrap") {
-    attr(final_result, "score_weight_dist") <- score_weight_dist
-    attr(final_result, "draw_weights_attached") <- draw_weights_attached
-    attr(final_result, "draw_weight_col") <- draw_weight_col
-    if (!is.null(draw_weight_omission_reason)) {
-      attr(final_result, "draw_weight_omission_reason") <-
-        draw_weight_omission_reason
-    }
-  }
+  attr(final_result, "method") <- "mvn"
 
   if (return_draws) {
     attr(final_result, "draws") <- sop_draw_matrix_to_df(
       draw_values,
       object,
-      successful_ids,
-      draw_weight_col,
-      weight_values
+      successful_ids
     )
-    if (!is.null(baseline_anchor_draws)) {
-      attr(final_result, "baseline_anchor_draws") <- baseline_anchor_draws
-    }
   }
 
   final_result
@@ -1236,27 +1071,13 @@ sop_draw_cell_key <- function(data, group_cols) {
   key
 }
 
-pack_sop_draw_result <- function(
-  result,
-  group_cols,
-  object_keys,
-  weight_col,
-  baseline_anchor = NULL
-) {
+pack_sop_draw_result <- function(result, group_cols, object_keys) {
   result_keys <- sop_draw_cell_key(result, group_cols)
   index <- match(object_keys, result_keys)
   if (anyNA(index)) {
     mostr_abort("A simulation draw did not return every requested SOP cell.")
   }
-  list(
-    estimate = result$estimate[index],
-    weight = if (!is.null(weight_col) && weight_col %in% names(result)) {
-      result[[weight_col]][index]
-    } else {
-      NULL
-    },
-    baseline_anchor = baseline_anchor
-  )
+  result$estimate[index]
 }
 
 summarize_sop_draw_matrix <- function(
@@ -1298,13 +1119,7 @@ summarize_sop_draw_matrix <- function(
   )
 }
 
-sop_draw_matrix_to_df <- function(
-  draw_values,
-  object,
-  draw_ids,
-  weight_col = NULL,
-  weight_values = NULL
-) {
+sop_draw_matrix_to_df <- function(draw_values, object, draw_ids) {
   metadata_cols <- setdiff(names(object), inference_columns())
   metadata <- as.data.frame(object)[, metadata_cols, drop = FALSE]
   n_cells <- nrow(metadata)
@@ -1314,9 +1129,6 @@ sop_draw_matrix_to_df <- function(
     drop = FALSE
   ]
   out$estimate <- as.vector(t(draw_values))
-  if (!is.null(weight_col) && !is.null(weight_values)) {
-    out[[weight_col]] <- as.vector(t(weight_values))
-  }
   out$draw_id <- rep(draw_ids, each = n_cells)
   rownames(out) <- NULL
   out

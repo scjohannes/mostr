@@ -50,7 +50,7 @@ make_individual_sops_object <- function(model, newdata) {
   out
 }
 
-test_that("inferences_simulation() validates stored models, simulation engines and custom vcov objects", {
+test_that("inferences_simulation() validates stored models and custom vcov objects", {
   model <- structure(list(coefficients = c(a = 0, b = 0)), class = "mock_model")
   newdata <- data.frame(id = 1:2, tx = c(0, 1), yprev = c(1, 2), time = 1)
   object <- make_avg_sops_object(model, newdata)
@@ -61,21 +61,12 @@ test_that("inferences_simulation() validates stored models, simulation engines a
     list(
       label = "no stored model",
       object = no_model,
-      engine = "mvn",
       vcov = NULL,
       error = "Model not stored"
     ),
     list(
-      label = "unknown engine",
-      object = object,
-      engine = "other",
-      vcov = NULL,
-      error = "Unknown simulation engine"
-    ),
-    list(
       label = "vcov given as a data frame",
       object = object,
-      engine = "mvn",
       vcov = data.frame(a = c(1, 0), b = c(0, 1)),
       error = "`vcov` must be a matrix."
     )
@@ -87,11 +78,8 @@ test_that("inferences_simulation() validates stored models, simulation engines a
       expect_error(
         mostr:::inferences_simulation(
           case$object,
-          engine = case$engine,
-          score_weight_dist = "exponential",
           n_draws = 2,
           vcov = case$vcov,
-          cluster = NULL,
           conf_level = 0.95,
           conf_type = "perc",
           workers = NULL,
@@ -117,7 +105,6 @@ test_that("inferences() validates the homogenized method interface", {
 
   expect_error(inferences(object, method = "other", n_draws = 1), "arg")
   expect_false("engine" %in% names(formals(inferences)))
-  expect_false("score_weight_dist" %in% names(formals(inferences)))
   expect_false("..." %in% names(formals(inferences)))
   # Obsolete and misspelled arguments are not silently absorbed.
   expect_error(
@@ -207,11 +194,8 @@ test_that("inferences_simulation() falls back when fast-path setup fails", {
       expect_message(
         out <- mostr:::inferences_simulation(
           object,
-          engine = "mvn",
-          score_weight_dist = "exponential",
           n_draws = 2,
           vcov = NULL,
-          cluster = NULL,
           conf_level = 0.8,
           conf_type = "wald",
           workers = NULL,
@@ -277,11 +261,8 @@ test_that("inferences_simulation() errors when all compiled-path or R-engine dra
       expect_error(
         mostr:::inferences_simulation(
           object,
-          engine = "mvn",
-          score_weight_dist = "exponential",
           n_draws = 1,
           vcov = case$vcov,
-          cluster = NULL,
           conf_level = 0.95,
           conf_type = "perc",
           workers = NULL,
@@ -300,7 +281,7 @@ test_that("inferences_simulation() errors when all compiled-path or R-engine dra
   }
 })
 
-test_that("score-bootstrap and FWB draw weights are normalized within by groups", {
+test_that("FWB draw weights are normalized within by groups", {
   model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
   make_by_group_object <- function(newdata, refit_data = NULL) {
     object <- expand.grid(
@@ -343,42 +324,6 @@ test_that("score-bootstrap and FWB draw weights are normalized within by groups"
   sops <- function(...) array(c(0.2, 0.8, 0.1, 0.5), dim = c(4, 1, 1))
 
   cases <- list(
-    list(
-      label = "score bootstrap",
-      object = make_by_group_object(data.frame(
-        id = 1:4,
-        time = 1,
-        yprev = 1,
-        tx = 0,
-        grp = c("a", "a", "b", "b")
-      )),
-      mocks = list(
-        generate_score_bootstrap_draws = function(...) {
-          list(
-            beta_draws = matrix(0, nrow = 1, ncol = 1),
-            baseline_weights = matrix(c(1, 3, 2, 6), nrow = 1)
-          )
-        },
-        set_coef = function(model, new_coefs) model,
-        predict_markov_sops = sops
-      ),
-      run = function(object) {
-        mostr:::inferences_simulation(
-          object,
-          engine = "score_bootstrap",
-          score_weight_dist = "exponential",
-          n_draws = 1,
-          vcov = NULL,
-          cluster = NULL,
-          conf_level = 0.8,
-          conf_type = "perc",
-          workers = NULL,
-          return_draws = TRUE
-        )
-      },
-      weight_col = "score_weight",
-      omission_reason = "averaged_sops"
-    ),
     list(
       label = "FWB",
       object = make_by_group_object(refit_data, refit_data),
@@ -447,26 +392,13 @@ test_that("score-bootstrap and FWB draw weights are normalized within by groups"
 
     expect_equal(draws$estimate, c(0.65, 0.4), info = case$label)
     expect_false(case$weight_col %in% names(draws), info = case$label)
-    if (!is.null(case$omission_reason)) {
-      expect_equal(
-        attr(out, "draw_weight_omission_reason"),
-        case$omission_reason,
-        info = case$label
-      )
-    }
   }
 })
 
-test_that("score-bootstrap and FWB individual sops attach each patient's draw weight", {
+test_that("FWB individual sops attach each patient's draw weight", {
   individual_sops <- function(...) {
     array(c(0.8, 0.7, 0.2, 0.3, 0.6, 0.5, 0.4, 0.5), dim = c(2, 2, 2))
   }
-
-  score_object <- make_individual_sops_object(
-    structure(list(coefficients = c(a = 0, b = 0)), class = "robcov_vglm"),
-    data.frame(id = 1:2, yprev = c(1, 2), time = 1)
-  )
-  attr(score_object, "newdata_supplied") <- FALSE
 
   prediction_data <- data.frame(id = 1:2, time = 1, yprev = 1)
   fwb_object <- make_individual_sops_object(
@@ -483,43 +415,6 @@ test_that("score-bootstrap and FWB individual sops attach each patient's draw we
   attr(fwb_object, "newdata_supplied") <- FALSE
 
   cases <- list(
-    # The R path of the score bootstrap, with two draws of patient weights.
-    list(
-      label = "score bootstrap",
-      object = score_object,
-      mocks = list(
-        generate_score_bootstrap_draws = function(...) {
-          list(
-            beta_draws = matrix(c(0, 0, 0, 0), nrow = 2, byrow = TRUE),
-            baseline_weights = matrix(
-              c(0.7, 0.3, 0.4, 0.6),
-              nrow = 2,
-              byrow = TRUE
-            )
-          )
-        },
-        set_coef = function(model, new_coefs) model,
-        predict_markov_sops = individual_sops
-      ),
-      run = function(object) {
-        mostr:::inferences_simulation(
-          object,
-          engine = "score_bootstrap",
-          score_weight_dist = "exponential",
-          n_draws = 2,
-          vcov = NULL,
-          cluster = NULL,
-          conf_level = 0.8,
-          conf_type = "perc",
-          workers = NULL,
-          return_draws = TRUE
-        )
-      },
-      method = "score_bootstrap",
-      weight_col = "score_weight",
-      first_weights = c(0.7, 0.3),
-      weights = c(0.3, 0.4, 0.6, 0.7)
-    ),
     # The FWB refit on the stored data, with one draw of cluster weights.
     list(
       label = "FWB",
@@ -603,48 +498,6 @@ test_that("score-bootstrap and FWB individual sops attach each patient's draw we
       info = case$label
     )
   }
-})
-
-test_that("inferences_simulation() rejects reserved score weight columns", {
-  model <- structure(
-    list(coefficients = c(a = 0, b = 0)),
-    class = "robcov_vglm"
-  )
-  newdata <- data.frame(
-    id = 1:2,
-    yprev = c(1, 2),
-    time = 1,
-    score_weight = c(10, 20)
-  )
-  object <- make_individual_sops_object(model, newdata)
-  attr(object, "newdata_supplied") <- FALSE
-
-  with_mocked_bindings(
-    generate_score_bootstrap_draws = function(...) {
-      list(
-        beta_draws = matrix(c(0, 0), nrow = 1),
-        baseline_weights = matrix(c(0.7, 0.3), nrow = 1)
-      )
-    },
-    {
-      expect_error(
-        mostr:::inferences_simulation(
-          object,
-          engine = "score_bootstrap",
-          score_weight_dist = "exponential",
-          n_draws = 1,
-          vcov = NULL,
-          cluster = NULL,
-          conf_level = 0.8,
-          conf_type = "perc",
-          workers = NULL,
-          return_draws = TRUE
-        ),
-        "reserved for bootstrap draw weights",
-        fixed = TRUE
-      )
-    }
-  )
 })
 
 test_that("soprob_markov() validates model classes and propagates Bayesian draws", {

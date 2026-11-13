@@ -31,7 +31,7 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
   }
   x <- x[keep, , drop = FALSE]
   measure_cols <- sop_measure_cols(x)
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(x))
+  weight_cols <- intersect("fwb_weight", names(x))
   # Every other column identifies a group: a profile, scenario, or draw.
   # The tests from `inferences(null = )` are not identifiers; they are
   # dropped, because a null value for probabilities says nothing about a
@@ -107,7 +107,7 @@ time_in_state_tidy_inference <- function(x, target_states, real_time) {
     real_time = real_time
   )
   weight_cols <- intersect(
-    c("score_weight", "fwb_weight"),
+    "fwb_weight",
     names(draw_result)
   )
   group_cols <- setdiff(
@@ -191,7 +191,7 @@ time_in_state_delta <- function(
   }
 
   source <- as.data.frame(x)
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(source))
+  weight_cols <- intersect("fwb_weight", names(source))
   group_cols <- setdiff(
     names(source),
     c(

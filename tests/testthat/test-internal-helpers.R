@@ -391,7 +391,7 @@ test_that("orm prediction helpers validate metadata and categorical levels", {
   expect_equal(unname(X_strat[, "x"]), c(1, 2))
 })
 
-test_that("orm score-bootstrap helpers cover validation and alignment branches", {
+test_that("orm score helpers cover validation and alignment branches", {
   skip_if_not_installed("rms")
 
   expect_error(
@@ -453,78 +453,6 @@ test_that("orm score-bootstrap helpers cover validation and alignment branches",
   )
 
   expect_true(is.matrix(mostr:::orm_model_bread(fit)$bread))
-})
-
-test_that("score bootstrap draw helper reports malformed robust components", {
-  baseline <- data.frame(id = c("a", "b"))
-  robust <- structure(
-    list(
-      coefficients = c(a = 0, b = 0),
-      bread = diag(2),
-      scores = matrix(0, nrow = 2, ncol = 2),
-      cluster = c("a", "b")
-    ),
-    class = "robcov_vglm"
-  )
-
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(
-      robust,
-      baseline,
-      "missing",
-      1
-    ),
-    "ID variable",
-    fixed = TRUE
-  )
-
-  bad_scores <- robust
-  bad_scores$scores <- data.frame(a = 1)
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(bad_scores, baseline, "id", 1),
-    "must be a matrix",
-    fixed = TRUE
-  )
-
-  bad_bread <- robust
-  bad_bread$bread <- c(1, 2)
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(bad_bread, baseline, "id", 1),
-    "`model$bread` must be a matrix",
-    fixed = TRUE
-  )
-
-  bad_cluster <- robust
-  bad_cluster$cluster <- "a"
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(
-      bad_cluster,
-      baseline,
-      "id",
-      1
-    ),
-    "does not match",
-    fixed = TRUE
-  )
-
-  bad_coef <- robust
-  bad_coef$coefficients <- c(a = 0)
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(bad_coef, baseline, "id", 1),
-    "Coefficient length",
-    fixed = TRUE
-  )
-
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(
-      robust,
-      baseline[0, , drop = FALSE],
-      "id",
-      1
-    ),
-    "Invalid baseline weights",
-    fixed = TRUE
-  )
 })
 
 test_that("robcov_vglm and score extraction cover malformed internals", {

@@ -466,10 +466,8 @@ test_that("time-benefit simulation inference uses real-time comparison scale", {
       out <- mostr:::inferences_avg_comparisons_time_benefit_simulation(
         object = object,
         engine = "mvn",
-        score_weight_dist = "exponential",
         n_draws = 2,
         vcov = NULL,
-        cluster = NULL,
         workers = NULL,
         conf_level = 0.95,
         conf_type = "perc",
@@ -555,7 +553,6 @@ test_that("comparison inference reduces paired draw-level SOPs", {
       out <- mostr:::inferences_avg_comparisons_linear(
         object = cmp,
         method = "mvn",
-        score_weight_dist = "exponential",
         n_draws = 2,
         vcov = NULL,
         cluster = NULL,
@@ -614,7 +611,6 @@ test_that("comparison inference centers Wald intervals on point comparisons", {
           object = cmp,
           method = "simulation",
           engine = "mvn",
-          score_weight_dist = "exponential",
           n_draws = 2,
           vcov = NULL,
           cluster = NULL,

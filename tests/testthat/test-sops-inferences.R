@@ -118,7 +118,7 @@ describe("avg_sops() and inferences() pipeline", {
   }
 
   # The pipeline data and its explicit-basis mostm() fit, made once and shared
-  # by the bootstrap, FWB, score-bootstrap and inline-versus-basis tests.
+  # by the bootstrap, FWB and inline-versus-basis tests.
   pipeline_case <- function() {
     grid_fixture("sops-inferences pipeline case", build_markov_pipeline_case)
   }
@@ -515,7 +515,7 @@ describe("avg_sops() and inferences() pipeline", {
     )
   })
 
-  test_that("numeric previous-state spline supports MVN, bootstrap and score-bootstrap inference", {
+  test_that("numeric previous-state spline supports MVN and bootstrap inference", {
     skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
@@ -532,18 +532,12 @@ describe("avg_sops() and inferences() pipeline", {
 
     cases <- list(
       list(method = "mvn", seed = 4413, n_draws = 2, return_draws = TRUE),
-      list(method = "bootstrap", seed = 4414, n_draws = 1, return_draws = TRUE),
-      list(
-        method = "score_bootstrap",
-        seed = 4415,
-        n_draws = 2,
-        return_draws = FALSE
-      )
+      list(method = "bootstrap", seed = 4414, n_draws = 1, return_draws = TRUE)
     )
 
     for (row in cases) {
       withr::local_seed(row$seed)
-      inferred <- run_inferences_method(
+      inferred <- inferences(
         avg,
         method = row$method,
         n_draws = row$n_draws,
@@ -649,50 +643,6 @@ describe("avg_sops() and inferences() pipeline", {
     expect_draw_specific_baseline_anchor(inferred, 2, 1:8)
   })
 
-  test_that("avg_sops() supports score-bootstrap simulation on the fast path", {
-    skip_on_cran() # The pass depends on the seed.
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- pipeline_case()
-    model <- pipeline_mostm_fit()
-
-    avg <- mostr::avg_sops(
-      model = model,
-      variables = "tx",
-      times = 1:8,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
-    )
-    expect_equal(nrow(attr(avg, "newdata_orig")), nrow(case$baseline))
-    expect_equal(nrow(attr(avg, "refit_data")), nrow(case$data))
-
-    withr::local_seed(4403)
-    inferred <- mostr:::inferences_score_bootstrap(
-      avg,
-      n_draws = 3,
-      return_draws = TRUE
-    )
-
-    draws <- mostr::get_draws(inferred)
-
-    expect_equal(attr(inferred, "method"), "score_bootstrap")
-    expect_equal(attr(inferred, "n_successful"), 3L)
-    expect_inference_intervals(inferred, require_positive_std_error = TRUE)
-    expect_equal(sort(unique(draws$draw_id)), 1:3)
-    expect_draw_specific_baseline_anchor(inferred, 3, 1:8)
-
-    expect_snapshot_value(
-      list(
-        result = pipeline_signature(inferred),
-        draws = draw_signature(draws)
-      ),
-      style = "json2",
-      tolerance = 1e-7,
-      cran = TRUE
-    )
-  })
-
   test_that("rerunning inference replaces baseline draws", {
     skip_on_cran()
     skip_if_not_installed("rms")
@@ -709,9 +659,9 @@ describe("avg_sops() and inferences() pipeline", {
       id_var = "id"
     )
     avg <- avg_sops(model, variables = "tx", times = 1:3, absorb = "6")
-    previous <- mostr:::inferences_score_bootstrap(
+    previous <- inferences(
       avg,
-      cluster = data$id,
+      method = "fwb",
       n_draws = 4,
       seed = 1
     )
@@ -744,9 +694,9 @@ describe("avg_sops() and inferences() pipeline", {
       )
     }
 
-    replacement <- mostr:::inferences_score_bootstrap(
+    replacement <- inferences(
       previous,
-      cluster = data$id,
+      method = "fwb",
       n_draws = 2,
       seed = 3
     )
@@ -754,8 +704,8 @@ describe("avg_sops() and inferences() pipeline", {
       sort(unique(attr(replacement, "baseline_anchor_draws")$draw_id)),
       1:2
     )
-    for (method in c("mvn", "score_bootstrap", "delta")) {
-      omitted <- run_inferences_method(
+    for (method in c("mvn", "fwb", "delta")) {
+      omitted <- inferences(
         previous,
         method = method,
         cluster = data$id,
@@ -792,14 +742,13 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(inline_avg$estimate, explicit_avg$estimate, tolerance = 1e-10)
 
     cases <- list(
-      list(method = "mvn", seed = 4411),
-      list(method = "score_bootstrap", seed = 4412)
+      list(method = "mvn", seed = 4411)
     )
     for (row in cases) {
       infer <- function(avg) {
         withr::with_seed(
           row$seed,
-          run_inferences_method(
+          inferences(
             avg,
             method = row$method,
             n_draws = 3,

@@ -94,44 +94,6 @@ make_test_model <- function(data) {
   ))
 }
 
-# `inferences()` no longer offers the score bootstrap, but the package keeps
-# it behind the unexported `inferences_score_bootstrap()`. Tests that loop over
-# every draw-based method call this, which sends `"score_bootstrap"` there and
-# every other method to `inferences()`.
-run_inferences_method <- function(x, method, ...) {
-  if (identical(method, "score_bootstrap")) {
-    return(mostr:::inferences_score_bootstrap(x, ...))
-  }
-  inferences(x, method = method, ...)
-}
-
-make_score_bootstrap_case <- function(
-  seed,
-  n_patients = 60,
-  follow_up_time = 10
-) {
-  data <- make_test_data(
-    n_patients = n_patients,
-    seed = seed,
-    follow_up_time = follow_up_time
-  )
-
-  list(
-    data = data,
-    baseline = data[data$time == 1, , drop = FALSE],
-    model = mostm(
-      ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    ),
-    times = seq_len(follow_up_time),
-    y_levels = 1:6,
-    absorb = 6
-  )
-}
-
 # Made once per test run.
 make_observed_average_case <- function() {
   skip_if_not_installed("VGAM")

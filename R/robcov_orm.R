@@ -368,3 +368,87 @@ robcov_orm <- function(
   )
   result
 }
+
+compute_scores_orm <- function(model) {
+  if (!inherits(model, "orm")) {
+    mostr_abort("'model' must be an orm object.")
+  }
+  if (is.null(model$x) || is.null(model$y)) {
+    mostr_abort(
+      "orm score calculations require the model to be fitted with ",
+      "`x = TRUE, y = TRUE`."
+    )
+  }
+
+  beta <- stats::coef(model)
+  Gamma <- get_effective_coefs(model, beta = beta)
+  X <- cbind("(Intercept)" = 1, as.matrix(model$x))
+  X <- X[, colnames(Gamma), drop = FALSE]
+
+  eta <- X %*% t(Gamma)
+  cum_probs <- stats::plogis(eta)
+  probs <- lp_to_probs(eta, nrow(Gamma))
+  probs <- pmax(probs, .Machine$double.eps)
+
+  y_levels <- as_state_labels(model$yunique)
+  y_idx <- match(as_state_labels(model$y), y_levels)
+  if (anyNA(y_idx)) {
+    mostr_abort("Could not match orm response values to fitted outcome levels.")
+  }
+
+  n <- nrow(X)
+  M <- nrow(Gamma)
+  d_eta <- matrix(0, nrow = n, ncol = M)
+
+  for (i in seq_len(n)) {
+    k <- y_idx[i]
+    if (k == 1L) {
+      d_eta[i, 1L] <- -cum_probs[i, 1L] * (1 - cum_probs[i, 1L]) / probs[i, 1L]
+    } else if (k == M + 1L) {
+      d_eta[i, M] <- cum_probs[i, M] * (1 - cum_probs[i, M]) / probs[i, M + 1L]
+    } else {
+      d_eta[i, k - 1L] <- cum_probs[i, k - 1L] *
+        (1 - cum_probs[i, k - 1L]) /
+        probs[i, k]
+      d_eta[i, k] <- -cum_probs[i, k] *
+        (1 - cum_probs[i, k]) /
+        probs[i, k]
+    }
+  }
+
+  intercept_scores <- d_eta
+  slope_scores <- as.matrix(model$x) * rowSums(d_eta)
+  scores <- cbind(intercept_scores, slope_scores)
+  colnames(scores) <- names(beta)
+  weights <- orm_case_weights(model, n)
+  scores <- scores * weights
+  colnames(scores) <- names(beta)
+  scores
+}
+
+align_cluster_orm <- function(model, cluster, n_scores) {
+  if (inherits(cluster, "formula")) {
+    mostr_abort("`cluster` for an orm fit must be a row-level vector.")
+  }
+
+  if (length(cluster) == n_scores) {
+    return(cluster)
+  }
+
+  na_action <- model$na.action
+  if (!is.null(na_action) && length(cluster) > n_scores) {
+    keep <- seq_along(cluster)
+    keep <- keep[-as.integer(na_action)]
+    if (length(keep) == n_scores) {
+      return(cluster[keep])
+    }
+  }
+
+  mostr_abort(
+    "Length of `cluster` (",
+    length(cluster),
+    ") does not match the number of orm score rows (",
+    n_scores,
+    "). Supply the row-level patient ID vector used to fit the model."
+  )
+}

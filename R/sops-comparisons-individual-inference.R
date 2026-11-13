@@ -26,7 +26,6 @@ inferences_profile_results <- function(
   method,
   n_draws,
   vcov,
-  cluster,
   workers,
   conf_level,
   conf_type,
@@ -68,12 +67,9 @@ inferences_profile_results <- function(
       model = model,
       setup = setup,
       reduce_draw = reduce_draw,
-      engine = method,
       n_draws = n_draws,
       vcov = vcov,
-      cluster = cluster,
-      workers = workers,
-      return_draws = return_draws
+      workers = workers
     )
   }
 
@@ -165,7 +161,6 @@ clear_comparison_inference <- function(object) {
     "n_boot",
     "n_successful",
     "engine",
-    "score_weight_dist",
     "fwb_weight_type",
     "fwb_weight_scale",
     "draw_weights_attached",
@@ -307,31 +302,15 @@ comparison_simulation_draws <- function(
   model,
   setup,
   reduce_draw,
-  engine,
   n_draws,
   vcov,
-  cluster,
-  workers,
-  return_draws
+  workers
 ) {
-  # Score-bootstrap patient weights are not used here, because nothing is
-  # averaged, but they are returned with the draws as `score_weight`, as for
-  # `sops()`, so the profiles' comparisons can be averaged afterwards.
-  simulation_draws <- generate_sop_coefficient_draws(
+  beta_draws <- generate_sop_coefficient_draws(
     model = model,
-    engine = engine,
-    score_weight_dist = "exponential",
     n_draws = n_draws,
-    vcov = vcov,
-    cluster = cluster,
-    baseline_data = setup$baseline_data,
-    id_var = setup$settings$id_var,
-    newdata_supplied = setup$newdata_supplied,
-    is_avg = FALSE,
-    return_draws = return_draws,
-    prediction_data = setup$newdata_pred
+    vcov = vcov
   )
-  beta_draws <- simulation_draws$beta_draws
   predict_array <- comparison_coefficient_predictor(model, setup)
 
   analysis_fn <- function(i) {
@@ -364,25 +343,10 @@ comparison_simulation_draws <- function(
   if (length(successful) == 0L) {
     mostr_abort("All simulation draws failed.")
   }
-  weights <- simulation_draws$baseline_weights_draws
-  weight_col <- simulation_draws$draw_weight_col
   list(
     values = do.call(rbind, results[successful]),
     draw_ids = successful,
-    weights = if (!is.null(weight_col) && !is.null(weights)) {
-      weights[successful, , drop = FALSE]
-    },
-    metadata = c(
-      list(n_successful = length(successful)),
-      if (identical(engine, "score_bootstrap")) {
-        list(
-          draw_weights_attached = simulation_draws$draw_weights_attached,
-          draw_weight_col = weight_col,
-          draw_weight_omission_reason =
-            simulation_draws$draw_weight_omission_reason
-        )
-      }
-    )
+    metadata = list(n_successful = length(successful))
   )
 }
 

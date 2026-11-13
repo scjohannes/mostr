@@ -644,12 +644,6 @@ test_that("low-level SOP helpers validate model families and state metadata", {
   )
 
   expect_error(
-    mostr:::score_bootstrap_components(list()),
-    "supports robcov_vglm and orm",
-    fixed = TRUE
-  )
-
-  expect_error(
     mostr:::marginalize_sops_array(
       array(1, dim = c(1, 1, 1)),
       grid = data.frame(tx = 0),
