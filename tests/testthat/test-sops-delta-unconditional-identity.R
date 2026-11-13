@@ -109,7 +109,7 @@ test_that("unconditional variance is conditional variance plus the patient terms
     # Each patient's SOPs under each treatment, from the public `sops()`.
     patient_sops <- lapply(c(0, 1), function(value) {
       profiles$tx <- value
-      sops(fit, newdata = profiles, times = identity_times, absorb = 4)
+      sops(fit, newdata = profiles, times = identity_times)
     })
     sop_matrix <- function(estimates, keys) {
       identity_patient_matrix(
@@ -124,8 +124,7 @@ test_that("unconditional variance is conditional variance plus the patient terms
     point <- avg_sops(
       fit,
       variables = list(tx = c(0, 1)),
-      times = identity_times,
-      absorb = 4
+      times = identity_times
     )
     expect_unconditional_identity(
       point,
@@ -138,8 +137,7 @@ test_that("unconditional variance is conditional variance plus the patient terms
     contrast <- avg_comparisons(
       fit,
       variables = list(tx = c(0, 1)),
-      times = identity_times,
-      absorb = 4
+      times = identity_times
     )
     cells <- as.data.frame(contrast)
     cells$state <- cells$state_set
@@ -161,7 +159,6 @@ test_that("unconditional variance is conditional variance plus the patient terms
       fit,
       variables = list(tx = c(0, 1)),
       times = identity_times,
-      absorb = 4,
       state_sets = identity_state_sets,
       time_map = grid_time_map(cell)
     )

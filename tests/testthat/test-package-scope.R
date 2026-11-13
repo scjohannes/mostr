@@ -75,6 +75,24 @@ test_that("the package exposes Markov workflows without removed APIs", {
       present = FALSE
     ),
     list(
+      # The fit records the absorbing states and the gap column, and
+      # `time_covariates` was replaced by time terms in the formula.
+      label = "fit settings and time_covariates in prediction and plot functions",
+      names = c("absorb", "gap_var", "time_covariates"),
+      within = argument_names(list(
+        sops, avg_sops, state_time, avg_state_time, comparisons,
+        avg_comparisons, soprob_markov, plot_lp_difference, plot_transitions,
+        plot_correlation, plot_variogram
+      )),
+      present = FALSE
+    ),
+    list(
+      label = "fit settings recorded by mostm()",
+      names = c("absorb", "gap_var"),
+      within = argument_names(list(mostm)),
+      present = TRUE
+    ),
+    list(
       label = "data argument of bootstrap_model_coefs()",
       names = "data",
       within = argument_names(list(bootstrap_model_coefs)),

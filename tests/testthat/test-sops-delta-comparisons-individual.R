@@ -28,8 +28,7 @@ test_that("delta intervals difference each profile's SOP derivatives", {
       newdata = case$profiles,
       variables = list(tx = levels),
       state_sets = setting$state_sets,
-      times = 1:4,
-      absorb = 3
+      times = 1:4
     )
     inferred <- inferences(cmp, method = "delta")
     expect_s3_class(inferred, "markov_comparisons")
@@ -47,7 +46,7 @@ test_that("delta intervals difference each profile's SOP derivatives", {
       profiles
     }))
     ind <- inferences(
-      sops(case$model, newdata = stacked, times = 1:4, absorb = 3),
+      sops(case$model, newdata = stacked, times = 1:4),
       method = "delta"
     )
     ind_jacobian <- get_jacobian(ind)
@@ -137,7 +136,6 @@ test_that("averaged delta derivatives of each profile match the averages", {
         estimand = "time_in_state",
         state_sets = state_sets,
         times = 1:4,
-        absorb = 3,
         time_map = time_map
       ),
       group = NULL,
@@ -149,7 +147,7 @@ test_that("averaged delta derivatives of each profile match the averages", {
       label = label,
       unit = state_time,
       average = avg_state_time,
-      args = c(list(case$model), args, list(times = 1:4, absorb = 3)),
+      args = c(list(case$model), args, list(times = 1:4)),
       group = group,
       null = NULL
     )
@@ -251,7 +249,7 @@ test_that("averaged delta derivatives of each profile match the averages", {
 
   expect_error(
     inferences(
-      state_time(case$model, times = 1:4, absorb = 3),
+      state_time(case$model, times = 1:4),
       method = "delta",
       vcov = "unconditional"
     ),
@@ -266,8 +264,7 @@ test_that("delta comparison inference keeps its restrictions", {
     case$model,
     newdata = case$profiles,
     variables = list(tx = c(0, 1)),
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   cmp <- do.call(comparisons, args)
   expect_error(

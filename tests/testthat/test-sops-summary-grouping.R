@@ -18,8 +18,8 @@ test_that("a missing value in an unused profile column keeps the profile", {
   plain <- case$profiles
   noted <- profiles_with_unused_note(case)
   n <- nrow(plain)
-  s_plain <- sops(case$model, newdata = plain, times = 1:4, absorb = 3)
-  s_noted <- sops(case$model, newdata = noted, times = 1:4, absorb = 3)
+  s_plain <- sops(case$model, newdata = plain, times = 1:4)
+  s_noted <- sops(case$model, newdata = noted, times = 1:4)
 
   for (time_map in list(NULL, case$time_map)) {
     expected <- time_in_state(s_plain, target_states = "1", time_map = time_map)
@@ -44,7 +44,6 @@ test_that("inferences(null = ) does not change interpolate_sops() or time_in_sta
   averaged <- avg_sops(
     case$model,
     times = 1:4,
-    absorb = 3,
     variables = list(tx = c(0, 1))
   )
   target_times <- c(1, 3, 5, 7)

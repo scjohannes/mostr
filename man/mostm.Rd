@@ -13,6 +13,8 @@ mostm(
   time_var = "time",
   p_var = "yprev",
   p2_var = NULL,
+  absorb = NULL,
+  gap_var = NULL,
   first_followup_time = NULL,
   weights = NULL,
   subset = NULL,
@@ -27,7 +29,15 @@ supported. For the \code{"orm"} and \code{"blrm"} engines, categorical predictor
 including time, must be factor or character columns of \code{data} rather
 than converted with \code{factor()} inside the formula; for factor time, also
 set \code{first_followup_time}. Random-effect terms are available only for the
-\code{"blrm"} engine; see "Random effects" below.}
+\code{"blrm"} engine; see "Random effects" below.
+
+Time terms are written inline, for example \code{rms::rcs(time, 4)},
+\code{log(time)} or \code{rms::pol(time, 2)}; the prediction functions evaluate
+them at each requested time. For the \code{"orm"} and \code{"blrm"} engines, use
+\code{rms::rcs()} and \code{rms::pol()} rather than \code{splines::ns()},
+\code{splines::bs()} or \code{stats::poly()}, for time and for any other variable:
+rms evaluates the latter again on the prediction rows, which gives a
+different basis, so \code{mostm()} refuses them.}
 
 \item{data}{A data frame with one row per patient and visit.}
 
@@ -84,6 +94,20 @@ the previous one. The prediction functions take it from the fit, as they
 do \code{id_var}, \code{time_var} and \code{p_var}, and then use second-order
 calculations. Without it, a column with the older state in the formula
 would be held at each patient's starting value.}
+
+\item{absorb}{The absorbing states, such as death: states that a patient
+never leaves, given as state labels, for example \code{absorb = "8"} or
+\code{absorb = c("home", "dead")}. The prediction functions keep a patient who
+reaches one of them there, and they never predict a transition out of
+it. \code{NULL} (the default) means that no state is absorbing. See
+"Absorbing states" below.}
+
+\item{gap_var}{Name of the column that holds the time since each
+patient's previous visit, if the model includes it, for example \code{"gap"}.
+The prediction functions set this column to the difference between
+consecutive requested times, so the visits in \code{times} may be spaced
+unevenly. Time must be numeric. See "Time since the previous visit"
+below.}
 
 \item{first_followup_time}{Time of the first visit after baseline. Each
 patient's row at this time is their starting row for automatic
@@ -176,6 +200,56 @@ when predictions are made: a later row is never used instead. Patients
 without any fitted transition are not part of the fitted cohort.
 }
 
+\subsection{Absorbing states}{
+
+A patient who reaches an absorbing state, such as death, stays there. The
+data therefore contain transitions into it but none out of it, and the
+model can't say what happens after it. Name such states in \code{absorb}: the
+prediction functions then keep the probability of being in them, and
+predict transitions only from the other states. \code{mostm()} never works out
+the absorbing states from the data, because a state that is seen only as
+an outcome, at a patient's last visit, need not be absorbing.
+
+\code{mostm()} checks \code{absorb} against the fitted rows of \code{data}:
+\itemize{
+\item Each label must be a state of the response.
+\item No fitted row may have an absorbing state as its previous state
+(\code{p_var}) or, for a second-order model, as the state two visits back
+(\code{p2_var}): a patient in an absorbing state has no further transitions.
+Remove such rows first; \code{\link[=prepare_markov_data]{prepare_markov_data()}} does this for the
+previous state.
+\item A state that occurs as an outcome but never as a previous state, and is
+not named in \code{absorb}, gives a warning: it may be absorbing. Without
+\code{absorb}, a model with a numeric previous state, such as
+\code{rms::rcs(yprev, 4)}, predicts transitions out of such a state from the
+other states' transitions, so dead patients can come back to life. With
+a factor previous state, the prediction functions stop instead, because
+the model has no coefficient for that previous state.
+}
+
+Bootstrap refits keep the absorbing states of the fit. A resample in which
+no patient reaches one of them has no transitions into it, so its refit
+leaves that state out, and the state's probability is 0 in that resample.
+}
+
+\subsection{Time since the previous visit}{
+
+When visits are spaced unevenly, the model can include the time since each
+patient's previous visit as a predictor, in a column named by \code{gap_var}.
+The prediction functions then set that column for every transition: to the
+difference between the requested time and the one before it, and, for the
+first requested time, to that time itself, that is, the time since time 0.
+So with numeric time and \code{times = c(1, 2, 4, 7)}, the gaps are 1, 1, 2 and
+3. A patient's first visit after baseline in the fitted data should
+therefore have a gap equal to its time.
+
+\code{mostm()} checks that the gap column is numeric, that time is numeric, and
+that on every row after a patient's first the gap equals the time since
+the patient's previous row, so that both columns use the same unit. Factor
+or character time can't be used with \code{gap_var}, because visit labels don't
+say how much time passes between visits.
+}
+
 \subsection{Weights and subsets}{
 
 \code{weights} and \code{subset} are evaluated once, first in \code{data} and then where
@@ -256,10 +330,12 @@ trajectories <- sim_markov(
 )
 model_data <- prepare_markov_data(trajectories, absorbing_state = 8)
 
+# State 8, death, is absorbing: patients who reach it stay there.
 fit <- mostm(
   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
   data = model_data,
-  id_var = "id"
+  id_var = "id",
+  absorb = "8"
 )
 
 # The same model fitted with VGAM
@@ -267,6 +343,7 @@ fit_vglm <- mostm(
   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
   data = model_data,
   id_var = "id",
+  absorb = "8",
   engine = "vglm"
 )
 # Both engines reach the same maximum of the log-likelihood
@@ -277,8 +354,7 @@ c(orm = stats::logLik(fit), vglm = stats::logLik(fit_vglm$vglm_fit))
 sops_by_arm <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
-  times = 1:14,
-  absorb = "8"
+  times = 1:14
 )
 sops_by_arm[sops_by_arm$time == 14, ]
 
@@ -290,6 +366,7 @@ if (requireNamespace("rmsb", quietly = TRUE)) {
     ordered(y) ~ yprev + time + tx,
     data = model_data,
     id_var = "id",
+    absorb = "8",
     engine = "blrm",
     subset = id <= 60,
     ppo = ~time,

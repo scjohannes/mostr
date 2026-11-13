@@ -8,9 +8,6 @@ soprob_markov(
   model,
   newdata,
   times = NULL,
-  absorb = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -29,17 +26,6 @@ patient or profile.}
 recursion takes one transition per value, so leaving out visits does not
 skip time; see \code{\link[=sops]{sops()}}. Unlike \code{\link[=sops]{sops()}}, this function does not warn
 when \code{times} leaves out fitted visits.}
-
-\item{absorb}{Optional absorbing state levels: states that a patient can't
-leave. A row of \code{newdata} whose previous state (the \code{p_var} column of
-\code{\link[=mostm]{mostm()}}) or state two visits back (the \code{p2_var} column) is absorbing
-gives an error: such a patient can't move to another state, and the model
-has no transitions out of an absorbing state to predict from.}
-
-\item{gap_var}{Optional elapsed-time-gap variable.}
-
-\item{time_covariates}{Optional data frame with one row per requested visit
-containing precomputed time-varying covariates.}
 
 \item{include_re}{For \code{blrm} fits, include fitted random-effect draws for
 known IDs, which \code{newdata} gives in the patient ID column (\code{id_var} of
@@ -66,11 +52,19 @@ native engine; other supported workflows use an engine written in R.
 \section{Settings taken from the fit}{
 
 The patient ID column, the time column, the previous-state column, the
-column with the state two visits back, and the states are those of the
-fitted model: the \code{id_var}, \code{time_var}, \code{p_var} and \code{p2_var} given to
-\code{\link[=mostm]{mostm()}}, and the states of the response in fitted order. A model fitted
-with \code{p2_var} is therefore always predicted with the second-order recursion.
-The \code{state} column of the result holds the fitted state labels. To predict
-with other columns, refit the model with \code{\link[=mostm]{mostm()}}.
+column with the state two visits back, the column with the time since the
+previous visit, the states and the absorbing states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var}, \code{p2_var}, \code{gap_var} and
+\code{absorb} given to \code{\link[=mostm]{mostm()}}, and the states of the response in fitted
+order. A model fitted with \code{p2_var} is therefore always predicted with the
+second-order recursion. The \code{state} column of the result holds the fitted
+state labels. To predict with other columns or other absorbing states,
+refit the model with \code{\link[=mostm]{mostm()}}.
+
+A patient who is in an absorbing state stays there, so every profile must
+start outside the absorbing states: a profile whose previous state (the
+\code{p_var} column) is absorbing, or, for a second-order model, whose state two
+visits back (the \code{p2_var} column) is, gives an error. Remove those patients
+from \code{newdata} first.
 }
 

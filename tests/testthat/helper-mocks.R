@@ -4,7 +4,8 @@
 # (`markov_settings()` with every field fixed by the fit). The prediction
 # functions take the patient ID, time and previous-state columns, the order
 # and the states from the fit, so a hand-made fit that tests other columns, a
-# second-order recursion or particular state labels records them here.
+# second-order recursion or particular state labels records them here, and
+# so does one with absorbing states (`absorb`) or a gap column (`gap_var`).
 # `y_levels` defaults to the states the object itself records.
 with_fit_settings <- function(
   model,
@@ -13,7 +14,9 @@ with_fit_settings <- function(
   p_var = "yprev",
   p2_var = NULL,
   y_levels = markov_model_ylevels_or_null(model),
-  engine = markov_model_engine(model)
+  engine = markov_model_engine(model),
+  absorb = NULL,
+  gap_var = NULL
 ) {
   settings <- markov_settings(
     engine = engine,
@@ -22,6 +25,8 @@ with_fit_settings <- function(
     p_var = p_var,
     p2_var = p2_var,
     y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
     first_followup_time =
       markov_model_starting_profile_metadata(model)$first_followup_time,
     from_fit = setdiff(
@@ -49,6 +54,7 @@ with_fit_settings <- function(
 # `class`: the class of the fit; c("blrm", "orm") as for rmsb fits.
 # `p2_var`: the column with the state two visits back for a second-order fit,
 #   recorded as `mostm(p2_var = )` records it.
+# `absorb`: the absorbing states, recorded as `mostm(absorb = )` records them.
 fake_blrm <- function(
   draws,
   tau = character(),
@@ -56,7 +62,8 @@ fake_blrm <- function(
   cluster = TRUE,
   gamma_draws = NULL,
   class = c("blrm", "orm"),
-  p2_var = NULL
+  p2_var = NULL,
+  absorb = NULL
 ) {
   non_slopes <- sum(startsWith(colnames(draws), "y>="))
   fit <- list(
@@ -76,7 +83,7 @@ fake_blrm <- function(
     markov_engine = "blrm",
     markov_id_var = "id"
   )
-  with_fit_settings(fit, p2_var = p2_var)
+  with_fit_settings(fit, p2_var = p2_var, absorb = absorb)
 }
 
 # A stand-in for `blrm_design_matrix()`: the design matrix is the `columns` of

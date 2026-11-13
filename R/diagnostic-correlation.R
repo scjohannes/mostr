@@ -32,14 +32,8 @@ plot_correlation_input_data <- function(
   if (!is.null(newdata)) {
     mostr_abort("`newdata` is only used for model-based plots.")
   }
-  if (
-    !is.null(settings$p2_var) ||
-      !is.null(settings$gap_var) ||
-      !is.null(settings$time_covariates)
-  ) {
-    mostr_abort(
-      "`p2_var`, `gap_var`, and `time_covariates` are only used for model-based plots."
-    )
+  if (!is.null(settings$p2_var)) {
+    mostr_abort("`p2_var` is only used for model-based plots.")
   }
   if (!is.null(seed)) {
     mostr_abort("`seed` is only used for `blrm` model-based plots.")

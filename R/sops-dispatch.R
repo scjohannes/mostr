@@ -13,14 +13,6 @@
 #'   recursion takes one transition per value, so leaving out visits does not
 #'   skip time; see [sops()]. Unlike [sops()], this function does not warn
 #'   when `times` leaves out fitted visits.
-#' @param absorb Optional absorbing state levels: states that a patient can't
-#'   leave. A row of `newdata` whose previous state (the `p_var` column of
-#'   [mostm()]) or state two visits back (the `p2_var` column) is absorbing
-#'   gives an error: such a patient can't move to another state, and the model
-#'   has no transitions out of an absorbing state to predict from.
-#' @param gap_var Optional elapsed-time-gap variable.
-#' @param time_covariates Optional data frame with one row per requested visit
-#'   containing precomputed time-varying covariates.
 #' @param include_re For `blrm` fits, include fitted random-effect draws for
 #'   known IDs, which `newdata` gives in the patient ID column (`id_var` of
 #'   [mostm()]). Only `blrm` fits have random effects, so `TRUE` gives an
@@ -38,9 +30,6 @@ soprob_markov <- function(
   model,
   newdata,
   times = NULL,
-  absorb = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -48,12 +37,7 @@ soprob_markov <- function(
 ) {
   stop_removed_fit_arguments(...)
   stop_include_re_without_blrm(model, include_re)
-  settings <- resolve_markov_settings(
-    model,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates
-  )
+  settings <- resolve_markov_settings(model)
   if (is.null(settings$y_levels)) {
     stop_no_fitted_states()
   }
@@ -282,7 +266,8 @@ validate_fast_previous_state_support <- function(model, settings) {
       "Model prediction requires transitions from state level(s) not ",
       "represented in the fitted transition data: ",
       paste(unsupported, collapse = ", "),
-      ". If a level is absorbing, pass it via `absorb`."
+      ". No fitted row has such a state as its previous state. If it is ",
+      "absorbing, such as death, name it in `mostm(absorb = )` and refit."
     )
   }
   invisible(NULL)

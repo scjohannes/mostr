@@ -56,7 +56,7 @@ test_that("each engine stores its fitting data and the patient ID column", {
   }
 
   for (case in engines) {
-    args <- c(case$args, list(data = data, id_var = "id"))
+    args <- c(case$args, list(data = data, id_var = "id", absorb = 6))
     if (!is.null(case$last_time)) {
       args$subset <- call("<=", quote(time), case$last_time)
     }
@@ -90,6 +90,7 @@ test_that("the vglm engine forwards robust covariance corrections", {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     type = "HC1",
     cadjust = FALSE,
     engine = "vglm"
@@ -120,6 +121,7 @@ test_that("mostm() validates numeric first follow-up schedules", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = no_one,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     error = TRUE
@@ -133,6 +135,7 @@ test_that("mostm() validates numeric first follow-up schedules", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = below_one,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     error = TRUE
@@ -145,6 +148,7 @@ test_that("mostm() validates numeric first follow-up schedules", {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = alternative,
     id_var = "id",
+    absorb = 6,
     first_followup_time = 2,
     engine = "vglm"
   )
@@ -159,6 +163,7 @@ test_that("mostm() validates numeric first follow-up schedules", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       first_followup_time = 2,
       engine = "vglm"
     ),
@@ -178,6 +183,7 @@ test_that("mostm() rejects former starting-profile arguments", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       start_time = 1,
       origin_time = 0,
       time_map = 1:6,
@@ -199,6 +205,7 @@ test_that("the vglm engine aligns stored fitting data after subset and NA drops"
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     subset = time <= 5,
     engine = "vglm"
   )
@@ -229,7 +236,8 @@ test_that("the orm engine stores fitting data and applies robust covariance", {
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   )
 
   expect_s3_class(fit, "orm")
@@ -247,6 +255,7 @@ test_that("the orm engine stores fitting data and applies robust covariance", {
       ordered(y) ~ time + tx + yprev,
       data = data,
       id_var = "id",
+      absorb = 6,
       subset = time <= 4
     )
   )
@@ -264,6 +273,7 @@ test_that("the blrm engine stores fitting data without sampling when requested",
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     subset = time <= 3,
     standata = TRUE,
     engine = "blrm"
@@ -279,6 +289,7 @@ test_that("the blrm engine stores fitting data without sampling when requested",
       ordered(y) ~ offset(time) + tx + yprev,
       data = data,
       id_var = "id",
+      absorb = 6,
       standata = TRUE,
       engine = "blrm"
     ),
@@ -297,6 +308,7 @@ test_that("automatic SOP prediction never substitutes a later profile row", {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
 
@@ -304,8 +316,7 @@ test_that("automatic SOP prediction never substitutes a later profile row", {
   expect_snapshot(
     sops(
       fit,
-      times = 1:3,
-      absorb = 6
+      times = 1:3
     ),
     error = TRUE
   )
@@ -375,10 +386,10 @@ test_that("missing values leave complete starting profiles of the fitted patient
     )
   )
 
-  sop_args <- list(times = 1:2, absorb = 6)
+  sop_args <- list(times = 1:2)
   for (case in cases) {
     data <- case$change(base)
-    fit <- do.call(mostm, c(case$args, list(data = data, id_var = "id")))
+    fit <- do.call(mostm, c(case$args, list(data = data, id_var = "id", absorb = 6)))
     profiles <- markov_validate_starting_profiles(fit)
     case$check(fit, data, profiles)
 
@@ -423,14 +434,14 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = incomplete,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
   expect_snapshot(
     avg_sops(
       incomplete_fit,
       variables = list(tx = c(0, 1)),
-      times = 1:2,
-      absorb = 6
+      times = 1:2
     ),
     error = TRUE
   )
@@ -451,6 +462,7 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = duplicated,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     "duplicate `id` x `time` combinations"
@@ -459,8 +471,7 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
     avg_sops(
       duplicated_fit,
       variables = list(tx = c(0, 1)),
-      times = 1:2,
-      absorb = 6
+      times = 1:2
     ),
     error = TRUE
   )
@@ -482,6 +493,7 @@ test_that("factor and character time require explicit first follow-up values", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     error = TRUE
@@ -492,6 +504,7 @@ test_that("factor and character time require explicit first follow-up values", {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     first_followup_time = "v1",
     engine = "vglm"
   )
@@ -507,6 +520,7 @@ test_that("factor and character time require explicit first follow-up values", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       time_var = "visit",
       engine = "vglm"
     ),
@@ -517,6 +531,7 @@ test_that("factor and character time require explicit first follow-up values", {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     time_var = "visit",
     first_followup_time = "v1",
     engine = "vglm"
@@ -532,6 +547,7 @@ test_that("factor and character time require explicit first follow-up values", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       first_followup_time = "v7",
       engine = "vglm"
     ),
@@ -549,6 +565,7 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
   # Rows of `newdata` without a patient column: one patient's starting row
@@ -559,7 +576,7 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
     profiles$rowid <- rowid
     profiles[, setdiff(names(profiles), "id"), drop = FALSE]
   }
-  sop_args <- list(times = 1:2, absorb = 6)
+  sop_args <- list(times = 1:2)
 
   # `rowid` gives the expected row numbers of the prediction data, and
   # `warning` the warning of a fractional bootstrap, which uses the stored
@@ -673,15 +690,16 @@ test_that("FWB inference on SOPs for each profile works with every frequentist e
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
-    orm = mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id")
+    orm = mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id", absorb = 6)
   )
   # The ordinary bootstrap of SOPs for each profile is row I42 of
   # test-refusals.R.
   sop_args <- list(
-    vglm = list(times = 1:2, absorb = 6),
-    orm = list(times = 1:2, absorb = "6")
+    vglm = list(times = 1:2),
+    orm = list(times = 1:2)
   )
   fwb_args <- list(
     vglm = list(use_coefstart = FALSE),
@@ -719,8 +737,7 @@ test_that("FWB inference on SOPs for each profile works with every frequentist e
   grouped <- sops(
     fits$orm,
     by = "sex",
-    times = 1:2,
-    absorb = "6"
+    times = 1:2
   )
   withr::local_seed(10061)
   grouped_ci <- inferences(

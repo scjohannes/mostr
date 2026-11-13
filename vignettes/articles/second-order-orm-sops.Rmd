@@ -73,13 +73,16 @@ interaction terms, rms's operator for restricted interactions.
 `p2_var = "ypprev"` tells `mostm()` that `ypprev` is the state two days
 back, so this is a second-order model. Without it, the prediction functions
 would treat `ypprev` like any other covariate and hold it at each patient's
-starting value instead of updating it from day to day.
+starting value instead of updating it from day to day. `absorb = ABSORB`
+names death as the absorbing state; a second-order fit also refuses rows
+whose state two days back is absorbing, a history that can't occur.
 
 ```{r fit-model}
 fit_second <- mostm(
   y ~ tx + rcs(time, 4) + yprev + ypprev + time %ia% yprev + time %ia% ypprev,
   data = model_data,
   id_var = "id",
+  absorb = ABSORB,
   p2_var = "ypprev",
   opt_method = "LM",
   scale = TRUE,
@@ -102,8 +105,7 @@ fast; use more, such as 1,000, in a real analysis.
 sop_second <- avg_sops(
   fit_second,
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  absorb = ABSORB
+  times = seq_len(FOLLOW_UP)
 ) |>
   inferences(n_draws = 50)
 
@@ -136,8 +138,7 @@ tis_second <- avg_comparisons(
   estimand = "time_in_state",
   state_sets = list(1:2, 3:5, 6:7, 8),
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  absorb = ABSORB
+  times = seq_len(FOLLOW_UP)
 ) |>
   inferences(n_draws = 100)
 
@@ -242,7 +243,6 @@ plot_transitions(
   fit_second,
   times = diagnostic_times,
   y_levels = fit_second$yunique,
-  absorb = ABSORB,
   show_values = FALSE
 ) +
   labs(title = "Model-based transition proportions")
@@ -264,7 +264,6 @@ plot_correlation(
   fit_second,
   times = seq_len(FOLLOW_UP),
   y_levels = fit_second$yunique,
-  absorb = ABSORB,
   show_values = FALSE
 ) +
   labs(title = "Model-based state correlations")
@@ -282,8 +281,7 @@ plot_variogram(
 plot_variogram(
   fit_second,
   times = seq_len(FOLLOW_UP),
-  y_levels = fit_second$yunique,
-  absorb = ABSORB
+  y_levels = fit_second$yunique
 ) +
   labs(title = "Model-based correlation variogram")
 ```

@@ -14,11 +14,6 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     dplyr::group_by(id) |>
     dplyr::mutate(age = stats::rnorm(1, 50, 10)) |>
     dplyr::ungroup()
-  time_covariates <- data |>
-    dplyr::select(time_lin, time_nlin_1) |>
-    dplyr::distinct() |>
-    as.data.frame()
-
   baseline_data <- data[data$time == 1, ]
 
   absorb <- 6
@@ -34,16 +29,16 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     data = data
   )
 
+  # The same model fitted by mostm(), which records the absorbing state.
   fit.a <- suppressWarnings(mostm(
-    y ~
-      (time_lin +
-        time_nlin_1) *
+    y ~ rms::rcs(time, 3) *
       tx +
       yprev +
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = absorb,
     engine = "vglm"
   ))$vglm_fit
 
@@ -59,9 +54,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
   b <- soprob_markov(
     model = fit.a,
     newdata = baseline_data[1, ],
-    times = times,
-    absorb = absorb,
-    time_covariates = time_covariates
+    times = times
   )[1, , ]
 
   expect_equal(a, b, tolerance = 1e-15)
@@ -84,11 +77,6 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     dplyr::mutate(age = stats::rnorm(1, 50, 10)) |>
     dplyr::ungroup()
 
-  time_covariates <- data |>
-    dplyr::select(time_lin, time_nlin_1) |>
-    dplyr::distinct() |>
-    as.data.frame()
-
   baseline_data <- data[data$time == 1, ]
 
   absorb <- 6
@@ -104,16 +92,16 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
     data = data
   )
 
+  # The same model fitted by mostm(), which records the absorbing state.
   fit.a <- suppressWarnings(mostm(
-    y ~
-      time_lin +
-      time_nlin_1 +
+    y ~ rms::rcs(time, 3) +
       tx +
       yprev +
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
     data = data,
     id_var = "id",
+    absorb = absorb,
     engine = "vglm"
   ))$vglm_fit
 
@@ -129,9 +117,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
   b <- soprob_markov(
     model = fit.a,
     newdata = baseline_data[1, ],
-    times = times,
-    absorb = absorb,
-    time_covariates = time_covariates
+    times = times
   )[1, , ]
 
   expect_equal(a, b, tolerance = 1e-15)
@@ -154,11 +140,6 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
     dplyr::mutate(age = stats::rnorm(1, 50, 10)) |>
     dplyr::ungroup()
 
-  time_covariates <- data |>
-    dplyr::select(time_lin, time_nlin_1) |>
-    dplyr::distinct() |>
-    as.data.frame()
-
   baseline_data <- data[data$time == 1, ]
   y_levels <- factor(sort(unique(data$y)), ordered = FALSE)
   times <- 1:follow_up
@@ -173,16 +154,16 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
     data = data
   )
 
+  # The same model fitted by mostm(), which records the absorbing state.
   fit.a <- suppressWarnings(mostm(
-    y ~
-      time_lin +
-      time_nlin_1 +
+    y ~ rms::rcs(time, 3) +
       tx +
       yprev +
       age,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
     data = data,
     id_var = "id",
+    absorb = absorb,
     engine = "vglm"
   ))$vglm_fit
 
@@ -207,9 +188,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
   results_new <- soprob_markov(
     model = fit.a,
     newdata = baseline_data,
-    times = times,
-    absorb = absorb,
-    time_covariates = time_covariates
+    times = times
   )
 
   # Strip dimnames for fair comparison (soprob_markov adds them, manual loop doesn't)
@@ -226,17 +205,19 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
   absorb <- 6
 
   # User constraint matrices: a linear trend in the time effect across
-  # thresholds and a separate treatment effect at the last threshold.
+  # thresholds and a separate treatment effect at the last threshold. Time
+  # enters as `time` and `log(time)`, inline terms that prediction evaluates
+  # at each requested time, so each can have its own constraint.
   constraints <- list(
     "(Intercept)" = diag(5),
-    "time_lin" = cbind(time_lin_1 = 1, time_lin_5 = 0:4),
-    "time_nlin_1" = cbind(PO_effect = 1),
+    "time" = cbind(time_1 = 1, time_5 = 0:4),
+    "log(time)" = cbind(PO_effect = 1),
     "tx" = cbind(PO_effect = rep(1, 5), Deviation_5th = c(rep(0, 4), 1)),
     "yprev" = cbind(PO_effect = 1),
     "age" = cbind(PO_effect = 1),
-    "time_lin:tx" = cbind(PO_effect = 1),
-    "time_nlin_1:tx" = cbind(PO_effect = 1),
-    "time_lin:yprev" = cbind(PO_effect = 1),
+    "time:tx" = cbind(PO_effect = 1),
+    "log(time):tx" = cbind(PO_effect = 1),
+    "time:yprev" = cbind(PO_effect = 1),
     "tx:age" = cbind(PO_effect = 1)
   )
   cases <- list(
@@ -267,26 +248,23 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
         dplyr::mutate(age = stats::rnorm(1, 50, 10)) |>
         dplyr::ungroup()
     })
-    time_covariates <- data |>
-      dplyr::select(time_lin, time_nlin_1) |>
-      dplyr::distinct() |>
-      as.data.frame()
     y_levels <- factor(sort(unique(data$y)), ordered = FALSE)
 
     # `constraints = NULL` keeps VGAM's constraints from `parallel`.
     fit <- suppressWarnings(mostm(
-      y ~ time_lin +
-        time_nlin_1 +
+      y ~ time +
+        log(time) +
         tx +
         yprev +
         age +
-        time_lin:tx +
-        time_nlin_1:tx +
-        yprev:time_lin +
+        time:tx +
+        log(time):tx +
+        yprev:time +
         tx:age,
-      family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx + time_lin),
+      family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx + time),
       data = data,
       id_var = "id",
+      absorb = absorb,
       constraints = case$constraints,
       engine = "vglm"
     ))$vglm_fit
@@ -299,19 +277,15 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
     res_plan <- soprob_markov(
       model = fit,
       newdata = newdata,
-      times = times,
-      absorb = absorb,
-      time_covariates = time_covariates
+      times = times
     )
 
     # --- MANUAL BUILD (markov_msm_build + markov_msm_run) ---
     components <- markov_msm_build(
       model = fit,
       newdata = newdata,
-      settings = markov_settings(
-        y_levels = y_levels,
-        time_covariates = time_covariates
-      )
+      times = times,
+      settings = markov_settings(y_levels = y_levels, absorb = absorb)
     )
     Gamma_hat <- compute_Gamma(get_coef(fit), VGAM::constraints(fit))
     res_manual <- markov_msm_run(
@@ -328,9 +302,7 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
       times = times,
       settings = markov_settings(
         y_levels = y_levels,
-        absorb = absorb,
-        time_var = "time_lin",
-        time_covariates = time_covariates
+        absorb = absorb
       )
     )
     res_reference <- reference_first_order_plan_sops(

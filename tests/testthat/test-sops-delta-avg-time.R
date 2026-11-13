@@ -15,6 +15,7 @@ delta_avg_time_case <- local({
         data = data,
         id_var = "id",
         first_followup_time = if (factor_time) levels(data$time)[1L] else 1,
+        absorb = 6,
         engine = "vglm"
       ))
       cases[[key]] <<- list(
@@ -37,7 +38,6 @@ test_that("average-time conditional variance agrees with numerical derivatives",
         variables = list(tx = c(0, 1)),
         times = case$times,
         state_sets = list(lower = c("1", "2"), all = as.character(1:6)),
-        absorb = 6,
         time_map = if (real_time) case$time_map else NULL,
         target_times = if (real_time) c(0, 1, 4, 9, 14) else NULL
       )
@@ -93,7 +93,6 @@ test_that("unconditional average time includes baseline sampling and joint covar
     variables = variables,
     times = case$times,
     state_sets = states,
-    absorb = 6,
     time_map = case$time_map,
     target_times = target_times
   )
@@ -101,8 +100,7 @@ test_that("unconditional average time includes baseline sampling and joint covar
   avg <- avg_sops(
     case$fit,
     variables = variables,
-    times = case$times,
-    absorb = 6
+    times = case$times
   ) |>
     inferences(method = "delta", conf_type = "wald")
   source <- attr(avg, "analytical")
@@ -178,16 +176,14 @@ test_that("real-time covariance respects omitted anchors and zero-length interva
     case$fit,
     times = case$times,
     time_map = case$time_map,
-    target_times = unname(case$time_map),
-    absorb = 6
+    target_times = unname(case$time_map)
   ) |>
     inferences(method = "delta")
   unanchored <- avg_state_time(
     case$fit,
     times = case$times,
     time_map = case$time_map,
-    baseline_time = NULL,
-    absorb = 6
+    baseline_time = NULL
   ) |>
     inferences(method = "delta")
   expect_equal(anchored$estimate, unanchored$estimate, tolerance = 1e-12)
@@ -201,8 +197,7 @@ test_that("real-time covariance respects omitted anchors and zero-length interva
     case$fit,
     times = case$times,
     time_map = case$time_map,
-    target_times = 7,
-    absorb = 6
+    target_times = 7
   )
   for (variance in c("conditional", "unconditional")) {
     inferred <- inferences(point, method = "delta", vcov = variance)
@@ -218,7 +213,6 @@ test_that("unconditional observed-cohort times agree with patient-weight refits"
     case$fit,
     times = case$times,
     state_sets = list(lower = c("1", "2")),
-    absorb = 6,
     time_map = case$time_map,
     target_times = 0:14
   )
@@ -249,8 +243,7 @@ test_that("unconditional observed-cohort times agree with patient-weight refits"
         individual <- sops(
           set_coef(case$fit, stats::coef(fitted)),
           newdata = baseline,
-          times = case$times,
-          absorb = 6
+          times = case$times
         )
         total <- time_in_state(
           individual,
@@ -276,7 +269,7 @@ test_that("unconditional observed-cohort times agree with patient-weight refits"
 test_that("average-time analytical inference preserves restrictions and row alignment", {
   skip_on_cran()
   case <- delta_avg_time_case()
-  point <- avg_state_time(case$fit, times = case$times, absorb = 6)
+  point <- avg_state_time(case$fit, times = case$times)
   inferred <- inferences(point, method = "delta")
   reordered <- point[nrow(point):1L, , drop = FALSE]
   result <- inferences(reordered, method = "delta")
@@ -285,26 +278,24 @@ test_that("average-time analytical inference preserves restrictions and row alig
   supplied <- avg_state_time(
     case$fit,
     newdata = attr(point, "newdata_pred"),
-    times = case$times,
-    absorb = 6
+    times = case$times
   )
   expect_snapshot(inferences(supplied, method = "delta"), error = TRUE)
   expect_no_error(inferences(supplied, method = "delta", vcov = "conditional"))
-  grouped <- avg_state_time(case$fit, times = case$times, absorb = 6, by = "tx")
+  grouped <- avg_state_time(case$fit, times = case$times, by = "tx")
   expect_snapshot(inferences(grouped, method = "delta"), error = TRUE)
 })
 
 starting_state_manual_time <- function(case, state, target_states, target_times) {
   baseline <- attr(
-    avg_sops(case$fit, times = case$times, absorb = 6),
+    avg_sops(case$fit, times = case$times),
     "newdata_pred"
   )
   baseline$yprev[] <- as.character(state)
   individual <- sops(
     case$fit,
     newdata = baseline,
-    times = case$times,
-    absorb = 6
+    times = case$times
   )
   mean(time_in_state(
     individual,
@@ -318,7 +309,7 @@ test_that("counterfactual starting states anchor the baseline at the set state",
   skip_on_cran()
   case <- delta_avg_time_case()
   levels <- levels(attr(
-    avg_sops(case$fit, times = case$times, absorb = 6),
+    avg_sops(case$fit, times = case$times),
     "newdata_pred"
   )$yprev)
   starts <- factor(c("1", "2"), levels = levels)
@@ -327,7 +318,6 @@ test_that("counterfactual starting states anchor the baseline at the set state",
     variables = list(yprev = starts),
     times = case$times,
     state_sets = "1",
-    absorb = 6,
     time_map = case$time_map,
     target_times = 0:14
   )
@@ -347,7 +337,6 @@ test_that("counterfactual starting states anchor the baseline at the set state",
     variables = list(yprev = starts),
     times = case$times,
     state_sets = "1",
-    absorb = 6,
     estimand = "time_in_state",
     time_map = case$time_map,
     target_times = 0:14
@@ -363,7 +352,7 @@ test_that("counterfactual starting states allow only conditional variance", {
   skip_on_cran()
   case <- delta_avg_time_case()
   levels <- levels(attr(
-    avg_sops(case$fit, times = case$times, absorb = 6),
+    avg_sops(case$fit, times = case$times),
     "newdata_pred"
   )$yprev)
   variables <- list(yprev = factor(c("1", "2"), levels = levels))
@@ -373,7 +362,6 @@ test_that("counterfactual starting states allow only conditional variance", {
       variables = variables,
       times = case$times,
       state_sets = list(lower = c("1", "2")),
-      absorb = 6,
       time_map = case$time_map,
       target_times = 0:14
     )
@@ -401,8 +389,7 @@ test_that("counterfactual starting states allow only conditional variance", {
   sop_average <- avg_sops(
     case$fit,
     variables = variables,
-    times = case$times,
-    absorb = 6
+    times = case$times
   )
   expect_no_error(
     inferences(sop_average, method = "delta", vcov = "conditional")
@@ -412,7 +399,6 @@ test_that("counterfactual starting states allow only conditional variance", {
     variables = variables,
     times = case$times,
     state_sets = "1",
-    absorb = 6,
     estimand = "time_in_state",
     time_map = case$time_map,
     target_times = 0:14
@@ -427,14 +413,13 @@ test_that("interpolated SOP estimates and draws start at the set starting state"
   skip_on_cran()
   case <- delta_avg_time_case()
   levels <- levels(attr(
-    avg_sops(case$fit, times = case$times, absorb = 6),
+    avg_sops(case$fit, times = case$times),
     "newdata_pred"
   )$yprev)
   avg <- avg_sops(
     case$fit,
     variables = list(yprev = factor(c("1", "3"), levels = levels)),
-    times = case$times,
-    absorb = 6
+    times = case$times
   ) |>
     inferences(method = "mvn", n_draws = 4, seed = 1)
   interpolated <- interpolate_sops(avg, time_map = case$time_map)
@@ -465,8 +450,7 @@ test_that("time_in_state() on delta SOPs keeps the uncertainty avg_state_time() 
     sop <- avg_sops(
       case$fit,
       variables = variables,
-      times = case$times,
-      absorb = 6
+      times = case$times
     ) |>
       inferences(method = "delta", vcov = variance)
     total <- time_in_state(sop, target_states = c("1", "2"))
@@ -474,8 +458,7 @@ test_that("time_in_state() on delta SOPs keeps the uncertainty avg_state_time() 
       case$fit,
       variables = variables,
       times = case$times,
-      state_sets = list(lower = c("1", "2")),
-      absorb = 6
+      state_sets = list(lower = c("1", "2"))
     ) |>
       inferences(method = "delta", vcov = variance)
     direct <- direct[match(total$tx, direct$tx), , drop = FALSE]
@@ -500,8 +483,7 @@ test_that("time_in_state() keeps delta uncertainty on the real-time scale", {
       sop <- avg_sops(
         case$fit,
         variables = variables,
-        times = case$times,
-        absorb = 6
+        times = case$times
       ) |>
         inferences(method = "delta", vcov = variance)
       total <- time_in_state(
@@ -515,7 +497,6 @@ test_that("time_in_state() keeps delta uncertainty on the real-time scale", {
         variables = variables,
         times = case$times,
         state_sets = list(lower = c("1", "2")),
-        absorb = 6,
         time_map = case$time_map,
         target_times = target_times
       ) |>
@@ -537,8 +518,7 @@ test_that("time_in_state() on per-profile delta SOPs matches state_time()", {
   sop <- sops(
     case$fit,
     variables = variables,
-    times = case$times,
-    absorb = 6
+    times = case$times
   ) |>
     inferences(method = "delta")
   for (time_map in list(NULL, case$time_map)) {
@@ -552,7 +532,6 @@ test_that("time_in_state() on per-profile delta SOPs matches state_time()", {
       variables = variables,
       times = case$times,
       state_sets = list(lower = c("1", "2")),
-      absorb = 6,
       time_map = time_map
     ) |>
       inferences(method = "delta")

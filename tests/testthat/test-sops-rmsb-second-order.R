@@ -38,7 +38,8 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
   model <- with_fit_settings(
     structure(list(), class = "vglm"),
     p2_var = "ypprev",
-    y_levels = 1:3
+    y_levels = 1:3,
+    absorb = 3
   )
 
   transition <- function(h, j) {
@@ -84,8 +85,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
       out <- soprob_markov(
         model = model,
         newdata = data,
-        times = 1:2,
-        absorb = 3
+        times = 1:2
       )
       withr::local_options(
         mostr.second_order_working_bytes = 256 * 1024^2
@@ -93,8 +93,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
       out_large_chunk <- soprob_markov(
         model = model,
         newdata = data,
-        times = 1:2,
-        absorb = 3
+        times = 1:2
       )
 
       # A patient cannot start in an absorbing state.
@@ -105,8 +104,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
         soprob_markov(
           model = model,
           newdata = absorb_data,
-          times = 1:2,
-          absorb = 3
+          times = 1:2
         ),
         "`yprev` is the absorbing state 3 for 1 of the 1 prediction rows",
         fixed = TRUE
@@ -124,7 +122,11 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
 })
 
 test_that("soprob_markov handles single first-order time points", {
-  model <- with_fit_settings(structure(list(), class = "vglm"), y_levels = 1:3)
+  model <- with_fit_settings(
+    structure(list(), class = "vglm"),
+    y_levels = 1:3,
+    absorb = 3
+  )
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
@@ -146,8 +148,7 @@ test_that("soprob_markov handles single first-order time points", {
           time = 1,
           yprev = factor(1, levels = 1:3)
         ),
-        times = 1,
-        absorb = 3
+        times = 1
       )
     }
   )
@@ -161,7 +162,11 @@ test_that("soprob_markov handles single first-order time points", {
 })
 
 test_that("soprob_markov carries absorbing labels that are not column positions", {
-  model <- with_fit_settings(structure(list(), class = "vglm"), y_levels = 0:2)
+  model <- with_fit_settings(
+    structure(list(), class = "vglm"),
+    y_levels = 0:2,
+    absorb = 2
+  )
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
@@ -192,8 +197,7 @@ test_that("soprob_markov carries absorbing labels that are not column positions"
           time = 1,
           yprev = factor(0, levels = 0:2)
         ),
-        times = 1:2,
-        absorb = 2
+        times = 1:2
       )
     }
   )

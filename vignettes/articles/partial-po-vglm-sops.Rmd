@@ -37,7 +37,9 @@ patients. There are four states:
 | 3 | On a ventilator or with acute respiratory distress syndrome (ARDS) |
 | 4 | Dead |
 
-Death is absorbing. Treated patients (`tx = 1`) have 0.8 times the odds of
+Death is absorbing; the fits below name it with `absorb = ABSORB` in
+`mostm()`, which records it so that every prediction keeps patients who die
+dead. Treated patients (`tx = 1`) have 0.8 times the odds of
 being in a worse state on any day.
 
 The simulator itself is a partial proportional-odds model, described in
@@ -90,6 +92,7 @@ fit_po <- mostm(
   form,
   data = model_data,
   id_var = "id",
+  absorb = ABSORB,
   engine = "vglm",
   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE)
 )
@@ -147,6 +150,7 @@ fit_ppo <- mostm(
   form,
   data = model_data,
   id_var = "id",
+  absorb = ABSORB,
   engine = "vglm",
   family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
   constraints = constraints,
@@ -221,8 +225,7 @@ point estimates are needed here, so we do not call `inferences()`.
 ```{r sops-models}
 sop_args <- list(
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  absorb = ABSORB
+  times = seq_len(FOLLOW_UP)
 )
 sop_po <- do.call(avg_sops, c(list(fit_po), sop_args))
 sop_ppo <- do.call(avg_sops, c(list(fit_ppo), sop_args))
@@ -310,14 +313,12 @@ transition_sources <- list(
   `Proportional odds` = plot_transitions(
     fit_po,
     times = seq_len(FOLLOW_UP),
-    y_levels = STATE_LEVELS,
-    absorb = ABSORB
+    y_levels = STATE_LEVELS
   ),
   `Partial proportional odds` = plot_transitions(
     fit_ppo,
     times = seq_len(FOLLOW_UP),
-    y_levels = STATE_LEVELS,
-    absorb = ABSORB
+    y_levels = STATE_LEVELS
   )
 )
 transitions <- do.call(rbind, Map(
@@ -394,7 +395,6 @@ correlation_plots <- list(
     fit_po,
     times = correlation_days,
     y_levels = STATE_LEVELS,
-    absorb = ABSORB,
     fill_limits = c(0, 1),
     show_values = FALSE
   ) +
@@ -403,7 +403,6 @@ correlation_plots <- list(
     fit_ppo,
     times = correlation_days,
     y_levels = STATE_LEVELS,
-    absorb = ABSORB,
     fill_limits = c(0, 1),
     show_values = FALSE
   ) +
@@ -434,8 +433,7 @@ draws to keep this example fast; use more, such as 1,000, in a real analysis.
 tis_args <- list(
   estimand = "time_in_state",
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  absorb = ABSORB
+  times = seq_len(FOLLOW_UP)
 )
 
 tis_po <- do.call(avg_comparisons, c(list(fit_po), tis_args)) |>

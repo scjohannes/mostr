@@ -780,15 +780,12 @@ get_time_info <- function(model, data, time_var) {
   )
 }
 
-default_sop_times <- function(data, time_var, time_covariates, default) {
+default_sop_times <- function(data, time_var, default) {
   if (default == "max_sequence") {
     return(seq_len(max(data[[time_var]], na.rm = TRUE)))
   }
 
   if (default == "fast") {
-    if (!is.null(time_covariates)) {
-      return(seq_len(nrow(time_covariates)))
-    }
     if (!is.null(time_var) && time_var %in% names(data)) {
       return(sort(unique(data[[time_var]])))
     }
@@ -828,7 +825,6 @@ resolve_sop_times <- function(
   data,
   times,
   time_var,
-  time_covariates = NULL,
   default = c("unique", "max_sequence", "fast")
 ) {
   default <- match.arg(default)
@@ -838,16 +834,12 @@ resolve_sop_times <- function(
     times <- if (time_info$is_factor) {
       time_info$levels
     } else {
-      default_sop_times(data, time_var, time_covariates, default)
+      default_sop_times(data, time_var, default)
     }
   }
 
   if (time_info$is_factor) {
     times <- coerce_visit_times(times, time_info, time_var)
-  }
-
-  if (!is.null(time_covariates) && nrow(time_covariates) != length(times)) {
-    mostr_abort("`time_covariates` must have one row per requested time point.")
   }
 
   list(times = times, time_info = time_info)
@@ -866,77 +858,27 @@ assign_sop_time <- function(data, time_var, value, time_info) {
   data
 }
 
-validate_factor_gap <- function(gap_var, time_covariates, time_info) {
-  if (is.null(gap_var) || !isTRUE(time_info$is_factor)) {
-    return(invisible(NULL))
-  }
-
-  if (
-    is.null(time_covariates) ||
-      !gap_var %in% names(time_covariates) ||
-      !is.numeric(time_covariates[[gap_var]])
-  ) {
-    mostr_abort(
-      "Factor visit time with `gap_var` requires numeric gap_var values in ",
-      "`time_covariates[[\"",
-      gap_var,
-      "\"]]`; elapsed gaps are not inferred from ",
-      "factor visit labels."
-    )
-  }
-
-  invisible(NULL)
-}
-
-assign_sop_gap <- function(
-  data,
-  gap_var,
-  times,
-  index,
-  time_covariates,
-  time_info
-) {
+# The gap since the previous requested visit, for a model fitted with
+# `gap_var`. The first transition's gap is its own time, the time since time
+# 0; `?mostm` and the "Choosing visits" section of `?sops` document this rule.
+# `mostm()` accepts `gap_var` only with numeric time, so the times can be
+# subtracted.
+assign_sop_gap <- function(data, gap_var, times, index) {
   if (is.null(gap_var)) {
     return(data)
   }
-
-  validate_factor_gap(gap_var, time_covariates, time_info)
-  if (
-    !isTRUE(time_info$is_factor) &&
-      (is.null(time_covariates) || !gap_var %in% names(time_covariates))
-  ) {
-    data[[gap_var]] <- if (index == 1L) {
-      times[index]
-    } else {
-      times[index] - times[index - 1L]
-    }
-  }
-
-  data
-}
-
-assign_sop_t_covs <- function(data, time_covariates, index) {
-  if (is.null(time_covariates)) {
-    return(data)
-  }
-
-  for (nm in names(time_covariates)) {
-    data[[nm]] <- time_covariates[index, nm]
+  data[[gap_var]] <- if (index == 1L) {
+    times[index]
+  } else {
+    times[index] - times[index - 1L]
   }
   data
 }
 
-# Set the columns of visit `index` of `times`: the time column, the gap since
-# the previous visit, and the time-varying covariates, as named in `settings`.
+# Set the columns of visit `index` of `times`: the time column and the gap
+# since the previous visit, as named in `settings`. Time terms of the formula,
+# such as `rcs(time, 4)`, are evaluated from the time column.
 assign_sop_visit <- function(data, settings, times, index, time_info) {
   data <- assign_sop_time(data, settings$time_var, times[index], time_info)
-  data <- assign_sop_gap(
-    data,
-    settings$gap_var,
-    times,
-    index,
-    settings$time_covariates,
-    time_info
-  )
-  assign_sop_t_covs(data, settings$time_covariates, index)
+  assign_sop_gap(data, settings$gap_var, times, index)
 }

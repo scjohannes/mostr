@@ -9,15 +9,12 @@ plot_correlation(
   newdata = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
   id_var = NULL,
   time_var = NULL,
   y_var = "y",
   p_var = NULL,
   p2_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   triangle = c("upper", "full"),
@@ -42,8 +39,6 @@ default) uses the states of the model; a supplied vector must hold the
 same states in the same order, otherwise it is an error. For trajectory
 data, supplied states set the order of the state scores; with \code{NULL}, the
 scores are factor codes or the integer state values.}
-
-\item{absorb}{Optional absorbing-state label for model-based recursions.}
 
 \item{id_var}{Name of the patient ID column. For a fitted model, \code{NULL}
 (the default) uses the \code{id_var} given to \code{\link[=mostm]{mostm()}}, which selects one
@@ -70,11 +65,6 @@ Supplying it for trajectory data is an error.}
 
 \item{facet_var}{Optional grouping variable. Correlations are computed
 separately within each observed stratum.}
-
-\item{gap_var}{Optional time-gap_var variable used by the fitted model.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table used by the fitted
-model.}
 
 \item{seed}{Optional random seed for \code{blrm} posterior draw selection.}
 
@@ -107,9 +97,9 @@ computed from model-implied pairwise moments rather than sampled paths.
 Minimum inputs depend on the object type. For trajectory data, \code{object} must
 contain the ID, time, and state columns named by \code{id_var}, \code{time_var}, and
 \code{y_var}. For model-based plots, pass a fitted Markov model and \code{times}; use
-\code{newdata} for explicit prediction profiles and pass \code{absorb} when the model
-has absorbing states. The column names and states default to those of the
-fit. Model-based correlations are computed from exact first- or
+\code{newdata} for explicit prediction profiles. The column names and states
+default to those of the fit, and the absorbing states are those given to
+\code{\link[=mostm]{mostm()}}. Model-based correlations are computed from exact first- or
 second-order Markov recursions. For \code{blrm} fits, posterior draws are kept
 separate through the moment calculation and summarized only after
 correlations are computed for each draw.
@@ -131,6 +121,6 @@ Pearson is useful when differences between these scores are meaningful.
 \examples{
 \dontrun{
 plot_correlation(data, id_var = "id", time_var = "day")
-plot_correlation(fit, times = 1:14, y_levels = 1:8, absorb = 8)
+plot_correlation(fit, times = 1:14)
 }
 }

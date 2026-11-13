@@ -47,6 +47,7 @@ fit <- mostm(
   y ~ rms::rcs(time, 4) + tx + yprev,
   data = markov_data,
   id_var = "id",
+  absorb = "8",
   opt_method = "LM",
   scale = TRUE,
   maxit = 100
@@ -55,8 +56,7 @@ fit <- mostm(
 sop <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
-  times = 1:28,
-  absorb = "8"
+  times = 1:28
 ) |> inferences(
   method = "delta"
 )

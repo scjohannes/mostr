@@ -401,14 +401,16 @@ native_plan_fits <- local({
           orm = suppressWarnings(mostm(
             y ~ time + tx + yprev,
             data = data,
-            id_var = "id"
+            id_var = "id",
+            absorb = 6
           )),
           vglm_po = make_test_model(data)$vglm_fit,
           vglm_partial_po = suppressWarnings(mostm(
-            ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
+            ordered(y) ~ rms::rcs(time, 3) + tx + yprev,
             family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
             data = data,
             id_var = "id",
+            absorb = 6,
             engine = "vglm"
           ))$vglm_fit
         )

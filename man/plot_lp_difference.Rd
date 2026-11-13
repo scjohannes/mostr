@@ -10,9 +10,6 @@ plot_lp_difference(
   variables,
   times,
   previous_states = NULL,
-  absorb = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   line_width = 0.7
 )
 }
@@ -29,18 +26,9 @@ first value is the reference.}
 
 \item{previous_states}{Optional previous-state values to facet by. Defaults
 to the fitted states that occur as the previous state in the data the
-model was fitted to, which leaves out absorbing states without
-\code{absorb}. A supplied state that never occurs there is an error, because
-the model has no linear predictor for it.}
-
-\item{absorb}{Optional absorbing-state label excluded from the default
-previous-state grid. It is needed only for a model that does not carry
-the data it was fitted to; a \code{\link[=mostm]{mostm()}} fit carries them.}
-
-\item{gap_var}{Optional time-gap_var variable used by the fitted model.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table used by the fitted
-model.}
+model was fitted to, which leaves out absorbing states. A supplied state
+that never occurs there is an error, because the model has no linear
+predictor for it.}
 
 \item{line_width}{Line width for the plotted contrasts.}
 }
@@ -69,8 +57,7 @@ plot_lp_difference(
   fit,
   profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
   variables = list(tx = c(0, 1)),
-  times = 1:28,
-  absorb = 8
+  times = 1:28
 )
 }
 }

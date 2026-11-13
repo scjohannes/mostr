@@ -271,7 +271,7 @@ skipped_sop_visit_message <- function(issue) {
       ),
       paste0(
         "If the model includes the time elapsed since the previous visit, ",
-        "name it in `gap_var`."
+        "name it in `mostm(gap_var = )` and refit."
       )
     ),
     collapse = " "

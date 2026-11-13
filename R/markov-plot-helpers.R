@@ -16,9 +16,6 @@ plot_markov_settings <- function(
   p_var = NULL,
   p2_var = NULL,
   y_levels = NULL,
-  absorb = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   data_id_var = NULL
 ) {
   if (markov_supported_model(x)) {
@@ -28,10 +25,7 @@ plot_markov_settings <- function(
       time_var = time_var,
       p_var = p_var,
       p2_var = p2_var,
-      y_levels = y_levels,
-      absorb = absorb,
-      gap_var = gap_var,
-      time_covariates = time_covariates
+      y_levels = y_levels
     ))
   }
   markov_settings(
@@ -39,10 +33,7 @@ plot_markov_settings <- function(
     time_var = time_var %||% "time",
     p_var = p_var %||% "yprev",
     p2_var = p2_var,
-    y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates
+    y_levels = y_levels
   )
 }
 

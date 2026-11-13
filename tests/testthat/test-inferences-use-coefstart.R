@@ -4,7 +4,7 @@
 
 test_that("use_coefstart = TRUE still works for vglm fits", {
   case <- make_comparisons_case()
-  estimates <- avg_sops(case$model, times = 1:2, absorb = 3)
+  estimates <- avg_sops(case$model, times = 1:2)
   expect_no_error(
     inferences(estimates, method = "bootstrap", n_draws = 2, seed = 1, use_coefstart = TRUE)
   )
@@ -16,7 +16,8 @@ test_that("use_coefstart = TRUE is refused by bootstrap_model_coefs() for orm fi
     y ~ time + tx + marker + yprev,
     data = case$data,
     first_followup_time = 1,
-    id_var = "id"
+    id_var = "id",
+    absorb = 3
   )
   expect_error(
     bootstrap_model_coefs(orm_fit, n_boot = 2, use_coefstart = TRUE),

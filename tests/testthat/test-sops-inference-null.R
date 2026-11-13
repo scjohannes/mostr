@@ -18,6 +18,7 @@ make_null_test_model <- function() {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
 }
@@ -29,8 +30,7 @@ make_null_test_comparison <- function(model, comparison) {
     estimand = "time_in_state",
     state_sets = "1",
     comparison = comparison,
-    times = 1:3,
-    absorb = 3
+    times = 1:3
   )
 }
 
@@ -64,13 +64,13 @@ test_that("default nulls are 0 for differences, 1 for ratios and none for SOPs a
     ),
     list(
       label = "avg_sops(), default null",
-      result = avg_sops(model, times = 1:3, absorb = 3) |>
+      result = avg_sops(model, times = 1:3) |>
         inferences(method = "delta"),
       null = NULL
     ),
     list(
       label = "avg_state_time(), default null",
-      result = avg_state_time(model, times = 1:3, absorb = 3) |>
+      result = avg_state_time(model, times = 1:3) |>
         inferences(method = "delta"),
       null = NULL
     )

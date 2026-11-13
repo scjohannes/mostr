@@ -11,20 +11,62 @@
   for a fit whose time column is not `"time"`, silently held that column at
   each profile's starting value and gave wrong probabilities.
 
+  The absorbing states and the column with the time since the previous visit
+  are declared when the model is fitted too: `mostm(..., absorb = "8")` and
+  `mostm(..., gap_var = "gap")`. `mostm()` checks them against the data:
+
+  * every `absorb` label must be a state of the response;
+  * no fitted row may have an absorbing state as its previous state, or, for
+    a second-order model, as the state two visits back (remove such rows
+    first; `prepare_markov_data(absorbing_state = )` does this for the
+    previous state);
+  * a state that occurs as an outcome but never as a previous state, and is
+    not named in `absorb`, gives a warning: it may be absorbing, such as
+    death. Before, a model with a numeric previous state (for example
+    `rms::rcs(yprev, 4)`) fitted without `absorb` let dead patients move back
+    to other states without any message;
+  * the `gap_var` column must be numeric and, on every row after a patient's
+    first, equal the time since the patient's previous row, so that a gap in
+    another unit than the time column is caught. `gap_var` needs numeric
+    time.
+
+  As before, the first predicted transition gets the first requested time as
+  its gap, the time since time 0. Absorbing states are never worked out from
+  the data, and they can't be changed at prediction time.
+
   `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
   `avg_comparisons()`, `soprob_markov()`, and `plot_lp_difference()` no
-  longer have the arguments `id_var`, `time_var`, `p_var`, `p2_var`, and
-  `y_levels`; passing one is an error. Drop them from these calls, and give
-  `p2_var`, `p_var`, and `time_var` to `mostm()` instead when they differ from
-  the defaults. The `state` column of the results now always holds the fitted
-  state labels (for example `"1"`, `"2"`, ...); before, it took the type of a
-  supplied `y_levels`, such as integers for `y_levels = 1:6`.
+  longer have the arguments `id_var`, `time_var`, `p_var`, `p2_var`,
+  `y_levels`, `absorb`, and `gap_var`; passing one is an error. Drop them from
+  these calls, and give `absorb` and `gap_var`, and `p2_var`, `p_var`, and
+  `time_var` when they differ from the defaults, to `mostm()` instead. The
+  `state` column of the results now always holds the fitted state labels (for
+  example `"1"`, `"2"`, ...); before, it took the type of a supplied
+  `y_levels`, such as integers for `y_levels = 1:6`.
 
-  `plot_transitions()`, `plot_correlation()`, and `plot_variogram()` keep these
-  arguments, because they also plot observed data, where nothing else names
-  the columns. For a fitted model they default to the fit's values, and a
-  value that differs from the fit's is an error, now also a `y_levels` with a
-  different number of states.
+  `time_covariates` is removed from these functions too. Write time terms
+  inline in the model formula instead, for example `rms::rcs(time, 4)`,
+  `log(time)`, `rms::pol(time, 2)` or `as.numeric(time > 7)`; the prediction
+  functions evaluate them at each requested time. They give the same results
+  as the precomputed columns that `time_covariates` supplied. For a model
+  with factor time there is now no way to give each visit's gap, so
+  `gap_var` with factor time is an error.
+
+  `plot_transitions()`, `plot_correlation()`, and `plot_variogram()` keep
+  `id_var`, `time_var`, `p_var`, `p2_var`, and `y_levels`, because they also
+  plot observed data, where nothing else names the columns. For a fitted
+  model they default to the fit's values, and a value that differs from the
+  fit's is an error, now also a `y_levels` with a different number of states.
+  They no longer have `absorb`, `gap_var`, and `time_covariates`, which only
+  model-based plots used; these come from the fit.
+
+* With `engine = "orm"` or `"blrm"`, `mostm()` refuses `splines::ns()`,
+  `splines::bs()` and `stats::poly()` (other than `raw = TRUE`) in the
+  formula, for time and for any other variable. rms evaluates these terms
+  again on the prediction rows, which gives a different basis without any
+  error: with `ns(age, 3)` the average probabilities of 40 profiles were off
+  by up to 0.04. Use `rms::rcs()` and `rms::pol()`, which keep the fitted
+  knots and terms. `engine = "vglm"` keeps the fitted basis and accepts them.
 
 * `mostm()` replaces `orm_markov()`, `vglm_markov()`, and `blrm_markov()`
   (#11). Choose the package that fits the model with `engine`: `"orm"` (the

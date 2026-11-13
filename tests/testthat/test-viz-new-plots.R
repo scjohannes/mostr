@@ -314,7 +314,11 @@ test_that("model-based plots take settings from the fit and refuse others", {
 })
 
 test_that("plot_transitions carries absorbing states absent from yprev levels", {
-  model <- structure(list(), class = "vglm", markov_id_var = "id")
+  model <- with_fit_settings(
+    structure(list(), class = "vglm", markov_id_var = "id"),
+    y_levels = 1:2,
+    absorb = 2
+  )
   newdata <- data.frame(
     id = 1,
     time = 0,
@@ -336,8 +340,6 @@ test_that("plot_transitions carries absorbing states absent from yprev levels", 
         model,
         newdata = newdata,
         times = 1:2,
-        y_levels = 1:2,
-        absorb = 2,
         seed = 1
       )
     }
@@ -842,8 +844,14 @@ test_that("correlation methods match R with ties and pairwise missing values", {
 
 test_that("model correlations match exact trajectories for both Markov orders", {
   skip_on_cran()
-  model <- structure(list(), class = "vglm", markov_id_var = "id")
   for (second_order in c(FALSE, TRUE)) {
+    # The fit records the order and the absorbing state 3.
+    model <- with_fit_settings(
+      structure(list(), class = "vglm", markov_id_var = "id"),
+      y_levels = 1:3,
+      p2_var = if (second_order) "ypprev",
+      absorb = 3
+    )
     probabilities <- function(time, previous, second_previous) {
       if (time == 1) {
         return(c(0.2, 0.3, 0.5))
@@ -891,9 +899,6 @@ test_that("model correlations match exact trajectories for both Markov orders", 
             x = model,
             newdata = newdata,
             times = 1:3,
-            y_levels = 1:3,
-            absorb = 3,
-            p2_var = if (second_order) "ypprev" else NULL,
             method = method
           )
           expected <- cor(mat, method = method)
@@ -919,19 +924,28 @@ test_that("model correlations match exact trajectories for both Markov orders", 
   }
 })
 
-test_that("plot_lp_difference() on a real fit needs no `absorb`, for vglm as for orm", {
+test_that("plot_lp_difference() on a real fit leaves out the absorbing state, for vglm as for orm", {
   # The absorbing state never appears as a previous state in the fitted data,
-  # so leaving out `absorb` must give the same plot as passing it.
+  # so the default previous states leave it out whether or not the fit
+  # records it as absorbing.
   for (engine in c("orm", "vglm")) {
     cell <- grid_cell(engine)
+    fit <- grid_fit(cell)
+    unrecorded <- markov_set_settings(
+      fit,
+      markov_settings_update(markov_model_settings(fit), absorb = NULL)
+    )
     args <- list(
-      grid_fit(cell),
       profile = grid_profiles(cell)[1, , drop = FALSE],
       variables = list(tx = c(0, 1)),
       times = 1:4
     )
-    with_absorb <- do.call(plot_lp_difference, c(args, absorb = grid_n_states))
-    without <- do.call(plot_lp_difference, args)
-    expect_equal(without$data, with_absorb$data, label = engine)
+    recorded <- do.call(plot_lp_difference, c(list(fit), args))
+    without <- do.call(plot_lp_difference, c(list(unrecorded), args))
+    expect_equal(without$data, recorded$data, label = engine)
+    expect_false(
+      as.character(grid_n_states) %in% as.character(recorded$data$previous_state),
+      label = engine
+    )
   }
 })

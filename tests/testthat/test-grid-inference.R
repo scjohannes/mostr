@@ -134,6 +134,7 @@ test_that("`type` and `cadjust` change conditional but not unconditional varianc
         data = data,
         id_var = "id",
         first_followup_time = 1,
+        absorb = grid_n_states,
         type = type,
         cadjust = cadjust
       )
@@ -149,8 +150,7 @@ test_that("`type` and `cadjust` change conditional but not unconditional varianc
         average <- avg_sops(
           fit,
           variables = grid_treatments,
-          times = 1:3,
-          absorb = grid_n_states
+          times = 1:3
         )
         list(
           conditional = inferences(average, method = "delta", vcov = "conditional"),

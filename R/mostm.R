@@ -44,6 +44,14 @@
 #'   than converted with `factor()` inside the formula; for factor time, also
 #'   set `first_followup_time`. Random-effect terms are available only for the
 #'   `"blrm"` engine; see "Random effects" below.
+#'
+#'   Time terms are written inline, for example `rms::rcs(time, 4)`,
+#'   `log(time)` or `rms::pol(time, 2)`; the prediction functions evaluate
+#'   them at each requested time. For the `"orm"` and `"blrm"` engines, use
+#'   `rms::rcs()` and `rms::pol()` rather than `splines::ns()`,
+#'   `splines::bs()` or `stats::poly()`, for time and for any other variable:
+#'   rms evaluates the latter again on the prediction rows, which gives a
+#'   different basis, so `mostm()` refuses them.
 #' @param data A data frame with one row per patient and visit.
 #' @param ... Arguments for the engine, given by name. Each must be an
 #'   argument of the chosen engine; an argument that belongs to a different
@@ -91,6 +99,18 @@
 #'   do `id_var`, `time_var` and `p_var`, and then use second-order
 #'   calculations. Without it, a column with the older state in the formula
 #'   would be held at each patient's starting value.
+#' @param absorb The absorbing states, such as death: states that a patient
+#'   never leaves, given as state labels, for example `absorb = "8"` or
+#'   `absorb = c("home", "dead")`. The prediction functions keep a patient who
+#'   reaches one of them there, and they never predict a transition out of
+#'   it. `NULL` (the default) means that no state is absorbing. See
+#'   "Absorbing states" below.
+#' @param gap_var Name of the column that holds the time since each
+#'   patient's previous visit, if the model includes it, for example `"gap"`.
+#'   The prediction functions set this column to the difference between
+#'   consecutive requested times, so the visits in `times` may be spaced
+#'   unevenly. Time must be numeric. See "Time since the previous visit"
+#'   below.
 #' @param first_followup_time Time of the first visit after baseline. Each
 #'   patient's row at this time is their starting row for automatic
 #'   predictions. For numeric time, `NULL` (the default) uses 1, time may not
@@ -127,6 +147,53 @@
 #' be missing. A fitted patient without a complete starting row is an error
 #' when predictions are made: a later row is never used instead. Patients
 #' without any fitted transition are not part of the fitted cohort.
+#'
+#' ## Absorbing states
+#'
+#' A patient who reaches an absorbing state, such as death, stays there. The
+#' data therefore contain transitions into it but none out of it, and the
+#' model can't say what happens after it. Name such states in `absorb`: the
+#' prediction functions then keep the probability of being in them, and
+#' predict transitions only from the other states. `mostm()` never works out
+#' the absorbing states from the data, because a state that is seen only as
+#' an outcome, at a patient's last visit, need not be absorbing.
+#'
+#' `mostm()` checks `absorb` against the fitted rows of `data`:
+#'
+#' * Each label must be a state of the response.
+#' * No fitted row may have an absorbing state as its previous state
+#'   (`p_var`) or, for a second-order model, as the state two visits back
+#'   (`p2_var`): a patient in an absorbing state has no further transitions.
+#'   Remove such rows first; [prepare_markov_data()] does this for the
+#'   previous state.
+#' * A state that occurs as an outcome but never as a previous state, and is
+#'   not named in `absorb`, gives a warning: it may be absorbing. Without
+#'   `absorb`, a model with a numeric previous state, such as
+#'   `rms::rcs(yprev, 4)`, predicts transitions out of such a state from the
+#'   other states' transitions, so dead patients can come back to life. With
+#'   a factor previous state, the prediction functions stop instead, because
+#'   the model has no coefficient for that previous state.
+#'
+#' Bootstrap refits keep the absorbing states of the fit. A resample in which
+#' no patient reaches one of them has no transitions into it, so its refit
+#' leaves that state out, and the state's probability is 0 in that resample.
+#'
+#' ## Time since the previous visit
+#'
+#' When visits are spaced unevenly, the model can include the time since each
+#' patient's previous visit as a predictor, in a column named by `gap_var`.
+#' The prediction functions then set that column for every transition: to the
+#' difference between the requested time and the one before it, and, for the
+#' first requested time, to that time itself, that is, the time since time 0.
+#' So with numeric time and `times = c(1, 2, 4, 7)`, the gaps are 1, 1, 2 and
+#' 3. A patient's first visit after baseline in the fitted data should
+#' therefore have a gap equal to its time.
+#'
+#' `mostm()` checks that the gap column is numeric, that time is numeric, and
+#' that on every row after a patient's first the gap equals the time since
+#' the patient's previous row, so that both columns use the same unit. Factor
+#' or character time can't be used with `gap_var`, because visit labels don't
+#' say how much time passes between visits.
 #'
 #' ## Weights and subsets
 #'
@@ -214,10 +281,12 @@
 #' )
 #' model_data <- prepare_markov_data(trajectories, absorbing_state = 8)
 #'
+#' # State 8, death, is absorbing: patients who reach it stay there.
 #' fit <- mostm(
 #'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
 #'   data = model_data,
-#'   id_var = "id"
+#'   id_var = "id",
+#'   absorb = "8"
 #' )
 #'
 #' # The same model fitted with VGAM
@@ -225,6 +294,7 @@
 #'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
 #'   data = model_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' # Both engines reach the same maximum of the log-likelihood
@@ -235,8 +305,7 @@
 #' sops_by_arm <- avg_sops(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:14,
-#'   absorb = "8"
+#'   times = 1:14
 #' )
 #' sops_by_arm[sops_by_arm$time == 14, ]
 #'
@@ -248,6 +317,7 @@
 #'     ordered(y) ~ yprev + time + tx,
 #'     data = model_data,
 #'     id_var = "id",
+#'     absorb = "8",
 #'     engine = "blrm",
 #'     subset = id <= 60,
 #'     ppo = ~time,
@@ -271,6 +341,8 @@ mostm <- function(
   time_var = "time",
   p_var = "yprev",
   p2_var = NULL,
+  absorb = NULL,
+  gap_var = NULL,
   first_followup_time = NULL,
   weights = NULL,
   subset = NULL,
@@ -319,6 +391,7 @@ mostm <- function(
   }
   if (engine %in% c("orm", "blrm")) {
     mostm_check_inline_factors(formula, engine, time_var)
+    mostm_check_data_dependent_bases(formula, engine)
   }
   mostm_check_random_effects(formula, engine)
 
@@ -376,6 +449,21 @@ mostm <- function(
     eval(model_call$subset, data, eval_env)
   }
 
+  # Bootstrap refits reuse the checked absorbing states and gap column; a
+  # resample without a death would otherwise fail the check that `absorb`
+  # names states of the response.
+  if (!coefficients_only) {
+    absorb <- validate_mostm_absorb(
+      absorb,
+      formula = formula,
+      data = data,
+      rows = mostm_subset_row_index(subset_rows, nrow(data)),
+      p_var = p_var,
+      p2_var = p2_var
+    )
+    validate_mostm_gap_var(gap_var, data, id_var, time_var)
+  }
+
   setup <- list(
     formula = formula,
     data = data,
@@ -420,6 +508,8 @@ mostm <- function(
     p_var = p_var,
     p2_var = p2_var,
     y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
     first_followup_time = stored$starting_profile_metadata$first_followup_time,
     from_fit = setdiff(
       markov_settings_fit_fields(),
@@ -701,6 +791,76 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
         "https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html"
       )
     }
+  )
+}
+
+# The rows of `data` that `subset` selects, as row numbers; all rows without
+# `subset`. A missing value in a logical `subset` drops the row, as in the
+# engines.
+mostm_subset_row_index <- function(subset_rows, n) {
+  if (is.null(subset_rows)) {
+    return(seq_len(n))
+  }
+  if (is.logical(subset_rows)) {
+    return(which(rep_len(subset_rows, n)))
+  }
+  seq_len(n)[subset_rows]
+}
+
+# `splines::ns()`, `splines::bs()` and `stats::poly()` choose their knots or
+# orthogonal polynomials from the data they are evaluated on. `rms::orm()` and
+# `rmsb::blrm()` keep only the formula, so mostr's orm design matrices and
+# `rms::predictrms()` evaluate these terms again on the prediction rows and
+# get another basis, without any error. Measured on 2026-11-13
+# (benchmarks/local/settings-refactor/spline-covariates.R): with `ns(age, 3)`
+# for a covariate, the design matrix of 40 profiles differed from the fitted
+# one by up to 0.42 and their average SOPs by up to 0.042; `bs()` and `poly()`
+# were as wrong, and one profile could even fail. `rms::rcs()` and `rms::pol()`
+# store their knots or powers and agreed exactly. VGAM keeps the fitted basis,
+# so `engine = "vglm"` is not checked. `poly(raw = TRUE)` has no data-dependent
+# part and is allowed.
+mostm_check_data_dependent_bases <- function(formula, engine) {
+  calls <- formula_rhs_calls(formula, c("ns", "bs", "poly"))
+  calls <- Filter(
+    function(call) {
+      fun <- call[[1L]]
+      name <- as.character(if (is.call(fun)) fun[[3L]] else fun)
+      if (!identical(name, "poly")) {
+        return(TRUE)
+      }
+      matched <- tryCatch(
+        match.call(stats::poly, call),
+        error = function(e) call
+      )
+      !isTRUE(matched$raw)
+    },
+    calls
+  )
+  if (!length(calls)) {
+    return(invisible(NULL))
+  }
+  labels <- unique(vapply(calls, deparse1, character(1)))
+  fitter <- switch(engine, orm = "`rms::orm()`", blrm = "`rmsb::blrm()`")
+  first <- calls[[1L]]
+  variable <- if (length(first) >= 2L && is.name(first[[2L]])) {
+    as.character(first[[2L]])
+  } else {
+    "x"
+  }
+  mostr_abort(
+    "With ",
+    fitter,
+    ", ",
+    format_sop_visit_list(paste0("`", labels, "`")),
+    if (length(labels) == 1L) " would be" else " would each be",
+    " evaluated again on the prediction rows, which gives a different basis ",
+    "without any error, so the state occupancy probabilities would be ",
+    "wrong. Use `rms::rcs()` for a spline, for example `rcs(",
+    variable,
+    ", 4)`, or `rms::pol()` for a polynomial, for example `pol(",
+    variable,
+    ", 2)`: both keep the knots or terms of the fit. `engine = \"vglm\"` ",
+    "keeps the fitted basis of these terms."
   )
 }
 

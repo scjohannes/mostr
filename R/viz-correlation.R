@@ -10,9 +10,9 @@
 #' Minimum inputs depend on the object type. For trajectory data, `object` must
 #' contain the ID, time, and state columns named by `id_var`, `time_var`, and
 #' `y_var`. For model-based plots, pass a fitted Markov model and `times`; use
-#' `newdata` for explicit prediction profiles and pass `absorb` when the model
-#' has absorbing states. The column names and states default to those of the
-#' fit. Model-based correlations are computed from exact first- or
+#' `newdata` for explicit prediction profiles. The column names and states
+#' default to those of the fit, and the absorbing states are those given to
+#' [mostm()]. Model-based correlations are computed from exact first- or
 #' second-order Markov recursions. For `blrm` fits, posterior draws are kept
 #' separate through the moment calculation and summarized only after
 #' correlations are computed for each draw.
@@ -43,7 +43,6 @@
 #'   same states in the same order, otherwise it is an error. For trajectory
 #'   data, supplied states set the order of the state scores; with `NULL`, the
 #'   scores are factor codes or the integer state values.
-#' @param absorb Optional absorbing-state label for model-based recursions.
 #' @param id_var Name of the patient ID column. For a fitted model, `NULL`
 #'   (the default) uses the `id_var` given to [mostm()], which selects one
 #'   starting row per patient from the stored data; a different name is an
@@ -64,9 +63,6 @@
 #'   Supplying it for trajectory data is an error.
 #' @param facet_var Optional grouping variable. Correlations are computed
 #'   separately within each observed stratum.
-#' @param gap_var Optional time-gap_var variable used by the fitted model.
-#' @param time_covariates Optional time-varying covariate lookup table used by the fitted
-#'   model.
 #' @param seed Optional random seed for `blrm` posterior draw selection.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
@@ -84,7 +80,7 @@
 #' @examples
 #' \dontrun{
 #' plot_correlation(data, id_var = "id", time_var = "day")
-#' plot_correlation(fit, times = 1:14, y_levels = 1:8, absorb = 8)
+#' plot_correlation(fit, times = 1:14)
 #' }
 #' @export
 plot_correlation <- function(
@@ -92,15 +88,12 @@ plot_correlation <- function(
   newdata = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
   id_var = NULL,
   time_var = NULL,
   y_var = "y",
   p_var = NULL,
   p2_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   triangle = c("upper", "full"),
@@ -125,9 +118,6 @@ plot_correlation <- function(
     p_var = p_var,
     p2_var = p2_var,
     y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     data_id_var = "id"
   )
 
@@ -173,15 +163,12 @@ plot_variogram <- function(
   newdata = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
   id_var = NULL,
   time_var = NULL,
   y_var = "y",
   p_var = NULL,
   p2_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   smooth = TRUE,
@@ -199,9 +186,6 @@ plot_variogram <- function(
     p_var = p_var,
     p2_var = p2_var,
     y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     data_id_var = "id"
   )
 

@@ -76,13 +76,18 @@ state, a smooth function of time (a restricted cubic spline with three knots,
 `rms::rcs(time, 3)`), and treatment. `id_var = "id"` tells mostr which rows
 belong to the same patient: it uses this to compute standard errors that
 allow for the correlation between one patient's transitions, and to store
-each patient's starting state for later predictions.
+each patient's starting state for later predictions. `absorb = "8"` names
+the absorbing state. The fit records it, and every later prediction keeps a
+patient who reaches state 8 there. If a state occurs as an outcome but never
+as a previous state and is not named in `absorb`, `mostm()` warns that it
+may be absorbing.
 
 ```{r fit}
 fit <- mostm(
   y ~ yprev + rms::rcs(time, 3) + tx,
   data = model_data,
-  id_var = "id"
+  id_var = "id",
+  absorb = "8"
 )
 
 exp(coef(fit)["tx"])
@@ -107,15 +112,13 @@ to treatment alone.
 
 - `variables = list(tx = c(0, 1))` gives the values to set;
 - `times = 1:28` gives the days. SOPs are calculated one day after the other,
-  so request every day, even if you only need some of them;
-- `absorb = "8"` names the absorbing state.
+  so request every day, even if you only need some of them.
 
 ```{r avg-sops}
 probabilities <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
-  times = 1:28,
-  absorb = "8"
+  times = 1:28
 )
 probabilities[probabilities$time == 28, ]
 ```
@@ -141,8 +144,7 @@ days_outside <- avg_comparisons(
   variables = list(tx = c(0, 1)),
   estimand = "time_in_state",
   state_sets = list(outside_hospital = c("1", "2")),
-  times = 1:28,
-  absorb = "8"
+  times = 1:28
 )
 days_outside
 ```

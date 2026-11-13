@@ -339,6 +339,7 @@ fit_robust <- mostm(
   ordered(y) ~ time + tx + yprev,
   data = data,
   id_var = "id",
+  absorb = "6",
   engine = "vglm"
 )
 
@@ -346,19 +347,22 @@ fit_robust <- mostm(
 result_sim <- avg_sops(
   model = fit_robust,
   variables = list(tx = c(0, 1)),
-  times = 1:60,
-  absorb = "6"
+  times = 1:60
 ) |>
   inferences(method = "mvn", n_draws = 1000)
 
 # The orm engine stores the package-owned full robust covariance matrix.
-fit_orm <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
+fit_orm <- mostm(
+  y ~ time + tx + yprev,
+  data = data,
+  id_var = "id",
+  absorb = "6"
+)
 
 avg_orm <- avg_sops(
   model = fit_orm,
   variables = list(tx = c(0, 1)),
-  times = 1:60,
-  absorb = "6"
+  times = 1:60
 )
 result_orm <- avg_orm |>
   inferences(method = "mvn", n_draws = 1000)
@@ -367,23 +371,20 @@ result_orm <- avg_orm |>
 result_boot <- avg_sops(
   model = fit_robust,
   variables = list(tx = c(0, 1)),
-  times = 1:60,
-  absorb = "6"
+  times = 1:60
 ) |>
   inferences(method = "bootstrap", n_draws = 500)
 
 # Individual-level SOPs with simulation inference
 ind_result <- sops(
   model = fit_robust,
-  times = 1:60,
-  absorb = "6") |>
+  times = 1:60) |>
   inferences(n_draws = 500)
 
 # Individual-level refit bootstrap uses FWB.
 ind_boot <- sops(
   model = fit_robust,
-  times = 1:60,
-  absorb = "6") |>
+  times = 1:60) |>
   inferences(method = "fwb", n_draws = 500)
 
 # Extract draws for custom analyses

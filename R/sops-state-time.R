@@ -104,13 +104,10 @@ state_time <- function(
   state_sets = NULL,
   by = FALSE,
   times,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -148,12 +145,9 @@ state_time <- function(
           state_sets = state_sets,
           by = by_choice$by %||% TRUE,
           times = times,
-          absorb = absorb,
           time_map = time_map,
           target_times = target_times,
           time_unit = time_unit,
-          gap_var = gap_var,
-          time_covariates = time_covariates,
           include_re = include_re,
           n_draws = n_draws,
           seed = seed,
@@ -168,12 +162,7 @@ state_time <- function(
   }
 
   validate_markov_model(model)
-  settings <- resolve_markov_settings(
-    model,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates
-  )
+  settings <- resolve_markov_settings(model)
   variables <- resolve_prediction_variables(
     variables,
     model,

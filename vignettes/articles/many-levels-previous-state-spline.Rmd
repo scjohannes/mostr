@@ -67,7 +67,12 @@ plot_sops(raw_data, geom = "bar")
 
 `prepare_markov_data(..., factor_previous = FALSE)` keeps `yprev` numeric so
 that it can enter the model through `rcs(yprev, 5)`, a restricted cubic spline
-with five knots. Because no state is absorbing, `absorbing_state = NULL`.
+with five knots. Because no state is absorbing, `absorbing_state = NULL`, and
+`mostm()` gets `absorb = NULL`, its default. A numeric previous state makes
+`absorb` matter: without it, the model would predict transitions out of an
+absorbing state from the transitions out of the other states. `mostm()`
+warns when a state occurs as an outcome but never as a previous state, which
+does not happen here.
 
 ```{r fit-model}
 model_data <- prepare_markov_data(
@@ -80,6 +85,7 @@ fit_many <- mostm(
   y ~ rms::rcs(time, 4) + tx + rms::rcs(yprev, 5),
   data = model_data,
   id_var = "id",
+  absorb = ABSORB,
   opt_method = "LM",
   scale = TRUE,
   penalty = 0,
@@ -94,7 +100,7 @@ fit_many
 As in [the proportional-odds article](full-po-sops.html), we compare the correlations between days
 in the observed data with those implied by the model, first as a matrix of
 all pairs of days and then as a variogram against the gap between days.
-Without an absorbing state, `absorb = NULL`. Some observed
+Some observed
 correlations are slightly negative, so both correlation plots use
 `fill_limits = c(-1, 1)`; a shared scale makes their colors comparable.
 
@@ -116,8 +122,7 @@ mc <- plot_correlation(
   time_var = "time",
   y_var = "y",
   times = seq_len(FOLLOW_UP),
-  y_levels = fit_many$yunique,
-  absorb = ABSORB
+  y_levels = fit_many$yunique
 )
 
 ec
@@ -138,8 +143,7 @@ plot_variogram(
   time_var = "time",
   y_var = "y",
   times = seq_len(FOLLOW_UP),
-  y_levels = fit_many$yunique,
-  absorb = ABSORB
+  y_levels = fit_many$yunique
 )
 ```
 

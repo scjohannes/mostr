@@ -29,6 +29,95 @@ never planned for release.
 **Decided against.** Keeping the code as an unexported function, as it was
 from 2026-11-09. Reason not recorded beyond the doubts above.
 
+## 2026-11-13: Move `absorb` and `gap_var` into `mostm()`, and remove `time_covariates`
+
+**Decided.** The absorbing states and the column with the time since the
+previous visit are given once, to `mostm(absorb = , gap_var = )`, recorded in
+the fit's settings and checked when fitting. The prediction functions
+(`sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+`avg_comparisons()`, `soprob_markov()`, `plot_lp_difference()`) and the model
+plots (`plot_transitions()`, `plot_correlation()`, `plot_variogram()`) lose
+`absorb`, `gap_var` and `time_covariates`; the plots only used them for
+fitted models. `time_covariates` is removed: time terms are written inline in
+the formula. The maintainer decided:
+
+- Absorbing states are never worked out from the data, and there is no
+  per-call `absorb`: first-passage probabilities (treating a non-absorbing
+  state as absorbing at prediction time) are not wanted.
+- The first transition keeps `times[1]` as its gap, the time since time 0,
+  also when supplied `newdata` starts at a later visit. The rule is accepted
+  and documented in `?mostm` and in "Choosing visits" of `?sops`.
+- With factor time there is no longer a way to give each visit's gap, so
+  `gap_var` with factor time is refused.
+
+`mostm()` refuses `absorb` labels that are not states of the response and
+fitted rows whose previous state, or for a second-order fit the state two
+visits back, is absorbing. It warns (class
+`mostr_warning_outcome_only_states`) about a state that occurs as an outcome
+but never as a previous state and is not in `absorb`; it does not change the
+fit. It refuses a `gap_var` column that is not numeric, or that differs from
+the time since the patient's previous row on any row after a patient's first
+(relative tolerance `sqrt(.Machine$double.eps)`). With `engine = "orm"` or
+`"blrm"` it refuses `splines::ns()`, `splines::bs()` and `stats::poly()`
+(other than `raw = TRUE`) for any variable.
+
+**Why.** Two silent wrong answers:
+
+- With a numeric previous state (for example `rcs(yprev, 4)`) and `absorb`
+  left out for death, dead patients moved back to state 7: in the simulated
+  trial measured on 2026-11-12, the day-14 probability of death was 0.012
+  instead of 0.057. A factor previous state stops at prediction because the
+  model has no coefficient for death as a previous state; a numeric one
+  extrapolates without a message. Recording `absorb` on the fit lets
+  `mostm()` warn about it once, where the data are at hand.
+- rms evaluates `ns()`, `bs()` and orthogonal `poly()` again on the
+  prediction rows and gets another basis, without an error. Measured on
+  2026-11-13 (`benchmarks/local/settings-refactor/spline-covariates.R`, 300
+  simulated patients, `ns(age, 3)` etc. for a covariate, 40 supplied
+  profiles): the orm design matrix differed from the fitted one by up to
+  0.42 (`ns`), 0.38 (`bs`) and 0.50 (`poly`), and the average SOPs by up to
+  0.042, 0.033 and 0.038; one profile with `poly()` failed with an error.
+  `rms::predictrms()`, which the blrm route uses, gave the same differences.
+  `rms::rcs()` and `rms::pol()` agreed exactly. With `engine = "vglm"`, which
+  keeps the fitted `predvars`, the SOPs agreed to 3e-16
+  (`spline-covariates-vglm.R`), so vglm is not refused.
+
+Inline time terms replace `time_covariates`. Measured on 2026-11-12 (SOPs and
+delta standard errors compared with precomputed columns passed through
+`time_covariates`): identical for `log(time)`, `rms::pol(time, 2)`,
+`as.numeric(time > 7)`, `rcs()`, `lsp()`, and vglm with `splines::ns(time, 3)`.
+orm with `splines::ns(time, 3)` fitted but prediction failed with "all
+interior knots match left boundary knot", because rms evaluates `ns()` again
+on the new data (now refused at fit time); `I(time > 7)` makes `rms::orm()`
+itself fail. A `gap_var` that is checked against the time column catches a
+gap recorded in another unit than time, which would otherwise be fitted and
+predicted on different scales.
+
+The 97 saved outputs of
+`benchmarks/local/settings-refactor/baseline-before-move.R` (on `40480f3`)
+and of its translated copy `baseline-after-move.R`, which passes `absorb`
+and `gap_var` to `mostm()` and replaces the `time_covariates` spline columns
+by `rms::rcs(time, 3)` inline, are identical with `identical()`
+(`compare-move.R`), including the SOPs, draws and covariances of the
+inline-term fit. The only difference in the full objects is the coefficient
+names stored with that fit's delta-method result (`time`, `time'` instead of
+`time_lin`, `time_nlin`). The gap fit in both scripts uses data whose gap
+equals the time since the previous row; the grid data's own `gap` column did
+not, so the test grid's gap set-up now spaces its visits at times 1, 2, 4, 5,
+7, 8 with matching gaps.
+
+**Decided against.** Inferring absorbing states from the data (a state seen
+only as an outcome): a rare state seen only at a last visit would be
+declared absorbing without the user knowing, so the check only warns. A
+per-call `absorb` for first-passage probabilities: not wanted, and it would
+predict from transitions the model was fitted on as if they could not
+happen. Keeping `time_covariates` for factor-time gaps: the only remaining
+use, and it kept a second way to set visit-specific columns that the
+execution plans, delta method, bootstrap replays and diagnostic traces all
+had to carry. Refusing `ns()`, `bs()` and `poly()` only on the time variable:
+the measurement showed the same wrong answer for any covariate. Changing the
+fit when the warning fires: the user decides whether the state is absorbing.
+
 ## 2026-11-12: Keep the blrm options as separate arguments
 
 **Decided.** `n_draws`, `seed`, `include_re`, `return_draws` and `conf_level`

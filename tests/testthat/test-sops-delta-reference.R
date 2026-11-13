@@ -190,7 +190,8 @@ delta_reference_fits <- local({
       orm_fit <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
         data = data,
-        id_var = "id"
+        id_var = "id",
+        absorb = 6
       ))
       vglm_fit <- make_test_model(data)$vglm_fit
       equidistant_fit <- suppressWarnings(mostm(
@@ -202,6 +203,7 @@ delta_reference_fits <- local({
         ),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       ))$vglm_fit
       baseline <- data[!duplicated(data$id), , drop = FALSE]

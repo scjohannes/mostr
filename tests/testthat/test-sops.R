@@ -15,6 +15,7 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = "6",
       engine = "vglm"
     )
   )$vglm_fit
@@ -29,8 +30,7 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
   actual <- soprob_markov(
     model,
     newdata = data[1, ],
-    times = seq_len(follow_up),
-    absorb = "6"
+    times = seq_len(follow_up)
   )
 
   expect_probability_array(actual, expected_dim = c(1L, follow_up, 6L))
@@ -48,68 +48,54 @@ test_that("soprob_markov follows custom partial proportional-odds constraints an
     seed = 789,
     follow_up_time = follow_up
   )
-  time_spline <- rms::rcs(data$time, 4)
-  data$time_lin <- as.vector(time_spline[, 1])
-  data$time_nlin_1 <- as.vector(time_spline[, 2])
-  data$time_nlin_2 <- as.vector(time_spline[, 3])
-  time_covariates <- make_time_covariates(
-    data,
-    "time",
-    "time_lin",
-    "time_nlin_1",
-    "time_nlin_2"
-  )
-
   # The linear time term gets its own effect on each cut-point through a
   # constraint column 0:4, rather than the identity matrix that
-  # `parallel = FALSE` would give.
+  # `parallel = FALSE` would give. Time enters as `time` and `log(time)`,
+  # inline terms that prediction evaluates at each visit.
   n_thresholds <- 5L
   main_constraints <- list(
     "(Intercept)" = diag(n_thresholds),
     "yprev" = cbind(PO_effect = 1),
     "tx" = cbind(PO_effect = 1),
-    "time_lin" = cbind(
-      time_lin_1 = 1,
-      time_lin_5 = 0:(n_thresholds - 1)
+    "time" = cbind(
+      time_1 = 1,
+      time_5 = 0:(n_thresholds - 1)
     ),
-    "time_nlin_1" = cbind(PO_effect = 1),
-    "time_nlin_2" = cbind(PO_effect = 1)
+    "log(time)" = cbind(PO_effect = 1)
   )
   cases <- list(
     list(
       label = "main effects",
-      formula = ordered(y) ~ time_lin + time_nlin_1 + time_nlin_2 + tx + yprev,
+      formula = ordered(y) ~ time + log(time) + tx + yprev,
       constraints = main_constraints
     ),
     list(
       label = "treatment-by-time and previous-state-by-time interactions",
-      formula = ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) *
+      formula = ordered(y) ~ (time + log(time)) *
         tx +
         yprev +
-        yprev:time_lin,
+        yprev:time,
       constraints = c(
         main_constraints,
         list(
-          "time_lin:tx" = cbind(PO_effect = 1),
-          "time_nlin_1:tx" = cbind(PO_effect = 1),
-          "time_nlin_2:tx" = cbind(PO_effect = 1),
-          "time_lin:yprev" = cbind(PO_effect = 1)
+          "time:tx" = cbind(PO_effect = 1),
+          "log(time):tx" = cbind(PO_effect = 1),
+          "time:yprev" = cbind(PO_effect = 1)
         )
       )
     )
   )
 
   baseline <- data[data$time == 1, , drop = FALSE][1, , drop = FALSE]
-  # The readable loop sets the time covariates of each visit itself.
-  visit_columns <- time_covariates[, c("time_lin", "time_nlin_1", "time_nlin_2")]
 
   for (case in cases) {
     model <- suppressWarnings(
       mostm(
         case$formula,
-        family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time_lin),
+        family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ time),
         data = data,
         id_var = "id",
+        absorb = "6",
         constraints = case$constraints,
         engine = "vglm"
       )
@@ -125,9 +111,7 @@ test_that("soprob_markov follows custom partial proportional-odds constraints an
       result <- soprob_markov(
         model,
         newdata = profile,
-        times = seq_len(follow_up),
-        absorb = "6",
-        time_covariates = time_covariates
+        times = seq_len(follow_up)
       )
       expect_probability_array(result, expected_dim = c(1L, follow_up, 6L))
       expect_absorbing_probability_monotone(result, absorbing_state = 6)
@@ -136,8 +120,7 @@ test_that("soprob_markov follows custom partial proportional-odds constraints an
         profile,
         times = seq_len(follow_up),
         states = 1:6,
-        absorb = 6,
-        visit_columns = visit_columns
+        absorb = 6
       )
       expect_equal(unname(result[1, , ]), loop, tolerance = 1e-10, info = label)
     }
@@ -173,8 +156,7 @@ test_that("soprob_markov normalizes transitions when no state is absorbing", {
   result <- soprob_markov(
     model,
     newdata = baseline,
-    times = seq_len(follow_up),
-    absorb = NULL
+    times = seq_len(follow_up)
   )
 
   expect_probability_array(result, expected_dim = c(5L, follow_up, 6L))
@@ -191,17 +173,12 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
     follow_up_time = follow_up,
     seed = 123
   )
-  time_covariates <- make_time_covariates(
-    data,
-    "time",
-    "time_lin",
-    "time_nlin_1"
-  )
   robust_model <- mostm(
-    ordered(y) ~ (time_lin + time_nlin_1) * tx + yprev,
+    ordered(y) ~ rms::rcs(time, 3) * tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = "6",
     engine = "vglm"
   )
   baseline <- data[data$time == 1, , drop = FALSE]
@@ -211,9 +188,7 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
   manual_tx1 <- sops(
     robust_model,
     newdata = baseline_tx1,
-    times = seq_len(follow_up),
-    absorb = "6",
-    time_covariates = time_covariates
+    times = seq_len(follow_up)
   )
   manual_tx1 <- aggregate(
     estimate ~ time + state,
@@ -227,9 +202,7 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
   manual_tx0 <- sops(
     robust_model,
     newdata = baseline_tx0,
-    times = seq_len(follow_up),
-    absorb = "6",
-    time_covariates = time_covariates
+    times = seq_len(follow_up)
   )
   manual_tx0 <- aggregate(
     estimate ~ time + state,
@@ -245,9 +218,7 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
     robust_model,
     newdata = baseline,
     variables = "tx",
-    times = seq_len(follow_up),
-    absorb = "6",
-    time_covariates = time_covariates
+    times = seq_len(follow_up)
   )
   automated <- as.data.frame(automated)
   automated <- automated[order(automated$tx, automated$state, automated$time), ]

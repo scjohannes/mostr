@@ -6,6 +6,7 @@ fit_vglm_in_closure <- function(data, parallel_flag, first_time) {
     family = VGAM::cumulative(reverse = TRUE, parallel = parallel_flag),
     data = data,
     id_var = "id",
+    absorb = 6,
     first_followup_time = if (first_time > 0) first_time else 1,
     engine = "vglm"
   )
@@ -16,6 +17,7 @@ fit_orm_in_closure <- function(data, use_logistic, first_time) {
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     family = if (use_logistic) "logistic" else "probit",
     first_followup_time = if (first_time > 0) first_time else 1
   )
@@ -25,8 +27,7 @@ expect_refits_succeed <- function(fit, method) {
   out <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = 6
+    times = 1:2
   )
   warnings <- character()
   inferred <- withCallingHandlers(
@@ -73,6 +74,7 @@ test_that("refits ignore later changes to variables used by the original call", 
     family = VGAM::cumulative(reverse = TRUE, parallel = parallel_flag),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
   # A non-parallel refit would produce a different number of coefficients.
@@ -102,13 +104,15 @@ fit_weighted_in_closure <- function(data, backend) {
       data = data,
       weights = row_weights,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     orm = mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       weights = row_weights,
-      id_var = "id"
+      id_var = "id",
+      absorb = 6
     )
   )
 }
@@ -202,8 +206,7 @@ test_that("FWB never falls back to unweighted refits for mostm() fits", {
   out <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = 6
+    times = 1:2
   )
 
   withr::local_seed(5702)
@@ -231,7 +234,7 @@ test_that("stored row weights stay out of starting profiles and SOP output", {
   expect_false(
     weight_column %in% names(attr(fit, "markov_starting_profile_data"))
   )
-  out <- sops(fit, times = 1:2, absorb = 6)
+  out <- sops(fit, times = 1:2)
   expect_false(weight_column %in% names(out))
 })
 
@@ -248,13 +251,15 @@ fit_subset_in_closure <- function(data, backend) {
       data = data,
       subset = keep_rows,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     orm = mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       subset = keep_rows,
-      id_var = "id"
+      id_var = "id",
+      absorb = 6
     )
   )
 }
@@ -286,6 +291,7 @@ test_that("refits reuse a fit-time coefstart given as a local variable", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     )
     start_values <- stats::coef(pilot)
@@ -294,6 +300,7 @@ test_that("refits reuse a fit-time coefstart given as a local variable", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       coefstart = start_values,
       engine = "vglm"
     )
@@ -319,6 +326,7 @@ fit_vglm_with_local_coefstart <- function(data) {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
   start_values <- stats::coef(pilot)
@@ -327,6 +335,7 @@ fit_vglm_with_local_coefstart <- function(data) {
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     coefstart = start_values,
     engine = "vglm"
   )

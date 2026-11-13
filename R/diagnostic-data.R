@@ -12,7 +12,6 @@ plot_transition_model_setup <- function(
     mostr_abort("`times` must be supplied for model-based plots.")
   }
   time_var <- settings$time_var
-  time_covariates <- settings$time_covariates
 
   data_res <- resolve_markov_source_data(model, newdata)
   source_data <- data_res$source_data
@@ -60,27 +59,11 @@ plot_transition_model_setup <- function(
     baseline_data,
     times,
     time_var,
-    time_covariates = NULL,
     default = "unique"
   )
   plot_times <- time_res$times
   time_info <- time_res$time_info
   recursion_times <- complete_plot_recursion_times(plot_times, time_info)
-  if (
-    !is.null(time_covariates) &&
-      nrow(time_covariates) != length(recursion_times)
-  ) {
-    mostr_abort(
-      "`time_covariates` must have one row per recursion time point for model-based ",
-      "plots. Sparse plot times are expanded to the full recursion grid; ",
-      "expected ",
-      length(recursion_times),
-      " rows but got ",
-      nrow(time_covariates),
-      "."
-    )
-  }
-  validate_factor_gap(settings$gap_var, time_covariates, time_info)
 
   y_levels <- markov_model_ylevels(model, settings$y_levels)
   ylevel_names <- as_state_labels(y_levels)

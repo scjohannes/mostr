@@ -14,9 +14,9 @@
 #' Minimum inputs depend on the object type. For trajectory data, `object` must
 #' contain the current time, current state, and previous-state columns named by
 #' `time_var`, `y_var`, and `p_var`. For model-based plots, pass a fitted
-#' Markov model and `times`; use `newdata` for explicit prediction profiles and
-#' pass `absorb` when the model has absorbing states. The column names and
-#' states default to those of the fit. Difference plots also require
+#' Markov model and `times`; use `newdata` for explicit prediction profiles. The
+#' column names and states default to those of the fit, and the absorbing
+#' states are those given to [mostm()]. Difference plots also require
 #' `comparison = "difference"` and `variables = list(var = c(reference,
 #' comparison))`.
 #'
@@ -35,7 +35,6 @@
 #'   same states in the same order, otherwise it is an error. For trajectory
 #'   data, `NULL` uses the states found in the `y_var` and `p_var` columns,
 #'   in numeric order when they are numbers.
-#' @param absorb Optional absorbing-state label.
 #' @param comparison `"none"` for transition proportions or `"difference"` for
 #'   counterfactual differences in transition proportions.
 #' @param time_var Name of the time column. For a fitted model, `NULL` (the
@@ -58,9 +57,6 @@
 #'   used for trajectory data.
 #' @param facet_var Optional observed grouping variable. The plot always facets
 #'   by time; `facet_var` adds grouping to the time panels.
-#' @param gap_var Optional time-gap_var variable used by the fitted model.
-#' @param time_covariates Optional time-varying covariate lookup table used by the fitted
-#'   model.
 #' @param seed Optional random seed for `blrm` posterior draw selection.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
@@ -80,9 +76,7 @@
 #'   fit,
 #'   times = 1:7,
 #'   variables = list(tx = c(0, 1)),
-#'   comparison = "difference",
-#'   y_levels = 1:8,
-#'   absorb = 8
+#'   comparison = "difference"
 #' )
 #' }
 #' @export
@@ -92,7 +86,6 @@ plot_transitions <- function(
   variables = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
   comparison = c("none", "difference"),
   time_var = NULL,
   y_var = "y",
@@ -100,8 +93,6 @@ plot_transitions <- function(
   p2_var = NULL,
   id_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   show_values = TRUE,
@@ -130,10 +121,7 @@ plot_transitions <- function(
       time_var = time_var,
       p_var = p_var,
       p2_var = p2_var,
-      y_levels = y_levels,
-      absorb = absorb,
-      gap_var = gap_var,
-      time_covariates = time_covariates
+      y_levels = y_levels
     )
     data <- plot_transitions_model_data(
       model = object,

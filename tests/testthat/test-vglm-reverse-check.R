@@ -4,6 +4,7 @@ fit_reverse_vglm <- function(data, family) {
     family = family,
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
 }
@@ -12,8 +13,7 @@ avg_sops_reverse_case <- function(fit) {
   avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = 6
+    times = 1:2
   )
 }
 
@@ -32,6 +32,7 @@ test_that("the reverse check reads `reverse` from the fitted family however it w
             family = VGAM::cumulative(reverse = rev_flag, parallel = TRUE),
             data = data,
             id_var = "id",
+            absorb = 6,
             engine = "vglm"
           )
         }
@@ -56,6 +57,7 @@ test_that("the reverse check reads `reverse` from the fitted family however it w
           family = VGAM::cumulative(reverse = rev_flag, parallel = TRUE),
           data = data,
           id_var = "id",
+          absorb = 6,
           engine = "vglm"
         )
         rev_flag <- FALSE

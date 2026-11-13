@@ -5,8 +5,7 @@ test_that("comparisons() returns paired SOP differences for each profile", {
     case$model,
     newdata = case$profiles,
     variables = list(tx = c(0, 1)),
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   lo <- sops_with_value(case, "tx", 0)
   hi <- sops_with_value(case, "tx", 1)
@@ -42,8 +41,7 @@ test_that("comparisons() lumps state sets and forms ratios for every level", {
     variables = list(tx = c(0, 1, 2)),
     state_sets = list(alive = c("1", "2")),
     comparison = "ratio",
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   alive <- function(x) {
     keep <- as.character(x$state) %in% c("1", "2")
@@ -74,7 +72,6 @@ test_that("comparisons() starts real-time totals from a set starting state", {
     estimand = "time_in_state",
     state_sets = "1",
     times = 1:4,
-    absorb = 3,
     time_map = case$time_map,
     target_times = seq(0, 7, by = 0.5)
   )
@@ -170,31 +167,31 @@ test_that("per-profile and average summaries validate arguments before predictin
     list(
       label = "avg_state_time(), duplicate times",
       fun = avg_state_time,
-      args = list(times = c(1, 1, 2), absorb = 3),
+      args = list(times = c(1, 1, 2)),
       phrase = "`times` must not contain duplicate"
     ),
     list(
       label = "avg_state_time(), empty state sets",
       fun = avg_state_time,
-      args = list(times = 1:2, absorb = 3, state_sets = list()),
+      args = list(times = 1:2, state_sets = list()),
       phrase = "`state_sets`"
     ),
     list(
       label = "avg_state_time(), duplicate state-set names",
       fun = avg_state_time,
-      args = list(times = 1:2, absorb = 3, state_sets = list(a = "1", a = "2")),
+      args = list(times = 1:2, state_sets = list(a = "1", a = "2")),
       phrase = "`state_sets`"
     ),
     list(
       label = "avg_state_time(), by a reserved output name",
       fun = avg_state_time,
-      args = list(times = 1:2, absorb = 3, by = "state_set"),
+      args = list(times = 1:2, by = "state_set"),
       phrase = "reserved output names"
     ),
     list(
       label = "avg_state_time(), baseline time without time map",
       fun = avg_state_time,
-      args = list(times = 1:2, absorb = 3, baseline_time = 1),
+      args = list(times = 1:2, baseline_time = 1),
       phrase = "`baseline_time` requires `time_map`"
     )
   )
@@ -304,7 +301,7 @@ paired_sop_draws <- function(case, method, n_draws, seed, state = "1", ...) {
   hi$tx <- 1
   # User-supplied profiles get no draw weights; that warning is expected.
   inferred <- suppressWarnings(inferences(
-    sops(case$model, newdata = rbind(lo, hi), times = 1:4, absorb = 3, ...),
+    sops(case$model, newdata = rbind(lo, hi), times = 1:4, ...),
     method = method,
     n_draws = n_draws,
     seed = seed
@@ -335,8 +332,7 @@ test_that("draw-based intervals reduce each draw to paired profile comparisons",
     newdata = case$profiles,
     variables = list(tx = c(0, 1)),
     state_sets = "1",
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   for (setting in list(
     list(method = "mvn", n_draws = 8L, seed = 101),
@@ -406,8 +402,7 @@ test_that("comparison intervals add null tests and replace earlier inference", {
     newdata = case$profiles,
     variables = list(tx = c(0, 1)),
     estimand = "time_in_state",
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   first <- inferences(cmp, n_draws = 5, seed = 11)
   expect_identical(attr(first, "null"), 0)
@@ -430,8 +425,7 @@ test_that("comparison intervals add null tests and replace earlier inference", {
     variables = list(tx = c(0, 1)),
     estimand = "time_in_state",
     comparison = "ratio",
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   expect_identical(attr(inferences(ratio, n_draws = 5, seed = 11), "null"), 1)
 })
@@ -447,7 +441,6 @@ expect_comparisons_match_paired_sops <- function(case, ..., info = NULL) {
     variables = list(tx = c(0, 1)),
     state_sets = "1",
     times = 1:4,
-    absorb = 3,
     ...
   )
   lo <- sops_with_value(case, "tx", 0, ...)
@@ -493,7 +486,6 @@ expect_comparisons_match_paired_sops <- function(case, ..., info = NULL) {
     estimand = "time_in_state",
     state_sets = "1",
     times = 1:4,
-    absorb = 3,
     time_map = case$time_map,
     ...
   )

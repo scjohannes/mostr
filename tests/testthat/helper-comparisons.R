@@ -28,6 +28,7 @@ build_comparisons_case <- function() {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
   list(
@@ -43,7 +44,7 @@ build_comparisons_case <- function() {
 sops_with_value <- function(case, var, value, times = 1:4, ...) {
   profiles <- case$profiles
   profiles[[var]] <- value
-  sops(case$model, newdata = profiles, times = times, absorb = 3, ...)
+  sops(case$model, newdata = profiles, times = times, ...)
 }
 
 # The same trajectories with visits stored as a factor, so the model has one
@@ -64,6 +65,7 @@ build_factor_comparisons_case <- function(case) {
     data = data,
     first_followup_time = "1",
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
   list(
@@ -99,6 +101,7 @@ build_second_order_comparisons_case <- function(case) {
     first_followup_time = 1,
     id_var = "id",
     p2_var = "ypprev",
+    absorb = 3,
     engine = "vglm"
   )
   list(

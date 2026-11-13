@@ -263,8 +263,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
         model = m_vglm,
         newdata = baseline_data,
         variables = list(tx = c(0, 1)),
-        times = 1:10,
-        absorb = 6
+        times = 1:10
       )
       run_mvn <- function(...) {
         inferences(result, method = "mvn", n_draws = 50, seed = 4440, ...)
@@ -304,8 +303,7 @@ test_that("seeded inference is invariant to outer worker count", {
     model,
     newdata = baseline,
     variables = list(tx = 0:1),
-    times = 1:4,
-    absorb = 6
+    times = 1:4
   )
 
   sequential <- inferences(

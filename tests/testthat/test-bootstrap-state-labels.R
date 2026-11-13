@@ -15,6 +15,7 @@ letter_case <- function() {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = "c",
     engine = "vglm"
   )
   list(numbers = case, letters = list(model = model, data = data))
@@ -23,8 +24,8 @@ letter_case <- function() {
 test_that("bootstrap results don't depend on whether states are numbers or letters", {
   skip_on_cran()
   cases <- letter_case()
-  numbers <- avg_sops(cases$numbers$model, times = 1:3, absorb = 3)
-  letters <- avg_sops(cases$letters$model, times = 1:3, absorb = "c")
+  numbers <- avg_sops(cases$numbers$model, times = 1:3)
+  letters <- avg_sops(cases$letters$model, times = 1:3)
   expect_equal(letters$estimate, numbers$estimate, tolerance = 1e-8)
 
   skip_on_cran()
@@ -78,10 +79,11 @@ test_that("a resample that lacks a state is relabelled whatever the response is 
     data = renamed,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
-  with_y <- avg_sops(case$model, times = 1:2, absorb = 3)
-  with_state <- avg_sops(renamed_model, times = 1:2, absorb = 3)
+  with_y <- avg_sops(case$model, times = 1:2)
+  with_state <- avg_sops(renamed_model, times = 1:2)
   expect_equal(with_state$estimate, with_y$estimate, tolerance = 1e-8)
 
   local_mocked_bindings(fast_group_bootstrap = resample_never_absorbed(case$data))
@@ -110,6 +112,7 @@ test_that("bootstrap_model_coefs() relabels only the response and yprev", {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
   local_mocked_bindings(fast_group_bootstrap = resample_never_absorbed(data))

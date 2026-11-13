@@ -31,6 +31,7 @@ build_avg_time_case <- function(factor_time) {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
   list(model = model, data = data)
@@ -39,7 +40,7 @@ build_avg_time_case <- function(factor_time) {
 test_that("analytical inference clears bootstrap and previous null metadata", {
   skip_on_cran()
   case <- make_avg_time_case()
-  boot <- avg_state_time(case$model, times = 1:3, absorb = 3) |>
+  boot <- avg_state_time(case$model, times = 1:3) |>
     inferences(method = "fwb", n_draws = 3, seed = 7211, null = 0)
   result <- inferences(boot, method = "delta")
   expect_identical(attr(result, "method"), "delta")
@@ -60,10 +61,9 @@ test_that("avg_state_time() totals equal time_in_state() of the matching avg_sop
   skip_on_cran()
   case <- make_avg_time_case()
   profiles <- case$data[!duplicated(case$data$id), , drop = FALSE][1:15, ]
-  observed <- list(case$model, absorb = 3, times = 1:4)
+  observed <- list(case$model, times = 1:4)
   subgroups <- list(
     case$model,
-    absorb = 3,
     newdata = profiles,
     by = "subgroup",
     times = 1:3
@@ -165,12 +165,11 @@ test_that("avg_state_time integrates irregular factor visits with optional basel
   skip_on_cran()
   case <- make_avg_time_case(factor_time = TRUE)
   time_map <- c("1" = 2, "2" = 7, "3" = 9)
-  avg <- avg_sops(case$model, absorb = 3, times = 1:3)
+  avg <- avg_sops(case$model, times = 1:3)
   # The omitted grid starts at `baseline_time = 0`, like `c(0, 2, 7, 9)`.
   for (target in list(NULL, c(0, 1, 2, 4, 7, 9), c(2, 7, 9))) {
     result <- avg_state_time(
       case$model,
-      absorb = 3,
       times = 1:3,
       state_sets = list(alive = 1:2, all = 1:3),
       time_map = time_map,
@@ -195,7 +194,6 @@ test_that("avg_state_time integrates irregular factor visits with optional basel
   }
   no_baseline <- avg_state_time(
     case$model,
-    absorb = 3,
     times = 1:3,
     state_sets = 1:2,
     time_map = time_map,
@@ -212,7 +210,6 @@ test_that("avg_state_time integrates irregular factor visits with optional basel
   )
   single <- avg_state_time(
     case$model,
-    absorb = 3,
     times = 1,
     time_map = c("1" = 2),
     baseline_time = NULL
@@ -220,7 +217,6 @@ test_that("avg_state_time integrates irregular factor visits with optional basel
   expect_equal(single$estimate, rep(0, 3))
   single_anchored <- avg_state_time(
     case$model,
-    absorb = 3,
     times = 1,
     time_map = c("1" = 2)
   )
@@ -237,7 +233,6 @@ test_that("avg_state_time rejects grouping names that would overwrite output col
     avg_state_time(
       case$model,
       newdata = profiles,
-      absorb = 3,
       times = 1:2,
       by = "state_set"
     )
@@ -246,7 +241,6 @@ test_that("avg_state_time rejects grouping names that would overwrite output col
     avg_state_time(
       case$model,
       newdata = profiles,
-      absorb = 3,
       times = 1:2,
       variables = list(state_set = c("a", "b"))
     )
@@ -255,7 +249,6 @@ test_that("avg_state_time rejects grouping names that would overwrite output col
     avg_state_time(
       case$model,
       newdata = profiles,
-      absorb = 3,
       times = 1:2,
       by = "time_unit",
       time_unit = "days"
@@ -265,7 +258,6 @@ test_that("avg_state_time rejects grouping names that would overwrite output col
     avg_state_time(
       case$model,
       newdata = profiles,
-      absorb = 3,
       times = 1:2,
       variables = list(time_unit = c("a", "b")),
       time_unit = "days"
@@ -274,7 +266,6 @@ test_that("avg_state_time rejects grouping names that would overwrite output col
   unlabeled <- avg_state_time(
     case$model,
     newdata = profiles,
-    absorb = 3,
     times = 1:2,
     by = "time_unit"
   )
@@ -286,13 +277,11 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
   case <- make_avg_time_case()
   avg <- avg_sops(
     case$model,
-    absorb = 3,
     variables = list(tx = 0:1),
     times = 1:3
   )
   total <- avg_state_time(
     case$model,
-    absorb = 3,
     variables = list(tx = 0:1),
     times = 1:3,
     state_sets = list(alive = 1:2, all = 1:3)
@@ -339,10 +328,9 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
 test_that("mapped resampling uses the baseline anchor of each draw", {
   skip_on_cran()
   case <- make_avg_time_case()
-  avg <- avg_sops(case$model, absorb = 3, times = 1:2)
+  avg <- avg_sops(case$model, times = 1:2)
   total <- avg_state_time(
     case$model,
-    absorb = 3,
     times = 1:2,
     state_sets = "1",
     time_map = c("1" = 4, "2" = 7),
@@ -384,7 +372,7 @@ test_that("mapped resampling uses the baseline anchor of each draw", {
 test_that("avg_state_time replaces inference metadata and preserves seeds and Wald centers", {
   skip_on_cran()
   case <- make_avg_time_case()
-  total <- avg_state_time(case$model, absorb = 3, times = 1:3, state_sets = "1")
+  total <- avg_state_time(case$model, times = 1:3, state_sets = "1")
   withr::local_seed(9324)
   seed_before <- .Random.seed
   result <- inferences(
