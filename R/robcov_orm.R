@@ -62,6 +62,39 @@ markov_assemble_sandwich <- function(
   )
 }
 
+# TRUE when the symmetric matrix `x` (a covariance, bread or information) is
+# positive definite with room to spare for inversion. The orm and vglm robust
+# covariances both use this rule, so that the two engines accept and refuse the
+# same matrices.
+markov_correlation_positive_definite <- function(x) {
+  if (any(!is.finite(x))) {
+    return(FALSE)
+  }
+  x <- x / 2 + t(x) / 2
+  variances <- diag(x)
+  # A positive definite matrix has positive diagonal entries. A zero or
+  # negative one cannot be scaled to a correlation matrix (cov2cor() would
+  # divide by its square root), and it already shows that the matrix is not
+  # positive definite.
+  if (!all(variances > 0)) {
+    return(FALSE)
+  }
+  eigenvalues <- eigen(
+    stats::cov2cor(x),
+    symmetric = TRUE,
+    only.values = TRUE
+  )$values
+  # The correlation matrix is checked so that covariate units do not matter: a
+  # raw check refuses a well-conditioned covariance whose variances are all
+  # about 1e-16. On the correlation scale the largest eigenvalue lies between 1
+  # and p. Refuse when the smallest is at most p * 1e-10 times the largest:
+  # inverting it would lose about 10 of 16 digits. On simulated trial fits the
+  # ratio is 2e-4 to 3e-3 (measured Nov 2026), about 1e5 times above the
+  # cut-off; only nearly duplicated covariates reach it.
+  tolerance <- max(1, max(abs(eigenvalues))) * length(variances) * 1e-10
+  min(eigenvalues) > tolerance
+}
+
 orm_case_weights <- function(model, n) {
   weights <- model$weights
   if (is.null(weights) || length(weights) == 0L) {
@@ -205,23 +238,7 @@ orm_model_bread <- function(fit) {
       }
     )
   }
-  eigenvalues <- if (all(diag(bread) > 0)) {
-    eigen(
-      stats::cov2cor(bread / 2 + t(bread) / 2),
-      symmetric = TRUE,
-      only.values = TRUE
-    )$values
-  } else {
-    0
-  }
-  # The bread must be positive definite. Its correlation matrix is checked so
-  # that covariate units do not matter; there the largest eigenvalue lies
-  # between 1 and p. Refuse when the smallest is at most p * 1e-10 times the
-  # largest: inverting it would lose about 10 of 16 digits. On simulated trial
-  # fits the ratio is 2e-4 to 3e-3 (measured Nov 2026), about 1e5 times above
-  # the cut-off; only nearly duplicated covariates reach it.
-  tolerance <- max(1, max(abs(eigenvalues))) * length(coefficients) * 1e-10
-  if (min(eigenvalues) <= tolerance) {
+  if (!markov_correlation_positive_definite(bread)) {
     mostr_abort(
       if (sandwich_penalty) {
         "The penalized orm `var.from.info.matrix` must be positive definite."

@@ -224,6 +224,14 @@ robcov_vglm <- function(
   )
   original_se <- sqrt(diag(model_vcov))
   names(original_se) <- names(coefficients)
+  # The check above passed on the correlation scale, so the Cholesky factor
+  # exists whatever the covariate units. solve() would refuse a covariate in
+  # large units, because it tests the condition number of the raw matrix: with
+  # one covariate multiplied by 1e6 (variance 4e-15 against about 2.5 for the
+  # intercepts) its reciprocal condition number was 2e-18 although the
+  # correlation matrix was well conditioned (measured Nov 2026).
+  model_information <- chol2inv(chol(model_vcov))
+  dimnames(model_information) <- dimnames(model_vcov)
 
   # --- 2. Compute observation-level score contributions ---
   scores <- compute_scores_vglm(fit)
@@ -245,18 +253,18 @@ robcov_vglm <- function(
     mostr_abort("Observation-level vglm scores must all be finite.")
   }
 
-  convergence <- validate_vglm_convergence(fit, scores, model_vcov)
+  convergence <- validate_vglm_convergence(fit, scores, model_information)
 
   bread_result <- if (bread_type == "observed") {
     compute_observed_bread_vglm(fit)
   } else {
     list(
       bread = model_vcov,
-      information = solve(model_vcov),
+      information = model_information,
       jacobian_asymmetry = NA_real_,
       min_information_eigenvalue = min(
         eigen(
-          solve(model_vcov),
+          model_information,
           symmetric = TRUE,
           only.values = TRUE
         )$values
@@ -626,25 +634,21 @@ validate_vglm_matrix <- function(
     mostr_abort("`", label, "` is not numerically symmetric.")
   }
 
-  if (positive_definite || positive_semidefinite) {
+  # Covariances and breads, which are inverted downstream, use the rule shared
+  # with orm.
+  if (positive_definite && !markov_correlation_positive_definite(x)) {
+    mostr_abort("`", label, "` is not numerically positive definite.")
+  }
+  if (positive_semidefinite) {
     eigenvalues <- eigen(
       (x + t(x)) / 2,
       symmetric = TRUE,
       only.values = TRUE
     )$values
-    eigen_scale <- max(1, max(abs(eigenvalues))) * p
-    positive_definite_tolerance <- 100 * .Machine$double.eps * eigen_scale
-    positive_semidefinite_tolerance <- sqrt(.Machine$double.eps) * eigen_scale
-    if (
-      positive_definite &&
-        min(eigenvalues) <= positive_definite_tolerance
-    ) {
-      mostr_abort("`", label, "` is not numerically positive definite.")
-    }
-    if (
-      positive_semidefinite &&
-        min(eigenvalues) < -positive_semidefinite_tolerance
-    ) {
+    positive_semidefinite_tolerance <- sqrt(.Machine$double.eps) *
+      max(1, max(abs(eigenvalues))) *
+      p
+    if (min(eigenvalues) < -positive_semidefinite_tolerance) {
       mostr_abort("`", label, "` is not numerically positive semidefinite.")
     }
   }
@@ -653,7 +657,7 @@ validate_vglm_matrix <- function(
 }
 
 
-validate_vglm_convergence <- function(fit, scores, model_vcov) {
+validate_vglm_convergence <- function(fit, scores, model_information) {
   iter <- tryCatch(fit@iter, error = function(e) NA_integer_)
   maxit <- tryCatch(fit@control$maxit, error = function(e) NA_integer_)
   if (
@@ -681,7 +685,6 @@ validate_vglm_convergence <- function(fit, scores, model_vcov) {
     }
   }
 
-  model_information <- solve(model_vcov)
   information_scale <- sqrt(pmax(diag(model_information), .Machine$double.eps))
   standardized_score <- colSums(scores) / information_scale
   score_norm <- max(abs(standardized_score))
@@ -912,14 +915,9 @@ compute_observed_bread_vglm <- function(fit) {
     symmetric = TRUE,
     only.values = TRUE
   )$values
-  information_tolerance <- 100 *
-    .Machine$double.eps *
-    max(1, max(abs(information_eigenvalues))) *
-    p
-  if (
-    any(!is.finite(information_eigenvalues)) ||
-      min(information_eigenvalues) <= information_tolerance
-  ) {
+  # The information is inverted into the bread, so it must pass the same rule
+  # as orm's bread.
+  if (!markov_correlation_positive_definite(information)) {
     mostr_abort(
       "The observed vglm information is singular or not positive definite. ",
       "Use `bread = \"vglm\"` only if working-information inference is ",
