@@ -70,7 +70,10 @@ against the formulas in its comments. When adding a model feature, add a set-up 
 need `MOSTR_RUN_SLOW=true` belong in files named `test-slow-*.R`. If a test
 consolidation removes or merges tests, run the planted-bug checks in
 `benchmarks/local/mutation/` first and after: no planted bug may go from caught to
-missed.
+missed. Use its `run_fast.R`, which stops each bug's run at the first failing test
+file and takes about 8 minutes for all bugs; the full `run_matrix.R`, which also
+counts every catching test, takes one to two hours and is needed only for that
+count. Its README explains both.
 
 ### Tests on CRAN
 
