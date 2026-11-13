@@ -339,33 +339,21 @@ delta_unconditional_state <- function(
   profile_ids,
   score_components
 ) {
-  cell_names <- paste0("cell_", seq_len(ncol(individual_values)))
-  colnames(individual_values) <- cell_names
-  rownames(average_jacobian) <- cell_names
   stacked <- delta_stacked_influence(
     individual_values = individual_values,
     average_jacobian = average_jacobian,
     profile_ids = profile_ids,
     score_components = score_components
   )
-  influence <- as.matrix(stacked$influence)
-  if (
-    nrow(influence) != length(profile_ids) ||
-      ncol(influence) != nrow(average_jacobian)
-  ) {
-    mostr_abort("The stacked SOP influence values have unexpected dimensions.")
-  }
+  influence <- stacked$influence
   colnames(influence) <- NULL
-  standard_error <- stacked$std.error
-  metadata <- stacked$metadata %||%
-    score_components$metadata %||%
-    list()
-  metadata$source <- metadata$source %||% "stacked_influence"
+  # The stored Jacobian has always carried these row names.
+  rownames(average_jacobian) <- paste0("cell_", seq_len(nrow(average_jacobian)))
   list(
-    std.error = as.numeric(standard_error),
+    std.error = as.numeric(stacked$std.error),
     influence = influence,
     average_jacobian = average_jacobian,
-    metadata = metadata
+    metadata = stacked$metadata
   )
 }
 

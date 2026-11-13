@@ -660,34 +660,21 @@ get_delta_score_components <- function(model, cluster = NULL) {
   )
 }
 
-delta_validate_profile_matrix <- function(value, label) {
-  value <- as.matrix(value)
-  if (!is.numeric(value) || length(value) == 0L || any(!is.finite(value))) {
-    mostr_abort(
-      "`",
-      label,
-      "` must be a non-empty finite numeric matrix."
-    )
-  }
-  value
-}
-
 # Combine centered profile functionals and fitted-coefficient influence for the
 # fitted-cohort unconditional target.
+# `individual_values` is [patient, cell], `average_jacobian` [cell,
+# coefficient] with the cells in the same order, `profile_ids` the patient of
+# each row of `individual_values`, and `score_components` the result of
+# `get_delta_score_components()`. The callers build all four, so their shapes
+# and names are not checked again here.
 delta_stacked_influence <- function(
   individual_values,
   average_jacobian,
   profile_ids,
   score_components
 ) {
-  values <- delta_validate_profile_matrix(
-    individual_values,
-    "individual_values"
-  )
-  G <- delta_validate_profile_matrix(average_jacobian, "average_jacobian")
+  values <- as.matrix(individual_values)
   n <- nrow(values)
-  m <- ncol(values)
-
   # The variance below is a sample covariance over patients, which needs at
   # least two of them.
   if (n < 2L) {
@@ -695,55 +682,12 @@ delta_stacked_influence <- function(
       "Stacked unconditional inference requires at least two profiles."
     )
   }
-  if (length(profile_ids) != n || anyNA(profile_ids)) {
-    mostr_abort(
-      "`profile_ids` must contain one non-missing patient ID per profile row."
-    )
-  }
+
+  # Each patient's row of values is added to that patient's scores, so both
+  # must hold the same patients. A patient in only one of them would need a
+  # made-up row in the other.
   profile_ids <- as.character(profile_ids)
-  if (any(profile_ids == "") || anyDuplicated(profile_ids)) {
-    mostr_abort("`profile_ids` must be non-empty and unique.")
-  }
-  if (!is.list(score_components)) {
-    mostr_abort(
-      "`score_components` must come from `get_delta_score_components()`."
-    )
-  }
-  required <- c("ids", "scores", "Ainv", "n")
-  missing_required <- required[vapply(
-    required,
-    function(name) is.null(score_components[[name]]),
-    logical(1)
-  )]
-  if (length(missing_required)) {
-    mostr_abort(
-      "`score_components` is missing: ",
-      paste(missing_required, collapse = ", "),
-      "."
-    )
-  }
-
   score_ids <- as.character(score_components$ids)
-  scores <- as.matrix(score_components$scores)
-  if (
-    anyNA(score_ids) ||
-      any(score_ids == "") ||
-      anyDuplicated(score_ids) ||
-      nrow(scores) != length(score_ids)
-  ) {
-    mostr_abort(
-      "Score-component IDs must be non-missing, unique, and row-aligned."
-    )
-  }
-  if (
-    length(score_components$n) != 1L ||
-      !is.numeric(score_components$n) ||
-      is.na(score_components$n) ||
-      score_components$n != length(score_ids)
-  ) {
-    mostr_abort("`score_components$n` does not match its patient score rows.")
-  }
-
   unmatched_scores <- setdiff(score_ids, profile_ids)
   unmatched_profiles <- setdiff(profile_ids, score_ids)
   if (length(unmatched_scores)) {
@@ -764,86 +708,24 @@ delta_stacked_influence <- function(
       "insert zero patient-score rows."
     )
   }
-  if (score_components$n != n) {
-    mostr_abort(
-      "The starting-profile and patient-score cohorts have different sizes."
-    )
-  }
 
-  cell_names <- colnames(values)
-  if (
-    is.null(cell_names) ||
-      anyNA(cell_names) ||
-      any(cell_names == "") ||
-      anyDuplicated(cell_names)
-  ) {
-    mostr_abort(
-      "`individual_values` columns must have unique, non-missing cell names."
-    )
-  }
-  jacobian_rows <- rownames(G)
-  if (
-    is.null(jacobian_rows) ||
-      anyNA(jacobian_rows) ||
-      any(jacobian_rows == "") ||
-      anyDuplicated(jacobian_rows) ||
-      !setequal(jacobian_rows, cell_names)
-  ) {
-    mostr_abort(
-      "Jacobian row names must uniquely match all `individual_values` cells."
-    )
-  }
-  if (nrow(G) != m) {
-    mostr_abort("`average_jacobian` must have one row per estimand cell.")
-  }
-  G <- G[cell_names, , drop = FALSE]
-
+  # Scores in the patient order of the profiles; Jacobian and inverse
+  # information in the coefficient order of the scores.
+  scores <- as.matrix(score_components$scores)
   coefficient_names <- colnames(scores)
-  if (
-    is.null(coefficient_names) ||
-      anyNA(coefficient_names) ||
-      any(coefficient_names == "") ||
-      anyDuplicated(coefficient_names)
-  ) {
-    mostr_abort(
-      "Score columns must have unique, non-missing coefficient names."
-    )
-  }
-  jacobian_columns <- colnames(G)
-  if (
-    is.null(jacobian_columns) ||
-      anyNA(jacobian_columns) ||
-      any(jacobian_columns == "") ||
-      anyDuplicated(jacobian_columns) ||
-      !setequal(jacobian_columns, coefficient_names)
-  ) {
-    mostr_abort("Score and Jacobian coefficient names do not match.")
-  }
-  G <- G[, coefficient_names, drop = FALSE]
-  score_Ainv <- delta_validate_named_matrix(
-    score_components$Ainv,
+  aligned_scores <- scores[match(profile_ids, score_ids), , drop = FALSE]
+  G <- as.matrix(average_jacobian)[, coefficient_names, drop = FALSE]
+  Ainv <- score_components$Ainv[
     coefficient_names,
-    "score_components$Ainv",
-    positive_definite = TRUE
-  )
-  if (any(!is.finite(scores))) {
-    mostr_abort("Patient score contributions contain non-finite values.")
-  }
-
-  score_order <- match(profile_ids, score_ids)
-  aligned_scores <- scores[
-    score_order,
     coefficient_names,
     drop = FALSE
   ]
-  rownames(aligned_scores) <- profile_ids
-  Ainv <- score_Ainv
 
   estimate <- colMeans(values)
   profile_component <- sweep(values, 2L, estimate, "-")
   coefficient_influence <- aligned_scores %*% t(Ainv) %*% t(G)
   influence <- profile_component + coefficient_influence
-  dimnames(influence) <- list(profile_ids, cell_names)
+  dimnames(influence) <- list(profile_ids, colnames(values))
 
   # Each estimate is an average over the n patients, so its variance is the
   # variance of the patients' influence values divided by n. The sample variance
@@ -859,7 +741,6 @@ delta_stacked_influence <- function(
   # under the `mostr.delta_max_bytes` limit.
   centered_influence <- sweep(influence, 2L, colMeans(influence), "-")
   variance <- colSums(centered_influence^2) / (n - 1) / n
-  names(variance) <- cell_names
 
   list(
     influence = influence,
