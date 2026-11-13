@@ -115,8 +115,7 @@ predict_markov_sops <- function(
       model = model_fast,
       newdata = newdata,
       times = times,
-      settings = settings,
-      builder = "batched"
+      settings = settings
     ),
     mostr_execution_plan_too_large = function(e) {
       fallback_condition <<- e

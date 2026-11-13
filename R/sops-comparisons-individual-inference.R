@@ -269,8 +269,7 @@ comparison_coefficient_predictor <- function(model, setup) {
         model = model_plan,
         newdata = setup$newdata_pred,
         times = setup$times,
-        settings = setup$settings,
-        builder = "streamed"
+        settings = setup$settings
       ),
       error = function(e) {
         notify_sop_r_engine_fallback(conditionMessage(e))

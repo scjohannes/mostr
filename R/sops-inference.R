@@ -877,8 +877,7 @@ inferences_simulation <- function(
         model = model_chk,
         newdata = newdata_pred,
         times = times,
-        settings = settings,
-        builder = "streamed"
+        settings = settings
       ),
       error = function(e) {
         notify_sop_r_engine_fallback(conditionMessage(e))

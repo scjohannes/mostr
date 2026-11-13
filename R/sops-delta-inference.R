@@ -156,8 +156,7 @@ delta_compile_plan <- function(object, model_plan, newdata, times) {
     times = times,
     # Only first-order models reach analytical inference
     # (`delta_validate_sop_scope()`).
-    settings = markov_result_settings(object),
-    builder = "streamed"
+    settings = markov_result_settings(object)
   )
 
   Gamma <- get_effective_coefs(model_plan)

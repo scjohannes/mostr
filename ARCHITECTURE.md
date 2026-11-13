@@ -583,7 +583,7 @@ flowchart LR
   `sops_blrm()`, `avg_sops_blrm()`, `predict_markov_sops()` (the internal
   form of `soprob_markov()`, used by every package caller),
   `soprob_markov_r_engine()`, `compile_sop_execution_plan()`,
-  `markov_msm_build()`, `markov_msm_build_batched()`, `assign_sop_visit()`,
+  `markov_msm_build()`, `assign_sop_visit()`,
   `stop_absorbing_start()`, `resolve_markov_source_data()`,
   `resolve_prediction_variables()`, `resolve_comparison_variables()`,
   `match_previous_state_variables()`, `warn_skipped_sop_visits()`,
@@ -1420,8 +1420,13 @@ variance and the coverage of the intervals are not tests: they are a one-off
 validation study in the ignored `benchmarks/local/validation-unconditional/`,
 whose scenarios and acceptance bands are in its README.
 
-Results built by the streamed design builder (`markov_msm_build()` and
-`markov_msm_run()`, which MVN draws and delta inference use) are compared with
+One function, `markov_msm_build()`, builds the prediction designs of every
+visit for first- and second-order orm and vglm fits; `sops()`, MVN draws and
+delta inference all use it through `compile_sop_execution_plan()`. It builds a
+visit's design in one piece, or one combination of previous states at a time
+above `mostr.max_batched_design_rows` rows, with identical results. Designs
+built one previous state at a time (`markov_msm_build()` and
+`markov_msm_run()`) are compared with
 public `sops()` on every first-order grid set-up, plus spline, numeric
 previous-state and factor-time set-ups, in `tests/testthat/test-orm-fast-path.R`.
 Since `sops()` is checked against the readable loop, this check is indirectly

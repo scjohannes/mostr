@@ -98,7 +98,7 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
 
     plan <- do.call(
       mostr:::compile_sop_execution_plan,
-      c(list(case$plan_model), internal_args, list(builder = "batched"))
+      c(list(case$plan_model), internal_args)
     )
     expect_s3_class(plan, "markov_sop_exec_plan")
     planned <- mostr:::run_sop_execution_plan(
