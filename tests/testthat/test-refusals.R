@@ -103,8 +103,22 @@ refusal_profiles <- function(cell = refusal_orm) {
 refusal_formula_orm <- y ~ time + tx + age + yprev
 refusal_formula_vglm <- ordered(y) ~ time + tx + age + yprev
 
-refusal_mostm <- function(data = grid_data(), ..., formula = refusal_formula_orm) {
-  mostm(formula, data = data, id_var = "id", first_followup_time = 1, ...)
+# State 4 is absorbing in the grid data, so the fit records it unless a row
+# passes another `absorb`.
+refusal_mostm <- function(
+  data = grid_data(),
+  ...,
+  formula = refusal_formula_orm,
+  absorb = grid_n_states
+) {
+  mostm(
+    formula,
+    data = data,
+    id_var = "id",
+    first_followup_time = 1,
+    absorb = absorb,
+    ...
+  )
 }
 
 # A fit of changed data, made once and kept with the grid's fits.
@@ -140,7 +154,8 @@ refusal_fake_blrm <- function(pppo = 0L, cppo = NULL, cluster = TRUE) {
     tau = tau,
     cppo = cppo,
     cluster = cluster,
-    gamma_draws = matrix(0, nrow = 2, ncol = 2)
+    gamma_draws = matrix(0, nrow = 2, ncol = 2),
+    absorb = grid_n_states
   )
 }
 
@@ -167,6 +182,7 @@ refusal_crossing_fit <- function() {
       data = data,
       id_var = "id",
       first_followup_time = 1,
+      absorb = grid_n_states,
       engine = "vglm",
       family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ score)
     )
@@ -253,13 +269,25 @@ fit_refusals <- list(
     function() {
       data <- grid_data()
       data$time <- data$time - 1
-      mostm(refusal_formula_orm, data = data, id_var = "id")
+      mostm(
+        refusal_formula_orm,
+        data = data,
+        id_var = "id",
+        absorb = grid_n_states
+      )
     },
     "contains a value below 1"
   ),
   refusal(
     "F16", "factor time without `first_followup_time`",
-    function() mostm(refusal_formula_orm, data = grid_cell_data(grid_cell("orm", time = "factor")), id_var = "id"),
+    function() {
+      mostm(
+        refusal_formula_orm,
+        data = grid_cell_data(grid_cell("orm", time = "factor")),
+        id_var = "id",
+        absorb = grid_n_states
+      )
+    },
     "Factor and character time require an explicit"
   ),
   refusal(
@@ -267,7 +295,13 @@ fit_refusals <- list(
     function() {
       data <- grid_data()
       data$w[1] <- -1
-      mostm(refusal_formula_orm, data = data, id_var = "id", weights = w)
+      mostm(
+        refusal_formula_orm,
+        data = data,
+        id_var = "id",
+        absorb = grid_n_states,
+        weights = w
+      )
     },
     "negative weights not allowed"
   ),
@@ -277,7 +311,13 @@ fit_refusals <- list(
       data <- grid_data()
       data$w <- as.numeric(data$w)
       data$w[1] <- Inf
-      mostm(refusal_formula_orm, data = data, id_var = "id", weights = w)
+      mostm(
+        refusal_formula_orm,
+        data = data,
+        id_var = "id",
+        absorb = grid_n_states,
+        weights = w
+      )
     },
     "`weights` must be finite."
   ),
@@ -298,6 +338,7 @@ fit_refusals <- list(
         refusal_formula_vglm,
         data = grid_data(),
         id_var = "id",
+        absorb = grid_n_states,
         engine = "vglm",
         form2 = ~ time + tx + age + yprev,
         subset = time > 0
@@ -328,14 +369,26 @@ fit_refusals <- list(
   refusal(
     "F26", "a `first_followup_time` that is not a visit of the data",
     function() {
-      mostm(refusal_formula_orm, data = grid_data(), id_var = "id", first_followup_time = 99)
+      mostm(
+        refusal_formula_orm,
+        data = grid_data(),
+        id_var = "id",
+        absorb = grid_n_states,
+        first_followup_time = 99
+      )
     },
     "`first_followup_time = 99` is not observed in the numeric time variable."
   ),
   refusal(
     "F27", "a numeric `first_followup_time` after the earliest visit",
     function() {
-      mostm(refusal_formula_orm, data = grid_data(), id_var = "id", first_followup_time = 2)
+      mostm(
+        refusal_formula_orm,
+        data = grid_data(),
+        id_var = "id",
+        absorb = grid_n_states,
+        first_followup_time = 2
+      )
     },
     "must equal the earliest observed scheduled time"
   ),
@@ -346,6 +399,7 @@ fit_refusals <- list(
         refusal_formula_orm,
         data = grid_cell_data(grid_cell("orm", time = "factor")),
         id_var = "id",
+        absorb = grid_n_states,
         first_followup_time = "9"
       )
     },
@@ -356,7 +410,7 @@ fit_refusals <- list(
     function() {
       data <- grid_data()
       data$time <- data$time > 3
-      mostm(y ~ tx + yprev, data = data, id_var = "id")
+      mostm(y ~ tx + yprev, data = data, id_var = "id", absorb = grid_n_states)
     },
     "The time variable must be numeric, factor, or character."
   ),
@@ -379,6 +433,52 @@ fit_refusals <- list(
     "F33", "a `p_var` column that is not in the data",
     function() refusal_mostm(p_var = "previous"),
     "is not in `data`. Set `p_var`"
+  ),
+  # P12 was the prediction-time refusal of factor time with a gap column;
+  # `mostm()` now refuses that combination (F34).
+  refusal(
+    "F34", "a gap column with factor time",
+    function() {
+      data <- grid_cell_data(grid_cell("orm", time = "factor"))
+      data$gap <- 1
+      mostm(
+        y ~ time + tx + yprev + gap,
+        data = data,
+        id_var = "id",
+        first_followup_time = "1",
+        absorb = grid_n_states,
+        gap_var = "gap"
+      )
+    },
+    "`gap_var` needs numeric time"
+  ),
+  refusal(
+    "F35", "a gap column that is not the time since the previous row",
+    function() {
+      data <- grid_cell_data(grid_cell("orm", visit = "gap"))
+      data$gap <- 7 * data$gap
+      refusal_mostm(
+        data = data,
+        formula = y ~ time + tx + yprev + gap,
+        gap_var = "gap"
+      )
+    },
+    "must hold the time since the patient's previous row"
+  ),
+  refusal(
+    "F36", "an `absorb` label that is not a state",
+    function() refusal_mostm(absorb = 5),
+    "`absorb` must name states of the response"
+  ),
+  refusal(
+    "F37", "fitted rows that start in an absorbing state",
+    function() refusal_mostm(absorb = c(2, 4)),
+    "A patient in an absorbing state can't leave it"
+  ),
+  refusal(
+    "F38", "a spline basis that rms would evaluate again on new data",
+    function() refusal_mostm(formula = y ~ splines::ns(time, 3) + tx + yprev),
+    "evaluated again on the prediction rows"
   )
 )
 
@@ -416,7 +516,7 @@ prediction_refusals <- list(
     "P01", "a fit that mostm() did not make",
     function() {
       fit <- rms::orm(refusal_formula_orm, data = grid_data(), x = TRUE, y = TRUE)
-      sops(fit, times = 1:4, absorb = 4)
+      sops(fit, times = 1:4)
     },
     "Model-based Markov workflows require fits created by `mostm()`."
   ),
@@ -428,7 +528,7 @@ prediction_refusals <- list(
         engine = "vglm",
         family = VGAM::cumulative(link = "probitlink", reverse = TRUE, parallel = TRUE)
       )
-      sops(fit, times = 1:4, absorb = 4)
+      sops(fit, times = 1:4)
     },
     "Only cumulative-logit models are supported"
   ),
@@ -440,7 +540,7 @@ prediction_refusals <- list(
         engine = "vglm",
         family = VGAM::cumulative(reverse = FALSE, parallel = TRUE)
       )
-      sops(fit, times = 1:4, absorb = 4)
+      sops(fit, times = 1:4)
     },
     "the cumulative family must use reverse = TRUE"
   ),
@@ -452,7 +552,7 @@ prediction_refusals <- list(
         engine = "vglm",
         family = VGAM::acat(reverse = TRUE, parallel = TRUE)
       )
-      sops(fit, times = 1:4, absorb = 4)
+      sops(fit, times = 1:4)
     },
     "only the cumulative family is supported"
   ),
@@ -461,7 +561,7 @@ prediction_refusals <- list(
     function() {
       fit <- grid_fit(refusal_orm)
       fit$sigma <- 1
-      sops(fit, times = 1:4, absorb = 4)
+      sops(fit, times = 1:4)
     },
     "Orm fits with random effects are not supported."
   ),
@@ -470,7 +570,7 @@ prediction_refusals <- list(
     function() {
       fit <- grid_fit(refusal_orm)
       attr(fit, "markov_starting_profile_data") <- NULL
-      sops(fit, times = 1:4, absorb = 4)
+      sops(fit, times = 1:4)
     },
     "Provide newdata: the model has no stored starting row for each patient."
   ),
@@ -479,7 +579,7 @@ prediction_refusals <- list(
     function() {
       data <- grid_data()
       fit <- refusal_mostm(data = data[!(data$id == data$id[1] & data$time == 1), ])
-      sops(fit, times = 1:4, absorb = 4)
+      sops(fit, times = 1:4)
     },
     "lack a row at the designated starting visit"
   ),
@@ -493,7 +593,10 @@ prediction_refusals <- list(
   ),
   refusal(
     "P09", "no `absorb` although a state was never a previous state",
-    function() refusal_call(sops, args = list(absorb = NULL)),
+    function() {
+      fit <- refusal_refit("no absorb", function() refusal_mostm(absorb = NULL))
+      sops(fit, times = 1:4)
+    },
     "Model prediction requires transitions from state level(s) not represented"
   ),
   refusal(
@@ -502,27 +605,9 @@ prediction_refusals <- list(
     "`y_levels` must be the fitted model's states in fitted order"
   ),
   refusal(
-    "P11", "`time_covariates` without one row per visit",
-    function() refusal_call(sops, time_covariates = data.frame(time = 1:2)),
-    "`time_covariates` must have one row per requested time point."
-  ),
-  refusal(
-    "P12", "factor time with a gap variable but no numeric gaps",
-    function() {
-      fit <- refusal_refit("factor time with a gap", function() {
-        data <- grid_cell_data(grid_cell("orm", time = "factor"))
-        # The grid's gap follows the visit, which factor time already fits.
-        data$gap <- withr::with_seed(3, sample(1:3, nrow(data), TRUE))
-        mostm(
-          y ~ time + tx + age + yprev + gap,
-          data = data,
-          id_var = "id",
-          first_followup_time = "1"
-        )
-      })
-      sops(fit, times = as.character(1:4), absorb = 4, gap_var = "gap")
-    },
-    "Factor visit time with `gap_var` requires numeric gap_var values"
+    "P11", "the removed `time_covariates`",
+    function() refusal_call(sops, time_covariates = data.frame(time = 1:4)),
+    "`time_covariates` was removed"
   ),
   refusal(
     "P13", "a blrm partial proportional-odds fit without constrained cut-points",
@@ -532,7 +617,6 @@ prediction_refusals <- list(
         refusal_fake_blrm(pppo = 1L),
         newdata = refusal_fake_profiles(),
         times = 1:2,
-        absorb = 4,
         n_draws = NULL
       )
     },
@@ -546,7 +630,6 @@ prediction_refusals <- list(
         refusal_fake_blrm(cluster = FALSE),
         newdata = refusal_fake_profiles(),
         times = 1:2,
-        absorb = 4,
         n_draws = NULL,
         include_re = TRUE
       )
@@ -676,7 +759,7 @@ prediction_refusals <- list(
   ),
   refusal(
     "P34", "no `times`",
-    function() sops(grid_fit(refusal_orm), absorb = 4),
+    function() sops(grid_fit(refusal_orm)),
     "`times` must be supplied to `sops()`."
   ),
   refusal(
@@ -823,7 +906,7 @@ prediction_refusals_with_extra_fits <- list(
     function() {
       profiles <- grid_profiles(refusal_vglm)
       profiles$score <- c(0, -20, 1)
-      sops(refusal_crossing_fit(), newdata = profiles, times = 1:4, absorb = 4)
+      sops(refusal_crossing_fit(), newdata = profiles, times = 1:4)
     },
     "cut-points (thresholds) of the partial proportional-odds model cross",
     class = "mostr_crossed_thresholds"
@@ -834,8 +917,7 @@ prediction_refusals_with_extra_fits <- list(
       avg_comparisons(
         refusal_crossing_fit(),
         variables = list(score = c(0, -20)),
-        times = 1:4,
-        absorb = 4
+        times = 1:4
       )
     },
     class = "mostr_crossed_thresholds"
@@ -858,7 +940,6 @@ inference_refusals <- list(
         refusal_fake_blrm(),
         newdata = refusal_fake_profiles(),
         times = 1:2,
-        absorb = 4,
         n_draws = NULL
       )
       inferences(average, method = "delta")
@@ -1253,7 +1334,7 @@ inference_refusals_with_extra_fits <- list(
         data <- grid_data()
         refusal_mostm(data = data[data$time == 1, ], formula = y ~ tx + age + yprev)
       })
-      average <- avg_sops(fit, variables = grid_treatments, times = 1:2, absorb = 4)
+      average <- avg_sops(fit, variables = grid_treatments, times = 1:2)
       inferences(average, method = "bootstrap", n_draws = 2, seed = 1)
     },
     "Bootstrap inference requires full longitudinal data"
@@ -1278,7 +1359,7 @@ inference_refusals_with_extra_fits <- list(
       # some coefficient draws.
       profiles <- grid_profiles(refusal_vglm)
       profiles$score <- -10
-      each <- sops(refusal_crossing_fit(), newdata = profiles, times = 1:2, absorb = 4)
+      each <- sops(refusal_crossing_fit(), newdata = profiles, times = 1:2)
       inferences(each, n_draws = 50, seed = 1)
     },
     "simulation draws, so those simulation draws give a negative probability",

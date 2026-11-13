@@ -24,8 +24,7 @@ test_that("the vglm engine supplies rms formula helpers and keeps %ia% semantics
         out <- mostr::soprob_markov(
           fit,
           newdata = baseline[1:3, , drop = FALSE],
-          times = 1:4,
-          absorb = "6"
+          times = 1:4
         )
         expect_equal(dim(out), c(3L, 4L, 6L), info = label)
         expect_equal(
@@ -70,6 +69,7 @@ test_that("the vglm engine supplies rms formula helpers and keeps %ia% semantics
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       )
     )
@@ -226,6 +226,7 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
   # Starting values have one row per row of `data`.
@@ -239,6 +240,7 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm",
     subset = time <= 4,
     etastart = start
@@ -249,6 +251,7 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
     ordered(y) ~ time + tx + yprev,
     data = kept_rows,
     id_var = "id",
+    absorb = 6,
     engine = "vglm",
     etastart = kept_start
   )
@@ -262,6 +265,7 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
     ordered(y) ~ time + tx + yprev,
     data = incomplete,
     id_var = "id",
+    absorb = 6,
     engine = "vglm",
     etastart = start
   )
@@ -271,6 +275,7 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
     ordered(y) ~ time + tx + yprev,
     data = complete_rows,
     id_var = "id",
+    absorb = 6,
     engine = "vglm",
     etastart = complete_start
   )

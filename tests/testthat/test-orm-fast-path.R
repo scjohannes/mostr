@@ -5,12 +5,10 @@ add_test_age <- function(data) {
 
 # SOPs from the streamed design builder, markov_msm_build() followed by
 # markov_msm_run(), which MVN draws and analytical inference use. `args` are
-# the arguments of sops(), turned into settings as sops() does.
+# the arguments of sops(); the settings, absorbing states included, come from
+# the fit as in sops().
 streamed_builder_sops <- function(fit, profiles, args) {
-  settings <- do.call(
-    mostr:::resolve_markov_settings,
-    c(list(fit), args[setdiff(names(args), "times")])
-  )
+  settings <- mostr:::resolve_markov_settings(fit)
   components <- mostr:::markov_msm_build(
     model = fit,
     newdata = profiles,
@@ -21,7 +19,7 @@ streamed_builder_sops <- function(fit, profiles, args) {
     components,
     mostr::get_effective_coefs(fit),
     times = args$times,
-    absorb = args$absorb
+    absorb = settings$absorb
   )
 }
 
@@ -57,13 +55,14 @@ test_that("the streamed design builder matches sops() on every model set-up", {
   orm_fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
     data = orm_data,
-    id_var = "id"
+    id_var = "id",
+    absorb = "6"
   ))
   cases[[length(cases) + 1L]] <- list(
     label = "orm, rcs(time) * tx",
     fit = orm_fit,
     profiles = orm_data[!duplicated(orm_data$id), ][1:12, , drop = FALSE],
-    args = list(times = 1:5, absorb = "6")
+    args = list(times = 1:5)
   )
 
   # vglm with a spline of a numeric previous state.
@@ -85,14 +84,14 @@ test_that("the streamed design builder matches sops() on every model set-up", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = numeric_data,
       id_var = "id",
+      absorb = "10",
       engine = "vglm"
     )),
     profiles = numeric_data[numeric_data$time == 1, , drop = FALSE][1:8, ],
-    args = list(times = 1:7, absorb = "10")
+    args = list(times = 1:7)
   )
 
-  # vglm with an inline rcs(time) spline, and the same spline as an explicit
-  # basis supplied to prediction through `time_covariates`.
+  # vglm with an inline rcs(time) spline.
   spline_data <- make_markov_trajectories(
     n_patients = 70,
     follow_up_time = 8,
@@ -103,17 +102,6 @@ test_that("the streamed design builder matches sops() on every model set-up", {
   ) |>
     prepare_markov_data()
   spline_data$age <- 45 + ((spline_data$id * 11) %% 31)
-  basis <- rms::rcs(spline_data$time, 4)
-  spline_data$time_lin <- as.vector(basis[, 1])
-  spline_data$time_nlin_1 <- as.vector(basis[, 2])
-  spline_data$time_nlin_2 <- as.vector(basis[, 3])
-  basis_columns <- c("time_lin", "time_nlin_1", "time_nlin_2")
-  time_covariates <- spline_data[
-    match(1:8, spline_data$time),
-    basis_columns,
-    drop = FALSE
-  ]
-  rownames(time_covariates) <- NULL
   spline_profiles <- spline_data[spline_data$time == 1, , drop = FALSE][1:12, ]
   cases[[length(cases) + 1L]] <- list(
     label = "vglm, inline rcs(time) * tx",
@@ -122,26 +110,11 @@ test_that("the streamed design builder matches sops() on every model set-up", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = spline_data,
       id_var = "id",
-      engine = "vglm"
-    )),
-    profiles = spline_profiles,
-    args = list(times = 1:8, absorb = "6")
-  )
-  cases[[length(cases) + 1L]] <- list(
-    label = "vglm, explicit time basis * tx with time_covariates",
-    fit = suppressWarnings(mostm(
-      ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = spline_data,
-      id_var = "id",
-      engine = "vglm"
-    )),
-    profiles = spline_profiles,
-    args = list(
-      times = 1:8,
       absorb = "6",
-      time_covariates = time_covariates
-    )
+      engine = "vglm"
+    )),
+    profiles = spline_profiles,
+    args = list(times = 1:8)
   )
 
   # vglm with factor visit time, no absorbing state, and numeric `times` that
@@ -258,11 +231,12 @@ test_that("orm SOPs report a state count that differs from the fit and a missing
 
   data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6111)
   data <- add_test_age(data)
-  fit <- suppressWarnings(mostm(
-    y ~ time + tx + yprev + age,
-    data = data,
-    id_var = "id"
-  ))
+  # Death, state 6, is left out of `absorb` on purpose, so `mostm()` warns
+  # and prediction then has no transitions out of it to work with.
+  expect_warning(
+    fit <- mostm(y ~ time + tx + yprev + age, data = data, id_var = "id"),
+    class = "mostr_warning_outcome_only_states"
+  )
   baseline <- data[!duplicated(data$id), ][1:3, , drop = FALSE]
 
   # The fit always supplies its own states, so a state count that differs
@@ -299,14 +273,14 @@ test_that("execution-plan budgets bound all retained first-order designs", {
   fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    absorb = "6"
   ))
   baseline <- data[!duplicated(data$id), ][1:4, , drop = FALSE]
   args <- list(
     model = fit,
     newdata = baseline,
-    times = 1:5,
-    absorb = "6"
+    times = 1:5
   )
   # The compiled result, before the budget forces the R fallback.
   expect_no_message(expected <- do.call(mostr::soprob_markov, args))
@@ -318,7 +292,7 @@ test_that("execution-plan budgets bound all retained first-order designs", {
         fit,
         baseline,
         times = 1:5,
-        settings = mostr:::resolve_markov_settings(fit, absorb = "6"),
+        settings = mostr:::resolve_markov_settings(fit),
         builder = builder
       ),
       error = function(e) e
@@ -387,12 +361,14 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   fit_default <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    absorb = "6"
   )
   fit_scaled <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
     data = data,
     id_var = "id",
+    absorb = "6",
     scale = TRUE
   )
   baseline <- data[!duplicated(data$id), ]
@@ -411,14 +387,12 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   sops_default <- mostr::sops(
     fit_default,
     baseline,
-    times = 1:4,
-    absorb = "6"
+    times = 1:4
   )
   sops_scaled <- mostr::sops(
     fit_scaled,
     baseline,
-    times = 1:4,
-    absorb = "6"
+    times = 1:4
   )
   expect_equal(sops_scaled$estimate, sops_default$estimate, tolerance = 1e-10)
 
@@ -427,14 +401,12 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   avg_default <- mostr::avg_sops(
     robust_default,
     variables = "tx",
-    times = 1:4,
-    absorb = "6"
+    times = 1:4
   )
   avg_scaled <- mostr::avg_sops(
     robust_scaled,
     variables = "tx",
-    times = 1:4,
-    absorb = "6"
+    times = 1:4
   )
   expect_equal(avg_scaled$estimate, avg_default$estimate, tolerance = 1e-10)
 
@@ -485,8 +457,7 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
       fit,
       newdata = data,
       variables = "tx",
-      times = 1:4,
-      absorb = "6"
+      times = 1:4
     )
     withr::with_seed(61053, mostr::inferences(
       full,
@@ -514,7 +485,8 @@ test_that("orm checks the size of an MVN covariance matrix and supports score-bo
   fit <- mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    absorb = "6"
   )
   robust_fit <- fit
   baseline <- data[!duplicated(data$id), ]
@@ -522,8 +494,7 @@ test_that("orm checks the size of an MVN covariance matrix and supports score-bo
   avg <- mostr::avg_sops(
     robust_fit,
     variables = "tx",
-    times = 1:4,
-    absorb = "6"
+    times = 1:4
   )
 
   expect_error(
@@ -562,7 +533,8 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
   first_fit <- mostm(
     y ~ tx + yprev + rms::rcs(time, 4),
     data = first_data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 8
   )
   data$ypprev <- stats::ave(data$yprev, data$id, FUN = function(value) {
     c(value[1L], value[-length(value)])
@@ -577,7 +549,8 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
     y ~ tx + yprev + ypprev + rms::rcs(time, 4),
     data = second_data,
     id_var = "id",
-    p2_var = "ypprev"
+    p2_var = "ypprev",
+    absorb = 8
   )
   states <- function(values, data, column = "yprev") {
     factor(values, levels = levels(data[[column]]))
@@ -607,8 +580,7 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
         list(sops = sops(
           first_fit,
           newdata = newdata,
-          times = 1:3,
-          absorb = 8
+          times = 1:3
         )$estimate)
       }
     ),
@@ -644,8 +616,7 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
         list(sops = sops(
           second_fit,
           newdata = newdata,
-          times = 1:3,
-          absorb = 8
+          times = 1:3
         )$estimate)
       }
     )

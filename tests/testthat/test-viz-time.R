@@ -19,6 +19,7 @@ make_plot_time_model <- function() {
       data = data,
       first_followup_time = 1,
       id_var = "id",
+      absorb = 3,
       engine = "vglm"
     )
   })
@@ -30,17 +31,15 @@ test_that("plot_time stacks every state into bars spanning follow-up", {
   by_arm <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = 3
+    times = 1:3
   )
   by_arm_days <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
-    absorb = 3,
     time_unit = "days"
   )
-  cohort <- avg_state_time(model, times = 1:3, absorb = 3)
+  cohort <- avg_state_time(model, times = 1:3)
   by_sex_estimate <- c(1, 3, 2, 2, 3, 5, 4, 4)
   by_sex <- structure(
     data.frame(
@@ -149,7 +148,7 @@ test_that("plot_time stacks every state into bars spanning follow-up", {
 test_that("plot_time pointrange draws confidence intervals per state", {
   skip_on_cran()
   model <- make_plot_time_model()
-  total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3, absorb = 3) |>
+  total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3) |>
     inferences(method = "delta")
 
   plot <- plot_time(total, type = "pointrange")
@@ -216,21 +215,18 @@ test_that("plot_time accepts or rejects its inputs", {
   total <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = 3
+    times = 1:3
   )
   overlapping <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
-    absorb = 3,
     state_sets = list(alive = c("1", "2"), well = "1")
   )
   partial <- avg_state_time(
     model,
     variables = list(tx = c(0, 1)),
     times = 1:3,
-    absorb = 3,
     state_sets = list(well = "1", ill = "2")
   )
 

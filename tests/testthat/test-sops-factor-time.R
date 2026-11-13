@@ -1,35 +1,3 @@
-make_factor_visit_case <- function(n_patients = 80, n_visits = 4, seed = 2026) {
-  withr::with_seed(seed, {
-    visits <- as.character(seq_len(n_visits))
-    ids <- seq_len(n_patients)
-    tx <- stats::rbinom(n_patients, 1, 0.5)
-
-    data <- expand.grid(
-      id = ids,
-      time = visits,
-      KEEP.OUT.ATTRS = FALSE
-    )
-    data <- data[order(data$id, data$time), , drop = FALSE]
-    data$time <- factor(data$time, levels = visits)
-    data$tx <- tx[data$id]
-    data$yprev <- factor(
-      sample(seq_len(4), nrow(data), replace = TRUE),
-      levels = as.character(seq_len(4))
-    )
-    eta <- -0.35 *
-      data$tx +
-      0.25 * as.integer(data$time) +
-      0.2 * as.integer(as.character(data$yprev))
-    p_worse <- stats::plogis(eta - mean(eta))
-    y_num <- pmin(
-      4L,
-      pmax(1L, 1L + stats::rbinom(nrow(data), 3L, p_worse))
-    )
-    data$y <- ordered(y_num, levels = as.character(seq_len(4)))
-    data
-  })
-}
-
 make_interpolation_case <- function() {
   x <- expand.grid(
     time = factor(c("v1", "v2"), levels = c("v1", "v2")),
@@ -146,6 +114,7 @@ absorbing_factor_visit_fit <- function() {
       data = case$data,
       id_var = "id",
       first_followup_time = "1",
+      absorb = case$absorb,
       opt_method = "LM",
       scale = TRUE,
       penalty = 0.1,
@@ -176,43 +145,6 @@ add_interpolation_intervals <- function(x) {
   x
 }
 
-test_that("factor visit gap requires explicit numeric time_covariates", {
-  skip_on_cran()
-  skip_if_not_installed("VGAM")
-
-  data <- make_factor_visit_case(n_patients = 40)
-  fit <- suppressWarnings(
-    mostm(
-      y ~ time + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      first_followup_time = "1",
-      engine = "vglm"
-    )
-  )
-  baseline <- data[!duplicated(data$id), , drop = FALSE]
-
-  expect_error(
-    soprob_markov(
-      fit,
-      newdata = baseline,
-      times = 1:4,
-      gap_var = "gap"
-    ),
-    "Factor visit time with `gap_var` requires numeric gap_var values"
-  )
-
-  out <- soprob_markov(
-    fit,
-    newdata = baseline,
-    times = 1:4,
-    gap_var = "gap",
-    time_covariates = data.frame(gap = c(3, 4, 7, 14))
-  )
-  expect_equal(dim(out), c(nrow(baseline), 4L, 4L))
-})
-
 test_that("factor visit orm SOP interpolation uses absorbing state", {
   skip_if_not_installed("rms")
 
@@ -222,8 +154,7 @@ test_that("factor visit orm SOP interpolation uses absorbing state", {
   sop_visit <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = names(case$visit_days),
-    absorb = case$absorb
+    times = names(case$visit_days)
   )
   expect_equal(
     as.character(attr(sop_visit, "avg_args")$times),

@@ -95,7 +95,8 @@ delta_public_orm_case <- local({
       model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
         data = data,
-        id_var = "id"
+        id_var = "id",
+        absorb = 6
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:8,
@@ -130,6 +131,7 @@ delta_public_unconditional_case <- local({
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       )
       value <<- list(
@@ -144,14 +146,10 @@ delta_public_unconditional_case <- local({
 
 replay_public_sops <- function(object, model) {
   args <- attr(object, "call_args")
-  settings <- markov_result_settings(object)
   sops(
     model = model,
     newdata = attr(object, "newdata_pred"),
-    times = args$times,
-    absorb = settings$absorb,
-    gap_var = settings$gap_var,
-    time_covariates = settings$time_covariates
+    times = args$times
   )
 }
 
@@ -288,8 +286,7 @@ test_that("delta replay rejects stale estimates even when cell keys align", {
     case$model,
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
-    times = 1,
-    absorb = max(case$y_levels)
+    times = 1
   )
   point$estimate[1] <- point$estimate[1] + 1e-8
 
@@ -312,8 +309,7 @@ test_that("public delta workflow returns bounded SOP and Wald comparison interva
     case$model,
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(
     avg,
@@ -364,8 +360,7 @@ test_that("public delta workflow returns bounded SOP and Wald comparison interva
     variables = list(tx = c(0, 1)),
     estimand = "sop",
     state_sets = list(low = c(1, 2)),
-    times = 1:3,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   comparison <- inferences(
     comparison,
@@ -421,8 +416,7 @@ test_that("public fixed VGLM Jacobians match coefficient replay", {
   point <- sops(
     case$model,
     newdata = case$baseline[1:4, , drop = FALSE],
-    times = 1:3,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
 
   set.seed(8111)
@@ -463,8 +457,7 @@ test_that("public fixed ORM Jacobians match coefficient replay", {
   point <- sops(
     case$model,
     newdata = case$baseline[1:3, , drop = FALSE],
-    times = 1:3,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(
     point,
@@ -485,8 +478,7 @@ test_that("public empirical ORM averages use complete named covariance", {
     case$model,
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(
     avg,
@@ -512,8 +504,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
   avg <- avg_sops(
     case$model,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(avg, method = "delta", vcov = "unconditional")
 
@@ -623,14 +614,12 @@ test_that("backend HC settings affect empirical but not unconditional inference"
   point_hc0 <- avg_sops(
     hc0,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
   point_hc1 <- avg_sops(
     hc1,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
   empirical_hc0 <- inferences(point_hc0, method = "delta", vcov = "conditional")
   empirical_hc1 <- inferences(point_hc1, method = "delta", vcov = "conditional")
@@ -673,8 +662,7 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
   fixed <- sops(
     case$model,
     newdata = case$baseline[1:3, , drop = FALSE],
-    times = 1:2,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
 
   expect_snapshot(
@@ -703,8 +691,7 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
   avg <- avg_sops(
     unconditional_case$model,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = max(unconditional_case$y_levels)
+    times = 1:2
   )
   expect_snapshot(
     inferences(
@@ -722,8 +709,7 @@ test_that("delta vcov choices preserve calculations and select class defaults", 
   args <- list(
     model = case$model,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
   objects <- list(
     do.call(sops, args),

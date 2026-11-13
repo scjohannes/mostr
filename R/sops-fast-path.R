@@ -19,10 +19,8 @@
 #' @param settings The resolved settings of the call
 #'   (`resolve_markov_settings()`): the state labels `y_levels`, the absorbing
 #'   states `absorb` (their transition matrices are not needed, because
-#'   absorbing states keep their prior probability mass), the columns
-#'   `time_var`, `p_var` and `gap_var`, and the time-dependent covariate lookup
-#'   `time_covariates`. With factor visit time, numeric `gap_var` values must
-#'   be supplied in `time_covariates`.
+#'   absorbing states keep their prior probability mass), and the columns
+#'   `time_var`, `p_var` and `gap_var`.
 #'
 #' @return A list containing pre-calculated matrices and metadata.
 #'
@@ -51,12 +49,10 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
     data,
     times,
     time_var,
-    time_covariates = settings$time_covariates,
     default = "fast"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   is_vglm <- inherits(model, "vglm")
   is_orm <- inherits(model, "orm")
@@ -210,12 +206,10 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
     newdata,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "fast"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   Gamma <- get_effective_coefs(model)
   validate_sop_threshold_count(Gamma, y_levels)

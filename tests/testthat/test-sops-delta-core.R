@@ -44,7 +44,8 @@ delta_orm_case <- local({
       model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
         data = data,
-        id_var = "id"
+        id_var = "id",
+        absorb = 6
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:3,

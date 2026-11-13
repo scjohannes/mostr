@@ -136,6 +136,7 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     )
   )
@@ -155,20 +156,21 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
   orm_fit <- suppressWarnings(mostm(
     ordered(y) ~ rms::lsp(time, c(3, 7)) + tx + yprev,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   ))
   # The plan compiler takes the fitted model inside the vglm engine's wrapper.
   cases <- list(
     list(label = "vglm", fit = vglm_fit, plan_model = vglm_fit$vglm_fit),
     list(label = "orm", fit = orm_fit, plan_model = orm_fit)
   )
-  args <- list(newdata = baseline, times = 1:8, absorb = 6)
+  args <- list(newdata = baseline, times = 1:8)
 
   for (case in cases) {
     internal_args <- list(
       newdata = baseline,
       times = 1:8,
-      settings = mostr:::resolve_markov_settings(case$fit, absorb = 6)
+      settings = mostr:::resolve_markov_settings(case$fit)
     )
     reference <- do.call(
       mostr:::soprob_markov_r_engine,

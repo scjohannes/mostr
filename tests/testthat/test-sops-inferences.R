@@ -18,7 +18,9 @@ describe("avg_sops() and inferences() pipeline", {
     data
   }
 
-  get_time_covariates <- function(data) {
+  # The spline columns at each visit, one row per visit in time order, as the
+  # readable loop sets them for a model fitted to the columns themselves.
+  get_time_basis_table <- function(data) {
     cols <- c("time", "time_lin", "time_nlin_1", "time_nlin_2")
     out <- unique(data[, cols, drop = FALSE])
     out <- out[order(out$time), , drop = FALSE]
@@ -37,14 +39,11 @@ describe("avg_sops() and inferences() pipeline", {
     )
     data <- mostr::prepare_markov_data(raw_data)
     data <- add_patient_age(data)
-    data <- add_time_basis(data)
 
     list(
       data = data,
       baseline = data[data$time == 1, , drop = FALSE],
-      time_covariates = get_time_covariates(data),
-      y_levels = 1:6,
-      absorb = "6"
+      y_levels = 1:6
     )
   }
 
@@ -67,42 +66,25 @@ describe("avg_sops() and inferences() pipeline", {
     list(
       data = data,
       baseline = data[data$time == 1, , drop = FALSE],
-      y_levels = 1:10,
-      absorb = "10"
+      y_levels = 1:10
     )
   }
 
+  # The time spline is written inline. It replaces precomputed columns of
+  # `rms::rcs(data$time, 4)` that were passed through the removed
+  # `time_covariates`; rms computes the same knots from the same data, so the
+  # snapshots below did not change.
   fit_pipeline_model <- function(data) {
     suppressWarnings(
       mostr::mostm(
-        ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
+        ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       )
     )
-  }
-
-  fit_pipeline_mostm_model <- function(data) {
-    suppressWarnings(mostr::mostm(
-      ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      time_var = "time_lin",
-      engine = "vglm"
-    ))
-  }
-
-  fit_inline_pipeline_mostm_model <- function(data) {
-    suppressWarnings(mostr::mostm(
-      ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    ))
   }
 
   fit_numeric_yprev_model <- function(data) {
@@ -112,20 +94,21 @@ describe("avg_sops() and inferences() pipeline", {
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 10,
         engine = "vglm"
       )
     )
   }
 
-  # The pipeline data and its explicit-basis mostm() fit, made once and shared
-  # by the bootstrap, FWB, score-bootstrap and inline-versus-basis tests.
+  # The pipeline data and its fit, made once and shared by the MVN,
+  # bootstrap, FWB and score-bootstrap tests.
   pipeline_case <- function() {
     grid_fixture("sops-inferences pipeline case", build_markov_pipeline_case)
   }
 
   pipeline_mostm_fit <- function() {
     grid_fixture("sops-inferences pipeline mostm fit", function() {
-      fit_pipeline_mostm_model(pipeline_case()$data)
+      fit_pipeline_model(pipeline_case()$data)
     })
   }
 
@@ -477,15 +460,13 @@ describe("avg_sops() and inferences() pipeline", {
     skip_if_not_installed("mvtnorm")
 
     case <- pipeline_case()
-    model <- fit_pipeline_model(case$data)
+    model <- pipeline_mostm_fit()
 
     avg <- mostr::avg_sops(
       model = model,
       newdata = case$baseline,
       variables = "tx",
-      times = 1:8,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:8
     )
     expect_equal(nrow(attr(avg, "newdata_orig")), nrow(case$baseline))
 
@@ -526,8 +507,7 @@ describe("avg_sops() and inferences() pipeline", {
     avg <- mostr::avg_sops(
       model = model,
       variables = "tx",
-      times = 1:7,
-      absorb = case$absorb
+      times = 1:7
     )
 
     cases <- list(
@@ -578,9 +558,7 @@ describe("avg_sops() and inferences() pipeline", {
     avg <- mostr::avg_sops(
       model = model,
       variables = "tx",
-      times = 1:8,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:8
     )
     expect_equal(nrow(attr(avg, "newdata_orig")), nrow(case$baseline))
     expect_equal(nrow(attr(avg, "refit_data")), nrow(case$data))
@@ -624,9 +602,7 @@ describe("avg_sops() and inferences() pipeline", {
     avg <- mostr::avg_sops(
       model = model,
       variables = "tx",
-      times = 1:8,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:8
     )
 
     withr::local_seed(4404)
@@ -660,9 +636,7 @@ describe("avg_sops() and inferences() pipeline", {
     avg <- mostr::avg_sops(
       model = model,
       variables = "tx",
-      times = 1:8,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:8
     )
     expect_equal(nrow(attr(avg, "newdata_orig")), nrow(case$baseline))
     expect_equal(nrow(attr(avg, "refit_data")), nrow(case$data))
@@ -706,9 +680,10 @@ describe("avg_sops() and inferences() pipeline", {
     model <- mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
-      id_var = "id"
+      id_var = "id",
+      absorb = 6
     )
-    avg <- avg_sops(model, variables = "tx", times = 1:3, absorb = "6")
+    avg <- avg_sops(model, variables = "tx", times = 1:3)
     previous <- mostr:::inferences_score_bootstrap(
       avg,
       cluster = data$id,
@@ -768,67 +743,6 @@ describe("avg_sops() and inferences() pipeline", {
     }
   })
 
-  test_that("inline rcs() and explicit basis agree for simulation inference", {
-    skip_on_cran()
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-    skip_if_not_installed("mvtnorm")
-
-    case <- pipeline_case()
-    explicit_avg <- mostr::avg_sops(
-      model = pipeline_mostm_fit(),
-      variables = "tx",
-      times = 1:8,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
-    )
-    inline_avg <- mostr::avg_sops(
-      model = fit_inline_pipeline_mostm_model(case$data),
-      variables = "tx",
-      times = 1:8,
-      absorb = case$absorb
-    )
-
-    expect_equal(inline_avg$estimate, explicit_avg$estimate, tolerance = 1e-10)
-
-    cases <- list(
-      list(method = "mvn", seed = 4411),
-      list(method = "score_bootstrap", seed = 4412)
-    )
-    for (row in cases) {
-      infer <- function(avg) {
-        withr::with_seed(
-          row$seed,
-          run_inferences_method(
-            avg,
-            method = row$method,
-            n_draws = 3,
-            return_draws = TRUE
-          )
-        )
-      }
-      explicit_inferred <- infer(explicit_avg)
-      inline_inferred <- infer(inline_avg)
-
-      for (column in c("estimate", "conf.low", "conf.high")) {
-        expect_equal(
-          inline_inferred[[column]],
-          explicit_inferred[[column]],
-          tolerance = 1e-10,
-          info = paste(row$method, column)
-        )
-      }
-      inline_draws <- mostr::get_draws(inline_inferred)$draw
-      expect_gt(length(inline_draws), 0)
-      expect_equal(
-        inline_draws,
-        mostr::get_draws(explicit_inferred)$draw,
-        tolerance = 1e-10,
-        info = row$method
-      )
-    }
-  })
-
   test_that("full-PO vglm engine fit with inline rcs matches VGAM::vglm()", {
     skip_on_cran()
     skip_if_not_installed("VGAM")
@@ -859,6 +773,7 @@ describe("avg_sops() and inferences() pipeline", {
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       )
     )$vglm_fit
@@ -878,7 +793,7 @@ describe("avg_sops() and inferences() pipeline", {
     )
   })
 
-  test_that("vglm engine fit with constrained PPO matches explicit spline basis in fit and MVN inference", {
+  test_that("vglm engine fit with constrained PPO matches explicit spline basis in fit, SOPs and covariance", {
     skip_on_cran()
     skip_if_not_installed("VGAM")
     skip_if_not_installed("rms")
@@ -910,7 +825,7 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(inline_basis, explicit_basis, tolerance = 1e-14)
 
     baseline <- data[data$time == 1, , drop = FALSE]
-    time_covariates <- get_time_covariates(data)
+    time_basis <- get_time_basis_table(data)
     y_levels <- 1:6
     n_thresholds <- length(y_levels) - 1
 
@@ -933,6 +848,7 @@ describe("avg_sops() and inferences() pipeline", {
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
         id_var = "id",
+        absorb = 6,
         constraints = explicit_constraints,
         engine = "vglm"
       )
@@ -946,6 +862,7 @@ describe("avg_sops() and inferences() pipeline", {
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       )
     )$vglm_fit
@@ -975,6 +892,7 @@ describe("avg_sops() and inferences() pipeline", {
         family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
         data = data,
         id_var = "id",
+        absorb = 6,
         constraints = inline_constraints,
         engine = "vglm"
       )
@@ -993,73 +911,57 @@ describe("avg_sops() and inferences() pipeline", {
       tolerance = 1e-10
     )
 
-    explicit_sops <- mostr::avg_sops(
-      explicit_fit,
-      newdata = baseline,
-      variables = "tx",
-      times = 1:12,
-      absorb = "6",
-      time_covariates = time_covariates
-    )
-    inline_sops <- mostr::avg_sops(
-      inline_fit,
-      newdata = baseline,
-      variables = "tx",
-      times = 1:12,
-      absorb = "6"
-    )
-
-    order_sops <- function(x) {
-      x[order(x$tx, x$time, as.integer(as.character(x$state))), , drop = FALSE]
-    }
-    explicit_sops <- order_sops(explicit_sops)
-    inline_sops <- order_sops(inline_sops)
-
-    expect_equal(inline_sops$tx, explicit_sops$tx)
-    expect_equal(inline_sops$time, explicit_sops$time)
-    expect_equal(inline_sops$state, explicit_sops$state)
-    expect_equal(
-      inline_sops$estimate,
-      explicit_sops$estimate,
-      tolerance = 1e-10
+    # The SOPs of the inline fit, which mostr evaluates at each visit, match
+    # the readable loop on the fit to the precomputed columns, with the
+    # columns set to each visit's spline values. A few profiles under each
+    # treatment keep the loop quick.
+    profiles <- baseline[1:3, , drop = FALSE]
+    profiles <- rbind(transform(profiles, tx = 0), transform(profiles, tx = 1))
+    inline_sops <- mostr::sops(inline_fit, newdata = profiles, times = 1:12)
+    basis_table <- time_basis[1:12, , drop = FALSE]
+    reference <- lapply(seq_len(nrow(profiles)), function(i) {
+      slow_first_order_sops(
+        slow_predictor(explicit_fit),
+        profiles[i, , drop = FALSE],
+        times = 1:12,
+        states = y_levels,
+        absorb = 6,
+        visit_columns = basis_table
+      )
+    })
+    expect_lt(
+      grid_largest_gap(inline_sops, reference, inline_sops$rowid, 1:12),
+      1e-10
     )
 
-    # Seeded MVN inference on patient-clustered robust fits gives the same
-    # limits whichever way the spline basis was written.
+    # The patient-clustered robust covariance does not depend on how the
+    # spline basis was written, so MVN inference on the inline fit uses the
+    # same covariance as the fit to the precomputed columns.
     inline_robust <- mostr::robcov_vglm(inline_fit, cluster = data$id)
     explicit_robust <- mostr::robcov_vglm(explicit_fit, cluster = data$id)
     expect_equal(inline_robust$bread_type, "observed")
     expect_true(all(is.finite(inline_robust$se)))
+    expect_equal(
+      unname(stats::coef(inline_robust)),
+      unname(stats::coef(explicit_robust)),
+      tolerance = 1e-8
+    )
+    expect_equal(
+      unname(stats::vcov(inline_robust)),
+      unname(stats::vcov(explicit_robust)),
+      tolerance = 1e-8
+    )
 
-    explicit_inferred <- mostr::avg_sops(
-      explicit_robust,
-      newdata = baseline,
-      variables = "tx",
-      times = 1:12,
-      absorb = "6",
-      time_covariates = time_covariates
-    ) |>
-      mostr::inferences(method = "mvn", n_draws = 3, workers = 1, seed = 42)
     inline_inferred <- mostr::avg_sops(
       inline_robust,
       newdata = baseline,
       variables = "tx",
-      times = 1:12,
-      absorb = "6"
+      times = 1:12
     ) |>
       mostr::inferences(method = "mvn", n_draws = 3, workers = 1, seed = 42)
-
     expect_s3_class(inline_inferred, "markov_avg_sops")
-    explicit_inferred <- order_sops(explicit_inferred)
-    inline_inferred <- order_sops(inline_inferred)
     for (column in c("estimate", "conf.low", "conf.high", "std.error")) {
       expect_true(all(is.finite(inline_inferred[[column]])), info = column)
-      expect_equal(
-        inline_inferred[[column]],
-        explicit_inferred[[column]],
-        tolerance = 1e-8,
-        info = column
-      )
     }
   })
 })

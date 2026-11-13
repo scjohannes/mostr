@@ -174,7 +174,9 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
     time_var = "visit",
     p_var = "prev",
     p2_var = "preprev",
-    y_levels = c(1, 2)
+    y_levels = c(1, 2),
+    absorb = 2,
+    gap_var = "gap"
   )
   newdata <- data.frame(
     id = c(1, 2),
@@ -182,7 +184,6 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
     subgroup = c("a", "b"),
     yprev = c(1, 2)
   )
-  time_covariates <- data.frame(visit = 1:2, spline = c(0, 1))
   captured <- new.env(parent = emptyenv())
 
   with_mocked_bindings(
@@ -241,10 +242,7 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
         newdata = newdata,
         variables = "tx",
         by = "subgroup",
-        times = 1:2,
-        absorb = 2,
-        gap_var = "gap",
-        time_covariates = time_covariates
+        times = 1:2
       )
     }
   )
@@ -257,7 +255,6 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
   expect_equal(captured$args$settings$p_var, "prev")
   expect_equal(captured$args$settings$p2_var, "preprev")
   expect_equal(captured$args$settings$gap_var, "gap")
-  expect_equal(captured$args$settings$time_covariates, time_covariates)
 })
 
 test_that("avg_sops() reports missing grouping variables from individual SOPs", {
@@ -367,6 +364,7 @@ test_that("get_draws() preserves covariates for individual SOP draws", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     "fewer than 30 clusters"
@@ -375,8 +373,7 @@ test_that("get_draws() preserves covariates for individual SOP draws", {
   sops_result <- sops(
     model = m_vglm_rob,
     newdata = dplyr::filter(data, time == 1),
-    times = 1:5,
-    absorb = 6
+    times = 1:5
   )
 
   result_ci <- inferences(

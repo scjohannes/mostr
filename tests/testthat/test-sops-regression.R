@@ -10,51 +10,14 @@ describe("SOP regression baselines", {
     merge(data, age_lookup, by = "id", all.x = TRUE, sort = FALSE)
   }
 
-  add_explicit_time_basis <- function(data, nk = 4) {
-    time_spl <- rms::rcs(data$time, nk)
-    data$time_lin <- as.vector(time_spl[, 1])
-    data$time_nlin_1 <- as.vector(time_spl[, 2])
-    data$time_nlin_2 <- as.vector(time_spl[, 3])
-    data
-  }
-
-  get_time_covariates <- function(data) {
-    time_covariates <- unique(data[, c(
-      "time",
-      "time_lin",
-      "time_nlin_1",
-      "time_nlin_2"
-    )])
-    time_covariates <- time_covariates[
-      order(time_covariates$time),
-      ,
-      drop = FALSE
-    ]
-    as.data.frame(time_covariates[,
-      c("time_lin", "time_nlin_1", "time_nlin_2"),
-      drop = FALSE
-    ])
-  }
-
-  fit_explicit_spline_model <- function(data) {
-    suppressWarnings(
-      mostm(
-        ordered(y) ~ (time_lin + time_nlin_1 + time_nlin_2) * tx + yprev + age,
-        family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = data,
-        id_var = "id",
-        engine = "vglm"
-      )
-    )
-  }
-
-  fit_inline_spline_model <- function(data) {
+  fit_inline_spline_model <- function(data, absorb) {
     suppressWarnings(
       mostm(
         ordered(y) ~ rms::rcs(time, 4) * tx + yprev + age,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = absorb,
         engine = "vglm"
       )
     )
@@ -137,12 +100,10 @@ describe("SOP regression baselines", {
 
     data <- mostr::prepare_markov_data(raw_data)
     data <- add_patient_age(data)
-    data <- add_explicit_time_basis(data, nk = 4)
 
     list(
       data = data,
       baseline = subset(data, time == 1),
-      time_covariates = get_time_covariates(data),
       y_levels = 1:6,
       absorb = "6"
     )
@@ -157,14 +118,13 @@ describe("SOP regression baselines", {
       seed = 1004
     )
 
-    data <- mostr::prepare_markov_data(raw_data)
+    # Death, state 4, is absorbing: its rows as the previous state are removed.
+    data <- mostr::prepare_markov_data(raw_data, absorbing_state = 4)
     data <- add_patient_age(data)
-    data <- add_explicit_time_basis(data, nk = 4)
 
     list(
       data = data,
       baseline = subset(data, time == 1),
-      time_covariates = get_time_covariates(data),
       y_levels = 1:4,
       absorb = "4"
     )
@@ -177,23 +137,19 @@ describe("SOP regression baselines", {
     skip_if_not_installed("mvtnorm")
 
     case <- build_generic_markov_case()
-    model <- suppressWarnings(fit_explicit_spline_model(case$data))
+    model <- suppressWarnings(fit_inline_spline_model(case$data, case$absorb))
 
     sops_result <- mostr::soprob_markov(
       model = model,
       newdata = case$baseline,
-      times = 1:10,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:10
     )
 
     avg_result <- mostr::avg_sops(
       model = model,
       newdata = case$baseline,
       variables = "tx",
-      times = 1:10,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:10
     )
 
     withr::local_seed(5001)
@@ -226,24 +182,20 @@ describe("SOP regression baselines", {
     # usable patient-clustered covariance. The point-estimate signatures need
     # only the coefficients, so the model is fitted as bootstrap refits are.
     model <- mostr:::markov_with_coefficients_only_refit(
-      suppressWarnings(fit_explicit_spline_model(case$data))
+      suppressWarnings(fit_inline_spline_model(case$data, case$absorb))
     )
 
     sops_result <- mostr::soprob_markov(
       model = model,
       newdata = case$baseline,
-      times = 1:10,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:10
     )
 
     avg_result <- mostr::avg_sops(
       model = model,
       newdata = case$baseline,
       variables = "tx",
-      times = 1:10,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
+      times = 1:10
     )
 
     expect_snapshot_value(
@@ -254,50 +206,5 @@ describe("SOP regression baselines", {
       style = "json2",
       cran = TRUE
     )
-  })
-
-  test_that("inline and explicit spline SOPs from the R engine agree for interaction models", {
-    skip_on_cran()
-    skip_if_not_installed("VGAM")
-    skip_if_not_installed("rms")
-
-    case <- build_generic_markov_case()
-    explicit_model <- fit_explicit_spline_model(case$data)
-    inline_model <- fit_inline_spline_model(case$data)
-
-    explicit_sops <- mostr::soprob_markov(
-      model = explicit_model,
-      newdata = case$baseline[1:10, , drop = FALSE],
-      times = 1:10,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
-    )
-
-    inline_sops <- mostr::soprob_markov(
-      model = inline_model,
-      newdata = case$baseline[1:10, , drop = FALSE],
-      times = 1:10,
-      absorb = case$absorb
-    )
-
-    explicit_avg <- mostr::avg_sops(
-      model = explicit_model,
-      newdata = case$baseline,
-      variables = "tx",
-      times = 1:10,
-      absorb = case$absorb,
-      time_covariates = case$time_covariates
-    )
-
-    inline_avg <- mostr::avg_sops(
-      model = inline_model,
-      newdata = case$baseline,
-      variables = "tx",
-      times = 1:10,
-      absorb = case$absorb
-    )
-
-    expect_equal(inline_sops, explicit_sops, tolerance = 1e-10)
-    expect_equal(inline_avg$estimate, explicit_avg$estimate, tolerance = 1e-10)
   })
 })

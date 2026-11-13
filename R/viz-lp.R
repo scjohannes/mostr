@@ -25,15 +25,9 @@
 #' @param times Time values at which to evaluate the linear predictor.
 #' @param previous_states Optional previous-state values to facet by. Defaults
 #'   to the fitted states that occur as the previous state in the data the
-#'   model was fitted to, which leaves out absorbing states without
-#'   `absorb`. A supplied state that never occurs there is an error, because
-#'   the model has no linear predictor for it.
-#' @param absorb Optional absorbing-state label excluded from the default
-#'   previous-state grid. It is needed only for a model that does not carry
-#'   the data it was fitted to; a [mostm()] fit carries them.
-#' @param gap_var Optional time-gap_var variable used by the fitted model.
-#' @param time_covariates Optional time-varying covariate lookup table used by the fitted
-#'   model.
+#'   model was fitted to, which leaves out absorbing states. A supplied state
+#'   that never occurs there is an error, because the model has no linear
+#'   predictor for it.
 #' @param line_width Line width for the plotted contrasts.
 #'
 #' @return A ggplot object.
@@ -44,8 +38,7 @@
 #'   fit,
 #'   profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:28,
-#'   absorb = 8
+#'   times = 1:28
 #' )
 #' }
 #' @export
@@ -55,9 +48,6 @@ plot_lp_difference <- function(
   variables,
   times,
   previous_states = NULL,
-  absorb = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   line_width = 0.7
 ) {
   model <- x
@@ -80,12 +70,7 @@ plot_lp_difference <- function(
     mostr_abort("Variables not in profile: ", variable)
   }
   plot_validate_scalar(line_width, "line_width", lower = 0)
-  settings <- resolve_markov_settings(
-    model,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates
-  )
+  settings <- resolve_markov_settings(model)
   time_var <- settings$time_var
 
   y_levels <- markov_model_ylevels(model, settings$y_levels)
@@ -146,7 +131,8 @@ plot_lp_difference <- function(
 # previous state, which `vglm` drops from the model matrix (so the predictors
 # no longer line up with the grid) and `orm` turns into missing lines. Such
 # states are left out of the default and refused when requested. Fits that do
-# not carry their data fall back to all states except `absorb`.
+# not carry their data fall back to all states except the absorbing states
+# recorded in the fit's settings.
 plot_lp_previous_states <- function(
   model,
   previous_states,
@@ -197,12 +183,10 @@ plot_lp_grid <- function(
     profile,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   rows <- vector(
     "list",

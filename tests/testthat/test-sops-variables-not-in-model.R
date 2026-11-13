@@ -29,8 +29,7 @@ test_that("a comparison of a variable the model doesn't use is 0, without a mess
     case$model,
     newdata = profiles,
     variables = list(note = c(0, 1)),
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   # The averaged comparisons are 0 in every grid set-up; this checks the
   # comparison of each profile.
@@ -49,7 +48,6 @@ test_that("its standard error, test and interval are NA for every method", {
     newdata = profiles,
     variables = list(note = c(0, 1)),
     times = 1:4,
-    absorb = 3,
     state_sets = "1"
   )
   expect_unreported_uncertainty(
@@ -65,7 +63,6 @@ test_that("its standard error, test and interval are NA for every method", {
     newdata = profiles,
     variables = list(note = c(0, 1)),
     times = 1:4,
-    absorb = 3,
     state_sets = "1"
   )
   expect_unreported_uncertainty(
@@ -76,7 +73,6 @@ test_that("its standard error, test and interval are NA for every method", {
     case$model,
     variables = list(marker = c(0, 1)),
     times = 1:4,
-    absorb = 3,
     estimand = "time_benefit"
   )
   # `marker` is in this model, so this is an ordinary comparison with an SE.
@@ -89,7 +85,6 @@ test_that("its standard error, test and interval are NA for every method", {
     variables = list(note = c(0, 1)),
     newdata = profiles,
     times = 1:4,
-    absorb = 3,
     state_sets = "1"
   )
   expect_unreported_uncertainty(
@@ -105,8 +100,7 @@ test_that("predictions under a variable the model doesn't use keep their standar
     case$model,
     newdata = profiles,
     variables = list(note = c(0, 1)),
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   # That the estimates are equal for every value is checked in every grid
   # set-up; this checks that they keep finite standard errors.

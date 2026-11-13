@@ -4,7 +4,13 @@
 # probabilities depend on time, treatment and both previous states, and only the
 # design matrix is mocked. test-slow-blrm.R covers the design matrix with real fits.
 
-markov_fake_blrm <- function(partial_odds = FALSE, second_order = FALSE) {
+# `absorb`: the absorbing states the hand-made fit records, as
+# `mostm(absorb = )` records them on a real fit.
+markov_fake_blrm <- function(
+  partial_odds = FALSE,
+  second_order = FALSE,
+  absorb = 4L
+) {
   p2_var <- if (second_order) "ypprev"
   draws <- rbind(
     c(1.2, 0.1, -1.3, 0.40, 0.08, -0.60, -0.25),
@@ -14,13 +20,14 @@ markov_fake_blrm <- function(partial_odds = FALSE, second_order = FALSE) {
   )
   colnames(draws) <- c("y>=2", "y>=3", "y>=4", "tx", "time", "yprev", "ypprev")
   if (!partial_odds) {
-    return(fake_blrm(draws, p2_var = p2_var))
+    return(fake_blrm(draws, p2_var = p2_var, absorb = absorb))
   }
   fake_blrm(
     cbind(draws, tau_time = c(0.05, -0.10, 0.15, 0.02)),
     tau = "tau_time",
     cppo = function(y) as.numeric(y) - 1,
-    p2_var = p2_var
+    p2_var = p2_var,
+    absorb = absorb
   )
 }
 
@@ -85,8 +92,8 @@ test_that("blrm sops() draws match the readable loop draw by draw", {
   times <- 1:4
 
   for (case in markov_fake_cases) {
-    model <- markov_fake_blrm(case$partial_odds, case$second_order)
     for (absorb in list(4L, c(3L, 4L))) {
+      model <- markov_fake_blrm(case$partial_odds, case$second_order, absorb)
       # SOP calls refuse a start in an absorbing state, and for second-order
       # models also an absorbing state two visits back.
       keep <- !as.character(profiles$yprev) %in% as.character(absorb)
@@ -99,7 +106,6 @@ test_that("blrm sops() draws match the readable loop draw by draw", {
         model,
         newdata = kept,
         times = times,
-        absorb = absorb,
         n_draws = NULL,
         return_draws = TRUE,
         posterior_summary = "mean"
@@ -169,7 +175,6 @@ test_that("blrm avg_sops() draws match averaging the loop within unequal groups"
       newdata = profiles,
       by = "marker",
       times = times,
-      absorb = 4L,
       n_draws = NULL,
       return_draws = TRUE,
       posterior_summary = "mean"

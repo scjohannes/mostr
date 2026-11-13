@@ -4,8 +4,8 @@
 #'
 #' Estimates state occupancy probabilities over time by iterating a transition
 #' matrix derived from a fitted model object (e.g., `vglm`, `rms`, or `rmsb`).
-#' This function supports linear time iteration as well as complex, non-linear
-#' time specifications (e.g., splines) via a covariate lookup table.
+#' Time terms of the formula, such as splines of time, are evaluated from the
+#' time column at each visit.
 #'
 #' @param object A fitted model object. Supported classes include:
 #'   \code{"lrm"}, \code{"orm"} (from package `rms`),
@@ -25,18 +25,7 @@
 #'   `p2_var`, the column with the state two visits back (`NULL` uses
 #'   first-order recursion, otherwise second-order recursion with histories
 #'   `(p2_var, p_var)`); `gap_var`, the column with the time since the previous
-#'   visit; `id_var`, the ID column used when `include_re = TRUE`; and
-#'   `time_covariates`, a data frame for explicit time-basis columns or other
-#'   time-varying covariates:
-#'   \itemize{
-#'     \item **Structure:** The number of rows in \code{time_covariates} must exactly match the length of \code{times}.
-#'     \item **Columns:** Column names must match the specific basis variables used in the model formula (e.g., \code{t1}, \code{t2}).
-#'     \item **Usage:** At step \eqn{t}, the values from row \eqn{t} of \code{time_covariates} are injected into the prediction data.
-#'   }
-#'   Registered inline terms such as \code{rms::rcs(time, 4)} and
-#'   \code{rms::lsp(time, c(3, 7))} do not require
-#'   \code{time_covariates}; prediction reuses the fitted model's stored transform
-#'   metadata.
+#'   visit; and `id_var`, the ID column used when `include_re = TRUE`.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
 #'   fitted random-effect draws in posterior predictions. This does not
 #'   integrate over the random-effects distribution; it uses the fitted effects
@@ -94,8 +83,7 @@
 #' probabilities <- soprob_markov(
 #'   fit,
 #'   newdata = baseline,
-#'   times = 1:3,
-#'   absorb = "8"
+#'   times = 1:3
 #' )
 #' dim(probabilities)
 #'
@@ -169,12 +157,10 @@ soprob_markov_r_engine <- function(
     data,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   draw_indices <- NULL
   if (ftype == "rmsb") {
@@ -390,7 +376,8 @@ check_transition_probabilities <- function(probs, context) {
     context,
     ". This often happens when the SOP recursion asks for transitions from ",
     "a state level that is not represented in the fitted transition model. ",
-    "If that level is absorbing, pass it via `absorb`; otherwise check that ",
+    "If that level is absorbing, name it in `mostm(absorb = )` and refit; ",
+    "otherwise check that ",
     "the states and factor levels in `data` are those of the fitted model."
   )
 }

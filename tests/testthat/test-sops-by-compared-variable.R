@@ -49,8 +49,7 @@ comparison_estimand_args <- function(estimand) {
   args <- list(
     variables = list(tx = c(0, 1)),
     estimand = estimand,
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   if (estimand != "time_benefit") {
     args$state_sets <- "1"
@@ -121,7 +120,7 @@ test_that("draw-based intervals by the compared variable match each group's own 
 
 test_that("avg_sops() grouped by a copy of the variable it sets uses the observed values", {
   case <- make_comparisons_case()
-  args <- list(times = 1:4, absorb = 3, variables = list(tx = c(0, 1)))
+  args <- list(times = 1:4, variables = list(tx = c(0, 1)))
   # `by = "tx"` itself is refused (row P25 of test-refusals.R), and the message
   # suggests this workaround: group by a copy of the observed treatment.
   profiles <- case$profiles
@@ -143,13 +142,12 @@ test_that("avg_sops() grouped by a copy of the variable it sets uses the observe
 
 test_that("avg_sops() by treatment without `variables` still groups by observed value", {
   case <- make_comparisons_case()
-  out <- avg_sops(case$model, newdata = case$profiles, times = 1:4, absorb = 3, by = "tx")
+  out <- avg_sops(case$model, newdata = case$profiles, times = 1:4, by = "tx")
   for (value in c(0, 1)) {
     expected <- avg_sops(
       case$model,
       newdata = case$profiles[case$profiles$tx == value, ],
-      times = 1:4,
-      absorb = 3
+      times = 1:4
     )
     got <- out[out$tx == value, , drop = FALSE]
     key <- function(x) paste(x$time, x$state)
@@ -203,6 +201,7 @@ test_that("resampling by the compared variable matches grouping by a copied colu
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
   args <- c(
@@ -240,8 +239,7 @@ test_that("avg_state_time() refuses `by` on the variable it sets", {
       newdata = case$profiles,
       variables = list(tx = c(0, 1)),
       by = "tx",
-      times = 1:4,
-      absorb = 3
+      times = 1:4
     ),
     "copy"
   )
@@ -250,8 +248,7 @@ test_that("avg_state_time() refuses `by` on the variable it sets", {
     case$model,
     newdata = case$profiles,
     by = "tx",
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   expect_setequal(unique(out$tx), c(0, 1))
 })

@@ -25,6 +25,7 @@ test_that("Markov workflows reject links other than the logit", {
             ),
             data = data,
             id_var = "id",
+            absorb = 6,
             engine = "vglm"
           )
         )
@@ -45,7 +46,8 @@ test_that("Markov workflows reject links other than the logit", {
               ordered(y) ~ time + tx + yprev,
               family = "probit",
               data = data,
-              id_var = "id"
+              id_var = "id",
+              absorb = 6
             )
           ),
           error = identity

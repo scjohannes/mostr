@@ -22,29 +22,25 @@ build_daily_visit_case <- function(time_as_factor) {
       y ~ time + tx + yprev,
       data = data,
       id_var = "id",
+      absorb = "6",
       first_followup_time = if (time_as_factor) "1"
     )
   )
 }
 
-# The daily visits fitted by vglm with an explicit spline basis for time, which
-# prediction takes from `time_covariates`. Made once per test run.
-make_time_covariate_visit_case <- function() {
+# The daily visits fitted by vglm with a spline of time, which prediction
+# evaluates at each requested time. Made once per test run.
+make_spline_visit_case <- function() {
   case <- make_daily_visit_case()
-  grid_fixture("daily visit case, vglm with time covariates", function() {
+  grid_fixture("daily visit case, vglm with a spline of time", function() {
     list(
       model = mostm(
-        ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
+        ordered(y) ~ rms::rcs(time, 3) + tx + yprev,
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = case$data,
         id_var = "id",
+        absorb = "6",
         engine = "vglm"
-      ),
-      time_covariates = make_time_covariates(
-        case$data,
-        "time",
-        "time_lin",
-        "time_nlin_1"
       )
     )
   })
@@ -77,8 +73,19 @@ make_irregular_visit_fits <- function() {
   grid_fixture("irregular visit fits", function() {
     data <- make_irregular_visit_case()
     list(
-      plain = mostm(y ~ time + tx + yprev, data = data, id_var = "id"),
-      gap = mostm(y ~ time + gap + tx + yprev, data = data, id_var = "id")
+      plain = mostm(
+        y ~ time + tx + yprev,
+        data = data,
+        id_var = "id",
+        absorb = "6"
+      ),
+      gap = mostm(
+        y ~ time + gap + tx + yprev,
+        data = data,
+        id_var = "id",
+        absorb = "6",
+        gap_var = "gap"
+      )
     )
   })
 }
@@ -104,14 +111,13 @@ test_that("avg_sops() warns when `times` skips fitted visits", {
   variables <- list(tx = c(0, 1))
 
   expect_no_warning(
-    full <- avg_sops(case$model, variables = variables, times = 1:8, absorb = "6")
+    full <- avg_sops(case$model, variables = variables, times = 1:8)
   )
   expect_warning(
     sparse <- avg_sops(
       case$model,
       variables = variables,
-      times = c(1, 4, 8),
-      absorb = "6"
+      times = c(1, 4, 8)
     ),
     class = "mostr_warning_skipped_visits"
   )
@@ -126,7 +132,7 @@ test_that("SOP functions warn when `times` skips fitted visits, and only then", 
   skip_on_cran()
   daily <- make_daily_visit_case()
   daily_factor <- make_daily_visit_case(time_as_factor = TRUE)
-  covariates <- make_time_covariate_visit_case()
+  spline <- make_spline_visit_case()
   irregular <- make_irregular_visit_fits()
   # Each supplied row's previous state is the state before the first requested
   # visit, so supplied profiles may start at a later visit.
@@ -146,7 +152,7 @@ test_that("SOP functions warn when `times` skips fitted visits, and only then", 
         "skips fitted visits 2, 3, 5, 6, and 7",
         "labelled 8 is the probability after 3 transitions",
         "`times = 1:8`",
-        "`gap_var`"
+        "`mostm(gap_var = )`"
       )
     ),
     # Without `newdata`, each patient starts from the state before visit 1, so
@@ -219,21 +225,18 @@ test_that("SOP functions warn when `times` skips fitted visits, and only then", 
       args = list(times = c(1, 4, 8, 12)),
       class = skipped
     ),
-    # Explicit time covariates do not change the check.
+    # A spline of time does not change the check.
     list(
-      label = "avg_sops(): time covariates for every visit",
+      label = "avg_sops(): a spline of time, every visit",
       fun = avg_sops,
-      model = covariates$model,
-      args = list(times = 1:8, time_covariates = covariates$time_covariates)
+      model = spline$model,
+      args = list(times = 1:8)
     ),
     list(
-      label = "avg_sops(): time covariates for skipped visits",
+      label = "avg_sops(): a spline of time, skipped visits",
       fun = avg_sops,
-      model = covariates$model,
-      args = list(
-        times = c(1, 4, 8),
-        time_covariates = covariates$time_covariates[c(1, 4, 8), , drop = FALSE]
-      ),
+      model = spline$model,
+      args = list(times = c(1, 4, 8)),
       class = skipped
     ),
     # Irregular visit schedules are checked against the fitted visits.
@@ -257,18 +260,18 @@ test_that("SOP functions warn when `times` skips fitted visits, and only then", 
       args = list(times = c(1, 4, 8, 12)),
       phrases = "request every fitted visit from 1 to 8, then the later times"
     ),
-    # `gap_var` allows times that skip fitted visits.
+    # A fit with `gap_var` allows times that skip fitted visits.
     list(
       label = "avg_sops(): gap_var",
       fun = avg_sops,
       model = irregular$gap,
-      args = list(times = c(1, 4, 8), gap_var = "gap")
+      args = list(times = c(1, 4, 8))
     ),
     list(
       label = "sops(): gap_var",
       fun = sops,
       model = irregular$gap,
-      args = list(times = c(1, 4, 8), gap_var = "gap")
+      args = list(times = c(1, 4, 8))
     ),
     # Factor visit times warn when levels are skipped.
     list(
@@ -337,7 +340,7 @@ test_that("SOP functions warn when `times` skips fitted visits, and only then", 
 
   for (case in cases) {
     run <- function() {
-      do.call(case$fun, c(list(case$model), case$args, list(absorb = "6")))
+      do.call(case$fun, c(list(case$model), case$args))
     }
     if (is.null(case$class) && length(case$phrases) == 0L) {
       expect_warning(run(), NA, info = case$label)
@@ -374,7 +377,7 @@ test_that("summaries warn about skipped visits once and not again during inferen
     list(
       label = "avg_state_time()",
       run = function() {
-        avg_state_time(model, variables = variables, times = c(1, 4, 8), absorb = "6")
+        avg_state_time(model, variables = variables, times = c(1, 4, 8))
       },
       warnings = 1L,
       infer = delta
@@ -382,7 +385,7 @@ test_that("summaries warn about skipped visits once and not again during inferen
     list(
       label = "avg_comparisons()",
       run = function() {
-        avg_comparisons(model, variables = variables, times = c(1, 4, 8), absorb = "6")
+        avg_comparisons(model, variables = variables, times = c(1, 4, 8))
       },
       warnings = 1L,
       infer = delta
@@ -394,8 +397,7 @@ test_that("summaries warn about skipped visits once and not again during inferen
           model,
           variables = variables,
           estimand = "time_benefit",
-          times = c(1, 4, 8),
-          absorb = "6"
+          times = c(1, 4, 8)
         )
       },
       warnings = 1L,
@@ -404,7 +406,7 @@ test_that("summaries warn about skipped visits once and not again during inferen
     list(
       label = "comparisons(), late start",
       run = function() {
-        comparisons(model, variables = "tx", times = 4:8, absorb = "6")
+        comparisons(model, variables = "tx", times = 4:8)
       },
       warnings = 1L,
       infer = delta
@@ -412,33 +414,33 @@ test_that("summaries warn about skipped visits once and not again during inferen
     list(
       label = "comparisons(), skipped visits",
       run = function() {
-        comparisons(model, variables = "tx", times = c(1, 4, 8), absorb = "6")
+        comparisons(model, variables = "tx", times = c(1, 4, 8))
       },
       warnings = 1L
     ),
     list(
       label = "state_time(), late start",
-      run = function() state_time(model, times = 4:8, absorb = "6"),
+      run = function() state_time(model, times = 4:8),
       warnings = 1L,
       infer = mvn
     ),
     list(
       label = "avg_state_time(), every visit",
       run = function() {
-        avg_state_time(model, variables = variables, times = 1:8, absorb = "6")
+        avg_state_time(model, variables = variables, times = 1:8)
       },
       warnings = 0L
     ),
     list(
       label = "comparisons(), every visit",
       run = function() {
-        comparisons(model, variables = "tx", times = 1:8, absorb = "6")
+        comparisons(model, variables = "tx", times = 1:8)
       },
       warnings = 0L
     ),
     list(
       label = "state_time(), every visit",
-      run = function() state_time(model, times = 1:8, absorb = "6"),
+      run = function() state_time(model, times = 1:8),
       warnings = 0L
     )
   )

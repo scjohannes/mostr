@@ -56,8 +56,7 @@ result <- avg_sops(
   model = fit,
   newdata = data,
   variables = list(tx = c(0, 1)),
-  times = 1:30,
-  absorb = 6
+  times = 1:30
 ) |>
   inferences(method = "bootstrap", n_draws = 1000, return_draws = TRUE)
 

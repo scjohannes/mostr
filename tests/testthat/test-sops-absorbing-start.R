@@ -1,9 +1,10 @@
 # A patient cannot start in an absorbing state. SOP calls refuse a profile whose
 # previous state, or for second-order models the state two visits back, is one
-# of the states in `absorb`. Without the refusal, a first-order fit predicts a
-# transition out of the absorbing state from a previous state it never saw (a
-# factor `yprev` fails with an unrelated error, a numeric `yprev` extends the
-# fitted slope), while a second-order fit silently keeps the patient there.
+# of the absorbing states that `mostm(absorb = )` records. Without the refusal,
+# a first-order fit predicts a transition out of the absorbing state from a
+# previous state it never saw (a factor `yprev` fails with an unrelated error,
+# a numeric `yprev` extends the fitted slope), while a second-order fit
+# silently keeps the patient there.
 
 # The error names the absorbing state, the column and how many profiles start
 # there.
@@ -38,7 +39,7 @@ absorbing_start_profiles <- function(profiles, count, column = "yprev") {
 # Every public SOP call type on the same profiles. A second-order model
 # records `p2_var`, so the calls are the same for both orders.
 absorbing_start_calls <- function(model, profiles) {
-  base <- list(model, newdata = profiles, times = 1:4, absorb = 3)
+  base <- list(model, newdata = profiles, times = 1:4)
   compare <- c(base, list(variables = list(tx = c(0, 1))))
   list(
     sops = function() do.call(sops, base),
@@ -75,6 +76,7 @@ test_that("every SOP call refuses profiles starting in an absorbing state", {
     data = numeric_data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
 
@@ -147,8 +149,29 @@ test_that("SOPs from the profiles stored by mostm() refuse an absorbing start", 
     id_var = "id",
     engine = "vglm"
   ))
+  # `mostm(absorb = 3)` refuses these data, because fitted rows start in state
+  # 3 (test-settings.R checks that). The stored profiles are checked again when
+  # predicting, so a fit that records `absorb` afterwards still reaches that
+  # check.
+  expect_error(
+    suppressWarnings(mostm(
+      ordered(y) ~ time + tx + marker + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      first_followup_time = 1,
+      id_var = "id",
+      absorb = 3,
+      engine = "vglm"
+    )),
+    "as the previous state",
+    class = "mostr_error"
+  )
+  model <- markov_set_settings(
+    model,
+    markov_settings_update(markov_model_settings(model), absorb = 3)
+  )
   err <- tryCatch(
-    avg_sops(model, times = 1:4, absorb = 3),
+    avg_sops(model, times = 1:4),
     error = function(e) e
   )
   expect_s3_class(err, "error")
@@ -167,8 +190,7 @@ test_that("soprob_markov() refuses prediction rows with an absorbing start", {
     soprob_markov(
       case$model,
       newdata = rows,
-      times = 1:4,
-      absorb = 3
+      times = 1:4
     ),
     "`yprev` is the absorbing state 3 for 2 of the 60 prediction rows",
     fixed = TRUE
@@ -179,8 +201,7 @@ test_that("soprob_markov() refuses prediction rows with an absorbing start", {
       case$model,
       newdata = case$profiles,
       variables = list(yprev = factor(c("2", "3"), levels = 1:3)),
-      times = 1:4,
-      absorb = 3
+      times = 1:4
     ),
     "if `variables` sets `yprev`, use non-absorbing states only",
     fixed = TRUE

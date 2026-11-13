@@ -648,20 +648,6 @@ test_that("markov_msm_build validates model classes and design alignment", {
       error = "supports only vglm and orm"
     ),
     list(
-      label = "time_covariates rows that do not match the times",
-      mocks = list(),
-      args = list(
-        structure(list(), class = "orm"),
-        data.frame(yprev = 1),
-        times = 1,
-        settings = markov_settings(
-          y_levels = 1:6,
-          time_covariates = data.frame(z = 1:2)
-        )
-      ),
-      error = "one row per requested time point"
-    ),
-    list(
       label = "an orm design that loses a column at a later visit",
       mocks = list(
         get_effective_coefs = coefs_named(c("(Intercept)", "x")),

@@ -30,15 +30,14 @@ test_that("sops() matches the readable loop on every model set-up", {
 
 test_that("sops() matches the loop with several absorbing states, inner ones included", {
   skip_on_cran()
-  absorb <- c(2L, grid_n_states)
-  for (cell in grid_core_cells()) {
+  for (cell in lapply(grid_core_cells(), grid_inner_absorbing)) {
     fit <- grid_fit(cell)
-    profiles <- grid_profiles(cell, absorb)
+    profiles <- grid_profiles(cell)
     result <- do.call(
       sops,
-      c(list(fit, newdata = profiles), grid_public_args(cell, absorb))
+      c(list(fit, newdata = profiles), grid_public_args(cell))
     )
-    reference <- grid_slow_sops(cell, fit, profiles, absorb)
+    reference <- grid_slow_sops(cell, fit, profiles, cell$absorb)
 
     expect_lt(
       grid_largest_gap(result, reference, result$rowid, grid_times(cell)),
@@ -48,13 +47,13 @@ test_that("sops() matches the loop with several absorbing states, inner ones inc
   }
 })
 
-test_that("sops() matches the loop for gaps, explicit bases, numeric states and weights", {
+test_that("sops() matches the loop for gaps, log time, numeric states and weights", {
   skip_on_cran()
   cells <- list(
     grid_cell("orm", visit = "gap"),
     grid_cell("vglm", visit = "gap"),
-    grid_cell("orm", time = "basis"),
-    grid_cell("vglm", time = "basis"),
+    grid_cell("orm", time = "log"),
+    grid_cell("vglm", time = "log"),
     grid_cell("orm", previous = "numeric"),
     grid_cell("vglm", previous = "numeric"),
     grid_cell("orm", weighted = TRUE),

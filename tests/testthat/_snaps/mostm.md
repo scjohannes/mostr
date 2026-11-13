@@ -44,8 +44,27 @@
 # fits without mostm() provenance must be refitted
 
     Code
-      sops(old, times = 1:2, absorb = 6)
+      sops(old, times = 1:2)
     Condition
       Error in `sops()`:
       ! Model-based Markov workflows require fits created by `mostm()`. Refit this model with `mostm(engine = "orm")`.
+
+# mostm() refuses bases that rms would evaluate again on new data
+
+    Code
+      mostm(y ~ splines::ns(time, 3) + yprev, data = data, id_var = "id", absorb = 4)
+    Condition
+      Error in `mostm()`:
+      ! With `rms::orm()`, `splines::ns(time, 3)` would be evaluated again on the prediction rows, which gives a different basis without any error, so the state occupancy probabilities would be wrong. Use `rms::rcs()` for a spline, for example `rcs(time, 4)`, or `rms::pol()` for a polynomial, for example `pol(time, 2)`: both keep the knots or terms of the fit. `engine = "vglm"` keeps the fitted basis of these terms.
+    Code
+      mostm(y ~ time + bs(age, 3) + yprev, data = data, id_var = "id", absorb = 4)
+    Condition
+      Error in `mostm()`:
+      ! With `rms::orm()`, `bs(age, 3)` would be evaluated again on the prediction rows, which gives a different basis without any error, so the state occupancy probabilities would be wrong. Use `rms::rcs()` for a spline, for example `rcs(age, 4)`, or `rms::pol()` for a polynomial, for example `pol(age, 2)`: both keep the knots or terms of the fit. `engine = "vglm"` keeps the fitted basis of these terms.
+    Code
+      mostm(y ~ stats::poly(age, 2) + ns(time, 2) + yprev, data = data, id_var = "id",
+      absorb = 4)
+    Condition
+      Error in `mostm()`:
+      ! With `rms::orm()`, `stats::poly(age, 2)` and `ns(time, 2)` would each be evaluated again on the prediction rows, which gives a different basis without any error, so the state occupancy probabilities would be wrong. Use `rms::rcs()` for a spline, for example `rcs(age, 4)`, or `rms::pol()` for a polynomial, for example `pol(age, 2)`: both keep the knots or terms of the fit. `engine = "vglm"` keeps the fitted basis of these terms.
 

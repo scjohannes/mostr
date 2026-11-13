@@ -10,7 +10,6 @@
 # (`grid_consistency_cells()`); everything here is deterministic.
 
 test_that("SOPs lie in [0, 1] and add to one at every visit (L1, L2)", {
-  inner <- c(2L, grid_n_states)
   for (cell in grid_consistency_cells()) {
     label <- grid_label(cell)
     average <- grid_call(avg_sops, cell, variables = grid_treatments)
@@ -20,9 +19,8 @@ test_that("SOPs lie in [0, 1] and add to one at every visit (L1, L2)", {
       inner_absorbing = list(
         grid_call(
           sops,
-          cell,
-          newdata = grid_profiles(cell, inner),
-          args = grid_public_args(cell, absorb = inner)
+          grid_inner_absorbing(cell),
+          newdata = grid_profiles(grid_inner_absorbing(cell))
         ),
         c("rowid", "time")
       ),
@@ -42,7 +40,6 @@ test_that("SOPs lie in [0, 1] and add to one at every visit (L1, L2)", {
 })
 
 test_that("occupancy of an absorbing state never falls (L4)", {
-  inner <- c(2L, grid_n_states)
   for (cell in grid_consistency_cells()) {
     label <- grid_label(cell)
     times <- grid_times(cell)
@@ -63,13 +60,9 @@ test_that("occupancy of an absorbing state never falls (L4)", {
       1e-12,
       label = paste(label, "real time from baseline")
     )
-    several <- grid_call(
-      sops,
-      cell,
-      newdata = grid_profiles(cell, inner),
-      args = grid_public_args(cell, absorb = inner)
-    )
-    for (state in inner) {
+    inner <- grid_inner_absorbing(cell)
+    several <- grid_call(sops, inner, newdata = grid_profiles(inner))
+    for (state in inner$absorb) {
       expect_lt(
         grid_largest_fall(several, state, "rowid", times),
         1e-12,

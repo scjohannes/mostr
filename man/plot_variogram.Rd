@@ -9,15 +9,12 @@ plot_variogram(
   newdata = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
   id_var = NULL,
   time_var = NULL,
   y_var = "y",
   p_var = NULL,
   p2_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   smooth = TRUE,
@@ -39,8 +36,6 @@ default) uses the states of the model; a supplied vector must hold the
 same states in the same order, otherwise it is an error. For trajectory
 data, supplied states set the order of the state scores; with \code{NULL}, the
 scores are factor codes or the integer state values.}
-
-\item{absorb}{Optional absorbing-state label for model-based recursions.}
 
 \item{id_var}{Name of the patient ID column. For a fitted model, \code{NULL}
 (the default) uses the \code{id_var} given to \code{\link[=mostm]{mostm()}}, which selects one
@@ -67,11 +62,6 @@ Supplying it for trajectory data is an error.}
 
 \item{facet_var}{Optional grouping variable. Correlations are computed
 separately within each observed stratum.}
-
-\item{gap_var}{Optional time-gap_var variable used by the fitted model.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table used by the fitted
-model.}
 
 \item{seed}{Optional random seed for \code{blrm} posterior draw selection.}
 

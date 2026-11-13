@@ -117,8 +117,7 @@
 #' comparisons(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:30,
-#'   absorb = 6
+#'   times = 1:30
 #' ) |>
 #'   inferences(method = "mvn", n_draws = 500)
 #'
@@ -129,8 +128,7 @@
 #'   variables = list(tx = c(0, 1)),
 #'   estimand = "time_in_state",
 #'   state_sets = "1",
-#'   times = 1:30,
-#'   absorb = 6
+#'   times = 1:30
 #' )
 #'
 #' # The same comparisons averaged within age groups.
@@ -139,8 +137,7 @@
 #'   variables = list(tx = c(0, 1)),
 #'   estimand = "time_in_state",
 #'   by = "age_group",
-#'   times = 1:30,
-#'   absorb = 6
+#'   times = 1:30
 #' )
 #' }
 #'
@@ -154,13 +151,10 @@ comparisons <- function(
   comparison = c("difference", "ratio"),
   by = FALSE,
   times,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -180,12 +174,7 @@ comparisons <- function(
   validate_comparison_times(times, "comparisons()")
   conf_level <- validate_conf_level(conf_level)
   validate_markov_model(model)
-  settings <- resolve_markov_settings(
-    model,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates
-  )
+  settings <- resolve_markov_settings(model)
   variables <- resolve_comparison_variables(
     variables,
     model = model,
@@ -205,13 +194,10 @@ comparisons <- function(
       comparison = comparison,
       by = by$by %||% TRUE,
       times = times,
-      absorb = absorb,
       time_map = time_map,
       baseline_time = baseline_time,
       target_times = target_times,
       time_unit = time_unit,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,

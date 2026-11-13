@@ -8,6 +8,7 @@ slow_blrm_fit <- function(formula, ...) {
     formula,
     data = grid_data(),
     id_var = "id",
+    absorb = 4L,
     engine = "blrm",
     iter = 200,
     warmup = 100,
@@ -49,7 +50,6 @@ slow_blrm_check <- function(fit, second_order, label) {
     fit,
     newdata = profiles,
     times = times,
-    absorb = 4L,
     n_draws = NULL,
     return_draws = TRUE,
     posterior_summary = "mean"

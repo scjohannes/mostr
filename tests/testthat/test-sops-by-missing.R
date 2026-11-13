@@ -31,7 +31,7 @@ expect_missing_by_error <- function(expr, info) {
 test_that("averages refuse a `by` column with missing values in newdata", {
   case <- make_comparisons_case()
   profiles <- profiles_with_missing_group(case)
-  base <- list(case$model, newdata = profiles, times = 1:4, absorb = 3, by = "grp")
+  base <- list(case$model, newdata = profiles, times = 1:4, by = "grp")
   compare <- c(base, list(variables = list(tx = c(0, 1))))
   calls <- list(
     avg_sops = function() do.call(avg_sops, base),
@@ -71,10 +71,11 @@ test_that("averages over the stored patients refuse missing `by` values in start
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
   expect_missing_by_error(
-    avg_sops(model, times = 1:4, absorb = 3, by = "grp"),
+    avg_sops(model, times = 1:4, by = "grp"),
     "stored avg_sops"
   )
   expect_missing_by_error(
@@ -82,7 +83,6 @@ test_that("averages over the stored patients refuse missing `by` values in start
       model,
       variables = list(tx = c(0, 1)),
       times = 1:4,
-      absorb = 3,
       by = "grp",
       state_sets = "1"
     ),
@@ -102,17 +102,17 @@ test_that("missing `by` values outside the starting rows do not matter", {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
-  out <- avg_sops(model, times = 1:4, absorb = 3, by = "grp")
+  out <- avg_sops(model, times = 1:4, by = "grp")
   expect_setequal(unique(out$grp), c("a", "b"))
   starts <- data[data$time == 1, , drop = FALSE]
   for (value in c("a", "b")) {
     expected <- avg_sops(
       model,
       newdata = starts[starts$grp == value, , drop = FALSE],
-      times = 1:4,
-      absorb = 3
+      times = 1:4
     )
     got <- out[out$grp == value, , drop = FALSE]
     key <- function(x) paste(x$time, x$state)
@@ -125,10 +125,10 @@ test_that("complete `by` columns, `by = TRUE`, and missing values in other colum
   profiles <- profiles_with_missing_group(case)
   profiles$grp2 <- ifelse(profiles$id %% 2 == 0, "a", "b")
   expect_no_error(
-    avg_sops(case$model, newdata = profiles, times = 1:4, absorb = 3, by = "grp2")
+    avg_sops(case$model, newdata = profiles, times = 1:4, by = "grp2")
   )
   expect_no_error(
-    avg_sops(case$model, newdata = profiles, times = 1:4, absorb = 3, by = TRUE)
+    avg_sops(case$model, newdata = profiles, times = 1:4, by = TRUE)
   )
   expect_no_error(
     avg_comparisons(
@@ -136,7 +136,6 @@ test_that("complete `by` columns, `by = TRUE`, and missing values in other colum
       newdata = profiles,
       variables = list(tx = c(0, 1)),
       times = 1:4,
-      absorb = 3,
       by = "tx",
       state_sets = "1"
     )

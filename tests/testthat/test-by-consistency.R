@@ -10,8 +10,7 @@ test_that("sops() returns each profile's SOPs under each value of `variables`", 
     case$model,
     newdata = case$profiles,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = 3
+    times = 1:3
   )
   expect_s3_class(cf, "markov_sops")
   expect_setequal(cf$rowid, seq_len(2L * n))
@@ -27,8 +26,7 @@ test_that("sops() returns each profile's SOPs under each value of `variables`", 
     case$model,
     newdata = case$profiles,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = 3
+    times = 1:3
   )
   means <- stats::aggregate(estimate ~ time + state + tx, cf, mean)
   index <- match(
@@ -38,7 +36,7 @@ test_that("sops() returns each profile's SOPs under each value of `variables`", 
   expect_equal(averaged$estimate, means$estimate[index], tolerance = 1e-12)
 
   # Without `variables`, the rows are the profiles themselves.
-  plain <- sops(case$model, times = 1:3, absorb = 3)
+  plain <- sops(case$model, times = 1:3)
   expect_false("rowidcf" %in% names(plain))
 })
 
@@ -57,7 +55,7 @@ test_that("per-profile functions and their avg_*() partners hand `by` to each ot
       average = avg_sops,
       unit_class = "markov_sops",
       average_class = "markov_avg_sops",
-      args = list(model, times = 1:3, absorb = 3),
+      args = list(model, times = 1:3),
       bad_by = list(list(sops, 1), list(avg_sops, NA))
     ),
     list(
@@ -66,7 +64,7 @@ test_that("per-profile functions and their avg_*() partners hand `by` to each ot
       average = avg_sops,
       unit_class = "markov_sops",
       average_class = "markov_avg_sops",
-      args = list(model, variables = tx, times = 1:3, absorb = 3)
+      args = list(model, variables = tx, times = 1:3)
     ),
     list(
       label = "state_time()",
@@ -78,8 +76,7 @@ test_that("per-profile functions and their avg_*() partners hand `by` to each ot
         model,
         variables = tx,
         state_sets = "1",
-        times = 1:3,
-        absorb = 3
+        times = 1:3
       ),
       bad_by = list(list(avg_state_time, 2))
     ),
@@ -94,8 +91,7 @@ test_that("per-profile functions and their avg_*() partners hand `by` to each ot
         variables = tx,
         estimand = "time_in_state",
         comparison = "ratio",
-        times = 1:4,
-        absorb = 3
+        times = 1:4
       ),
       average_rows = 3L,
       bad_by = list(
@@ -141,7 +137,6 @@ test_that("per-profile functions and their avg_*() partners hand `by` to each ot
         estimand = "time_in_state",
         comparison = "ratio",
         times = 1:4,
-        absorb = 3,
         by = FALSE
       ),
       method = "delta",
@@ -155,8 +150,8 @@ test_that("per-profile functions and their avg_*() partners hand `by` to each ot
 test_that("bare variable names choose values like marginaleffects", {
   skip_on_cran()
   case <- make_comparisons_case()
-  sop_args <- list(case$model, times = 1:3, absorb = 3)
-  comparison_args <- list(case$model, state_sets = "1", times = 1:4, absorb = 3)
+  sop_args <- list(case$model, times = 1:3)
+  comparison_args <- list(case$model, state_sets = "1", times = 1:4)
   starts <- factor(c("1", "2"), levels = levels(case$data$yprev))
 
   # Each bare name gives the same result as the values written out. Factors
@@ -403,7 +398,7 @@ test_that("averaging per-profile results reproduces the avg_*() result", {
   )
 
   for (row in cases) {
-    args <- c(list(case$model, times = 1:4, absorb = 3), row$args)
+    args <- c(list(case$model, times = 1:4), row$args)
     unit <- do.call(row$unit, args)
     average <- do.call(row$average, args)
     keys <- intersect(row$keys, names(average))
@@ -431,19 +426,17 @@ test_that("draw weights let users average per-profile draws themselves", {
   model <- comparisons_case$model
   tx <- list(tx = c(0, 1))
 
-  sop_args <- list(model, variables = tx, times = 1:2, absorb = 3)
+  sop_args <- list(model, variables = tx, times = 1:2)
   state_time_args <- list(
     model,
     variables = tx,
     state_sets = "1",
     times = 1:3,
-    absorb = 3,
     time_map = c("1" = 1, "2" = 2, "3" = 4)
   )
   observed_args <- list(
     observed_case$model,
-    times = observed_case$times,
-    absorb = observed_case$absorb
+    times = observed_case$times
   )
   real_time_args <- function(estimand) {
     list(
@@ -452,7 +445,6 @@ test_that("draw weights let users average per-profile draws themselves", {
       estimand = estimand,
       state_sets = if (estimand == "time_in_state") "1",
       times = 1:4,
-      absorb = 3,
       time_map = comparisons_case$time_map
     )
   }
@@ -460,8 +452,7 @@ test_that("draw weights let users average per-profile draws themselves", {
     model,
     variables = tx,
     state_sets = "1",
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
 
   # A setting draws `n_draws` with `method` and `seed` for the per-profile

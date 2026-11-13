@@ -1,13 +1,12 @@
 test_that("avg_sops averages observed covariates overall and within groups", {
   skip_on_cran()
   case <- make_observed_average_case()
-  individual <- sops(case$model, times = case$times, absorb = case$absorb)
+  individual <- sops(case$model, times = case$times)
   for (by in list(TRUE, "tx")) {
     average <- avg_sops(
       case$model,
       by = by,
-      times = case$times,
-      absorb = case$absorb
+      times = case$times
     )
     keys <- c("time", "state", if (is.character(by)) by)
     manual <- stats::aggregate(individual$estimate, individual[keys], mean)
@@ -20,15 +19,13 @@ test_that("avg_sops averages observed covariates overall and within groups", {
   empty_by <- avg_sops(
     case$model,
     by = character(),
-    times = case$times,
-    absorb = case$absorb
+    times = case$times
   )
   explicit <- avg_sops(
     case$model,
     newdata = attr(individual, "newdata_pred"),
     variables = NULL,
-    times = case$times,
-    absorb = case$absorb
+    times = case$times
   )
   expect_equal(empty_by$estimate, explicit$estimate)
   expect_null(attr(empty_by, "avg_args")$by)
@@ -37,8 +34,8 @@ test_that("avg_sops averages observed covariates overall and within groups", {
 test_that("observed averages retain conditional and unconditional covariance", {
   skip_on_cran()
   case <- make_observed_average_case()
-  average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
-  individual <- sops(case$model, times = case$times, absorb = case$absorb) |>
+  average <- avg_sops(case$model, times = case$times)
+  individual <- sops(case$model, times = case$times) |>
     inferences(method = "delta")
   conditional <- inferences(average, method = "delta", vcov = "conditional")
   cell <- match(
@@ -67,7 +64,7 @@ test_that("observed averages retain conditional and unconditional covariance", {
 test_that("observed averages support both refit bootstrap methods", {
   skip_on_cran()
   case <- make_observed_average_case()
-  average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
+  average <- avg_sops(case$model, times = case$times)
   for (method in c("bootstrap", "fwb")) {
     result <- inferences(average, method = method, n_draws = 3, seed = 5211)
     draws <- get_draws(result)

@@ -68,14 +68,16 @@ test_that("orm robust covariance is preserved when time units change", {
   days <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = case$data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   )
   data <- case$data
   data$minutes <- data$time * 1440
   minutes <- mostm(
     ordered(y) ~ minutes + tx + yprev,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   )
   units <- ifelse(names(stats::coef(minutes)) == "minutes", 1440, 1)
 
@@ -212,7 +214,8 @@ test_that("the orm engine stores package robust covariance metadata by default",
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = case$data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   )
   metadata <- attr(fit, "markov_robust_covariance")
   n_clusters <- length(unique(case$data$id))
@@ -270,13 +273,13 @@ test_that("weighted orm scores equal numerical weighted row likelihood derivativ
     ordered(y) ~ time + tx + yprev,
     data = weighted_data,
     weights = case_weight,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   ))
   average <- avg_sops(
     wrapped,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    absorb = 6
+    times = 1:2
   )
   inferred <- inferences(average, method = "delta", vcov = "conditional")
   expect_true(all(is.finite(inferred$std.error)))

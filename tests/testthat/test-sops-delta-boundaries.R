@@ -85,6 +85,7 @@ test_that("absorption during prediction does not certify numerical saturation", 
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   ))
   states <- seq_len(nrow(get_effective_coefs(model)) + 1L)
@@ -93,8 +94,7 @@ test_that("absorption during prediction does not certify numerical saturation", 
   individual <- sops(
     model,
     newdata = baseline,
-    times = 1:3,
-    absorb = max(states)
+    times = 1:3
   )
   expect_gt(min(individual$estimate), 0)
   expect_lt(max(individual$estimate), 1)
@@ -118,15 +118,13 @@ test_that("absorption during prediction does not certify numerical saturation", 
     sops(
       saturated_model,
       newdata = baseline,
-      times = 1:3,
-      absorb = max(states)
+      times = 1:3
     ),
     avg_sops(
       saturated_model,
       newdata = baseline,
       times = 1:3,
-      variables = list(tx = c(0, 1)),
-      absorb = max(states)
+      variables = list(tx = c(0, 1))
     )
   )
   for (point in points) {

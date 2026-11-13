@@ -15,8 +15,7 @@ test_that("state_time() totals each profile's SOPs under each value", {
     newdata = case$profiles,
     variables = list(tx = c(0, 1)),
     state_sets = list(alive = c("1", "2")),
-    times = 1:4,
-    absorb = 3
+    times = 1:4
   )
   expect_s3_class(out, "markov_state_time")
   expect_identical(nrow(out), 2L * n)
@@ -35,7 +34,7 @@ test_that("state_time() totals each profile's SOPs under each value", {
   expect_false("time" %in% names(out))
   expect_identical(names(out)[ncol(out)], "estimate")
 
-  plain <- state_time(case$model, times = 1:4, absorb = 3)
+  plain <- state_time(case$model, times = 1:4)
   expect_false("rowidcf" %in% names(plain))
   expect_setequal(plain$state_set, as.character(1:3))
 })

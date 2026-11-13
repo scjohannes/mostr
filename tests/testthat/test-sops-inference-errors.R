@@ -690,7 +690,13 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
 
   draws <- matrix(stats::qlogis(0.4), nrow = 2, ncol = 1)
   colnames(draws) <- "y>=2"
-  blrm <- fake_blrm(draws, cluster = FALSE, class = "blrm")
+  blrm <- fake_blrm(draws, cluster = FALSE, class = "blrm", absorb = 2)
+  # The fit also records a gap column, as `mostm(gap_var = )` would, so the
+  # posterior recursion sets it at each visit.
+  blrm <- markov_set_settings(
+    blrm,
+    markov_settings_update(markov_model_settings(blrm), gap_var = "gap_var")
+  )
 
   with_mocked_bindings(
     blrm_design_matrix = fake_blrm_design(character()),
@@ -700,13 +706,9 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
         newdata = data.frame(
           id = 1:2,
           yprev = factor(c(1, 1)),
-          gap_var = 0,
-          z = 0
+          gap_var = 0
         ),
-        times = 1:2,
-        absorb = 2,
-        gap_var = "gap_var",
-        time_covariates = data.frame(z = c(1, 2))
+        times = 1:2
       )
     }
   )

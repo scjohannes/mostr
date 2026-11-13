@@ -124,7 +124,6 @@ compile_sop_execution_plan <- function(
     newdata,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "fast"
   )$times
   build <- if (identical(builder, "batched")) {
@@ -202,12 +201,10 @@ compile_second_order_execution_plan <- function(
     newdata,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "fast"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
   ylevel_names <- as_state_labels(y_levels)
   absorb_idx <- which(ylevel_names %in% as_state_labels(absorb))
   non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)

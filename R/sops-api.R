@@ -28,13 +28,6 @@
 #'   30. Each value is one transition, so leaving out visits does not skip
 #'   time; see the section "Choosing visits". Numeric time variables use
 #'   numeric values; factor-valued visit indices use fitted visit levels.
-#' @param absorb The absorbing states, such as death: states that a patient
-#'   can't leave. Every profile must start outside them: a profile whose
-#'   previous state (the `p_var` column of [mostm()]) is absorbing, or, for a
-#'   second-order model, whose state two visits back (the `p2_var` column) is,
-#'   gives an error. Such a patient can't move to another state, and the model
-#'   has no transitions out of an absorbing state to predict from, so remove
-#'   those patients from `newdata` first.
 #' @param variables Optional covariates to set before predicting: a named list
 #'   of values, such as `list(tx = c(0, 1))`, or bare names, such as `"tx"`.
 #'   Each profile is then predicted once for every combination of the values,
@@ -48,15 +41,6 @@
 #'   both return the result of [avg_sops()] with the same arguments. A `by`
 #'   column must have no missing values among the averaged profiles; drop or
 #'   impute those patients first.
-#' @param gap_var Optional name of the variable holding the time elapsed since
-#'   the previous visit, if the model includes one. Each transition then uses
-#'   the difference between consecutive values of `times` (the first value for
-#'   the first transition), unless `time_covariates` contains this column, so
-#'   `times` may skip visits. See the section "Choosing visits".
-#' @param time_covariates Optional time-varying covariate lookup table for
-#'   explicit basis columns. Registered inline terms such as
-#'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without
-#'   supplying `time_covariates`.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
 #'   fitted random-effect draws in posterior predictions for known IDs. Only
 #'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
@@ -127,13 +111,22 @@
 #' @section Choosing visits:
 #' SOPs are calculated one visit at a time. The first value of `times` is the
 #' first transition from the starting state, and each later value is one more
-#' transition. The values set the time variable, and any time-varying
-#' covariates, for each transition; they do not say how much time passes
-#' between transitions. Leaving out visits therefore does not skip time. With
-#' daily visits, `times = c(1, 7, 14)` gives the probabilities after 1, 2, and 3
+#' transition. The values set the time variable, and so every time term of the
+#' model formula, such as `rms::rcs(time, 4)` or `log(time)`, for each
+#' transition; they do not say how much time passes between transitions.
+#' Leaving out visits therefore does not skip time. With daily visits,
+#' `times = c(1, 7, 14)` gives the probabilities after 1, 2, and 3
 #' transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
 #' and 14. To get SOPs at selected visits, request every visit, such as
 #' `times = 1:14`, and keep the rows you need.
+#'
+#' A model fitted with `gap_var` (see [mostm()]) includes the time since the
+#' previous visit. Each transition then gets the difference between its
+#' requested time and the one before it, and the first transition gets the
+#' first requested time itself, the time since time 0. With
+#' `times = c(1, 2, 4, 7)` the gaps are 1, 1, 2 and 3, so the visits may be
+#' spaced unevenly. When `newdata` starts at a later visit, the first gap is
+#' still the first requested time, not the time since that visit.
 #'
 #' When `newdata` is omitted, each patient starts from their state before the
 #' first follow-up visit (`first_followup_time` of [mostm()]), so
@@ -144,18 +137,26 @@
 #' A warning is given when `times` leaves out visits that occur in the data the
 #' model was fitted to, is not in increasing order, or, when `newdata` is
 #' omitted, does not begin at the first follow-up visit. Times after the last
-#' fitted visit are allowed. There is no warning when `gap_var` is supplied,
-#' because each transition then uses its own elapsed time, so the visits may be
-#' spaced unevenly.
+#' fitted visit are allowed. There is no warning for a model fitted with
+#' `gap_var`, because each transition then uses its own elapsed time, so the
+#' visits may be spaced unevenly.
 #'
 #' @section Settings taken from the fit:
 #' The patient ID column, the time column, the previous-state column, the
-#' column with the state two visits back, and the states are those of the
-#' fitted model: the `id_var`, `time_var`, `p_var` and `p2_var` given to
-#' [mostm()], and the states of the response in fitted order. A model fitted
-#' with `p2_var` is therefore always predicted with the second-order recursion.
-#' The `state` column of the result holds the fitted state labels. To predict
-#' with other columns, refit the model with [mostm()].
+#' column with the state two visits back, the column with the time since the
+#' previous visit, the states and the absorbing states are those of the
+#' fitted model: the `id_var`, `time_var`, `p_var`, `p2_var`, `gap_var` and
+#' `absorb` given to [mostm()], and the states of the response in fitted
+#' order. A model fitted with `p2_var` is therefore always predicted with the
+#' second-order recursion. The `state` column of the result holds the fitted
+#' state labels. To predict with other columns or other absorbing states,
+#' refit the model with [mostm()].
+#'
+#' A patient who is in an absorbing state stays there, so every profile must
+#' start outside the absorbing states: a profile whose previous state (the
+#' `p_var` column) is absorbing, or, for a second-order model, whose state two
+#' visits back (the `p2_var` column) is, gives an error. Remove those patients
+#' from `newdata` first.
 #'
 #' @seealso [avg_sops()] for averaged SOPs, [soprob_markov()] for the
 #'   underlying computation.
@@ -182,11 +183,8 @@ sops <- function(
   model,
   newdata = NULL,
   times,
-  absorb = NULL,
   variables = NULL,
   by = FALSE,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -204,12 +202,7 @@ sops <- function(
     mostr_abort("`times` must be supplied to `sops()`.")
   }
   conf_level <- validate_conf_level(conf_level)
-  settings <- resolve_markov_settings(
-    model,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates
-  )
+  settings <- resolve_markov_settings(model)
   by_choice <- resolve_by_choice(by)
   if (by_choice$average) {
     return(avg_sops_impl(
@@ -292,15 +285,9 @@ sops_impl <- function(
     newdata_orig,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
-  validate_factor_gap(
-    settings$gap_var,
-    settings$time_covariates,
-    time_res$time_info
-  )
   warn_skipped_sop_visits(
     model,
     newdata_orig,
@@ -676,9 +663,6 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   `FALSE` or `NULL` does not average and returns the [sops()] result, one
 #'   row per profile, value of `variables`, time, and state.
 #' @inheritParams sops
-#' @param time_covariates Optional time-varying covariate lookup table for
-#'   explicit precomputed time-basis columns. Registered inline terms such as
-#'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without it.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.
@@ -761,26 +745,25 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
 #'   data = data,
 #'   id_var = "id",
+#'   absorb = 6,
 #'   engine = "vglm"
 #' )
 #'
 #' # Models fitted with mostm() can use their stored starting profiles.
-#' observed <- avg_sops(fit, times = 1:60, absorb = 6)
+#' observed <- avg_sops(fit, times = 1:60)
 #'
 #' # Set treatment to each requested value before averaging.
 #' result <- avg_sops(
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   absorb = 6
+#'   times = 1:60
 #' ) |> inferences(method = "mvn", n_draws = 500)
 #'
 #' # Refit bootstrap resamples the patients stored on the fitted model.
 #' result_boot <- avg_sops(
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   absorb = 6
+#'   times = 1:60
 #' ) |> inferences(method = "fwb", n_draws = 500)
 #' }
 #'
@@ -791,9 +774,6 @@ avg_sops <- function(
   variables = NULL,
   by = TRUE,
   times,
-  absorb = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -811,12 +791,7 @@ avg_sops <- function(
     mostr_abort("`times` must be supplied to `avg_sops()`.")
   }
   conf_level <- validate_conf_level(conf_level)
-  settings <- resolve_markov_settings(
-    model,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates
-  )
+  settings <- resolve_markov_settings(model)
 
   by_choice <- resolve_by_choice(by)
   if (!by_choice$average) {
@@ -1017,15 +992,9 @@ avg_sops_impl <- function(
     newdata_expanded,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "unique"
   )
   resolved_times <- time_res$times
-  validate_factor_gap(
-    settings$gap_var,
-    settings$time_covariates,
-    time_res$time_info
-  )
   sops_array <- predict_markov_sops(
     model = model,
     newdata = newdata_expanded,
@@ -1089,15 +1058,9 @@ avg_sops_blrm <- function(
     newdata_expanded,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
-  validate_factor_gap(
-    settings$gap_var,
-    settings$time_covariates,
-    time_res$time_info
-  )
 
   validate_sops_by(by, newdata_expanded, data_arg = "expanded prediction data")
 

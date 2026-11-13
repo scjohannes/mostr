@@ -182,9 +182,16 @@ test_that("real-time comparisons use baseline support without integrating it", {
   expect_equal(disabled$estimate, 2.1)
 })
 
-test_that("avg_comparisons() passes the fit's settings and its own arguments to the SOP call", {
-  # The column names come from the fit's settings, `gap_var` from the call.
-  fit_settings <- list(time_var = "visit", p_var = "prev", p2_var = "preprev")
+test_that("avg_comparisons() passes the fit's settings to the SOP call", {
+  # The column names, the absorbing states and the gap column all come from
+  # the fit's settings.
+  fit_settings <- list(
+    time_var = "visit",
+    p_var = "prev",
+    p2_var = "preprev",
+    absorb = "2",
+    gap_var = "gap"
+  )
   model <- do.call(
     with_fit_settings,
     c(
@@ -193,7 +200,6 @@ test_that("avg_comparisons() passes the fit's settings and its own arguments to 
       list(y_levels = c("1", "2"))
     )
   )
-  structure_args <- list(gap_var = "gap")
 
   # The time-benefit estimand pairs the profiles itself, so it calls
   # `sops_impl()`; the other estimands call `avg_sops_impl()`. `forwarded` lists
@@ -201,47 +207,34 @@ test_that("avg_comparisons() passes the fit's settings and its own arguments to 
   cases <- list(
     list(
       label = "time in state, through avg_sops()",
-      time_covariates = data.frame(visit = 1:2, spline = c(0, 1)),
-      run = function(captured, time_covariates) {
+      run = function(captured) {
         avg <- make_mock_avg_sops(tx_levels = c(0, 1))
         with_mocked_bindings(
           avg_sops_impl = function(...) {
             captured$settings <- list(...)$settings
             avg
           },
-          do.call(
-            avg_comparisons,
-            c(
-              list(
-                model,
-                variables = list(tx = c(0, 1)),
-                estimand = "time_in_state",
-                state_sets = "1",
-                times = 1:2,
-                absorb = "2",
-                time_covariates = time_covariates
-              ),
-              structure_args
-            )
+          avg_comparisons(
+            model,
+            variables = list(tx = c(0, 1)),
+            estimand = "time_in_state",
+            state_sets = "1",
+            times = 1:2
           )
         )
       },
-      forwarded = c(
-        fit_settings,
-        structure_args,
-        list(y_levels = c("1", "2"), absorb = "2")
-      ),
+      forwarded = c(fit_settings, list(y_levels = c("1", "2"))),
       expected = list()
     ),
     list(
       label = "time benefit from paired profiles, through sops()",
-      time_covariates = data.frame(visit = 1, spline = 0),
-      run = function(captured, time_covariates) {
+      run = function(captured) {
         newdata <- data.frame(
           id = 1:2,
           tx = c(0, 1),
           yprev = c(2, 2),
-          prev = c(2, 2),
+          # The fit records state 2 as absorbing, so the profiles start in 1.
+          prev = c(1, 1),
           preprev = c(1, 1)
         )
         with_mocked_bindings(
@@ -266,35 +259,28 @@ test_that("avg_comparisons() passes the fit's settings and its own arguments to 
             )
             out
           },
-          do.call(
-            avg_comparisons,
-            c(
-              list(
-                model,
-                newdata = newdata,
-                variables = list(tx = c(0, 1)),
-                estimand = "time_benefit",
-                times = 1,
-                time_covariates = time_covariates
-              ),
-              structure_args
-            )
+          avg_comparisons(
+            model,
+            newdata = newdata,
+            variables = list(tx = c(0, 1)),
+            estimand = "time_benefit",
+            times = 1
           )
         )
       },
-      forwarded = c(fit_settings, structure_args),
+      forwarded = fit_settings,
       expected = list(estimate = 0.5, estimand = "time_benefit")
     )
   )
 
   for (case in cases) {
     captured <- new.env(parent = emptyenv())
-    out <- case$run(captured, case$time_covariates)
+    out <- case$run(captured)
     expect_true(inherits(out, "markov_avg_comparisons"), info = case$label)
     for (name in names(case$expected)) {
       expect_equal(out[[name]], case$expected[[name]], info = case$label)
     }
-    forwarded <- c(case$forwarded, list(time_covariates = case$time_covariates))
+    forwarded <- case$forwarded
     for (name in names(forwarded)) {
       # `[[` matches names exactly, so a misnamed argument cannot pass by
       # partial matching.

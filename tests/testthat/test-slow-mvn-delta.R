@@ -68,8 +68,7 @@ test_that("MVN draws match conditional delta variance with a scaled covariance",
         fit,
         newdata = profiles,
         variables = list(tx = c(0, 1)),
-        times = 1:4,
-        absorb = 4
+        times = 1:4
       )
       keys <- c("time", "state", "tx")
     } else {
@@ -77,8 +76,7 @@ test_that("MVN draws match conditional delta variance with a scaled covariance",
         fit,
         newdata = profiles,
         variables = list(tx = c(0, 1)),
-        times = 1:4,
-        absorb = 4
+        times = 1:4
       )
       keys <- c("time", "state_set")
     }

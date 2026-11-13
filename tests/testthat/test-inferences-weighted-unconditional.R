@@ -20,6 +20,7 @@ build_weighted_case <- function(case) {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm",
     weights = w
   )
@@ -28,6 +29,7 @@ build_weighted_case <- function(case) {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     weights = w
   ))
   list(vglm = vglm_fit, orm = orm_fit)
@@ -38,7 +40,7 @@ test_that("conditional variance still works for weighted fits", {
   fits <- make_weighted_case()
   for (engine in names(fits)) {
     out <- inferences(
-      avg_sops(fits[[engine]], times = 1:2, absorb = 3),
+      avg_sops(fits[[engine]], times = 1:2),
       method = "delta",
       vcov = "conditional"
     )

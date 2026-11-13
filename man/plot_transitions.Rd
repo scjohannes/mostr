@@ -10,7 +10,6 @@ plot_transitions(
   variables = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
   comparison = c("none", "difference"),
   time_var = NULL,
   y_var = "y",
@@ -18,8 +17,6 @@ plot_transitions(
   p2_var = NULL,
   id_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   show_values = TRUE,
@@ -47,8 +44,6 @@ default) uses the states of the model; a supplied vector must hold the
 same states in the same order, otherwise it is an error. For trajectory
 data, \code{NULL} uses the states found in the \code{y_var} and \code{p_var} columns,
 in numeric order when they are numbers.}
-
-\item{absorb}{Optional absorbing-state label.}
 
 \item{comparison}{\code{"none"} for transition proportions or \code{"difference"} for
 counterfactual differences in transition proportions.}
@@ -79,11 +74,6 @@ used for trajectory data.}
 \item{facet_var}{Optional observed grouping variable. The plot always facets
 by time; \code{facet_var} adds grouping to the time panels.}
 
-\item{gap_var}{Optional time-gap_var variable used by the fitted model.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table used by the fitted
-model.}
-
 \item{seed}{Optional random seed for \code{blrm} posterior draw selection.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
@@ -113,9 +103,9 @@ relative to the first level.
 Minimum inputs depend on the object type. For trajectory data, \code{object} must
 contain the current time, current state, and previous-state columns named by
 \code{time_var}, \code{y_var}, and \code{p_var}. For model-based plots, pass a fitted
-Markov model and \code{times}; use \code{newdata} for explicit prediction profiles and
-pass \code{absorb} when the model has absorbing states. The column names and
-states default to those of the fit. Difference plots also require
+Markov model and \code{times}; use \code{newdata} for explicit prediction profiles. The
+column names and states default to those of the fit, and the absorbing
+states are those given to \code{\link[=mostm]{mostm()}}. Difference plots also require
 \code{comparison = "difference"} and \code{variables = list(var = c(reference, comparison))}.
 }
 \examples{
@@ -126,9 +116,7 @@ plot_transitions(
   fit,
   times = 1:7,
   variables = list(tx = c(0, 1)),
-  comparison = "difference",
-  y_levels = 1:8,
-  absorb = 8
+  comparison = "difference"
 )
 }
 }

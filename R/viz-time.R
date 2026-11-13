@@ -61,8 +61,7 @@
 #' tis <- avg_state_time(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:28,
-#'   absorb = "6"
+#'   times = 1:28
 #' ) |>
 #'   inferences(method = "delta")
 #'

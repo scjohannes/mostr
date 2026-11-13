@@ -62,12 +62,10 @@ markov_transition_trace <- function(
     data,
     times,
     settings$time_var,
-    time_covariates = settings$time_covariates,
     default = "unique"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(settings$gap_var, settings$time_covariates, time_info)
 
   draw_indices <- NULL
   if (ftype == "rmsb") {

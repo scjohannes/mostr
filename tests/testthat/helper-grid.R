@@ -38,12 +38,6 @@ grid_data <- function() {
       data$age <- round(stats::rnorm(length(ids), 60, 10))[match(data$id, ids)]
       data$w <- sample(1:3, length(ids), TRUE)[match(data$id, ids)]
       data$marker <- as.integer(data$id %% 3 == 0)
-      data$gap <- 1 + (data$time %% 3)
-      data$gap[data$time == 1] <- 1
-
-      basis <- rms::rcs(data$time, 3)
-      data$time_lin <- as.vector(basis[, 1])
-      data$time_nlin <- as.vector(basis[, 2])
       data
     })
   }
@@ -51,11 +45,13 @@ grid_data <- function() {
 }
 
 # Set-ups as a list of cells. `previous`: how the previous state is coded.
-# `time`: linear, spline, factor, or an explicit spline basis given to prediction
-# through `time_covariates`. `visit`: "gap" adds a gap variable and uneven visits.
-# `id`: how patient IDs are stored, as numbers, character strings ("p1", ...) or
-# a factor of those strings, whose sorted levels differ from the order in which
-# patients appear.
+# `time`: linear, a spline (`rms::rcs(time, 3)`), `log(time)` (an inline term
+# that no rms basis handler knows), or factor. `visit`: "gap" adds the time
+# since the previous visit and uneven visits. `id`: how patient IDs are
+# stored, as numbers, character strings ("p1", ...) or a factor of those
+# strings, whose sorted levels differ from the order in which patients appear.
+# `absorb`: the absorbing states given to `mostm()`; an inner absorbing state
+# such as 2 removes the fitted rows that start in it (`grid_cell_data()`).
 grid_cell <- function(
   engine,
   order = 1L,
@@ -64,7 +60,8 @@ grid_cell <- function(
   odds = "full",
   previous = "factor",
   visit = "regular",
-  id = "numeric"
+  id = "numeric",
+  absorb = grid_n_states
 ) {
   list(
     engine = engine,
@@ -74,8 +71,15 @@ grid_cell <- function(
     odds = odds,
     previous = previous,
     visit = visit,
-    id = id
+    id = id,
+    absorb = absorb
   )
+}
+
+# The same set-up with state 2 absorbing as well as state 4.
+grid_inner_absorbing <- function(cell) {
+  cell$absorb <- c(2L, grid_n_states)
+  cell
 }
 
 grid_label <- function(cell) {
@@ -88,6 +92,7 @@ grid_label <- function(cell) {
     paste0(cell$previous, " previous state"),
     paste0(cell$visit, " visits"),
     paste0(cell$id, " IDs"),
+    paste0("absorbing ", paste(cell$absorb, collapse = " and ")),
     sep = ", "
   )
 }
@@ -117,7 +122,7 @@ grid_consistency_cells <- function() {
       list(
         grid_cell(engine, weighted = TRUE),
         grid_cell(engine, visit = "gap"),
-        grid_cell(engine, time = "basis"),
+        grid_cell(engine, time = "log"),
         grid_cell(engine, previous = "numeric"),
         grid_cell(engine, id = "character"),
         grid_cell(engine, time = "factor", id = "factor")
@@ -169,6 +174,30 @@ grid_core_cells <- function(times = c("linear", "rcs", "factor")) {
 
 grid_cell_data <- function(cell) {
   data <- grid_data()
+  if (cell$visit == "gap") {
+    # Uneven visits: visits 1 to 6 at times 1, 2, 4, 5, 7 and 8. The gap is
+    # the time since the previous row, and the first row's gap is its own
+    # time, as `mostm(gap_var = )` requires and prediction assumes.
+    data$time <- c(1, 2, 4, 5, 7, 8)[data$time]
+    data$gap <- stats::ave(
+      data$time,
+      data$id,
+      FUN = function(t) c(t[1L], diff(t))
+    )
+  }
+  # A patient in an absorbing state has no further transitions, so a
+  # patient's rows end before the first one that starts in an inner absorbing
+  # state. Patients who start in it have no rows.
+  inner <- setdiff(cell$absorb, grid_n_states)
+  if (length(inner)) {
+    hit <- as.integer(as.character(data$yprev)) %in% inner |
+      as.integer(as.character(data$ypprev)) %in% inner
+    absorbed <- stats::ave(as.integer(hit), data$id, FUN = cumsum) > 0L
+    data <- data[!absorbed, , drop = FALSE]
+    data$yprev <- droplevels(data$yprev)
+    data$ypprev <- droplevels(data$ypprev)
+    rownames(data) <- NULL
+  }
   if (cell$time == "factor") {
     data$time <- factor(data$time, levels = sort(unique(data$time)))
   }
@@ -225,7 +254,7 @@ grid_fit_to <- function(
   time_term <- switch(
     cell$time,
     rcs = "rms::rcs(time, 3)",
-    basis = "time_lin + time_nlin",
+    log = "log(time)",
     "time"
   )
   rhs <- paste(
@@ -240,6 +269,7 @@ grid_fit_to <- function(
     collapse = " + "
   )
   first_followup <- if (cell$time == "factor") "1" else 1
+  gap_var <- if (cell$visit == "gap") "gap"
   family <- VGAM::cumulative(
     reverse = TRUE,
     parallel = if (cell$odds == "partial") FALSE ~ tx else TRUE
@@ -255,6 +285,8 @@ grid_fit_to <- function(
           id_var = "id",
           first_followup_time = first_followup,
           p2_var = p2_var,
+          absorb = cell$absorb,
+          gap_var = gap_var,
           weights = w
         )
       } else {
@@ -263,7 +295,9 @@ grid_fit_to <- function(
           data = data,
           id_var = "id",
           first_followup_time = first_followup,
-          p2_var = p2_var
+          p2_var = p2_var,
+          absorb = cell$absorb,
+          gap_var = gap_var
         )
       }
     } else {
@@ -275,6 +309,8 @@ grid_fit_to <- function(
           id_var = "id",
           first_followup_time = first_followup,
           p2_var = p2_var,
+          absorb = cell$absorb,
+          gap_var = gap_var,
           engine = "vglm",
           family = family,
           weights = w
@@ -286,6 +322,8 @@ grid_fit_to <- function(
           id_var = "id",
           first_followup_time = first_followup,
           p2_var = p2_var,
+          absorb = cell$absorb,
+          gap_var = gap_var,
           engine = "vglm",
           family = family
         )
@@ -310,33 +348,20 @@ grid_visit_columns <- function(cell, times = grid_times(cell)) {
   if (cell$visit == "gap") {
     return(data.frame(gap = c(times[1], diff(times))))
   }
-  if (cell$time == "basis") {
-    data <- grid_data()
-    rows <- data[match(times, data$time), c("time_lin", "time_nlin")]
-    rownames(rows) <- NULL
-    return(rows)
-  }
   NULL
 }
 
-# Arguments that select the same set-up in the public functions.
-grid_public_args <- function(cell, absorb = grid_n_states, times = grid_times(cell)) {
-  # The fit records the order (`grid_fit_to()` gives `p2_var` to `mostm()`).
-  args <- list(times = times, absorb = absorb)
-  if (cell$visit == "gap") {
-    args$gap_var <- "gap"
-  }
-  if (cell$time == "basis") {
-    table <- grid_visit_columns(cell, times)
-    table$time <- times
-    args$time_covariates <- table
-  }
-  args
+# Arguments that select the same set-up in the public functions. The fit
+# records the order, the absorbing states and the gap column (`grid_fit_to()`
+# gives `p2_var`, `absorb` and `gap_var` to `mostm()`), so only the times
+# remain.
+grid_public_args <- function(cell, times = grid_times(cell)) {
+  list(times = times)
 }
 
 # One patient per starting state that is outside `absorb`, with the state two
 # visits back shifted so that it differs from the previous state.
-grid_profiles <- function(cell, absorb = grid_n_states) {
+grid_profiles <- function(cell, absorb = cell$absorb) {
   data <- grid_cell_data(cell)
   start <- as.character(data$time) == "1"
   baseline <- data[start, , drop = FALSE]

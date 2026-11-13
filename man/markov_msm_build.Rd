@@ -16,10 +16,8 @@ markov_msm_build(model, newdata, times = NULL, settings)
 \item{settings}{The resolved settings of the call
 (\code{resolve_markov_settings()}): the state labels \code{y_levels}, the absorbing
 states \code{absorb} (their transition matrices are not needed, because
-absorbing states keep their prior probability mass), the columns
-\code{time_var}, \code{p_var} and \code{gap_var}, and the time-dependent covariate lookup
-\code{time_covariates}. With factor visit time, numeric \code{gap_var} values must
-be supplied in \code{time_covariates}.}
+absorbing states keep their prior probability mass), and the columns
+\code{time_var}, \code{p_var} and \code{gap_var}.}
 }
 \value{
 A list containing pre-calculated matrices and metadata.

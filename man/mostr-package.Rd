@@ -43,7 +43,8 @@ comparisons, confidence intervals and model checks need a fit made by
 \section{Estimate state occupancy probabilities}{
 
 All of these take \code{times}, the consecutive visits to predict (for example
-\code{times = 1:28}), and \code{absorb}, the absorbing states such as death.
+\code{times = 1:28}). The absorbing states, such as death, are given to
+\code{\link[=mostm]{mostm()}} with \code{absorb}.
 \itemize{
 \item \code{\link[=avg_sops]{avg_sops()}} averages the SOPs over the patients. With
 \code{variables = list(tx = c(0, 1))} it gives the SOPs if every patient had

@@ -5,11 +5,17 @@ test_that("mostm() records its call and engine, and bootstrap refits call it wit
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6101)
   fits <- list(
-    orm = mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id"),
+    orm = mostm(
+      ordered(y) ~ time + tx + yprev,
+      data = data,
+      id_var = "id",
+      absorb = 6
+    ),
     vglm = mostm(
       ordered(y) ~ time + tx + yprev,
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     )
   )
@@ -70,17 +76,24 @@ test_that("the vglm engine fits the orm proportional odds model by default", {
   skip_if_not_installed("VGAM")
 
   data <- make_test_data(n_patients = 60, follow_up_time = 8, seed = 6102)
-  fit_orm <- mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id")
+  fit_orm <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 6
+  )
   fit_default <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
   fit_explicit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm",
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE)
   )
@@ -192,6 +205,7 @@ test_that("mostm() accepts the engine arguments used in the articles and passes 
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     maxit = 30,
     family = "logistic"
   )
@@ -201,6 +215,7 @@ test_that("mostm() accepts the engine arguments used in the articles and passes 
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm",
     maxit = 30,
     trace = FALSE
@@ -276,13 +291,18 @@ test_that("fits without mostm() provenance must be refitted", {
   local_reproducible_output(width = 80)
 
   data <- make_test_data(n_patients = 30, follow_up_time = 6, seed = 6108)
-  fit <- mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id")
+  fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 6
+  )
   old <- fit
   attr(old, "markov_engine") <- NULL
   attr(old, "markov_fit_wrapper") <- "orm_markov"
 
   expect_snapshot(
-    sops(old, times = 1:2, absorb = 6),
+    sops(old, times = 1:2),
     error = TRUE
   )
 })
@@ -317,7 +337,11 @@ test_that("orm and vglm fits do not load the blrm engine's packages", {
         seed = 1
       )
       data <- prepare_markov_data(trajectories, absorbing_state = 8)
-      mostm(ordered(y) ~ yprev + time + tx, data = data, id_var = "id")
+      mostm(
+        ordered(y) ~ yprev + time + tx,
+        data = data,
+        id_var = "id"
+      )
       mostm(
         ordered(y) ~ yprev + time + tx,
         data = data,
@@ -359,6 +383,7 @@ test_that("a patient column with another name gives the same results as `id`", {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = id_var,
+      absorb = 6,
       engine = "vglm"
     )
   }
@@ -366,7 +391,7 @@ test_that("a patient column with another name gives the same results as `id`", {
   fit_pid <- fit_model(renamed, "pid")
   expect_equal(stats::vcov(fit_pid), stats::vcov(fit_id))
 
-  args <- list(times = 1:3, absorb = 6, variables = list(tx = c(0, 1)))
+  args <- list(times = 1:3, variables = list(tx = c(0, 1)))
   profiles_id <- data[data$time == 1, , drop = FALSE]
   profiles_pid <- renamed[renamed$time == 1, , drop = FALSE]
   for (fun in c("avg_sops", "avg_comparisons")) {
@@ -404,6 +429,7 @@ test_that("orm refits keep the fit's na.action and penalty", {
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     na.action = Hmisc::na.delete,
     penalty = 2,
     var.penalty = "sandwich"
@@ -412,6 +438,7 @@ test_that("orm refits keep the fit's na.action and penalty", {
     ordered(y) ~ time + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     na.action = Hmisc::na.delete
   )
   expect_gt(
@@ -432,8 +459,7 @@ test_that("orm refits keep the fit's na.action and penalty", {
   out <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    absorb = 6
+    times = 1:3
   )
   withr::local_seed(6113)
   inferred <- inferences(out, method = "bootstrap", n_draws = 2)
@@ -532,7 +558,12 @@ test_that("mostm() refuses factor() written inside the formula unless the engine
 
   # A factor column in `data` fits, and `ordered()` on the response is allowed.
   data$tx_factor <- factor(data$tx)
-  fit <- mostm(ordered(y) ~ time + tx_factor + yprev, data = data, id_var = "id")
+  fit <- mostm(
+    ordered(y) ~ time + tx_factor + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 6
+  )
   expect_s3_class(fit, "orm")
 
   # VGAM fits factor() written inside the formula: one coefficient for each
@@ -541,14 +572,65 @@ test_that("mostm() refuses factor() written inside the formula unless the engine
     ordered(y) ~ factor(time) + tx + yprev,
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
   expect_s3_class(fit, "robcov_vglm")
   expect_contains(names(stats::coef(fit)), paste0("factor(time)", 2:6))
-  out <- sops(fit, times = 1:2, absorb = 6)
+  out <- sops(fit, times = 1:2)
   totals <- tapply(out$estimate, list(out$rowid, out$time), sum)
   expect_equal(dim(totals), c(length(unique(data$id)), 2L))
   expect_equal(as.vector(totals), rep(1, length(totals)), tolerance = 1e-10)
+})
+
+test_that("mostm() refuses bases that rms would evaluate again on new data", {
+  skip_if_not_installed("rms")
+  data <- grid_data()
+  # rms evaluates these terms again on the prediction rows and gets another
+  # basis, so the SOPs would be wrong without any error. This holds for any
+  # variable, not only time.
+  expect_snapshot(error = TRUE, {
+    mostm(y ~ splines::ns(time, 3) + yprev, data = data, id_var = "id", absorb = 4)
+    mostm(y ~ time + bs(age, 3) + yprev, data = data, id_var = "id", absorb = 4)
+    mostm(
+      y ~ stats::poly(age, 2) + ns(time, 2) + yprev,
+      data = data,
+      id_var = "id",
+      absorb = 4
+    )
+  })
+  refuse <- list(
+    y ~ time + tx:splines::ns(age, 3) + yprev,
+    y ~ time + poly(age, degree = 2, raw = FALSE) + yprev
+  )
+  for (formula in refuse) {
+    expect_error(
+      mostm(formula, data = data, id_var = "id", absorb = 4),
+      "evaluated again on the prediction rows",
+      fixed = TRUE,
+      class = "mostr_error",
+      info = deparse1(formula)
+    )
+  }
+  # The refusals above stop before fitting; the fits below take about 2 s.
+  skip_on_cran()
+  # Raw polynomials and the rms bases do not depend on the data they are
+  # evaluated on.
+  allowed <- list(
+    y ~ time + stats::poly(age, 2, raw = TRUE) + yprev,
+    y ~ rms::rcs(time, 3) + rms::pol(age, 2) + yprev
+  )
+  for (formula in allowed) {
+    expect_no_error(mostm(formula, data = data, id_var = "id", absorb = 4))
+  }
+  # VGAM keeps the fitted basis, so the vglm engine accepts these terms.
+  expect_no_error(mostm(
+    ordered(y) ~ splines::ns(time, 2) + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 4,
+    engine = "vglm"
+  ))
 })
 
 test_that("mostm() refuses random-effect terms that its engine cannot fit", {
@@ -631,7 +713,12 @@ test_that("mostm() refuses random-effect terms that its engine cannot fit", {
   # Only calls count: a column named `cluster` is an ordinary predictor.
   with_column <- data
   with_column$cluster <- with_column$tx
-  fit <- mostm(ordered(y) ~ time + cluster + yprev, data = with_column, id_var = "id")
+  fit <- mostm(
+    ordered(y) ~ time + cluster + yprev,
+    data = with_column,
+    id_var = "id",
+    absorb = 6
+  )
   expect_s3_class(fit, "orm")
 
   skip_if_not_installed("rmsb")
@@ -644,6 +731,7 @@ test_that("mostm() refuses random-effect terms that its engine cannot fit", {
     ordered(y) ~ time + tx + yprev + cluster(id),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "blrm",
     standata = TRUE
   )
@@ -655,7 +743,12 @@ test_that("model-based functions reject orm fits that hold random effects", {
   skip_if_not_installed("rms")
 
   data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6307)
-  fit <- mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id")
+  fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 6
+  )
   expect_null(mostr:::validate_markov_model(fit))
 
   # A fit saved before mostm() rejected these terms can still hold them.
@@ -677,7 +770,13 @@ test_that("a weighted orm fit does not show rms's warning that its bootstrap ign
   # grid_fit_to() hides all warnings, so fit directly.
   data <- grid_cell_data(grid_cell("orm", weighted = TRUE))
   expect_no_warning(
-    mostm(y ~ time + tx + age + yprev, data = data, id_var = "id", weights = w),
+    mostm(
+      y ~ time + tx + age + yprev,
+      data = data,
+      id_var = "id",
+      weights = w,
+      absorb = 4
+    ),
     message = "weights are ignored"
   )
 })

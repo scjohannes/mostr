@@ -24,6 +24,7 @@ build_crossed_threshold_case <- function(case) {
     data = data,
     first_followup_time = 1,
     id_var = "id",
+    absorb = 3,
     engine = "vglm"
   )
   profiles <- data[data$time == 1, , drop = FALSE][1:3, , drop = FALSE]
@@ -53,7 +54,7 @@ test_that("the fixture's thresholds really cross at score = -20", {
 test_that("SOP calls stop when the fitted thresholds cross", {
   skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
-  base <- list(case$model, newdata = case$profiles, times = 1:3, absorb = 3)
+  base <- list(case$model, newdata = case$profiles, times = 1:3)
   compare <- c(base, list(variables = list(tx = c(0, 1)), state_sets = "1"))
   calls <- list(
     sops = function() do.call(sops, base),
@@ -71,7 +72,7 @@ test_that("the error says how many profiles cross, and when", {
   skip_on_cran() # The pass depends on the seed.
   case <- make_crossed_threshold_case()
   err <- tryCatch(
-    sops(case$model, newdata = case$profiles, times = 1:3, absorb = 3),
+    sops(case$model, newdata = case$profiles, times = 1:3),
     error = function(e) e
   )
   expect_s3_class(err, "mostr_crossed_thresholds")
@@ -84,7 +85,6 @@ test_that("the error says how many profiles cross, and when", {
       case$model,
       newdata = case$profiles,
       times = 1:3,
-      absorb = 3,
       variables = list(tx = c(0, 1)),
       state_sets = "1"
     ),
@@ -110,8 +110,7 @@ test_that("sops() agrees with the readable loop on both sides of the crossing", 
   out <- sops(
     case$model,
     newdata = case$profiles[1:2, , drop = FALSE],
-    times = 1:3,
-    absorb = 3
+    times = 1:3
   )
   for (i in 1:2) {
     rows <- out[out$rowid == i, , drop = FALSE]
@@ -164,7 +163,7 @@ test_that("inference stops when cut-points cross in some draws or refits", {
   cases <- list(
     list(
       label = "sops(), simulation draws",
-      result = sops(case$model, newdata = profiles, times = 1:3, absorb = 3),
+      result = sops(case$model, newdata = profiles, times = 1:3),
       method = "mvn",
       n_draws = 20,
       seed = 1,
@@ -176,7 +175,6 @@ test_that("inference stops when cut-points cross in some draws or refits", {
         case$model,
         newdata = profiles,
         times = 1:3,
-        absorb = 3,
         variables = list(tx = c(0, 1)),
         state_sets = "1"
       ),
@@ -187,7 +185,7 @@ test_that("inference stops when cut-points cross in some draws or refits", {
     ),
     list(
       label = "avg_sops(), bootstrap refits",
-      result = avg_sops(case$model, newdata = profiles, times = 1:3, absorb = 3),
+      result = avg_sops(case$model, newdata = profiles, times = 1:3),
       method = "bootstrap",
       n_draws = 10,
       seed = 3,
@@ -218,7 +216,12 @@ crossed_fake_blrm <- function() {
     c(1.2, 0.1, -1.3, 0.25, 0.05, -0.55, 0.02)
   )
   colnames(draws) <- c("y>=2", "y>=3", "y>=4", "tx", "time", "yprev", "tau_time")
-  fake_blrm(draws, tau = "tau_time", cppo = function(y) as.numeric(y) - 1)
+  fake_blrm(
+    draws,
+    tau = "tau_time",
+    cppo = function(y) as.numeric(y) - 1,
+    absorb = 4L
+  )
 }
 
 crossed_fake_design <- fake_blrm_design(c("tx", "time", "yprev"), tau_var = "time")
@@ -233,11 +236,11 @@ test_that("blrm partial proportional-odds fits stop where cut-points cross", {
     yprev = factor(c(1, 2), levels = 1:4)
   )
 
-  before <- sops(model, newdata = profiles, times = 1:2, absorb = 4L, n_draws = NULL)
+  before <- sops(model, newdata = profiles, times = 1:2, n_draws = NULL)
   expect_true(all(before$estimate >= 0))
 
   expect_error(
-    sops(model, newdata = profiles, times = 1:3, absorb = 4L, n_draws = NULL),
+    sops(model, newdata = profiles, times = 1:3, n_draws = NULL),
     "cross for 2 of the 2 profiles at time 3 in 2 of the 4 posterior draws",
     class = "mostr_crossed_thresholds"
   )

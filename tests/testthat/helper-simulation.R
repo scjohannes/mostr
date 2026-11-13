@@ -71,25 +71,19 @@ make_test_data <- function(
   return(data)
 }
 
-make_time_covariates <- function(data, time_col = "time", ...) {
-  cols <- c(time_col, ...)
-  out <- unique(data[cols])
-  out <- out[order(out[[time_col]]), , drop = FALSE]
-  rownames(out) <- NULL
-  out
-}
-
 #' Fit a standard VGLM model for testing
 #'
 #' @param data Data frame from make_test_data
 #'
-#' @return A fitted robcov_vglm object, clustered on `data$id`
+#' @return A fitted robcov_vglm object, clustered on `data$id`, with state 6
+#'   absorbing
 make_test_model <- function(data) {
   suppressWarnings(mostm(
-    ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
+    ordered(y) ~ rms::rcs(time, 3) + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   ))
 }
@@ -120,15 +114,15 @@ make_score_bootstrap_case <- function(
     data = data,
     baseline = data[data$time == 1, , drop = FALSE],
     model = mostm(
-      ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
+      ordered(y) ~ rms::rcs(time, 3) + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
     times = seq_len(follow_up_time),
-    y_levels = 1:6,
-    absorb = 6
+    y_levels = 1:6
   )
 }
 
@@ -153,9 +147,9 @@ build_observed_average_case <- function() {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
-    times = 1:3,
-    absorb = 6
+    times = 1:3
   )
 }

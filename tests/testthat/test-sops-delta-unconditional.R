@@ -13,6 +13,7 @@ local_delta_vglm_fit <- local({
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       )
     }
@@ -33,7 +34,8 @@ local_delta_orm_fit <- local({
       fit <<- mostm(
         ordered(y) ~ time + tx + yprev,
         data = data,
-        id_var = "id"
+        id_var = "id",
+        absorb = 6
       )
     }
     fit
@@ -49,8 +51,7 @@ test_that("explicit zero ORM penalties preserve unpenalized inference", {
     avg <- avg_sops(
       model,
       variables = list(tx = c(0, 1)),
-      times = 1:3,
-      absorb = 6
+      times = 1:3
     )
     inferences(avg, method = "delta", vcov = covariance)
   }
@@ -59,6 +60,7 @@ test_that("explicit zero ORM penalties preserve unpenalized inference", {
       ordered(y) ~ time + tx + yprev,
       data = data,
       id_var = "id",
+      absorb = 6,
       penalty = 0,
       var.penalty = variance
     )
@@ -80,15 +82,13 @@ delta_weighted_sop_estimate <- function(
   profile_weights,
   variables,
   times,
-  y_levels,
-  absorb
+  y_levels
 ) {
   weighted_model <- set_coef(model, coefficient)
   probabilities <- soprob_markov(
     model = weighted_model,
     newdata = prediction_data,
-    times = times,
-    absorb = absorb
+    times = times
   )
   n <- length(profile_weights)
   unlist(
@@ -115,14 +115,12 @@ delta_weighted_refit_oracle <- function(
   variables = list(tx = c(0, 1)),
   times = 1:2,
   y_levels = 1:6,
-  absorb = 6,
   step = 1e-2
 ) {
   point <- avg_sops(
     model,
     variables = variables,
-    times = times,
-    absorb = absorb
+    times = times
   )
   inferred <- inferences(
     point,
@@ -173,8 +171,7 @@ delta_weighted_refit_oracle <- function(
       profile_weights = upper_profile_weights,
       variables = variables,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb
+      y_levels = y_levels
     )
     lower_sop <- delta_weighted_sop_estimate(
       model = model,
@@ -183,8 +180,7 @@ delta_weighted_refit_oracle <- function(
       profile_weights = lower_profile_weights,
       variables = variables,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb
+      y_levels = y_levels
     )
     numerical_sop[patient_id, ] <- n *
       (upper_sop - lower_sop) /
@@ -197,8 +193,7 @@ delta_weighted_refit_oracle <- function(
       profile_weights = upper_profile_weights,
       variables = variables,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb
+      y_levels = y_levels
     )
     lower_profile_only <- delta_weighted_sop_estimate(
       model = model,
@@ -207,8 +202,7 @@ delta_weighted_refit_oracle <- function(
       profile_weights = lower_profile_weights,
       variables = variables,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb
+      y_levels = y_levels
     )
     profile_only_sop[patient_id, ] <- n *
       (upper_profile_only - lower_profile_only) /
@@ -572,6 +566,7 @@ test_that("unconditional score machinery rejects partial proportional odds", {
     ),
     data = data,
     id_var = "id",
+    absorb = 6,
     engine = "vglm"
   )
 

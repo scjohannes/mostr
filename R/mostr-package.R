@@ -33,7 +33,8 @@
 #'
 #' @section Estimate state occupancy probabilities:
 #' All of these take `times`, the consecutive visits to predict (for example
-#' `times = 1:28`), and `absorb`, the absorbing states such as death.
+#' `times = 1:28`). The absorbing states, such as death, are given to
+#' [mostm()] with `absorb`.
 #'
 #' * [avg_sops()] averages the SOPs over the patients. With
 #'   `variables = list(tx = c(0, 1))` it gives the SOPs if every patient had
