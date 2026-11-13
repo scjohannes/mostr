@@ -14,8 +14,8 @@ known_bug_fits <- local({
       formula <- ordered(y) ~ time + tx + yprev + bmi
       cache <<- list(
         yprev_levels = levels(data$yprev),
-        orm = mostm(formula, data = data, id_var = "id"),
-        vglm = mostm(formula, data = data, id_var = "id", engine = "vglm")
+        orm = mostm(formula, data = data, id_var = "id", absorb = 6),
+        vglm = mostm(formula, data = data, id_var = "id", absorb = 6, engine = "vglm")
       )
     }
     cache
@@ -62,9 +62,9 @@ test_that("known bug: a profile whose factor `yprev` has only its own levels giv
   own_levels$yprev <- factor(c(2, 3))
 
   for (engine in c("orm", "vglm")) {
-    expected <- sops(fits[[engine]], newdata = full, times = 1:3, absorb = 6)
+    expected <- sops(fits[[engine]], newdata = full, times = 1:3)
     result <- tryCatch(
-      sops(fits[[engine]], newdata = own_levels, times = 1:3, absorb = 6),
+      sops(fits[[engine]], newdata = own_levels, times = 1:3),
       error = function(e) e
     )
     expect_false(
@@ -88,7 +88,7 @@ test_that("known bug: a profile value that is not a fitted level gives a mostr_e
 
   for (engine in c("orm", "vglm")) {
     condition <- known_bug_condition(
-      sops(fits[[engine]], newdata = profiles, times = 1:3, absorb = 6)
+      sops(fits[[engine]], newdata = profiles, times = 1:3)
     )
     expect_true(inherits(condition, "mostr_error"), info = engine)
     expect_match(
@@ -172,7 +172,7 @@ test_that("known bug: a profile with a missing covariate gives a mostr_error nam
   for (engine in c("orm", "vglm")) {
     for (fn in c("sops", "avg_sops")) {
       condition <- known_bug_condition(
-        get(fn)(fits[[engine]], newdata = profiles, times = 1:3, absorb = 6)
+        get(fn)(fits[[engine]], newdata = profiles, times = 1:3)
       )
       expect_true(
         inherits(condition, "mostr_error"),
