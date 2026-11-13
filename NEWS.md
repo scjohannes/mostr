@@ -241,6 +241,15 @@
 
 ## Bug fixes
 
+* The robust variance of `"vglm"` fits now accepts or refuses a nearly
+  singular covariance by the same rule as `"orm"` fits: it checks the
+  correlation matrix, so the units of the covariates no longer matter. Before,
+  a `"vglm"` fit with a covariate whose values are tiny, such as a covariate
+  multiplied by 10^-6, stopped with "`stats::vcov(fit)` is not numerically
+  positive definite" although the same model fitted with `"orm"` worked, and
+  `"vglm"` accepted correlations that `"orm"` refuses as too close to
+  singular to invert reliably.
+
 * Parallel bootstrap and simulation inference (`workers` greater than 1) now
   restore every level of a nested future plan when they finish. Before, a
   plan such as `future::plan(list(multisession, multisession))` came back with

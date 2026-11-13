@@ -118,6 +118,41 @@ had to carry. Refusing `ns()`, `bs()` and `poly()` only on the time variable:
 the measurement showed the same wrong answer for any covariate. Changing the
 fit when the warning fires: the user decides whether the state is absorbing.
 
+## 2026-11-13: One positive-definiteness rule for the orm and vglm robust variance
+
+**Decided.** `orm_model_bread()` and the vglm checks of `vcov(fit)`, the
+chosen bread and the observed information use one helper,
+`markov_correlation_positive_definite()` in `R/robcov_orm.R`. It refuses a
+matrix with a non-positive diagonal entry and otherwise checks the
+correlation matrix: the smallest eigenvalue must exceed p * 1e-10 * max(1,
+largest), the orm rule. `robcov_vglm()` now inverts `vcov(fit)` with
+`chol2inv(chol())` instead of `solve()`.
+
+**Why.** vglm checked the raw matrix with tolerance 100 * eps * p * max(1,
+largest), so the two engines disagreed (measured with 3 coefficients):
+
+- a covariance with correlation eigenvalues 2.07 and 1.3e-11 (built from
+  eigenvalues 2, 1 - 1e-11 and 1e-11): orm refused, vglm accepted;
+- `diag(1e-16, 3)`: orm accepted, vglm refused, although its correlation
+  matrix is the identity.
+
+On a real fit (40 simulated patients, `ordered(y) ~ time + tx + yprev + bmi`,
+12 coefficients) the smallest correlation eigenvalue of `vcov(fit)` is 0.0039,
+5e5 times above the cut-off, and it stays there when `bmi` is multiplied by
+1e-6 or 1e6; the old raw rule refused both. With `bmi` multiplied by 1e-6 the
+vglm fit now works and its conditional delta standard errors match the unit
+scale to a relative 1e-10. With `bmi` multiplied by 1e6, `solve()` refused
+`vcov(fit)` (reciprocal condition number 2e-18 on the raw scale), hence the
+Cholesky inverse; that fit still stops, now at the observed information,
+because the finite-difference step of the observed bread,
+eps^(1/3) * max(1, |coefficient|), is 6e-6 for a coefficient of 1e-7 and moves
+the linear predictor by up to 157. That step is a separate problem, not changed
+here.
+
+**Decided against.** Keeping the raw rule for vglm: it makes the result depend
+on the units of the covariates. Two separate copies of the correlation rule:
+the two had already drifted apart once.
+
 ## 2026-11-12: Keep the blrm options as separate arguments
 
 **Decided.** `n_draws`, `seed`, `include_re`, `return_draws` and `conf_level`
