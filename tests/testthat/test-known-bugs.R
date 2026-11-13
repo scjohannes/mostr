@@ -77,6 +77,109 @@ test_that("known bug: a profile whose factor `yprev` has only its own levels giv
   }
 })
 
+test_that("known bug: a profile whose `yprev` holds integers gives the SOPs of the fitted factor levels for every engine", {
+  # The model reads `yprev` as a factor. orm turns the integers into its
+  # fitted levels; vglm stops in stats::model.matrix() with "contrasts apply
+  # only to factors".
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+  fits <- known_bug_fits()
+  full <- known_bug_profiles()
+  integers <- full
+  integers$yprev <- c(2L, 3L)
+
+  for (engine in c("orm", "vglm")) {
+    expected <- sops(fits[[engine]], newdata = full, times = 1:3)
+    result <- tryCatch(
+      sops(fits[[engine]], newdata = integers, times = 1:3),
+      error = function(e) e
+    )
+    expect_false(
+      inherits(result, "error"),
+      info = paste(engine, if (inherits(result, "error")) conditionMessage(result))
+    )
+    if (!inherits(result, "error")) {
+      expect_equal(result$estimate, expected$estimate, info = engine)
+    }
+  }
+})
+
+# A fake blrm fit (no Stan) whose design reads `tx`, `time` and `yprev` as
+# numbers, with two hand-built profiles whose factor `yprev` has the fitted
+# states as levels. `sformula` is the formula rmsb stores, from which mostr
+# reads the columns the model uses.
+known_bug_blrm <- function() {
+  coefficients <- rbind(
+    c(0.5, -0.5, 0, 1.2, 0.1),
+    c(2, 1, 0, -1.1, 0.2),
+    c(-0.4, -2, 0, 0.2, 0.3)
+  )
+  colnames(coefficients) <- c("y>=2", "y>=3", "tx", "time", "yprev")
+  model <- fake_blrm(coefficients)
+  model$sformula <- y ~ tx + time + yprev
+  list(
+    model = model,
+    profiles = data.frame(
+      id = c("a", "b"),
+      tx = c(0, 1),
+      yprev = factor(c(1, 2), levels = 1:3),
+      time = 1
+    )
+  )
+}
+
+test_that("known bug: blrm SOPs of a profile whose factor `yprev` has only its own levels are those of the fitted states", {
+  # As for orm and vglm, the later previous state 3 becomes NA, and blrm
+  # stops with "BLRM prediction produced invalid probability mass".
+  local_mocked_bindings(
+    blrm_design_matrix = fake_blrm_design(c("tx", "time", "yprev"))
+  )
+  fake <- known_bug_blrm()
+  own_levels <- fake$profiles
+  own_levels$yprev <- factor(c(1, 2))
+
+  expected <- sops(fake$model, newdata = fake$profiles, times = 1:3, n_draws = 3, seed = 4)
+  result <- tryCatch(
+    sops(fake$model, newdata = own_levels, times = 1:3, n_draws = 3, seed = 4),
+    error = function(e) e
+  )
+  expect_false(
+    inherits(result, "error"),
+    info = if (inherits(result, "error")) conditionMessage(result)
+  )
+  if (!inherits(result, "error")) {
+    expect_equal(result$estimate, expected$estimate)
+  }
+})
+
+test_that("known bug: blrm refuses a profile `yprev` that is not a fitted state, and a missing covariate, naming the column", {
+  # A `yprev` of 9 is predicted as if it were a state, and a missing `tx`
+  # stops with "BLRM prediction produced invalid probability mass", which
+  # names no column.
+  local_mocked_bindings(
+    blrm_design_matrix = fake_blrm_design(c("tx", "time", "yprev"))
+  )
+  fake <- known_bug_blrm()
+  not_a_state <- fake$profiles
+  not_a_state$yprev <- c("1", "9")
+  missing_tx <- fake$profiles
+  missing_tx$tx <- c(NA, 1)
+
+  for (case in list(list(not_a_state, "yprev"), list(missing_tx, "tx"))) {
+    for (fn in c("sops", "avg_sops")) {
+      condition <- known_bug_condition(
+        get(fn)(fake$model, newdata = case[[1]], times = 1:3, n_draws = 3, seed = 4)
+      )
+      expect_true(inherits(condition, "mostr_error"), info = paste(case[[2]], fn))
+      expect_match(
+        conditionMessage(condition %||% simpleCondition("")),
+        case[[2]],
+        info = paste(case[[2]], fn)
+      )
+    }
+  }
+})
+
 test_that("known bug: a profile value that is not a fitted level gives a mostr_error naming the column for every engine", {
   # orm refuses through mostr_abort(); vglm stops in stats::model.frame() with
   # "factor yprev has new levels 9", a plain simpleError.

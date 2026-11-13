@@ -81,20 +81,7 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
   }
 
   # Terms object
-  if (is_vglm) {
-    tt <- stats::terms(model)
-    tt <- stats::delete.response(tt)
-    contrasts_arg <- if (length(model@contrasts)) {
-      model@contrasts
-    } else {
-      NULL
-    }
-    xlev_arg <- model@xlevels
-  } else if (is_orm) {
-    tt <- NULL
-    contrasts_arg <- NULL
-    xlev_arg <- NULL
-  }
+  tt <- if (is_vglm) stats::delete.response(stats::terms(model))
 
   # Helper to get design matrix columns used by the effective coefficient
   # matrix. For inline transforms such as rms::rcs(), model.matrix() uses the
@@ -103,12 +90,7 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
     if (is_orm) {
       X <- orm_model_matrix(model, d, include_intercept = TRUE)
     } else {
-      X <- stats::model.matrix(
-        tt,
-        data = d,
-        contrasts.arg = contrasts_arg,
-        xlev = xlev_arg
-      )
+      X <- vglm_prediction_design(model, d, tt)
     }
     common <- intersect(colnames(X), common_cols)
     if (length(common) == 0) {
@@ -266,12 +248,7 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
     X <- if (inherits(model, "orm")) {
       orm_model_matrix(model, d, include_intercept = TRUE)
     } else {
-      stats::model.matrix(
-        tt,
-        data = d,
-        contrasts.arg = if (length(model@contrasts)) model@contrasts else NULL,
-        xlev = model@xlevels
-      )
+      vglm_prediction_design(model, d, tt)
     }
     missing_cols <- setdiff(colnames(Gamma), colnames(X))
     if (length(missing_cols) > 0L) {

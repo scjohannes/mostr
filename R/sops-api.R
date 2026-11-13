@@ -22,7 +22,11 @@
 #'   every row supplies a separate starting state and set of covariates. The
 #'   internal `rowid` column is regenerated. If `NULL`, uses the data stored by
 #'   [mostm()] and requires exactly one complete designated starting profile
-#'   per fitted patient.
+#'   per fitted patient. Every column the model uses needs a value in every
+#'   row, except the time and `gap_var` columns, which are set at each visit,
+#'   and columns that `variables` sets; other columns may have missing values.
+#'   The previous-state column holds states of the fitted model, as a factor
+#'   (with any levels), numbers, or text.
 #' @param times Required. The consecutive visits at which to calculate SOPs,
 #'   in increasing order, for example `times = 1:30` for daily visits up to day
 #'   30. Each value is one transition, so leaving out visits does not skip
@@ -632,7 +636,12 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   supplied, every row supplies a separate starting state and set of
 #'   covariates. The internal `rowid` column is regenerated. If `NULL`, uses
 #'   data stored by [mostm()] and requires exactly one complete designated
-#'   starting profile per fitted patient.
+#'   starting profile per fitted patient. Every column the model uses needs a
+#'   value in every row, except the time and `gap_var` columns, which are set
+#'   at each visit, and columns that `variables` sets; other columns may have
+#'   missing values.
+#'   The previous-state column holds states of the fitted model, as a factor
+#'   (with any levels), numbers, or text.
 #' @param variables Optional covariates to set before averaging: a named list
 #'   of values, such as `list(tx = c(0, 1))` for probabilities if every patient
 #'   received control or treatment, or bare names, such as `"tx"`. As in

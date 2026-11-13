@@ -81,6 +81,15 @@ plot_lp_difference <- function(
     settings = settings
   )
 
+  # The grid sets `variable`, the previous state and the visit time, so only
+  # the profile's other predictors need values.
+  stop_missing_predictors(
+    model,
+    profile,
+    settings,
+    set_columns = c(variable, settings$p_var),
+    data_arg = "profile"
+  )
   data <- plot_lp_grid(
     model = model,
     profile = profile,
@@ -89,6 +98,7 @@ plot_lp_difference <- function(
     previous_states = previous_states,
     settings = settings
   )
+  data <- normalize_prediction_states(model, data, settings)
   eta <- markov_linear_predictor_matrix(model, data)
   lp_data <- plot_lp_difference_data(
     data = data,
@@ -203,7 +213,8 @@ plot_lp_grid <- function(
           value = prev,
           model = model,
           profile = profile,
-          p_var = p_var
+          p_var = p_var,
+          states = previous_states
         )
         row <- assign_sop_visit(
           row,
@@ -224,9 +235,21 @@ plot_lp_grid <- function(
   out
 }
 
-plot_lp_previous_state <- function(value, model, profile, p_var) {
+# `states` are the plotted previous states, the levels of a factor column
+# when the fit records neither levels nor a type for it.
+plot_lp_previous_state <- function(value, model, profile, p_var, states) {
   if (p_var %in% names(profile)) {
-    return(coerce_previous_state_values(value, profile[[p_var]], p_var))
+    # The type and levels the model reads, from an empty copy of the
+    # profile's column: a factor with only the profile's own state would make
+    # every other previous state NA. The profile's value itself is replaced,
+    # so it is not checked.
+    prototype <- fitted_state_values(
+      model,
+      profile[[p_var]][0L],
+      p_var,
+      states
+    )
+    return(coerce_previous_state_values(value, prototype, p_var))
   }
 
   model_levels <- get_model_factor_levels(model, p_var)
@@ -311,13 +334,7 @@ markov_vglm_link_matrix <- function(model, newdata) {
     return(as.matrix(out))
   }
 
-  tt <- stats::delete.response(stats::terms(model))
-  x <- stats::model.matrix(
-    tt,
-    newdata,
-    contrasts.arg = if (length(model@contrasts)) model@contrasts else NULL,
-    xlev = model@xlevels
-  )
+  x <- vglm_prediction_design(model, newdata)
   attr(x, "assign") <- model@assign
 
   lm2vlm <- utils::getFromNamespace("lm2vlm.model.matrix", "VGAM")

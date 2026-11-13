@@ -28,7 +28,11 @@ For \code{orm} models, the family must be logistic.}
 every row supplies a separate starting state and set of covariates. The
 internal \code{rowid} column is regenerated. If \code{NULL}, uses the data stored by
 \code{\link[=mostm]{mostm()}} and requires exactly one complete designated starting profile
-per fitted patient.}
+per fitted patient. Every column the model uses needs a value in every
+row, except the time and \code{gap_var} columns, which are set at each visit,
+and columns that \code{variables} sets; other columns may have missing values.
+The previous-state column holds states of the fitted model, as a factor
+(with any levels), numbers, or text.}
 
 \item{times}{Required. The consecutive visits at which to calculate SOPs,
 in increasing order, for example \code{times = 1:30} for daily visits up to day
