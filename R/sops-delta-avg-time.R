@@ -20,7 +20,6 @@ inferences_delta_avg_time <- function(
       'Analytical average time requires `conf_type = "wald"`.'
     )
   }
-  target <- delta_validate_target(object, target)
   avg <- replay_avg_time_sops(object, conf_level, return_draws = FALSE)
   avg <- inferences_delta_sops(
     object = avg,
@@ -98,7 +97,7 @@ inferences_delta_avg_time <- function(
   )
   operator <- vector("list", n_result)
   baseline_mean <- numeric(n_result)
-  # ponytail: scan source cells per result; index groups if setup time dominates.
+  # Scan source cells per result; index groups if setup time dominates.
   for (i in seq_len(n_result)) {
     states <- as.character(state_sets[[state_index[i]]])
     selected <- as.character(source$state) %in% states

@@ -215,8 +215,7 @@ flowchart TD
   another engine is an error naming that engine. Unknown names are errors for
   `"orm"` and `"vglm"`; `"blrm"` passes them on, because `rmsb::blrm()` hands
   its own `...` to the Stan optimizer. `x`, `y`, `x.arg`, `y.arg`, and `offset`
-  are rejected (the design matrix and response are always kept), as are the
-  former starting-profile arguments (`markov_reject_legacy_args()`). `type`,
+  are rejected (the design matrix and response are always kept). `type`,
   `cadjust`, and `weights` are rejected for `"blrm"`. The other engines'
   argument lists are looked up only when a name is not accepted, because the
   blrm list loads rmsb and rstan, which would slow every orm or vglm fit and

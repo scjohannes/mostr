@@ -12,6 +12,12 @@ make_avg_sops_object <- function(model, newdata, by = NULL) {
   class(out) <- c("markov_avg_sops", class(out))
   attr(out, "model") <- model
   attr(out, "newdata_orig") <- newdata
+  # As `avg_sops()` stores them: the starting profiles once per scenario.
+  profiles <- newdata[!duplicated(newdata$id), , drop = FALSE]
+  attr(out, "newdata_pred") <- do.call(
+    rbind,
+    lapply(c(0, 1), function(tx) transform(profiles, tx = tx))
+  )
   attr(out, "refit_data") <- newdata
   attr(out, "call_args") <- list(times = 1:2)
   attr(out, "avg_args") <- list(
@@ -50,46 +56,26 @@ make_individual_sops_object <- function(model, newdata) {
   out
 }
 
-test_that("inferences_simulation() validates stored models and custom vcov objects", {
+test_that("inferences_simulation() refuses a custom vcov that is not a matrix", {
   model <- structure(list(coefficients = c(a = 0, b = 0)), class = "mock_model")
   newdata <- data.frame(id = 1:2, tx = c(0, 1), yprev = c(1, 2), time = 1)
   object <- make_avg_sops_object(model, newdata)
-  no_model <- object
-  attr(no_model, "model") <- NULL
-
-  cases <- list(
-    list(
-      label = "no stored model",
-      object = no_model,
-      vcov = NULL,
-      error = "Model not stored"
-    ),
-    list(
-      label = "vcov given as a data frame",
-      object = object,
-      vcov = data.frame(a = c(1, 0), b = c(0, 1)),
-      error = "`vcov` must be a matrix."
-    )
-  )
 
   with_mocked_bindings(
     get_coef = function(model) c(a = 0, b = 0),
-    for (case in cases) {
-      expect_error(
-        mostr:::inferences_simulation(
-          case$object,
-          n_draws = 2,
-          vcov = case$vcov,
-          conf_level = 0.95,
-          conf_type = "perc",
-          workers = NULL,
-          return_draws = FALSE
-        ),
-        case$error,
-        fixed = TRUE,
-        info = case$label
-      )
-    }
+    expect_error(
+      mostr:::inferences_simulation(
+        object,
+        n_draws = 2,
+        vcov = data.frame(a = c(1, 0), b = c(0, 1)),
+        conf_level = 0.95,
+        conf_type = "perc",
+        workers = NULL,
+        return_draws = FALSE
+      ),
+      "`vcov` must be a matrix.",
+      fixed = TRUE
+    )
   )
 })
 
@@ -117,7 +103,6 @@ test_that("inferences() validates the homogenized method interface", {
   with_mocked_bindings(
     inferences_bootstrap = function(object, engine, ...) {
       seen_engine <<- engine
-      attr(object, "engine") <- engine
       object
     },
     {
@@ -208,7 +193,6 @@ test_that("inferences_simulation() falls back when fast-path setup fails", {
 
   expect_s3_class(out, "markov_avg_sops")
   expect_equal(attr(out, "n_successful"), 2L)
-  expect_equal(attr(out, "conf_type"), "wald")
   expect_s3_class(attr(out, "draws"), "data.frame")
 })
 
@@ -341,8 +325,7 @@ test_that("FWB draw weights are normalized within by groups", {
           data,
           id_var,
           workers,
-          packages,
-          globals
+          packages
         ) {
           list(analysis_fn(data, fwb_samples[[1]]))
         },
@@ -359,7 +342,7 @@ test_that("FWB draw weights are normalized within by groups", {
           list(
             model = model,
             data = boot_data,
-            y_levels = 1,
+            ylevels = 1,
             absorb = NULL,
             missing_states = character(0)
           )
@@ -373,6 +356,7 @@ test_that("FWB draw weights are normalized within by groups", {
           n_boot = 1,
           workers = NULL,
           conf_level = 0.95,
+          conf_type = "perc",
           return_draws = TRUE,
           use_coefstart = FALSE
         )
@@ -440,7 +424,7 @@ test_that("FWB individual sops attach each patient's draw weight", {
           list(
             model = model,
             data = boot_data,
-            y_levels = 1:2,
+            ylevels = 1:2,
             absorb = NULL,
             missing_states = character(0)
           )
@@ -453,11 +437,11 @@ test_that("FWB individual sops attach each patient's draw weight", {
           n_boot = 1,
           workers = NULL,
           conf_level = 0.95,
+          conf_type = "perc",
           return_draws = TRUE,
           use_coefstart = FALSE
         )
       },
-      method = "fwb",
       weight_col = "fwb_weight",
       first_weights = c(0.5, 1.5),
       weights = c(0.5, 1.5)
@@ -474,7 +458,6 @@ test_that("FWB individual sops attach each patient's draw weight", {
     public_draws <- mostr::get_draws(out)
 
     expect_s3_class(out, "markov_sops")
-    expect_equal(attr(out, "method"), case$method, info = case$label)
     expect_equal(attr(out, "draw_weights_attached"), TRUE, info = case$label)
     expect_equal(attr(out, "draw_weight_col"), case$weight_col, info = case$label)
     expect_equal(
@@ -501,31 +484,9 @@ test_that("FWB individual sops attach each patient's draw weight", {
 })
 
 test_that("soprob_markov() validates model classes and propagates Bayesian draws", {
-  expect_error(
-    soprob_markov(
-      model = with_fit_settings(structure(list(), class = "other"), y_levels = 1),
-      newdata = data.frame(yprev = 1),
-      times = 1
-    ),
-    "Object class not supported",
-    fixed = TRUE
-  )
-
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
     {
-      expect_error(
-        soprob_markov(
-          model = with_fit_settings(
-            structure(list(vglm_fit = NULL), class = "robcov_vglm"),
-            y_levels = 1:2
-          ),
-          newdata = data.frame(yprev = 1),
-          times = 1
-        ),
-        "does not contain the original vglm fit",
-        fixed = TRUE
-      )
       expect_error(
         soprob_markov(
           model = with_fit_settings(
@@ -616,6 +577,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       n_boot = 1,
       workers = NULL,
       conf_level = 0.95,
+      conf_type = "perc",
       return_draws = FALSE,
       use_coefstart = FALSE
     ),
@@ -632,6 +594,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       n_boot = 1,
       workers = NULL,
       conf_level = 0.95,
+      conf_type = "perc",
       return_draws = FALSE,
       use_coefstart = FALSE
     ),
@@ -655,8 +618,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       data,
       id_var,
       workers,
-      packages,
-      globals
+      packages
     ) {
       lapply(boot_samples, function(sample) analysis_fn(data))
     },
@@ -666,7 +628,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
         return(list(
           model = NULL,
           data = transform(newdata, new_id = id),
-          y_levels = 1:3,
+          ylevels = 1:3,
           absorb = 3,
           missing_states = character(0)
         ))
@@ -674,7 +636,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       list(
         model = model,
         data = transform(newdata, new_id = id),
-        y_levels = 1:2,
+        ylevels = 1:2,
         absorb = 2,
         missing_states = 3
       )
@@ -715,6 +677,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
             n_boot = 3,
             workers = NULL,
             conf_level = 0.8,
+            conf_type = "perc",
             return_draws = TRUE,
             use_coefstart = TRUE
           ),
@@ -740,8 +703,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       data,
       id_var,
       workers,
-      packages,
-      globals
+      packages
     ) {
       list(NULL)
     },
@@ -753,6 +715,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
           n_boot = 1,
           workers = NULL,
           conf_level = 0.95,
+          conf_type = "perc",
           return_draws = FALSE,
           use_coefstart = FALSE
         ),
@@ -797,7 +760,7 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
       list(
         model = model,
         data = boot_data,
-        y_levels = 1:2,
+        ylevels = 1:2,
         absorb = NULL,
         missing_states = character(0)
       )
@@ -832,6 +795,7 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
         n_boot = 1,
         workers = NULL,
         conf_level = 0.95,
+        conf_type = "perc",
         return_draws = TRUE,
         use_coefstart = FALSE
       )
@@ -839,7 +803,6 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
   )
 
   expect_equal(fit_weights_seen, c(0.5, 0.5, 1.5, 1.5))
-  expect_equal(attr(out, "method"), "fwb")
   expect_equal(attr(out, "fwb_weight_type"), "exponential")
   expect_equal(attr(out, "fwb_weight_scale"), "cluster_mean_1")
   expect_s3_class(attr(out, "draws"), "data.frame")

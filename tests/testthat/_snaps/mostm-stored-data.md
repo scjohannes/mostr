@@ -26,16 +26,6 @@
       Error in `mostm()`:
       ! For numeric time, `first_followup_time` must equal the earliest observed scheduled time (`1`).
 
-# mostm() rejects former starting-profile arguments
-
-    Code
-      mostm(ordered(y) ~ time_lin + tx + yprev, family = VGAM::cumulative(reverse = TRUE,
-        parallel = TRUE), data = data, id_var = "id", absorb = 6, start_time = 1,
-      origin_time = 0, time_map = 1:6, engine = "vglm")
-    Condition
-      Error in `mostm()`:
-      ! mostm() does not accept the former starting-profile argument(s) `start_time`, `origin_time`, `time_map`. Use `first_followup_time` to select the stored starting profiles; supply baseline and time-mapping arguments to downstream SOP summary functions.
-
 # automatic SOP prediction never substitutes a later profile row
 
     Code

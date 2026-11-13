@@ -210,7 +210,10 @@ plot_variogram <- function(
       x = "Absolute Time Difference",
       y = "Correlation"
     ) +
-    ggplot2::coord_cartesian(ylim = c(0, 1)) +
+    # The panel starts at 0 unless a correlation is negative.
+    ggplot2::coord_cartesian(
+      ylim = c(min(0, variogram$correlation, na.rm = TRUE), 1)
+    ) +
     ggplot2::theme_bw()
 
   if (smooth) {

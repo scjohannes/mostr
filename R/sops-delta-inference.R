@@ -103,14 +103,12 @@ delta_resolve_vcov <- function(object, vcov) {
 
 delta_validate_target <- function(object, target) {
   if (!is.null(delta_individual_subject(object))) {
-    target <- target %||% "fixed"
     if (!identical(target, "fixed")) {
       stop_individual_conditional_only(object)
     }
     return(target)
   }
 
-  target <- target %||% "empirical"
   if (!target %in% c("empirical", "unconditional")) {
     mostr_abort(
       "Averaged delta inference supports `vcov = \"conditional\"`, ",
@@ -151,16 +149,15 @@ delta_validate_sop_scope <- function(object, model, by) {
   invisible(model_plan)
 }
 
-delta_compile_plan <- function(object, model_plan, newdata, times, output) {
+delta_compile_plan <- function(object, model_plan, newdata, times) {
   plan <- compile_sop_execution_plan(
     model = model_plan,
     newdata = newdata,
     times = times,
     # Only first-order models reach analytical inference
-    # (`delta_validate_target()`).
+    # (`delta_validate_sop_scope()`).
     settings = markov_result_settings(object),
-    builder = "streamed",
-    output = output
+    builder = "streamed"
   )
 
   Gamma <- get_effective_coefs(model_plan)
@@ -438,28 +435,10 @@ delta_finalize_result <- function(
     conf_type = conf_type
   )
   result <- as.data.frame(object)
-  old_inference <- setdiff(inference_columns(), "estimate")
-  result <- result[, setdiff(names(result), old_inference), drop = FALSE]
   result$conf.low <- bounds$conf.low
   result$conf.high <- bounds$conf.high
   result$std.error <- standard_error
   result <- delta_copy_result_attrs(result, object)
-
-  for (name in c(
-    "draws",
-    "n_draws",
-    "n_boot",
-    "n_successful",
-    "engine",
-    "fwb_weight_type",
-    "fwb_weight_scale",
-    "null",
-    "draw_weights_attached",
-    "draw_weight_col",
-    "draw_weight_omission_reason"
-  )) {
-    attr(result, name) <- NULL
-  }
 
   keys <- delta_row_key_frame(result)
   analytical$version <- 1L
@@ -487,20 +466,6 @@ delta_finalize_result <- function(
   result
 }
 
-delta_individual_cells <- function(
-  probabilities,
-  times,
-  y_levels,
-  newdata
-) {
-  array_to_df_individual(
-    sops_array = probabilities,
-    times = times,
-    y_levels = y_levels,
-    newdata = newdata
-  )
-}
-
 delta_average_arrays <- function(
   probabilities,
   jacobian,
@@ -509,39 +474,30 @@ delta_average_arrays <- function(
   y_levels,
   variables,
   n_each,
-  individual_probabilities = NULL,
-  grouped = FALSE
+  individual_probabilities = NULL
 ) {
   n_cf <- nrow(grid)
   q <- dim(jacobian)[4L]
-  if (isTRUE(grouped)) {
-    if (
+  if (
+    !identical(
+      dim(probabilities),
+      c(n_cf, length(times), length(y_levels))
+    ) ||
       !identical(
-        dim(probabilities),
+        dim(jacobian)[seq_len(3L)],
         c(n_cf, length(times), length(y_levels))
-      ) ||
-        !identical(
-          dim(jacobian)[seq_len(3L)],
-          c(n_cf, length(times), length(y_levels))
-        )
-    ) {
-      mostr_abort("Grouped analytical SOP arrays have unexpected dimensions.")
-    }
-    marginal_probabilities <- probabilities
-    marginal_n_each <- 1L
-  } else {
-    marginal_probabilities <- probabilities
-    marginal_n_each <- n_each
-    individual_probabilities <- probabilities
+      )
+  ) {
+    mostr_abort("Grouped analytical SOP arrays have unexpected dimensions.")
   }
   cells <- marginalize_sops_array(
-    sops_array = marginal_probabilities,
+    sops_array = probabilities,
     grid = grid,
     times = times,
     y_levels = y_levels,
     variables = variables,
     n_cf = n_cf,
-    n_each = marginal_n_each
+    n_each = 1L
   )
   average_jacobian <- matrix(NA_real_, nrow = nrow(cells), ncol = q)
   individual_values <- if (is.null(individual_probabilities)) {
@@ -551,23 +507,14 @@ delta_average_arrays <- function(
   }
   cursor <- 1L
   for (scenario in seq_len(n_cf)) {
-    if (isTRUE(grouped)) {
-      scenario_jac <- jacobian[scenario, , , , drop = FALSE]
-    } else {
-      rows <- ((scenario - 1L) * n_each + 1L):(scenario * n_each)
-      scenario_jac <- jacobian[rows, , , , drop = FALSE]
-    }
+    scenario_jac <- jacobian[scenario, , , , drop = FALSE]
     n_cells <- length(times) * length(y_levels)
     output_rows <- cursor:(cursor + n_cells - 1L)
-    average_jacobian[output_rows, ] <- if (isTRUE(grouped)) {
-      matrix(scenario_jac, nrow = n_cells, ncol = q)
-    } else {
-      matrix(
-        apply(scenario_jac, c(2L, 3L, 4L), mean),
-        nrow = n_cells,
-        ncol = q
-      )
-    }
+    average_jacobian[output_rows, ] <- matrix(
+      scenario_jac,
+      nrow = n_cells,
+      ncol = q
+    )
     if (!is.null(individual_values)) {
       rows <- ((scenario - 1L) * n_each + 1L):(scenario * n_each)
       scenario_prob <- individual_probabilities[rows, , , drop = FALSE]
@@ -595,14 +542,6 @@ inferences_delta_sops <- function(
   conf_type
 ) {
   is_average <- inherits(object, "markov_avg_sops")
-  target <- delta_validate_target(object, target)
-  if (identical(target, "unconditional") && !is.null(vcov)) {
-    mostr_abort(
-      "A coefficient covariance matrix cannot be supplied for unconditional inference; ",
-      "unconditional inference uses fitted-model score components and the ",
-      "stacked patient influence function."
-    )
-  }
   model <- attr(object, "model")
   if (is.null(model)) {
     mostr_abort("Model not stored in object. Cannot perform delta inference.")
@@ -661,8 +600,7 @@ inferences_delta_sops <- function(
     object = object,
     model_plan = model_plan,
     newdata = newdata,
-    times = times,
-    output = if (is_average) "average" else "individual"
+    times = times
   )
   engine_result <- delta_validate_plan_result(
     run_sop_delta_plan(
@@ -677,7 +615,7 @@ inferences_delta_sops <- function(
   )
 
   if (!is_average) {
-    calculated <- delta_individual_cells(
+    calculated <- array_to_df_individual(
       engine_result$probabilities,
       times,
       y_levels,
@@ -714,8 +652,7 @@ inferences_delta_sops <- function(
     y_levels = y_levels,
     variables = variables,
     n_each = n_each,
-    individual_probabilities = engine_result$individual_probabilities,
-    grouped = TRUE
+    individual_probabilities = engine_result$individual_probabilities
   )
   key_cols <- c("time", "state", names(variables))
   index <- delta_match_cells(object, reduced$cells, key_cols)

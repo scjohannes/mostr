@@ -380,37 +380,6 @@ test_that("public delta workflow returns bounded SOP and Wald comparison interva
   )
 })
 
-test_that("unconditional targets reject explicit coefficient covariance", {
-  object <- data.frame(
-    estimand = "sop",
-    time = 1,
-    state_set = "1",
-    comparison = "difference",
-    estimate = 0
-  )
-  class(object) <- c("markov_avg_comparisons", "data.frame")
-  attr(object, "comparison_args") <- list(
-    estimand = "sop",
-    comparison = "difference"
-  )
-  attr(object, "avg_args") <- list(
-    variables = list(tx = c(0, 1)),
-    by = NULL
-  )
-
-  condition <- tryCatch(
-    delta_validate_comparison_scope(
-      object,
-      target = "unconditional",
-      vcov = diag(1),
-      conf_type = "wald"
-    ),
-    error = identity
-  )
-  expect_s3_class(condition, "error")
-  expect_match(conditionMessage(condition), "cannot be supplied", fixed = TRUE)
-})
-
 test_that("public fixed VGLM Jacobians match coefficient replay", {
   case <- delta_public_vglm_case()
   point <- sops(
@@ -515,8 +484,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
     object = avg,
     model_plan = model_plan,
     newdata = newdata,
-    times = avg_args$times,
-    output = "average"
+    times = avg_args$times
   )
   engine <- delta_validate_plan_result(
     run_sop_delta_plan(plan, model_plan),
@@ -526,7 +494,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
   )
   grid <- do.call(expand.grid, avg_args$variables)
   n_each <- nrow(newdata) / nrow(grid)
-  reduced <- delta_average_arrays(
+  reduced <- delta_average_profile_arrays(
     probabilities = engine$probabilities,
     jacobian = engine$jacobian,
     grid = grid,

@@ -1,39 +1,7 @@
 # Patient-cluster covariance and unconditional delta-method helpers.
 
-delta_unconditional_coefficients <- function(model) {
-  beta <- get_coef(model)
-  if (
-    !is.numeric(beta) ||
-      length(beta) < 1L ||
-      any(!is.finite(beta)) ||
-      is.null(names(beta)) ||
-      anyNA(names(beta)) ||
-      any(names(beta) == "") ||
-      anyDuplicated(names(beta))
-  ) {
-    mostr_abort(
-      "Analytical inference requires a finite coefficient vector with ",
-      "unique, non-missing names."
-    )
-  }
-  beta
-}
-
-delta_unconditional_model <- function(model) {
-  if (inherits(model, "robcov_vglm")) {
-    fit <- model$vglm_fit
-    if (is.null(fit) || !inherits(fit, "vglm")) {
-      mostr_abort(
-        "The `robcov_vglm` object does not contain its fitted vglm model."
-      )
-    }
-    return(fit)
-  }
-  model
-}
-
 delta_validate_full_po_model <- function(model) {
-  fit <- delta_unconditional_model(model)
+  fit <- sop_delta_backend_model(model)
 
   if (inherits(fit, "blrm")) {
     mostr_abort(
@@ -175,7 +143,7 @@ delta_fitting_row_count <- function(model) {
     return(nrow(model$scores))
   }
 
-  fit <- delta_unconditional_model(model)
+  fit <- sop_delta_backend_model(model)
   if (inherits(fit, "vglm")) {
     return(as.integer(stats::nobs(fit, type = "lm")))
   }
@@ -203,7 +171,7 @@ delta_fitting_row_count <- function(model) {
 }
 
 delta_align_explicit_cluster <- function(model, cluster, n_rows) {
-  fit <- delta_unconditional_model(model)
+  fit <- sop_delta_backend_model(model)
   if (inherits(fit, "vglm")) {
     return(align_cluster_vglm(fit, cluster, n_rows))
   }
@@ -409,7 +377,7 @@ delta_normalize_orm_backend_matrix <- function(
 # The case weights the model was fitted with (`mostm(weights = )`), or NULL.
 # vglm fits store them as a one-column matrix, orm fits as a vector.
 delta_fit_case_weights <- function(model) {
-  fit <- delta_unconditional_model(model)
+  fit <- sop_delta_backend_model(model)
   weights <- if (inherits(fit, "vglm")) {
     tryCatch(methods::slot(fit, "prior.weights"), error = function(e) NULL)
   } else {
@@ -466,7 +434,7 @@ delta_reject_penalized_orm_unconditional <- function(model) {
 # and otherwise using the backend's patient-cluster robust convention.
 get_delta_cluster_vcov <- function(model, cluster = NULL, vcov = NULL) {
   delta_validate_full_po_model(model)
-  beta <- delta_unconditional_coefficients(model)
+  beta <- sop_delta_raw_coef(model)
 
   if (!is.null(vcov)) {
     covariance <- delta_validate_named_matrix(
@@ -480,7 +448,7 @@ get_delta_cluster_vcov <- function(model, cluster = NULL, vcov = NULL) {
       metadata = list(
         source = "explicit",
         covariance = "user_supplied",
-        backend = class(delta_unconditional_model(model))[[1L]],
+        backend = class(sop_delta_backend_model(model))[[1L]],
         type = NA_character_,
         cadjust = NA,
         adjustment_factor = NA_real_,
@@ -492,7 +460,7 @@ get_delta_cluster_vcov <- function(model, cluster = NULL, vcov = NULL) {
   }
 
   cluster_info <- resolve_delta_cluster(model, cluster = cluster)
-  fit <- delta_unconditional_model(model)
+  fit <- sop_delta_backend_model(model)
 
   if (inherits(fit, "vglm")) {
     stored_cluster_matches <- inherits(model, "robcov_vglm") &&
@@ -625,8 +593,8 @@ delta_validate_scores <- function(scores, coefficient_names, n_rows) {
 # per-participant sensitivity for the stacked influence function.
 get_delta_score_components <- function(model, cluster = NULL) {
   delta_validate_full_po_model(model)
-  beta <- delta_unconditional_coefficients(model)
-  fit <- delta_unconditional_model(model)
+  beta <- sop_delta_raw_coef(model)
+  fit <- sop_delta_backend_model(model)
   delta_reject_weighted_unconditional(model)
   if (inherits(fit, "orm")) {
     delta_reject_penalized_orm_unconditional(fit)
@@ -898,13 +866,6 @@ delta_stacked_influence <- function(
   list(
     influence = influence,
     std.error = sqrt(pmax(variance, 0)),
-    estimate = estimate,
-    profile_component = profile_component,
-    coefficient_influence = coefficient_influence,
-    Ainv = Ainv,
-    scores = aligned_scores,
-    ids = profile_ids,
-    n = n,
     metadata = c(
       list(
         source = "stacked_patient_influence",
@@ -920,29 +881,4 @@ delta_stacked_influence <- function(
       score_components$metadata %||% list()
     )
   )
-}
-
-# Propagate a raw-coefficient covariance through an estimand Jacobian.
-delta_empirical_covariance <- function(jacobian, covariance) {
-  jacobian <- delta_validate_profile_matrix(jacobian, "jacobian")
-  coefficient_names <- colnames(jacobian)
-  if (
-    is.null(coefficient_names) ||
-      anyNA(coefficient_names) ||
-      any(coefficient_names == "") ||
-      anyDuplicated(coefficient_names)
-  ) {
-    mostr_abort("`jacobian` columns must have unique raw-coefficient names.")
-  }
-  covariance <- delta_validate_named_matrix(
-    covariance,
-    coefficient_names,
-    "covariance",
-    positive_semidefinite = TRUE
-  )
-  answer <- jacobian %*% covariance %*% t(jacobian)
-  answer <- (answer + t(answer)) / 2
-  row_names <- rownames(jacobian)
-  dimnames(answer) <- list(row_names, row_names)
-  answer
 }

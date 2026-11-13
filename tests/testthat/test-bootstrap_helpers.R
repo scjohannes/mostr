@@ -334,7 +334,6 @@ test_that("parallel helpers restore every level of a nested future plan after an
         n_draws = 1,
         analysis_fn = function(i) stop("boom"),
         workers = 2,
-        globals = TRUE,
         packages = character(0)
       )
     }
@@ -345,25 +344,6 @@ test_that("parallel helpers restore every level of a nested future plan after an
     expect_error(suppressWarnings(failing[[label]]()), info = label)
     expect_length(future::plan("list"), 2L)
   }
-})
-
-test_that("apply_to_bootstrap maps deprecated parallel argument to workers", {
-  data <- data.frame(id = c(1, 2), y = c(3, 4))
-  boot_samples <- list(
-    data.frame(original_id = c(1, 2), new_id = c("1_1", "2_1"), boot_id = 1)
-  )
-
-  expect_warning(
-    result <- apply_to_bootstrap(
-      boot_samples = boot_samples,
-      analysis_fn = function(boot_data) sum(boot_data$y),
-      data = data,
-      id_var = "id",
-      parallel = FALSE
-    ),
-    "parallel.*deprecated"
-  )
-  expect_equal(result[[1]], 7)
 })
 
 test_that("bootstrap_analysis_wrapper drops absent states and refits models", {
@@ -377,13 +357,18 @@ test_that("bootstrap_analysis_wrapper drops absent states and refits models", {
   )
   model <- lm(as.numeric(y) ~ x, data = original_data)
 
-  result <- bootstrap_analysis_wrapper(
-    boot_data = boot_data,
-    model = model,
-    factor_cols = "y",
-    original_data = original_data,
-    y_levels = 1:3,
-    absorb = 3
+  result <- with_mocked_bindings(
+    update_bootstrap_model = function(model, boot_data, ...) {
+      stats::update(model, data = boot_data)
+    },
+    bootstrap_analysis_wrapper(
+      boot_data = boot_data,
+      model = model,
+      factor_cols = "y",
+      original_data = original_data,
+      y_levels = 1:3,
+      absorb = 3
+    )
   )
 
   expect_s3_class(result$model, "lm")
@@ -396,7 +381,11 @@ test_that("bootstrap_analysis_wrapper drops absent states and refits models", {
 
 test_that("bootstrap_analysis_wrapper reports model fitting failures", {
   boot_data <- data.frame(y = factor(c(1, 2)), x = c(1, 2))
-  model <- structure(list(), class = "not_updateable")
+  # The stored call names a function that does not exist, so the refit fails.
+  model <- structure(
+    list(call = quote(mostr_test_missing_fitter())),
+    class = "not_refittable"
+  )
 
   expect_warning(
     result <- bootstrap_analysis_wrapper(
@@ -417,12 +406,12 @@ test_that("bootstrap_analysis_wrapper refits with the datadist option unset", {
 
   # The user's `datadist` option as the refit sees it.
   datadist_seen <- "not refitted"
-  update.orm <- function(object, data, ...) {
+  mostr_test_refit <- function(data, ...) {
     datadist_seen <<- getOption("datadist")
     structure(list(data = data), class = "orm")
   }
-  assign("update.orm", update.orm, envir = globalenv())
-  withr::defer(rm("update.orm", envir = globalenv()))
+  assign("mostr_test_refit", mostr_test_refit, envir = globalenv())
+  withr::defer(rm("mostr_test_refit", envir = globalenv()))
 
   old_dd <- structure(list(source = "existing"), class = "datadist")
   assign("dd", old_dd, envir = globalenv())
@@ -440,7 +429,7 @@ test_that("bootstrap_analysis_wrapper refits with the datadist option unset", {
   result <- expect_no_warning(
     bootstrap_analysis_wrapper(
       boot_data = boot_data,
-      model = structure(list(), class = "orm"),
+      model = structure(list(call = quote(mostr_test_refit())), class = "orm"),
       factor_cols = "y",
       original_data = boot_data
     )
@@ -453,36 +442,38 @@ test_that("bootstrap_analysis_wrapper refits with the datadist option unset", {
 })
 
 test_that("update_bootstrap_model suppresses only known orm weight warning", {
-  update.orm <- function(object, data, weights = NULL, ...) {
+  # The stored call of a hand-made fit names the function that refits it.
+  mostr_test_refit <- function(data, weights = NULL, ...) {
     warning(
       "currently weights are ignored in model validation and bootstrapping orm fits",
       call. = FALSE
     )
     structure(list(data = data), class = "orm")
   }
-  assign("update.orm", update.orm, envir = globalenv())
-  withr::defer(rm("update.orm", envir = globalenv()))
+  assign("mostr_test_refit", mostr_test_refit, envir = globalenv())
+  withr::defer(rm("mostr_test_refit", envir = globalenv()))
 
+  model <- structure(list(call = quote(mostr_test_refit())), class = "orm")
   boot_data <- data.frame(y = 1:3, .mostr_fit_weight = c(0.5, 1, 1.5))
 
   result <- expect_no_warning(
     mostr:::update_bootstrap_model(
-      structure(list(), class = "orm"),
+      model,
       boot_data,
       fit_weights = boot_data$.mostr_fit_weight
     )
   )
   expect_s3_class(result, "orm")
 
-  update.orm <- function(object, data, weights = NULL, ...) {
+  mostr_test_refit <- function(data, weights = NULL, ...) {
     warning("important warning", call. = FALSE)
     structure(list(data = data), class = "orm")
   }
-  assign("update.orm", update.orm, envir = globalenv())
+  assign("mostr_test_refit", mostr_test_refit, envir = globalenv())
 
   expect_warning(
     mostr:::update_bootstrap_model(
-      structure(list(), class = "orm"),
+      model,
       boot_data,
       fit_weights = boot_data$.mostr_fit_weight
     ),
@@ -492,22 +483,23 @@ test_that("update_bootstrap_model suppresses only known orm weight warning", {
 
 test_that("bootstrap_analysis_wrapper falls back when coefstart update fails", {
   coef.vglm <- function(object, ...) object$coefficients
-  update.vglm <- function(object, data, coefstart = NULL, ...) {
+  # The stored call of a hand-made fit names the function that refits it.
+  mostr_test_refit <- function(data, coefstart = NULL, ...) {
     if (!is.null(coefstart)) {
       stop("coefstart failed")
     }
-    structure(
-      list(data = data, coefficients = object$coefficients),
-      class = "vglm"
-    )
+    structure(list(data = data, coefficients = c(a = 1)), class = "vglm")
   }
   assign("coef.vglm", coef.vglm, envir = globalenv())
-  assign("update.vglm", update.vglm, envir = globalenv())
+  assign("mostr_test_refit", mostr_test_refit, envir = globalenv())
   withr::defer(rm("coef.vglm", envir = globalenv()))
-  withr::defer(rm("update.vglm", envir = globalenv()))
+  withr::defer(rm("mostr_test_refit", envir = globalenv()))
 
   boot_data <- data.frame(y = factor(c(1, 2)), x = c(0, 1))
-  model <- structure(list(coefficients = c(a = 1)), class = "vglm")
+  model <- structure(
+    list(coefficients = c(a = 1), call = quote(mostr_test_refit())),
+    class = "vglm"
+  )
 
   result <- bootstrap_analysis_wrapper(
     boot_data = boot_data,
@@ -519,87 +511,6 @@ test_that("bootstrap_analysis_wrapper falls back when coefstart update fails", {
 
   expect_s3_class(result$model, "vglm")
   expect_equal(result$model$data, boot_data)
-})
-
-test_that("bootstrap_analysis_wrapper multiplies fractional weights with call weights and stored fit weights", {
-  update.mock_weighted <- function(object, data, weights = NULL, ...) {
-    weight_expr <- substitute(weights)
-    structure(
-      list(
-        data = data,
-        weights = eval(weight_expr, data, parent.frame())
-      ),
-      class = "mock_weighted"
-    )
-  }
-  assign("update.mock_weighted", update.mock_weighted, envir = globalenv())
-  withr::defer(rm("update.mock_weighted", envir = globalenv()))
-
-  call_data <- data.frame(
-    y = factor(c(1, 2, 3)),
-    x = c(0, 1, 2),
-    w = c(2, 3, 4)
-  )
-  make_weighted_lm <- function() {
-    original_data <- data.frame(
-      y = c(1, 2, 3, 4),
-      x = c(0, 1, 2, 3)
-    )
-    original_weights <- c(2, 3, 4, 5)
-
-    list(
-      model = stats::lm(
-        y ~ x,
-        data = original_data,
-        weights = original_weights
-      ),
-      data = original_data
-    )
-  }
-  weighted_lm <- make_weighted_lm()
-
-  cases <- list(
-    list(
-      label = "weights named in the model call",
-      model = structure(
-        list(call = quote(mock_fit(y ~ x, data = original_data, weights = w))),
-        class = "mock_weighted"
-      ),
-      data = call_data,
-      factor_cols = "y",
-      fit_weights = c(0.5, 1, 1.5),
-      class = "mock_weighted",
-      expected = c(1, 3, 6),
-      # The refit also sees the product as a data column.
-      stored = function(model) model$data$.mostr_fit_weight
-    ),
-    list(
-      label = "weights stored on an lm fit",
-      model = weighted_lm$model,
-      data = weighted_lm$data,
-      factor_cols = character(0),
-      fit_weights = c(0.5, 1, 1.5, 2),
-      class = "lm",
-      expected = c(1, 3, 6, 10),
-      stored = function(model) model$model[["(weights)"]]
-    )
-  )
-
-  for (case in cases) {
-    result <- expect_no_warning(
-      bootstrap_analysis_wrapper(
-        boot_data = case$data,
-        model = case$model,
-        factor_cols = case$factor_cols,
-        original_data = case$data,
-        fit_weights = case$fit_weights
-      )
-    )
-
-    expect_s3_class(result$model, case$class)
-    expect_equal(result$model$weights, case$expected, info = case$label)
-    expect_equal(case$stored(result$model), case$expected, info = case$label)
-  }
 })
 
 test_that("bootstrap_analysis_wrapper decides when refits use starting values", {

@@ -14,14 +14,6 @@
       Error in `robcov_vglm()`:
       ! Score columns must exactly match vglm coefficient names and order.
 
-# Small-sample adjustment / separates HC1 and cluster corrections
-
-    Code
-      robcov_vglm(m, cluster = cluster, adjust = TRUE, cadjust = TRUE)
-    Condition
-      Error in `robcov_vglm()`:
-      ! Supply only one of legacy `adjust` and `cadjust`, not both.
-
 # Utility methods / print and summary methods work
 
     Code

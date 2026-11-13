@@ -162,7 +162,8 @@ plot_comparisons <- function(
             ribbon_mapping,
             alpha = ribbon_alpha,
             color = NA
-          )
+          ) +
+          ggplot2::labs(fill = plot_comparisons_axis_label(color_var))
       } else {
         p <- p +
           ggplot2::geom_ribbon(
@@ -201,7 +202,6 @@ plot_comparisons <- function(
         comparison
       ),
       colour = plot_comparisons_axis_label(color_var),
-      fill = plot_comparisons_axis_label(color_var),
       linetype = plot_comparisons_axis_label(linetype_var),
       title = plot_comparisons_title(data)
     )

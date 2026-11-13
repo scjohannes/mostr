@@ -73,32 +73,22 @@ get_effective_coefs_vglm <- function(model, beta = NULL) {
   colnames(Gamma) <- term_names
   rownames(Gamma) <- paste0("eta", 1:M)
 
-  # 5. Iterate through terms and consume coefficients
   # vglm stores coefficients in the order of the terms in constraints()
   current_idx <- 1
 
   for (j in seq_along(C_list)) {
     term <- term_names[j]
     C_j <- C_list[[j]] # Matrix [M x k]
-
-    # How many coefs for this term? (k)
     k <- ncol(C_j)
-
-    # Extract the chunk of beta
     beta_chunk <- beta[current_idx:(current_idx + k - 1)]
 
-    # Compute effective coefficients for this term: C_j %*% beta_j
-    # Result is a vector of length M
+    # Effective coefficients of this term, C_j %*% beta_j: a vector of length M
     gamma_j <- C_j %*% beta_chunk
-
-    # Store in Gamma matrix
     Gamma[, term] <- as.vector(gamma_j)
 
-    # Advance index
     current_idx <- current_idx + k
   }
 
-  # Sanity check
   if (current_idx - 1 != length(beta)) {
     warning(
       "Mismatch in coefficient consumption. ",

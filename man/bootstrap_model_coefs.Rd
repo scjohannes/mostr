@@ -4,13 +4,7 @@
 \alias{bootstrap_model_coefs}
 \title{Bootstrap confidence intervals for model coefficients}
 \usage{
-bootstrap_model_coefs(
-  model,
-  n_boot,
-  workers = NULL,
-  parallel = NULL,
-  use_coefstart = FALSE
-)
+bootstrap_model_coefs(model, n_boot, workers = NULL, use_coefstart = FALSE)
 }
 \arguments{
 \item{model}{A model fitted with \code{\link[=mostm]{mostm()}} and the \code{"orm"} or \code{"vglm"}
@@ -21,9 +15,6 @@ resamples patients from those stored data.}
 
 \item{workers}{Number of workers for parallel processing. If NULL (default)
 or 1, sequential processing is used. If > 1, uses parallel processing.}
-
-\item{parallel}{(Deprecated) Logical indicating whether to use parallel
-processing. Use the \code{workers} parameter instead.}
 
 \item{use_coefstart}{Logical. If \code{TRUE}, each refit starts from the
 original model coefficients, which can speed up convergence. Only models

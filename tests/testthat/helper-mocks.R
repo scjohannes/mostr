@@ -14,12 +14,10 @@ with_fit_settings <- function(
   p_var = "yprev",
   p2_var = NULL,
   y_levels = markov_model_ylevels_or_null(model),
-  engine = markov_model_engine(model),
   absorb = NULL,
   gap_var = NULL
 ) {
   settings <- markov_settings(
-    engine = engine,
     id_var = id_var,
     time_var = time_var,
     p_var = p_var,
@@ -27,8 +25,6 @@ with_fit_settings <- function(
     y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
-    first_followup_time =
-      markov_model_starting_profile_metadata(model)$first_followup_time,
     from_fit = setdiff(
       markov_settings_fit_fields(),
       if (is.null(y_levels)) "y_levels"

@@ -77,22 +77,6 @@ preflight_execution_plan_designs <- function(
   )
 }
 
-measure_execution_plan_designs <- function(X_init, X_transition) {
-  matrices <- c(list(X_init), Filter(Negate(is.null), X_transition))
-  sum(vapply(
-    matrices,
-    function(x) as.double(length(x)) * 8,
-    numeric(1)
-  ))
-}
-
-validate_execution_plan_designs <- function(design_bytes, workspace_bytes) {
-  if (!is.finite(design_bytes) || design_bytes > workspace_bytes) {
-    stop_execution_plan_too_large(design_bytes, workspace_bytes)
-  }
-  invisible(NULL)
-}
-
 # A plan for the SOPs of `newdata` at `times`: the prediction designs of every
 # visit, built once, with the columns and states named in `settings`
 # (`resolve_markov_settings()`). `run_sop_execution_plan()` runs it for any
@@ -102,8 +86,7 @@ compile_sop_execution_plan <- function(
   newdata,
   times,
   settings,
-  builder = c("batched", "streamed"),
-  output = "array"
+  builder = c("batched", "streamed")
 ) {
   builder <- match.arg(builder)
   validate_markov_model(model)
@@ -116,7 +99,6 @@ compile_sop_execution_plan <- function(
       newdata = newdata,
       times = times,
       settings = settings,
-      output = output,
       Gamma = Gamma_template
     ))
   }
@@ -147,14 +129,8 @@ compile_sop_execution_plan <- function(
       times = resolved_times,
       y_levels = as_state_labels(settings$y_levels),
       absorb = as_state_labels(settings$absorb),
-      time_var = settings$time_var,
-      p_var = settings$p_var,
-      p2_var = NULL,
-      gap_var = settings$gap_var,
-      output = output,
       workspace_bytes = components$workspace_bytes,
       design_bytes = components$design_bytes,
-      basis_terms = attr(model, "markov_basis_terms", exact = TRUE),
       components = components
     ),
     class = "markov_sop_exec_plan"
@@ -182,7 +158,6 @@ compile_second_order_execution_plan <- function(
   newdata,
   times,
   settings,
-  output,
   Gamma
 ) {
   y_levels <- settings$y_levels
@@ -251,16 +226,6 @@ compile_second_order_execution_plan <- function(
     )
   }
   initial_data <- set_visit(newdata, 1L)
-  initial_data[[p_var]] <- normalize_previous_state_column(
-    initial_data[[p_var]],
-    newdata[[p_var]],
-    p_var
-  )
-  initial_data[[p2_var]] <- normalize_previous_state_column(
-    initial_data[[p2_var]],
-    newdata[[p2_var]],
-    p2_var
-  )
   X_init <- get_X(initial_data)
   designs <- vector("list", length(times))
   if (length(times) >= 2L) {
@@ -286,8 +251,6 @@ compile_second_order_execution_plan <- function(
       designs[[visit]] <- get_X(expanded)
     }
   }
-  design_bytes <- measure_execution_plan_designs(X_init, designs)
-  validate_execution_plan_designs(design_bytes, budget$workspace_bytes)
   structure(
     list(
       version = 1L,
@@ -297,13 +260,8 @@ compile_second_order_execution_plan <- function(
       times = times,
       y_levels = ylevel_names,
       absorb = as_state_labels(absorb),
-      time_var = settings$time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = settings$gap_var,
-      output = output,
       workspace_bytes = budget$workspace_bytes,
-      design_bytes = design_bytes,
+      design_bytes = budget$design_bytes,
       components = list(
         X_init = X_init,
         X_transition = designs,

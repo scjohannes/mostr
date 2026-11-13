@@ -47,24 +47,14 @@ stop_missing_mostm_id_var <- function() {
   )
 }
 
-warn_duplicate_markov_id_time <- function(
-  data,
-  id_var,
-  time_var = "time",
-  wrapper = "mostm()"
-) {
-  if (!time_var %in% names(data)) {
-    return(invisible(NULL))
-  }
-
+warn_duplicate_markov_id_time <- function(data, id_var, time_var = "time") {
   key <- data[c(id_var, time_var)]
   if (anyDuplicated(key) == 0L) {
     return(invisible(NULL))
   }
 
   warning(
-    wrapper,
-    " received data with duplicate `",
+    "mostm() received data with duplicate `",
     id_var,
     "` x `",
     time_var,
@@ -485,32 +475,16 @@ markov_validate_starting_profiles <- function(
   profiles
 }
 
-markov_subset_source_data <- function(data, subset, eval_env) {
+markov_subset_source_data <- function(data, subset) {
   if (is.null(subset)) {
     return(list(data = data, rows = seq_len(nrow(data))))
   }
 
-  selection <- eval(subset, data, eval_env)
-  rows <- seq_len(nrow(data))[selection]
+  rows <- seq_len(nrow(data))[subset]
   rows <- rows[!is.na(rows)]
   list(data = data[rows, , drop = FALSE], rows = rows)
 }
 
-# Earlier fitting functions accepted these starting-profile arguments.
-markov_reject_legacy_args <- function(dots) {
-  legacy <- intersect(c("start_time", "origin_time", "time_map"), names(dots))
-  if (!length(legacy)) {
-    return(invisible(NULL))
-  }
-
-  mostr_abort(
-    "mostm() does not accept the former starting-profile argument(s) ",
-    paste0("`", legacy, "`", collapse = ", "),
-    ". Use `first_followup_time` to select the stored starting profiles; ",
-    "supply baseline and time-mapping arguments to downstream SOP summary ",
-    "functions."
-  )
-}
 
 markov_first_followup_time <- function(time, first_followup_time) {
   if (is.numeric(time)) {
@@ -601,21 +575,13 @@ markov_prepare_stored_data <- function(
   data,
   formula,
   subset,
-  eval_env,
   fit_data,
   id_var,
   time_var,
   first_followup_time,
   starting_profiles = TRUE
 ) {
-  if (!is.data.frame(data)) {
-    return(list(
-      refit_data = NULL,
-      starting_profile_data = NULL,
-      starting_profile_metadata = NULL
-    ))
-  }
-  source <- markov_subset_source_data(data, subset, eval_env)
+  source <- markov_subset_source_data(data, subset)
   refit_data <- source$data
   if (!starting_profiles) {
     return(list(
@@ -628,7 +594,6 @@ markov_prepare_stored_data <- function(
     refit_data[[time_var]],
     first_followup_time
   )
-  validate_markov_id_var(id_var, fit_data, "fitted data")
 
   fitted_ids <- unique(as.character(fit_data[[id_var]]))
   if (anyNA(fitted_ids) || any(fitted_ids == "")) {
@@ -668,15 +633,10 @@ markov_prepare_stored_data <- function(
     starting_profile_data = starting_profile_data,
     starting_profile_metadata = list(
       id_var = id_var,
-      time_var = time_var,
       first_followup_time = scheduled_start,
       required_variables = required,
       predictor_variables = predictor_variables,
-      fitted_ids = fitted_ids,
-      factor_levels = lapply(
-        refit_data[vapply(refit_data, is.factor, logical(1))],
-        levels
-      )
+      fitted_ids = fitted_ids
     )
   )
 }
@@ -733,20 +693,6 @@ resolve_markov_source_data <- function(model, newdata, settings = NULL) {
   source_data <- if (newdata_supplied) {
     newdata
   } else {
-    metadata <- markov_model_starting_profile_metadata(model)
-    if (
-      !is.null(time_var) &&
-        !is.null(metadata$time_var) &&
-        !identical(time_var, metadata$time_var)
-    ) {
-      mostr_abort(
-        "Automatic SOP prediction requested `time_var = \"",
-        time_var,
-        "\"`, but `mostm()` stored the starting profiles using `",
-        metadata$time_var,
-        "`. Refit with the intended `time_var` or supply explicit `newdata`."
-      )
-    }
     markov_validate_starting_profiles(
       model,
       required_variables = c(time_var, settings$p_var)

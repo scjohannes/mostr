@@ -18,13 +18,10 @@ time_in_state(
 \item \strong{Array:} \verb{[Patients x Time x States]} (Frequentist) or \verb{[Draws x Patients x Time x States]} (Bayes).
 \item \strong{Tidy SOP:} A \code{markov_sops}, \code{markov_avg_sops}, or
 \code{markov_interpolated_sops} object.
-\item \strong{Data Frame:} Legacy wide bootstrap SOP data containing columns
-\code{boot_id}, \code{time}, \code{tx}, and \verb{state_*}.
 }}
 
 \item{target_states}{Vector of target state(s) to include in the time calculation.
-Can be integer indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).
-For bootstrap outputs, these must match the suffix of the \code{state_} columns (e.g., if column is \code{state_1}, use \code{1}).}
+Can be integer indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).}
 
 \item{time_map}{Optional named numeric vector or data frame mapping visit
 labels to real elapsed times. Supplying this switches tidy SOP and array
@@ -57,13 +54,6 @@ limits but neither draws nor delta-method results, these columns are
 \code{NA}. Tests from
 \code{inferences(null = )} are dropped, because a null value for
 probabilities does not apply to a total time.
-\item \strong{Input = Bootstrap DF:} A data frame with columns:
-\itemize{
-\item \code{boot_id}: Bootstrap iteration
-\item \code{SOP_tx}: Mean time in target state (Treatment)
-\item \code{SOP_ctrl}: Mean time in target state (Control)
-\item \code{delta}: Difference (Treatment - Control)
-}
 }
 }
 \description{
@@ -83,10 +73,6 @@ intervals and standard errors. For SOPs from
 the totals are computed with the delta method; see Details. SOPs with
 confidence limits but no stored draws give totals with \code{NA} limits and
 a warning; see Details.
-\item \strong{Legacy Wide Bootstrap-Level:} If input is a data frame with
-\code{boot_id}, \code{time}, \code{tx}, and \verb{state_*} columns, it returns mean
-time-in-state per treatment group and the difference for each bootstrap
-sample.
 }
 }
 \details{

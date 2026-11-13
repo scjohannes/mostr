@@ -353,3 +353,53 @@ oracle_visit_design <- function(components, visit, non_absorb) {
   }
   X[rows, , drop = FALSE]
 }
+
+# R reference for the compiled averaging in analytical inference: averages
+# per-profile SOPs and their Jacobians over the profiles of each scenario.
+# `probabilities` and `jacobian` hold one row per scenario-profile pair, in
+# grid blocks of `n_each` profiles.
+delta_average_profile_arrays <- function(
+  probabilities,
+  jacobian,
+  grid,
+  times,
+  y_levels,
+  variables,
+  n_each
+) {
+  n_cf <- nrow(grid)
+  q <- dim(jacobian)[4L]
+  cells <- marginalize_sops_array(
+    sops_array = probabilities,
+    grid = grid,
+    times = times,
+    y_levels = y_levels,
+    variables = variables,
+    n_cf = n_cf,
+    n_each = n_each
+  )
+  average_jacobian <- matrix(NA_real_, nrow = nrow(cells), ncol = q)
+  individual_values <- matrix(NA_real_, nrow = n_each, ncol = nrow(cells))
+  n_cells <- length(times) * length(y_levels)
+  cursor <- 1L
+  for (scenario in seq_len(n_cf)) {
+    rows <- ((scenario - 1L) * n_each + 1L):(scenario * n_each)
+    output_rows <- cursor:(cursor + n_cells - 1L)
+    average_jacobian[output_rows, ] <- matrix(
+      apply(jacobian[rows, , , , drop = FALSE], c(2L, 3L, 4L), mean),
+      nrow = n_cells,
+      ncol = q
+    )
+    individual_values[, output_rows] <- matrix(
+      probabilities[rows, , , drop = FALSE],
+      nrow = n_each,
+      ncol = n_cells
+    )
+    cursor <- cursor + n_cells
+  }
+  list(
+    cells = cells,
+    jacobian = average_jacobian,
+    individual_values = individual_values
+  )
+}

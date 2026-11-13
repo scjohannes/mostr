@@ -366,14 +366,14 @@ mostm <- function(
   type = c("HC0", "HC1"),
   cadjust = NULL
 ) {
+  model_call <- match.call()
   refit_args <- markov_capture_refit_args(
-    match.call(),
+    model_call,
     environment(),
     names(formals(sys.function())),
     ...
   )
   engine <- match.arg(engine)
-  model_call <- match.call()
   model_call[[1L]] <- quote(mostm)
   model_call$engine <- engine
   dots <- match.call(expand.dots = FALSE)$...
@@ -520,7 +520,6 @@ mostm <- function(
     data = data,
     formula = formula,
     subset = subset_rows,
-    eval_env = eval_env,
     fit_data = fit_data,
     id_var = id_var,
     time_var = time_var,
@@ -538,7 +537,6 @@ mostm <- function(
   # object without them can't be used to predict (`stop_no_fitted_states()`).
   y_levels <- markov_model_ylevels_or_null(fitted$fit)
   settings <- markov_settings(
-    engine = engine,
     id_var = id_var,
     time_var = time_var,
     p_var = p_var,
@@ -546,7 +544,6 @@ mostm <- function(
     y_levels = y_levels,
     absorb = absorb,
     gap_var = gap_var,
-    first_followup_time = stored$starting_profile_metadata$first_followup_time,
     from_fit = setdiff(
       markov_settings_fit_fields(),
       if (is.null(y_levels)) "y_levels"
@@ -740,7 +737,6 @@ mostm_check_engine_args <- function(engine, dots, values) {
       "Arguments passed to the engine through `...` must be named."
     )
   }
-  markov_reject_legacy_args(dots)
   if ("offset" %in% supplied) {
     stop_unsupported_offset()
   }

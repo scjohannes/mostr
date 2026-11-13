@@ -481,16 +481,6 @@ test_that("avg_comparisons() validates v1 interface boundaries", {
         "`times` must be supplied to `avg_comparisons()`.",
         fixed = TRUE
       )
-      expect_error(
-        avg_comparisons(
-          structure(list(), class = "mock_model", markov_id_var = "id"),
-          variables = list(tx = c(0, 1)),
-          times = 1,
-          origin = "none"
-        ),
-        "`origin` is no longer supported; use `baseline_time` instead.",
-        fixed = TRUE
-      )
     }
   )
 })

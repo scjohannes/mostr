@@ -180,7 +180,7 @@ describe("robcov_vglm()", {
     # Check n matches
     expect_equal(result$n, n)
 
-    result_row_cluster <- robcov_vglm(m, cluster = seq_len(n), adjust = FALSE)
+    result_row_cluster <- robcov_vglm(m, cluster = seq_len(n), cadjust = FALSE)
     expect_equal(result_row_cluster$var, result$var, tolerance = 1e-15)
 
     # coef() and vcov() return the stored estimates.
@@ -299,14 +299,14 @@ describe("robcov_vglm()", {
     })
 
     # rms::robcov() makes no small-sample correction for clusters, so the
-    # clustered rows turn it off, once with the legacy `adjust` spelling.
+    # clustered rows turn it off.
     cases <- list(
       list(label = "binary", fits = binary, cluster = NULL, args = list(), tolerance = 1e-6),
       list(
         label = "binary, clustered",
         fits = binary_clustered,
         cluster = binary_clusters,
-        args = list(adjust = FALSE),
+        args = list(cadjust = FALSE),
         tolerance = 1e-6,
         n_clusters = n_clusters
       ),
@@ -622,20 +622,6 @@ describe("Small-sample adjustment", {
     )
     expect_equal(result_both$adjustment_factor, hc1_factor * 20 / 19)
 
-    expect_warning(
-      result_legacy <- robcov_vglm(m, cluster = cluster, adjust = TRUE),
-      "fewer than 30 clusters"
-    )
-    expect_equal(result_legacy$var, result_adj$var)
-
-    expect_snapshot(error = TRUE, {
-      robcov_vglm(
-        m,
-        cluster = cluster,
-        adjust = TRUE,
-        cadjust = TRUE
-      )
-    })
   })
 })
 
@@ -932,14 +918,14 @@ describe("Utility methods", {
     # Test with clustering and no adjustment
     cluster <- rep(1:10, each = 10)
     expect_warning(
-      result_cl <- robcov_vglm(m, cluster = cluster, adjust = FALSE),
+      result_cl <- robcov_vglm(m, cluster = cluster, cadjust = FALSE),
       "fewer than 30 clusters"
     )
     expect_snapshot(summary(result_cl))
 
     # Test with clustering and explicit adjustment
     expect_warning(
-      result_adj <- robcov_vglm(m, cluster = cluster, adjust = TRUE),
+      result_adj <- robcov_vglm(m, cluster = cluster, cadjust = TRUE),
       "fewer than 30 clusters"
     )
     expect_snapshot(summary(result_adj))

@@ -276,7 +276,6 @@ mostm_fit_vglm <- function(
 
   attr(answer, "markov_vglm") <- TRUE
   attr(answer, "markov_split_assign") <- split_assign$has_basis
-  attr(answer, "markov_basis_terms") <- split_assign$basis_terms
 
   list(fit = answer, fit_data = fit_data)
 }
@@ -325,16 +324,9 @@ split_rms_basis_assign <- function(x, terms) {
     function(term) length(rms_basis_handlers_for_term(term)) > 0L,
     logical(1)
   )]
-  basis_metadata <- vector("list", length(basis_terms))
-  names(basis_metadata) <- basis_terms
 
   for (term in basis_terms) {
     cols <- assign[[term]]
-    basis_metadata[[term]] <- list(
-      handlers = rms_basis_handlers_for_term(term),
-      columns = colnames(x)[cols],
-      column_indices = as.integer(cols)
-    )
     pos <- match(term, names(assign))
     assign[term] <- NULL
     split_cols <- stats::setNames(as.list(cols), colnames(x)[cols])
@@ -344,8 +336,7 @@ split_rms_basis_assign <- function(x, terms) {
   list(
     assign = assign,
     orig_assign = orig_assign,
-    has_basis = length(basis_terms) > 0L,
-    basis_terms = basis_metadata
+    has_basis = length(basis_terms) > 0L
   )
 }
 

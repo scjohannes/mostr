@@ -160,7 +160,6 @@ avg_comparisons <- function(
   stop_removed_fit_arguments(...)
   stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
-  stop_legacy_baseline_args(extra_args)
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)
@@ -214,8 +213,7 @@ avg_comparisons <- function(
       by = by,
       times = times,
       settings = settings,
-      include_re = include_re,
-      ...
+      include_re = include_re
     )
     # The point estimate calls `sops()` on the counterfactual rows as supplied
     # `newdata`, so check `times` here against the original profiles.

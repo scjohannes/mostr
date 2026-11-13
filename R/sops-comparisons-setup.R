@@ -1,16 +1,5 @@
 # Average comparison setup helpers.
 
-stop_legacy_baseline_args <- function(extra_args) {
-  legacy_args <- intersect(names(extra_args), c("origin_time", "origin"))
-  if (length(legacy_args) > 0L) {
-    mostr_abort(
-      "`",
-      legacy_args[1L],
-      "` is no longer supported; use `baseline_time` instead."
-    )
-  }
-  invisible(NULL)
-}
 
 validate_comparison_times <- function(times, fn) {
   if (missing(times) || is.null(times)) {
@@ -301,11 +290,8 @@ avg_comparison_setup <- function(
   by,
   times,
   settings,
-  include_re,
-  ...
+  include_re
 ) {
-  validate_markov_model(model)
-
   data_res <- resolve_markov_source_data(model, newdata, settings)
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data

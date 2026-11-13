@@ -29,12 +29,10 @@ inferences_bootstrap <- function(
   n_boot,
   workers,
   conf_level,
-  conf_type = "perc",
+  conf_type,
   return_draws,
   use_coefstart
 ) {
-  engine <- match.arg(engine, choices = c("standard", "fwb"))
-
   if (!inherits(object, "markov_avg_sops")) {
     if (engine != "fwb") {
       mostr_abort(
@@ -59,7 +57,6 @@ inferences_bootstrap <- function(
   model <- attr(object, "model")
   prediction_data <- attr(object, "newdata_pred")
   newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
-  call_args <- attr(object, "call_args")
   avg_args <- attr(object, "avg_args")
 
   settings <- markov_result_settings(object)
@@ -89,7 +86,7 @@ inferences_bootstrap <- function(
     settings$p2_var
   )
 
-  # --- 4. Define Analysis Function ---
+  # --- 3. Define Analysis Function ---
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
     baseline_anchor <- NULL
     if (engine == "standard") {
@@ -118,7 +115,7 @@ inferences_bootstrap <- function(
 
     m_boot <- boot_result$model
     boot_data <- boot_result$data
-    boot_ylevels <- boot_result$ylevels %||% boot_result$y_levels
+    boot_ylevels <- boot_result$ylevels
     boot_absorb <- boot_result$absorb
     missing_states <- boot_result$missing_states
 
@@ -287,7 +284,7 @@ inferences_bootstrap <- function(
     result
   }
 
-  # --- 5. Apply to Bootstrap Samples ---
+  # --- 4. Apply to Bootstrap Samples ---
   if (engine == "standard") {
     boot_ids <- fast_group_bootstrap(
       data = refit_data,
@@ -303,7 +300,6 @@ inferences_bootstrap <- function(
       state_cols = factor_cols,
       starting_states = bootstrap_starting_states(
         profiles = if (newdata_supplied) prediction_data,
-        variables = variables,
         state_vars = c(settings$p_var, settings$p2_var)
       )
     )
@@ -333,26 +329,7 @@ inferences_bootstrap <- function(
       data = refit_data,
       id_var = id_var,
       workers = workers,
-      packages = c("rms", "VGAM", "Hmisc", "stats"),
-      globals = c(
-        "model",
-        "object",
-        "prediction_data",
-        "newdata_supplied",
-        "variables",
-        "times",
-        "y_levels",
-        "settings",
-        "n_times",
-        "n_states",
-        "factor_cols",
-        "use_coefstart",
-        "engine",
-        "id_var",
-        "by",
-        "complete_bootstrap_sop_states",
-        "state_factor"
-      )
+      packages = c("rms", "VGAM", "Hmisc", "stats")
     )
   } else {
     fwb_samples <- generate_fwb_bootstrap_weights(
@@ -367,30 +344,11 @@ inferences_bootstrap <- function(
       data = refit_data,
       id_var = id_var,
       workers = workers,
-      packages = c("rms", "VGAM", "Hmisc", "stats"),
-      globals = c(
-        "model",
-        "object",
-        "prediction_data",
-        "newdata_supplied",
-        "variables",
-        "times",
-        "y_levels",
-        "settings",
-        "n_times",
-        "n_states",
-        "factor_cols",
-        "use_coefstart",
-        "engine",
-        "id_var",
-        "by",
-        "complete_bootstrap_sop_states",
-        "state_factor"
-      )
+      packages = c("rms", "VGAM", "Hmisc", "stats")
     )
   }
 
-  # --- 6. Combine and Compute Summary Statistics ---
+  # --- 5. Combine and Compute Summary Statistics ---
   boot_results <- keep_successful_draws(boot_results)
   baseline_anchor_draws <- combine_baseline_anchor_draws(
     lapply(boot_results, attr, "baseline_anchor"),
@@ -433,16 +391,11 @@ inferences_bootstrap <- function(
   final_result <- restore_sops_attrs(final_result, object)
 
   # Add bootstrap metadata
-  attr(final_result, "n_boot") <- n_boot
   attr(final_result, "n_successful") <- length(boot_results)
-  attr(final_result, "conf_level") <- conf_level
-  attr(final_result, "method") <- if (engine == "fwb") "fwb" else "bootstrap"
-  attr(final_result, "engine") <- engine
   if (engine == "fwb") {
     attr(final_result, "fwb_weight_type") <- "exponential"
     attr(final_result, "fwb_weight_scale") <- "cluster_mean_1"
     attr(final_result, "draw_weights_attached") <- FALSE
-    attr(final_result, "draw_weight_col") <- NULL
     attr(final_result, "draw_weight_omission_reason") <- "averaged_sops"
   }
 
@@ -462,26 +415,19 @@ inferences_bootstrap_sops_fwb <- function(
   n_boot,
   workers,
   conf_level,
-  conf_type = "perc",
+  conf_type,
   return_draws,
   use_coefstart
 ) {
   model <- attr(object, "model")
-  prediction_data <- attr(object, "newdata_pred") %||%
-    attr(object, "newdata_orig")
+  prediction_data <- attr(object, "newdata_pred")
   newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
   call_args <- attr(object, "call_args")
 
   settings <- markov_result_settings(object)
   y_levels <- settings$y_levels
   times <- call_args$times
-  if (is.null(model)) {
-    mostr_abort("Model not stored in object. Cannot perform bootstrap.")
-  }
   id_var <- markov_require_id_var(model, settings$id_var)
-  if (is.null(prediction_data)) {
-    mostr_abort("Prediction data not stored. Cannot perform bootstrap.")
-  }
   refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, id_var, settings$time_var)
 
@@ -527,7 +473,7 @@ inferences_bootstrap_sops_fwb <- function(
     )
 
     m_boot <- boot_result$model
-    boot_ylevels <- boot_result$ylevels %||% boot_result$y_levels
+    boot_ylevels <- boot_result$ylevels
     boot_absorb <- boot_result$absorb
     missing_states <- boot_result$missing_states
 
@@ -597,20 +543,7 @@ inferences_bootstrap_sops_fwb <- function(
     data = refit_data,
     id_var = id_var,
     workers = workers,
-    packages = c("rms", "VGAM", "Hmisc", "stats"),
-    globals = c(
-      "model",
-      "prediction_data",
-      "refit_data",
-      "times",
-      "y_levels",
-      "settings",
-      "factor_cols",
-      "use_coefstart",
-      "id_var",
-      "newdata_supplied",
-      "draw_weight_col"
-    )
+    packages = c("rms", "VGAM", "Hmisc", "stats")
   )
 
   boot_results <- keep_successful_draws(boot_results)
@@ -643,11 +576,7 @@ inferences_bootstrap_sops_fwb <- function(
   rownames(final_result) <- NULL
   final_result <- restore_sops_attrs(final_result, object)
 
-  attr(final_result, "n_boot") <- n_boot
   attr(final_result, "n_successful") <- length(boot_results)
-  attr(final_result, "conf_level") <- conf_level
-  attr(final_result, "method") <- "fwb"
-  attr(final_result, "engine") <- "fwb"
   attr(final_result, "fwb_weight_type") <- "exponential"
   attr(final_result, "fwb_weight_scale") <- "cluster_mean_1"
   attr(final_result, "draw_weights_attached") <- draw_weights_attached
@@ -833,17 +762,14 @@ check_bootstrap_starting_states <- function(
 
 # The states that prediction starts from, for each previous-state column in
 # `state_vars`: the values of supplied prediction `profiles` (NULL when the
-# profiles come from each resample's own patients) and the values that
-# `variables` sets.
-bootstrap_starting_states <- function(profiles, variables, state_vars) {
+# profiles come from each resample's own patients). `variables` never sets a
+# previous-state column here: `inferences()` refuses that for the bootstrap.
+bootstrap_starting_states <- function(profiles, state_vars) {
   out <- list()
   for (column in unique(state_vars)) {
-    values <- c(
-      if (is.data.frame(profiles) && column %in% names(profiles)) {
-        as_state_labels(profiles[[column]])
-      },
-      if (column %in% names(variables)) as_state_labels(variables[[column]])
-    )
+    values <- if (is.data.frame(profiles) && column %in% names(profiles)) {
+      as_state_labels(profiles[[column]])
+    }
     values <- unique(values[!is.na(values)])
     if (length(values) > 0L) {
       out[[column]] <- values

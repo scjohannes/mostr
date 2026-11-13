@@ -162,8 +162,6 @@ set_coef.vglm <- function(model, new_coefs) {
 #'   variable cannot be found in the model's original data, it will be extracted
 #'   from this data frame. **Note:** For cluster-robust SEs, the cluster vector
 #'   must have the same length as the model's fitting data, not prediction data.
-#' @param adjust Deprecated compatibility alias for `cadjust` for `vglm`
-#'   models.
 #' @param bread Bread used for a raw `vglm` model: `"observed"` or `"vglm"`.
 #' @param type HC correction used when computing an ORM or VGLM sandwich:
 #'   `"HC0"` or `"HC1"`.
@@ -235,7 +233,6 @@ get_vcov_robust <- function(
   model,
   cluster = NULL,
   data = NULL,
-  adjust = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
   cadjust = NULL
@@ -267,7 +264,6 @@ get_vcov_robust <- function(
         robcov_vglm(
           model,
           cluster = NULL,
-          adjust = adjust,
           bread = bread,
           type = type,
           cadjust = cadjust
@@ -378,7 +374,6 @@ get_vcov_robust <- function(
     robcov_result <- robcov_vglm(
       model,
       cluster = cluster,
-      adjust = adjust,
       bread = bread,
       type = type,
       cadjust = cadjust

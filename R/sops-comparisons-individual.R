@@ -166,7 +166,6 @@ comparisons <- function(
   stop_removed_fit_arguments(...)
   stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
-  stop_legacy_baseline_args(extra_args)
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)

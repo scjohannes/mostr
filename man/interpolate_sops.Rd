@@ -75,7 +75,7 @@ avg <- avg_sops(
   fit,
   newdata = baseline,
   variables = list(tx = c(0, 1)),
-  times = NULL
+  times = 1:4
 )
 interpolate_sops(
   avg,

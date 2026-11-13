@@ -21,7 +21,6 @@ apply_sop_simulation_draws <- function(
   n_draws,
   analysis_fn,
   workers,
-  globals,
   packages = c("rms", "VGAM", "stats", "mostr")
 ) {
   use_parallel <- !is.null(workers) && workers > 1
@@ -38,17 +37,19 @@ apply_sop_simulation_draws <- function(
     mostr_abort("Package 'furrr' is required for parallel processing")
   }
 
-  # `plan(new)` returns the user's whole plan; `plan()` alone returns only its
-  # outer level, and restoring from that dropped any nested levels.
+  # `plan(new)` returns the user's whole plan, nested levels included, so that
+  # is what gets restored; `plan()` alone returns only the outer level.
   old_plan <- future::plan(future.callr::callr, workers = workers)
   on.exit(future::plan(old_plan), add = TRUE)
 
   results <- furrr::future_map(
     draw_ids,
     draw_fn,
+    # `draw_fn` reaches everything it uses through its own environment, which
+    # is sent with it, so no other object is exported to the workers.
     .options = furrr::furrr_options(
       seed = FALSE,
-      globals = globals,
+      globals = FALSE,
       packages = packages
     ),
     .progress = FALSE

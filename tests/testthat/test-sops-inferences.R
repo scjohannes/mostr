@@ -568,7 +568,7 @@ describe("avg_sops() and inferences() pipeline", {
     draws <- mostr::get_draws(inferred)
 
     expect_equal(attr(inferred, "method"), "bootstrap")
-    expect_equal(attr(inferred, "n_boot"), 2)
+    expect_equal(attr(inferred, "n_draws"), 2)
     expect_equal(attr(inferred, "n_successful"), 2L)
     expect_inference_intervals(inferred)
     expect_equal(sort(unique(draws$draw_id)), 1:2)
@@ -612,7 +612,7 @@ describe("avg_sops() and inferences() pipeline", {
     expect_equal(attr(inferred, "method"), "fwb")
     expect_equal(attr(inferred, "fwb_weight_type"), "exponential")
     expect_equal(attr(inferred, "fwb_weight_scale"), "cluster_mean_1")
-    expect_equal(attr(inferred, "n_boot"), 2)
+    expect_equal(attr(inferred, "n_draws"), 2)
     expect_equal(attr(inferred, "n_successful"), 2L)
     expect_inference_intervals(inferred)
     expect_equal(sort(unique(draws$draw_id)), 1:2)

@@ -215,8 +215,7 @@ delta_comparison_block <- function(
     object = object,
     model_plan = model_plan,
     newdata = newdata,
-    times = setup$times,
-    output = "individual"
+    times = setup$times
   )
   result <- delta_validate_plan_result(
     run_sop_delta_plan(plan, model_plan),

@@ -68,10 +68,6 @@
 #' )
 #' }
 #'
-#' @importFrom stats setNames aggregate model.matrix predict
-#' @importFrom utils modifyList
-#' @importFrom methods slot
-#'
 #' @export
 prepare_markov_data <- function(
   data,

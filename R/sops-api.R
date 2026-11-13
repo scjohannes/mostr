@@ -926,47 +926,6 @@ avg_sops_impl <- function(
     newdata_supplied
   )
 
-  direct_backend <- inherits(model, c("vglm", "robcov_vglm", "orm", "blrm"))
-  if (!direct_backend) {
-    # `times` was checked above against the stored or supplied profiles.
-    sops_ind <- muffle_skipped_sop_visits(sops_impl(
-      model,
-      newdata = newdata_expanded,
-      variables = NULL,
-      times = times,
-      settings = settings,
-      ...
-    ))
-    resolved_times <- attr(sops_ind, "call_args")$times
-    group_cols <- unique(c("time", "state", names(var_list), by))
-    missing_groups <- setdiff(group_cols, names(sops_ind))
-    if (length(missing_groups) > 0L) {
-      mostr_abort(
-        "Grouping variables missing: ",
-        paste(missing_groups, collapse = ", ")
-      )
-    }
-    result <- aggregate_sops_estimates(sops_ind, group_cols)
-    return(set_sops_attrs(
-      result,
-      class_name = "markov_avg_sops",
-      model = attr(sops_ind, "model"),
-      call_args = attr(sops_ind, "call_args"),
-      settings = markov_result_settings(sops_ind),
-      newdata_orig = newdata_orig,
-      avg_args = list(
-        variables = var_list,
-        by = by,
-        times = resolved_times
-      ),
-      extra_attrs = list(
-        newdata_pred = newdata_expanded,
-        refit_data = refit_data,
-        newdata_supplied = newdata_supplied
-      )
-    ))
-  }
-
   if (is.null(settings$y_levels)) {
     stop_no_fitted_states()
   }
@@ -1060,8 +1019,7 @@ avg_sops_blrm <- function(
   return_draws,
   ...
 ) {
-  y_levels <- settings$y_levels %||% model$ylevels
-  settings <- markov_settings_update(settings, y_levels = y_levels)
+  y_levels <- settings$y_levels
 
   time_res <- resolve_sop_times(
     model,

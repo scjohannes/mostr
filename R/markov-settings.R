@@ -13,20 +13,16 @@
 
 #' Settings of a fitted model or of one SOP call
 #'
-#' @param engine The engine that fitted the model (`"orm"`, `"vglm"`, `"blrm"`)
-#'   or `NULL` when unknown.
 #' @param id_var,time_var,p_var,p2_var,gap_var Column names: patient ID, visit
 #'   time, previous state, state two visits back (`NULL` for first order), and
 #'   elapsed time since the previous visit.
 #' @param y_levels State labels in fitted order.
 #' @param absorb Absorbing states, as given to `mostm()`.
-#' @param first_followup_time The visit of the stored starting profiles.
 #' @param from_fit Names of the fields that the fit fixes. A diagnostic plot
 #'   may repeat these but not change them.
 #' @return An object of class `markov_settings`; `order` is the Markov order.
 #' @noRd
 markov_settings <- function(
-  engine = NULL,
   id_var = NULL,
   time_var = "time",
   p_var = "yprev",
@@ -34,7 +30,6 @@ markov_settings <- function(
   y_levels = NULL,
   absorb = NULL,
   gap_var = NULL,
-  first_followup_time = NULL,
   from_fit = character()
 ) {
   for (arg in c("id_var", "time_var", "p_var", "p2_var", "gap_var")) {
@@ -64,13 +59,9 @@ markov_settings <- function(
       "\"`."
     )
   }
-  if (!is.null(engine) && !engine %in% markov_engines()) {
-    mostr_abort("Internal Markov model engine provenance is invalid.")
-  }
   from_fit <- intersect(from_fit, markov_settings_fit_fields())
   structure(
     list(
-      engine = engine,
       id_var = id_var,
       time_var = time_var,
       p_var = p_var,
@@ -79,7 +70,6 @@ markov_settings <- function(
       y_levels = y_levels,
       absorb = absorb,
       gap_var = gap_var,
-      first_followup_time = first_followup_time,
       from_fit = from_fit
     ),
     class = "markov_settings"
@@ -89,7 +79,6 @@ markov_settings <- function(
 # The fields that `mostm()` fixes for every later call on the fit.
 markov_settings_fit_fields <- function() {
   c(
-    "engine",
     "id_var",
     "time_var",
     "p_var",
@@ -120,20 +109,14 @@ markov_set_settings <- function(model, settings) {
 
 # The settings recorded on a fit. Fits made by `mostm()` store them, and so do
 # the hand-made fits of the package tests (`with_fit_settings()` in
-# `tests/testthat/helper-mocks.R`). Other objects get settings built from what
-# they record (engine and patient ID) and the default column names, with
-# nothing fixed.
+# `tests/testthat/helper-mocks.R`). Other objects get settings built from the
+# patient ID they record and the default column names, with nothing fixed.
 markov_model_settings <- function(model) {
   settings <- markov_model_metadata_attr(model, "markov_settings")
   if (inherits(settings, "markov_settings")) {
     return(settings)
   }
-  markov_settings(
-    engine = markov_model_engine(model),
-    id_var = markov_model_id_var(model),
-    first_followup_time =
-      markov_model_starting_profile_metadata(model)$first_followup_time
-  )
+  markov_settings(id_var = markov_model_id_var(model))
 }
 
 # The settings of a SOP, comparison or time result.
@@ -190,7 +173,6 @@ resolve_markov_settings <- function(
   # is first order.
   p2 <- if ("p2_var" %in% fit$from_fit) fit$p2_var else p2_var
   markov_settings(
-    engine = fit$engine,
     id_var = id_var %||% fit$id_var,
     time_var = time_var %||% fit$time_var,
     p_var = p_var %||% fit$p_var,
@@ -200,7 +182,6 @@ resolve_markov_settings <- function(
       markov_model_ylevels_or_null(model),
     absorb = fit$absorb,
     gap_var = fit$gap_var,
-    first_followup_time = fit$first_followup_time,
     from_fit = fit$from_fit
   )
 }
@@ -369,15 +350,15 @@ validate_mostm_previous_state_vars <- function(p_var, p2_var, data) {
 # (`rows`, the rows selected by `subset`). Returns `absorb`, or `NULL` when it
 # names no state. Absorbing states are never worked out from the data: a
 # state that never occurs as a previous state is often absorbing, but it can
-# also be a rare state seen only at a last visit, so `warn` only warns.
+# also be a rare state seen only at a last visit, so such a state only
+# gets a warning.
 validate_mostm_absorb <- function(
   absorb,
   formula,
   data,
   rows,
   p_var,
-  p2_var,
-  warn = TRUE
+  p2_var
 ) {
   if (!is.null(absorb) && !length(absorb)) {
     absorb <- NULL
@@ -413,8 +394,7 @@ validate_mostm_absorb <- function(
     )
   }
 
-  previous_columns <- intersect(c(p_var, p2_var), names(data))
-  for (column in previous_columns) {
+  for (column in c(p_var, p2_var)) {
     values <- as_state_labels(data[[column]][rows])
     hit <- !is.na(values) & values %in% absorb_labels
     if (!any(hit)) {
@@ -449,13 +429,11 @@ validate_mostm_absorb <- function(
     )
   }
 
-  if (warn && p_var %in% names(data)) {
-    previous <- data[[p_var]][rows]
-    previous_states <- unique(as_state_labels(previous[!is.na(previous)]))
-    outcome_only <- setdiff(outcome_states, c(previous_states, absorb_labels))
-    if (length(outcome_only)) {
-      warn_outcome_only_states(outcome_only, p_var, absorb_labels)
-    }
+  previous <- data[[p_var]][rows]
+  previous_states <- unique(as_state_labels(previous[!is.na(previous)]))
+  outcome_only <- setdiff(outcome_states, c(previous_states, absorb_labels))
+  if (length(outcome_only)) {
+    warn_outcome_only_states(outcome_only, p_var, absorb_labels)
   }
   absorb
 }

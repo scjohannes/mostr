@@ -534,8 +534,6 @@ test_that("get_vcov_robust aligns a cluster formula with the rows an orm fit use
 })
 
 test_that("markov_msm_build validates model classes and design alignment", {
-  skip_if_not_installed("VGAM")
-
   coefs_named <- function(columns) {
     function(model, beta = NULL) {
       matrix(0, nrow = 1, ncol = length(columns), dimnames = list(NULL, columns))
@@ -555,15 +553,6 @@ test_that("markov_msm_build validates model classes and design alignment", {
       )
     }
   }
-  vglm_fit <- VGAM::vglm(
-    y ~ x,
-    family = VGAM::binomialff,
-    data = data.frame(
-      y = c(0, 1, 1, 0, 0, 1),
-      x = c(0, 0.2, 0.4, 0.6, 0.8, 1)
-    )
-  )
-
   cases <- list(
     list(
       label = "an unsupported model class",
@@ -588,16 +577,6 @@ test_that("markov_msm_build validates model classes and design alignment", {
         settings = markov_settings(y_levels = 1:2)
       ),
       error = "Design matrix columns missing"
-    ),
-    list(
-      label = "a vglm design without the coefficient columns",
-      mocks = list(get_effective_coefs = coefs_named("missing_column")),
-      args = list(
-        model = vglm_fit,
-        newdata = data.frame(id = 1:2, x = c(0, 1)),
-        settings = markov_settings(y_levels = 1:2)
-      ),
-      error = "Could not construct a design matrix"
     )
   )
 

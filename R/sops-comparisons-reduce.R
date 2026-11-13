@@ -41,8 +41,7 @@ avg_comparison_from_avg_sops <- function(
     time_unit = time_unit
   )
 
-  draw_attr <- sop_draw_attr_name(x)
-  draws <- if (!is.null(draw_attr)) attr(x, draw_attr) else NULL
+  draws <- attr(x, "draws")
 
   if (!is.null(draws)) {
     value_col <- sop_draw_value_col(draws)
@@ -81,7 +80,7 @@ avg_comparison_from_avg_sops <- function(
     }
 
     if (isTRUE(return_draws)) {
-      attr(point, draw_attr) <- restore_observed_by_names(
+      attr(point, "draws") <- restore_observed_by_names(
         draw_reduced,
         variables
       )
@@ -477,8 +476,7 @@ avg_comparison_time_benefit_point <- function(
     time_unit = time_unit
   )
 
-  draw_attr <- sop_draw_attr_name(ind)
-  draws <- if (!is.null(draw_attr)) attr(ind, draw_attr) else NULL
+  draws <- attr(ind, "draws")
   if (!is.null(draws)) {
     value_col <- sop_draw_value_col(draws)
     draw_reduced <- reduce_time_benefit_sops_df(
@@ -495,16 +493,14 @@ avg_comparison_time_benefit_point <- function(
     }
 
     group_cols <- setdiff(names(draw_reduced), c("estimate", "draw_id"))
-    if (inherits(model, "blrm")) {
-      point <- summarize_comparison_draws(
-        draw_reduced,
-        group_cols = group_cols,
-        posterior_summary = posterior_summary,
-        conf_level = conf_level
-      )
-    }
+    point <- summarize_comparison_draws(
+      draw_reduced,
+      group_cols = group_cols,
+      posterior_summary = posterior_summary,
+      conf_level = conf_level
+    )
     if (isTRUE(return_draws)) {
-      attr(point, draw_attr) <- draw_reduced
+      attr(point, "draws") <- draw_reduced
     }
   }
 
@@ -566,7 +562,7 @@ reduce_time_benefit_sops_df <- function(
 
 counterfactual_array_from_tidy <- function(data, value_col, setup) {
   states <- as_state_labels(setup$settings$y_levels)
-  times <- setup$times %||% sort(unique(data$time))
+  times <- setup$times
   n_states <- length(states)
   n_times <- length(times)
   arr <- array(
@@ -605,7 +601,7 @@ time_benefit_from_counterfactual_array <- function(
   varname <- names(setup$variables)[1]
   ref_idx <- 1L
   comp_idx <- seq.int(2L, length(values))
-  times <- setup$times %||% seq_len(dim(sops_array)[3])
+  times <- setup$times
   by <- setup$by
   baseline <- setup$baseline_data
   pieces <- vector("list", length(comp_idx))

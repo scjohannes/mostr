@@ -761,14 +761,13 @@ normalize_inference_result <- function(
   return_draws
 ) {
   primary_class <- class(x)[1]
-  draws <- attr(x, "draws")
-  attr(x, "draws") <- NULL
-  attr(x, "engine") <- NULL
   attr(x, "method") <- method
   attr(x, "n_draws") <- n_draws
   attr(x, "conf_level") <- conf_level
   attr(x, "conf_type") <- conf_type
-  attr(x, "draws") <- if (isTRUE(return_draws)) draws else NULL
+  if (!isTRUE(return_draws)) {
+    attr(x, "draws") <- NULL
+  }
   x <- order_estimate_columns(x)
   class(x) <- c(primary_class, "data.frame")
   x
@@ -807,14 +806,12 @@ inferences_simulation <- function(
 ) {
   # --- 1. Extract Stored Attributes ---
   model <- attr(object, "model")
-  newdata_orig <- attr(object, "newdata_orig")
-  newdata_pred_stored <- attr(object, "newdata_pred")
+  newdata_pred <- attr(object, "newdata_pred")
   call_args <- attr(object, "call_args")
   avg_args <- attr(object, "avg_args")
 
   settings <- markov_result_settings(object)
   y_levels <- settings$y_levels
-  id_var <- settings$id_var
 
   # For avg_sops objects
   is_avg <- inherits(object, "markov_avg_sops")
@@ -830,42 +827,20 @@ inferences_simulation <- function(
     by <- NULL
   }
 
-  if (is.null(model)) {
-    mostr_abort(
-      "Model not stored in object. Cannot perform simulation inference."
-    )
-  }
-
   # --- 2. Prepare Prediction Data (COMPUTED ONCE) ---
   if (is_avg) {
-    # For avg_sops: create counterfactual datasets
+    # For avg_sops: the stored prediction data hold the profiles once per
+    # counterfactual scenario
     grid <- create_counterfactual_grid(variables)
     n_cf <- nrow(grid)
-    if (!is.null(newdata_pred_stored)) {
-      newdata_pred <- newdata_pred_stored
-      if (nrow(newdata_pred) %% n_cf != 0L) {
-        mostr_abort(
-          "Stored prediction data is not aligned with counterfactual grid."
-        )
-      }
-      n_each <- nrow(newdata_pred) / n_cf
-    } else {
-      baseline_data <- resolve_markov_prediction_data(
-        newdata_orig,
-        id_var = id_var,
-        time_var = settings$time_var
+    if (nrow(newdata_pred) %% n_cf != 0L) {
+      mostr_abort(
+        "Stored prediction data is not aligned with counterfactual grid."
       )
-      newdata_pred <- create_counterfactual_data(
-        baseline_data,
-        grid,
-        variables,
-        by = by
-      )
-      n_each <- nrow(baseline_data)
     }
+    n_each <- nrow(newdata_pred) / n_cf
   } else {
     # For individual sops: use data directly
-    newdata_pred <- newdata_pred_stored %||% newdata_orig
     grid <- NULL
     n_cf <- 1
     n_each <- nrow(newdata_pred)
@@ -877,9 +852,6 @@ inferences_simulation <- function(
     n_draws = n_draws,
     vcov = vcov
   )
-
-  n_times <- length(times)
-  n_states <- length(y_levels)
 
   if (is_avg) {
     group_cols <- c("time", "state", names(variables))
@@ -906,8 +878,7 @@ inferences_simulation <- function(
         newdata = newdata_pred,
         times = times,
         settings = settings,
-        builder = "streamed",
-        output = if (is_avg) "average" else "individual"
+        builder = "streamed"
       ),
       error = function(e) {
         notify_sop_r_engine_fallback(conditionMessage(e))
@@ -1018,34 +989,11 @@ inferences_simulation <- function(
     }
   }
 
-  # --- 6. Apply Across All Draws ---
-  globals_list <- c(
-    "model",
-    "model_chk",
-    "beta_draws",
-    "newdata_pred",
-    "times",
-    "y_levels",
-    "settings",
-    "is_avg",
-    "grid",
-    "variables",
-    "n_cf",
-    "n_each",
-    "group_cols",
-    "object_keys",
-    "use_fast_path",
-    "by"
-  )
-  if (use_fast_path) {
-    globals_list <- c(globals_list, "execution_plan")
-  }
-
+  # --- 5. Apply Across All Draws ---
   sim_results <- apply_sop_simulation_draws(
     n_draws = nrow(beta_draws),
     analysis_fn = analysis_fn,
-    workers = workers,
-    globals = globals_list
+    workers = workers
   )
 
   # --- 6. Combine fixed-order draw cells ---
@@ -1073,12 +1021,7 @@ inferences_simulation <- function(
   final_result$std.error <- summary_stats$std.error
 
   final_result <- restore_sops_attrs(final_result, object)
-  # Add metadata
-  attr(final_result, "n_draws") <- n_draws
   attr(final_result, "n_successful") <- length(sim_results)
-  attr(final_result, "conf_level") <- conf_level
-  attr(final_result, "conf_type") <- conf_type
-  attr(final_result, "method") <- "mvn"
 
   if (return_draws) {
     attr(final_result, "draws") <- sop_draw_matrix_to_df(

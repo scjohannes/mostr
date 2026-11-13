@@ -212,6 +212,23 @@
   `update_datadist` from your calls; the estimates and standard errors are the
   same as before.
 
+* `time_in_state()` no longer accepts a data frame with `boot_id`, `tx` and
+  `state_*` columns, which no function of the package has produced for some
+  time. Pass SOPs from `sops()` or `avg_sops()`, after `inferences()` if you
+  want intervals; any other data frame is refused.
+
+* The deprecated arguments `adjust` of `robcov_vglm()` and `get_vcov_robust()`
+  and `parallel` of `bootstrap_model_coefs()` are removed. Use `cadjust` and
+  `workers`. The value of `robcov_vglm()` no longer has an `adjust` element;
+  read `cadjust`.
+
+* `mostm()`, `comparisons()` and `avg_comparisons()` no longer name the
+  replacement when they are given `start_time`, `origin_time`, `origin` or
+  `time_map` from earlier versions.
+
+* Results of `inferences()` no longer carry an `n_boot` attribute; `n_draws`
+  holds the same number.
+
 ## Minor improvements
 
 * When `rms::orm()` cannot fit a model, the error now suggests

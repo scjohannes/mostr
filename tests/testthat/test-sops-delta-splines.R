@@ -159,8 +159,7 @@ test_that("penalized orm previous-state splines support delta inference", {
     object = avg,
     model_plan = fit,
     newdata = attr(avg, "newdata_pred"),
-    times = attr(avg, "avg_args")$times,
-    output = "average"
+    times = attr(avg, "avg_args")$times
   )
   native <- run_sop_delta_plan(plan, fit)
   oracle <- run_sop_delta_r_oracle(plan, fit)

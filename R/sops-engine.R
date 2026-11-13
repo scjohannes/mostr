@@ -3,15 +3,13 @@
 #' Calculate State Occupancy Probabilities for Markov Models
 #'
 #' Estimates state occupancy probabilities over time by iterating a transition
-#' matrix derived from a fitted model object (e.g., `vglm`, `rms`, or `rmsb`).
+#' matrix derived from a model fitted by `mostm()`.
 #' Time terms of the formula, such as splines of time, are evaluated from the
 #' time column at each visit.
 #'
-#' @param object A fitted model object. Supported classes include:
-#'   \code{"lrm"}, \code{"orm"} (from package `rms`),
-#'   \code{"blrm"} (from package `rmsb`), and
-#'   \code{"vglm"} (from package `VGAM`).
-#' @param data A data frame containing the baseline covariates for the prediction.
+#' @param model A model fitted by `mostm()`: an `orm` fit, a `blrm` fit, or
+#'   the `robcov_vglm` object of the vglm engine (or the `vglm` fit inside it).
+#' @param newdata A data frame containing the baseline covariates for the prediction.
 #'   Rows represent unique patients. Columns must contain baseline covariates and
 #'   initial values for time-varying variables.
 #' @param times Visit-scale time points to iterate over. For numeric time
@@ -119,30 +117,17 @@ soprob_markov_r_engine <- function(
   n_draws_total <- dots$.n_draws_total
   prediction_cache_arg <- if (is.null(p2_var)) dots$.prediction_cache else NULL
 
-  cl <- if (inherits(object, "blrm")) {
-    "blrm"
+  ftype <- if (inherits(object, "blrm")) {
+    "rmsb"
   } else if (inherits(object, "robcov_vglm")) {
-    "robcov_vglm"
+    "robcov"
   } else if (inherits(object, "orm")) {
-    "orm"
-  } else if (inherits(object, "vglm")) {
-    "vglm"
+    "rms"
   } else {
-    class(object)[1]
-  }
-  ftypes <- c(
-    orm = "rms",
-    blrm = "rmsb",
-    vglm = "vglm",
-    robcov_vglm = "robcov"
-  )
-  ftype <- ftypes[cl]
-
-  if (is.na(ftype)) {
-    mostr_abort("Object class not supported")
+    "vglm"
   }
 
-  # Validate model is compatible with Markov simulation
+  # `soprob_markov()` reaches this engine without an earlier check of the fit.
   validate_markov_model(object)
 
   if (!p_var %in% names(data)) {
@@ -187,15 +172,7 @@ soprob_markov_r_engine <- function(
         prediction_cache = prediction_cache_arg
       )
     },
-    robcov = function(obj, d) {
-      if (is.null(obj$vglm_fit)) {
-        mostr_abort(
-          "robcov_vglm object does not contain the original vglm fit. ",
-          "Please re-run robcov_vglm() with the latest version of the package."
-        )
-      }
-      predict_vglm_response_markov(obj$vglm_fit, d)
-    }
+    robcov = function(obj, d) predict_vglm_response_markov(obj$vglm_fit, d)
   )
 
   # Prepare dimensions

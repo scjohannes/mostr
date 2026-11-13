@@ -1,85 +1,3 @@
-test_that("RMS basis registry compiles rcs and lsp bases", {
-  skip_if_not_installed("rms")
-  skip_if_not_installed("Hmisc")
-
-  handlers <- mostr:::rms_basis_registry()
-  expect_equal(names(handlers), c("rcs", "lsp"))
-
-  values <- c(-1, 0, 1, 3, 6, NA_real_)
-
-  lsp <- mostr:::new_compiled_rms_basis(
-    handler = "lsp",
-    variable = "time",
-    parameters = c(1, 4),
-    columns = c("time", "time'", "time''")
-  )
-  actual_lsp <- mostr:::evaluate_compiled_rms_basis(lsp, values)
-  expected_lsp <- cbind(values, pmax(values - 1, 0), pmax(values - 4, 0))
-  expect_equal(as.vector(actual_lsp), as.vector(expected_lsp))
-  expect_equal(attr(actual_lsp, "nonlinear"), c(FALSE, TRUE, TRUE))
-
-  knots <- c(0, 1, 4, 5)
-  rcs <- mostr:::new_compiled_rms_basis(
-    handler = "rcs",
-    variable = "time",
-    parameters = knots,
-    columns = c("time", "time'", "time''")
-  )
-  actual_rcs <- mostr:::evaluate_compiled_rms_basis(rcs, values)
-  expected_rcs <- Hmisc::rcspline.eval(values, knots = knots, inclx = TRUE)
-  expect_equal(
-    as.vector(actual_rcs),
-    as.vector(expected_rcs),
-    tolerance = 1e-13
-  )
-})
-
-test_that("a third RMS basis handler extends evaluation without dispatch changes", {
-  hinge2 <- list(
-    id = "hinge2",
-    helper = "hinge2",
-    assume = "hinge2",
-    assume_code = 99L,
-    pattern = "(^|:)\\s*hinge2\\(",
-    evaluate = function(values, knots) {
-      cbind(values, pmax(values - knots[1L], 0)^2)
-    }
-  )
-  withr::local_options(
-    mostr.rms_basis_handlers = list(hinge2 = hinge2)
-  )
-  basis <- mostr:::new_compiled_rms_basis(
-    "hinge2",
-    variable = "time",
-    parameters = 2,
-    columns = c("time", "time_hinge2")
-  )
-  actual <- mostr:::evaluate_compiled_rms_basis(basis, c(1, 2, 4))
-
-  expect_equal(as.vector(actual), as.vector(cbind(c(1, 2, 4), c(0, 0, 4))))
-  expect_equal(attr(actual, "nonlinear"), c(FALSE, TRUE))
-  expect_equal(
-    mostr:::rms_basis_handler_for_design("hinge2", 99L)$id,
-    "hinge2"
-  )
-  expect_equal(
-    mostr:::rms_basis_handlers_for_term("hinge2(time)"),
-    "hinge2"
-  )
-})
-
-test_that("RMS basis registry recognizes fitted Design metadata", {
-  expect_equal(
-    mostr:::rms_basis_handler_for_design("rcspline", 4L)$id,
-    "rcs"
-  )
-  expect_equal(
-    mostr:::rms_basis_handler_for_design("lspline", 3L)$id,
-    "lsp"
-  )
-  expect_null(mostr:::rms_basis_handler_for_design("polynomial", 2L))
-})
-
 test_that("formula helper injection includes every registered RMS basis and leaves non-formulas alone", {
   skip_if_not_installed("rms")
 
@@ -141,12 +59,7 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
     )
   )
 
-  # The vglm engine splits the lsp basis into one column per piece and records
-  # them, so prediction can rebuild the basis.
-  basis_terms <- attr(vglm_fit, "markov_basis_terms", exact = TRUE)
-  expect_length(basis_terms, 1L)
-  expect_equal(basis_terms[[1L]]$handlers, "lsp")
-  expect_length(basis_terms[[1L]]$columns, 3L)
+  # The vglm engine splits the lsp basis into one column per piece.
   expect_equal(attr(vglm_fit, "markov_split_assign", exact = TRUE), TRUE)
   expect_length(
     grep("lsp\\(", names(vglm_fit$vglm_fit@constraints), value = TRUE),

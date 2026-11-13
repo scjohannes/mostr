@@ -158,7 +158,6 @@ clear_comparison_inference <- function(object) {
     "target",
     "covariance_source",
     "covariance_metadata",
-    "n_boot",
     "n_successful",
     "engine",
     "fwb_weight_type",
@@ -271,8 +270,7 @@ comparison_coefficient_predictor <- function(model, setup) {
         newdata = setup$newdata_pred,
         times = setup$times,
         settings = setup$settings,
-        builder = "streamed",
-        output = "individual"
+        builder = "streamed"
       ),
       error = function(e) {
         notify_sop_r_engine_fallback(conditionMessage(e))
@@ -336,8 +334,7 @@ comparison_simulation_draws <- function(
   results <- apply_sop_simulation_draws(
     n_draws = nrow(beta_draws),
     analysis_fn = analysis_fn,
-    workers = workers,
-    globals = c("beta_draws", "predict_array", "reduce_draw")
+    workers = workers
   )
   successful <- which(!vapply(results, is.null, logical(1)))
   if (length(successful) == 0L) {
@@ -416,7 +413,7 @@ comparison_fwb_draws <- function(
         times = setup$times,
         settings = markov_settings_update(
           setup$settings,
-          y_levels = state_factor(boot_result$ylevels %||% boot_result$y_levels),
+          y_levels = state_factor(boot_result$ylevels),
           absorb = boot_result$absorb
         )
       ),
@@ -452,16 +449,7 @@ comparison_fwb_draws <- function(
     data = refit_data,
     id_var = setup$settings$id_var,
     workers = workers,
-    packages = c("rms", "VGAM", "Hmisc", "stats"),
-    globals = c(
-      "model",
-      "setup",
-      "refit_data",
-      "factor_cols",
-      "use_coefstart",
-      "reduce_draw",
-      "weight_col"
-    )
+    packages = c("rms", "VGAM", "Hmisc", "stats")
   )
   results <- keep_successful_draws(results)
   list(
@@ -471,7 +459,6 @@ comparison_fwb_draws <- function(
       do.call(rbind, lapply(results, `[[`, "weight"))
     },
     metadata = list(
-      n_boot = n_boot,
       n_successful = length(results),
       draw_weights_attached = !is.null(weight_col) && isTRUE(return_draws),
       draw_weight_col = weight_col,

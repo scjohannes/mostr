@@ -262,8 +262,6 @@ fwb_baseline_weights <- function(fwb_weights, baseline_data, id_var) {
 #' @param workers Number of workers for parallel processing. If NULL (default)
 #'   or 1, sequential processing is used. If > 1, uses parallel processing with
 #'   future.callr::callr strategy.
-#' @param parallel (Deprecated) Logical indicating whether to use parallel
-#'   processing. Use the \code{workers} parameter instead.
 #' @param packages Character vector of packages needed by \code{analysis_fn}.
 #'   Default is c("rms", "VGAM", "Hmisc", "stats", "dplyr")
 #' @param globals Character vector of global variables/functions needed by
@@ -297,22 +295,9 @@ apply_to_bootstrap <- function(
   data,
   id_var,
   workers = NULL,
-  parallel = NULL,
   packages = c("rms", "VGAM", "Hmisc", "stats"),
   globals = character(0)
 ) {
-  # Handle deprecated parallel parameter
-  if (!is.null(parallel)) {
-    warning(
-      "The 'parallel' argument is deprecated. ",
-      "Please use 'workers' instead.\n",
-      "  - For sequential processing: workers = NULL or workers = 1\n",
-      "  - For parallel processing: workers = N (e.g., workers = 8)"
-    )
-    if (parallel && is.null(workers)) {
-      workers <- parallel::detectCores() - 1
-    }
-  }
 
   # Determine whether to parallelize based on workers
   use_parallel <- !is.null(workers) && workers > 1
@@ -678,7 +663,7 @@ bootstrap_refit_model <- function(model) {
         "The supplied robcov_vglm object does not contain the original vglm fit."
       )
     }
-    return(markov_inherit_engine(model$vglm_fit, model))
+    return(model$vglm_fit)
   }
 
   model
@@ -720,57 +705,13 @@ bootstrap_state_columns <- function(model, refit_data, p_var, p2_var = NULL) {
 }
 
 bootstrap_original_fit_weights <- function(model, data) {
-  if (!is.null(markov_model_refit_args(model))) {
-    # `mostm()` fits store their row weights as a column of the refit data,
-    # so resampled rows carry their own weights. Unweighted fits have unit
-    # weights.
-    prior_weight_column <- markov_model_prior_weight_column(model)
-    if (is.null(prior_weight_column)) {
-      return(rep(1, nrow(data)))
-    }
-    return(bootstrap_prior_weights(data, prior_weight_column))
-  }
-
-  stored_weights <- bootstrap_stored_fit_weights(model, data)
-  if (!is.null(stored_weights)) {
-    return(stored_weights)
-  }
-
-  model_call <- if (inherits(model, "vglm")) {
-    tryCatch(methods::slot(model, "call"), error = function(e) NULL)
-  } else {
-    model$call
-  }
-
-  if (is.null(model_call) || is.null(model_call$weights)) {
+  # `mostm()` fits store their row weights as a column of the refit data, so
+  # resampled rows carry their own weights. Unweighted fits have unit weights.
+  prior_weight_column <- markov_model_prior_weight_column(model)
+  if (is.null(prior_weight_column)) {
     return(rep(1, nrow(data)))
   }
-
-  weights <- tryCatch(
-    eval(model_call$weights, data, parent.frame()),
-    error = function(e) NULL
-  )
-
-  if (is.null(weights)) {
-    warning(
-      "Could not recover original model weights; using fractional ",
-      "bootstrap weights only.",
-      call. = FALSE
-    )
-    return(rep(1, nrow(data)))
-  }
-
-  if (
-    length(weights) != nrow(data) ||
-      any(!is.finite(weights)) ||
-      any(weights < 0)
-  ) {
-    mostr_abort(
-      "Original model weights must be non-negative finite row weights."
-    )
-  }
-
-  as.numeric(weights)
+  bootstrap_prior_weights(data, prior_weight_column)
 }
 
 bootstrap_prior_weights <- function(data, column) {
@@ -790,69 +731,6 @@ bootstrap_prior_weights <- function(data, column) {
   weights
 }
 
-bootstrap_stored_fit_weights <- function(model, data) {
-  candidates <- list(
-    tryCatch(
-      stats::model.weights(stats::model.frame(model)),
-      error = function(e) NULL
-    ),
-    bootstrap_model_component(model, "prior.weights"),
-    bootstrap_model_component(model, "weights"),
-    if (inherits(model, "vglm")) {
-      tryCatch(methods::slot(model, "prior.weights"), error = function(e) NULL)
-    } else {
-      NULL
-    }
-  )
-
-  for (weights in candidates) {
-    weights <- bootstrap_as_row_weights(weights, nrow(data))
-    if (!is.null(weights)) {
-      return(weights)
-    }
-  }
-
-  NULL
-}
-
-bootstrap_model_component <- function(model, name) {
-  if (methods::is(model, "S4")) {
-    return(NULL)
-  }
-
-  tryCatch(model[[name]], error = function(e) NULL)
-}
-
-bootstrap_as_row_weights <- function(weights, n_rows) {
-  if (is.null(weights)) {
-    return(NULL)
-  }
-
-  if (is.matrix(weights) || is.data.frame(weights)) {
-    if (nrow(weights) != n_rows) {
-      return(NULL)
-    }
-    if (ncol(weights) == 1) {
-      weights <- weights[, 1]
-    } else if (all(weights == weights[, 1])) {
-      weights <- weights[, 1]
-    } else {
-      return(NULL)
-    }
-  }
-
-  if (!is.numeric(weights) || length(weights) != n_rows) {
-    return(NULL)
-  }
-  if (any(!is.finite(weights)) || any(weights < 0)) {
-    mostr_abort(
-      "Original model weights must be non-negative finite row weights."
-    )
-  }
-
-  as.numeric(weights)
-}
-
 update_bootstrap_model <- function(
   model,
   boot_data,
@@ -861,23 +739,10 @@ update_bootstrap_model <- function(
   drop_coefstart = FALSE
 ) {
   refit_args <- markov_model_refit_args(model)
-  model_call <- if (!is.null(refit_args)) bootstrap_model_call(model) else NULL
-
-  if (is.null(model_call)) {
-    # Fits without stored `mostm()` arguments keep plain `update()` semantics.
-    updated <- bootstrap_update_model(
-      model,
-      boot_data,
-      fit_weights,
-      coefstart,
-      drop_coefstart
-    )
-    return(markov_inherit_engine(updated, model))
-  }
 
   # The stored call is the `mostm()` call, so the refit calls `mostm()` with
   # the original engine.
-  refit_call <- model_call
+  refit_call <- bootstrap_model_call(model)
   refit_call$data <- quote(boot_data)
 
   # Stored refit data already exclude the rows removed by `subset`, and
@@ -919,35 +784,10 @@ update_bootstrap_model <- function(
 
   # Refits need only the coefficients, so `mostm()` skips the
   # patient-clustered covariance and the starting profiles.
-  updated <- suppress_expected_refit_warnings(
+  suppress_expected_refit_warnings(
     model,
     markov_with_coefficients_only_refit(eval(refit_call))
   )
-
-  markov_inherit_engine(updated, model)
-}
-
-bootstrap_update_model <- function(
-  model,
-  boot_data,
-  fit_weights,
-  coefstart,
-  drop_coefstart = FALSE
-) {
-  update_call <- quote(stats::update(model, data = boot_data))
-  if (!is.null(fit_weights)) {
-    update_call$weights <- quote(.mostr_fit_weight)
-  }
-  if (!is.null(coefstart)) {
-    update_call$coefstart <- quote(coefstart)
-  } else if (
-    drop_coefstart && !is.null(bootstrap_model_call(model)$coefstart)
-  ) {
-    # `update()` removes an argument that is set to NULL.
-    update_call["coefstart"] <- list(NULL)
-  }
-
-  suppress_expected_refit_warnings(model, eval(update_call))
 }
 
 bootstrap_model_call <- function(model) {

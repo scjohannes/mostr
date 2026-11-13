@@ -64,7 +64,7 @@ test_that("sops() validates inputs and supports stratified aggregation", {
           times = 1:2,
           by = "missing"
         ),
-        "Grouping variables missing: missing",
+        "Variables specified in 'by' not found in newdata: missing",
         fixed = TRUE
       )
 
@@ -188,20 +188,9 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
-    sops_impl = function(model, newdata, variables, times, settings, ...) {
+    predict_markov_sops = function(model, newdata, times, settings, ...) {
       captured$args <- c(list(...), list(settings = settings))
-      out <- expand.grid(
-        time = times,
-        state = c(1, 2),
-        tx = c(0, 1),
-        subgroup = c("a", "b"),
-        KEEP.OUT.ATTRS = FALSE
-      )
-      out$estimate <- seq_len(nrow(out)) / 100
-      attr(out, "model") <- model
-      attr(out, "call_args") <- list(times = times)
-      attr(out, "settings") <- markov_settings_update(settings, y_levels = c(1, 2))
-      out
+      array(0.5, dim = c(nrow(newdata), length(times), 2L))
     },
     {
       observed <- avg_sops(model, newdata = newdata, times = 1)
@@ -255,35 +244,6 @@ test_that("avg_sops() validates inputs and preserves grouping metadata", {
   expect_equal(captured$args$settings$p_var, "prev")
   expect_equal(captured$args$settings$p2_var, "preprev")
   expect_equal(captured$args$settings$gap_var, "gap")
-})
-
-test_that("avg_sops() reports missing grouping variables from individual SOPs", {
-  model <- structure(list(), class = "mock_model", markov_id_var = "id")
-  newdata <- data.frame(id = 1, tx = 0, yprev = 1)
-
-  with_mocked_bindings(
-    validate_markov_model = function(object) NULL,
-    sops_impl = function(model, newdata, variables, times, settings, ...) {
-      out <- data.frame(time = 1, state = 1, tx = 0, estimate = 0.5)
-      attr(out, "model") <- model
-      attr(out, "call_args") <- list(times = times)
-      attr(out, "settings") <- settings
-      out
-    },
-    {
-      expect_error(
-        avg_sops(
-          model,
-          newdata = newdata,
-          variables = "tx",
-          by = "subgroup",
-          times = 1
-        ),
-        "Grouping variables missing",
-        fixed = TRUE
-      )
-    }
-  )
 })
 
 test_that("get_draws() rejects plain data frames and joins draws on the keys they share", {
@@ -400,21 +360,19 @@ test_that("get_draws() preserves covariates for individual SOP draws", {
 test_that("markov_msm_run() propagates probabilities without absorbing states", {
   components <- list(
     X_init = matrix(0, nrow = 2, ncol = 1, dimnames = list(NULL, "x")),
+    # One stacked design per later visit: the rows of both patients for
+    # previous state 1, then for previous state 2.
     X_transition = list(
-      list(
-        matrix(0, nrow = 2, ncol = 1, dimnames = list(NULL, "x")),
-        matrix(0, nrow = 2, ncol = 1, dimnames = list(NULL, "x"))
-      ),
-      list(
-        matrix(0, nrow = 2, ncol = 1, dimnames = list(NULL, "x")),
-        matrix(0, nrow = 2, ncol = 1, dimnames = list(NULL, "x"))
-      )
+      NULL,
+      matrix(0, nrow = 4, ncol = 1, dimnames = list(NULL, "x"))
     ),
     n_pat = 2L,
     n_states = 2L,
     M = 1L,
     y_levels = 1:2,
-    col_names = "x"
+    col_names = "x",
+    transition_layout = "stacked",
+    transition_origins = 1:2
   )
   gamma <- matrix(0, nrow = 1, ncol = 1)
   colnames(gamma) <- "x"
@@ -431,14 +389,7 @@ test_that("markov_msm_run() propagates probabilities without absorbing states", 
   expect_equal(out[, 2, 1], c(0.5, 0.5))
 })
 
-test_that("time_in_state() sums occupancy over time for bootstrap data frames and arrays", {
-  boot <- data.frame(
-    boot_id = rep(1:2, each = 4),
-    time = rep(1:2, times = 4),
-    tx = rep(c(1, 0), each = 2, times = 2),
-    state_1 = c(0.8, 0.7, 0.5, 0.4, 0.6, 0.5, 0.3, 0.2),
-    state_2 = c(0.2, 0.3, 0.5, 0.6, 0.4, 0.5, 0.7, 0.8)
-  )
+test_that("time_in_state() sums occupancy over time for arrays and refuses a plain data frame", {
   arr3 <- array(
     c(0.8, 0.6, 0.2, 0.4, 0.7, 0.5, 0.3, 0.5),
     dim = c(2, 2, 2),
@@ -454,41 +405,9 @@ test_that("time_in_state() sums occupancy over time for bootstrap data frames an
   # `value` picks the part of the result that `expected` gives.
   cases <- list(
     list(
-      label = "data frame, treated arm in one state",
-      input = boot,
-      target_states = 1,
-      value = function(out) out$SOP_tx,
-      expected = c(1.5, 1.1)
-    ),
-    list(
-      label = "data frame, control arm in one state",
-      input = boot,
-      target_states = 1,
-      value = function(out) out$SOP_ctrl,
-      expected = c(0.9, 0.5)
-    ),
-    list(
-      label = "data frame, all states give no difference",
-      input = boot,
-      target_states = c(1, 2),
-      value = function(out) out$delta,
-      expected = c(0, 0)
-    ),
-    list(
-      label = "data frame without tx",
-      input = data.frame(boot_id = 1, time = 1),
-      error = "must contain 'boot_id', 'time', and 'tx'"
-    ),
-    list(
-      label = "data frame without state columns",
-      input = data.frame(boot_id = 1, time = 1, tx = 0),
-      error = "does not contain any columns starting with 'state_'"
-    ),
-    list(
-      label = "data frame without the target state",
-      input = boot,
-      target_states = 3,
-      error = "target state columns were not found"
+      label = "a data frame that is not SOPs",
+      input = data.frame(boot_id = 1, time = 1, tx = 0, state_1 = 0.5),
+      error = "must be SOPs from"
     ),
     list(
       label = "3D array with named states",
@@ -514,7 +433,7 @@ test_that("time_in_state() sums occupancy over time for bootstrap data frames an
     list(
       label = "a vector",
       input = 1:3,
-      error = "must be an array or data frame"
+      error = "must be SOPs or an array"
     ),
     list(
       label = "a matrix",
@@ -590,56 +509,6 @@ test_that("low-level SOP helpers validate model families and state metadata", {
     fixed = TRUE
   )
 
-  offset_data <- data.frame(
-    y = ordered(rep(1:3, length.out = 30)),
-    x = rep(c(0, 1), length.out = 30),
-    off = seq(-0.2, 0.2, length.out = 30)
-  )
-  offset_model <- suppressWarnings(
-    VGAM::vglm(
-      y ~ x + offset(off),
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = offset_data
-    )
-  )
-  attr(offset_model, "markov_engine") <- "vglm"
-  expect_error(
-    mostr:::validate_markov_model(offset_model),
-    "Model offsets are not supported",
-    fixed = TRUE
-  )
-
-  null_offset_model <- suppressWarnings(
-    VGAM::vglm(
-      y ~ x,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = offset_data,
-      offset = NULL
-    )
-  )
-  attr(null_offset_model, "markov_engine") <- "vglm"
-  expect_error(
-    mostr:::validate_markov_model(null_offset_model),
-    NA
-  )
-
-  fit_with_optional_offset <- function(offset = NULL) {
-    fit <- suppressWarnings(
-      VGAM::vglm(
-        y ~ x,
-        family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-        data = offset_data,
-        offset = offset
-      )
-    )
-    attr(fit, "markov_engine") <- "vglm"
-    fit
-  }
-  expect_error(
-    mostr:::validate_markov_model(fit_with_optional_offset()),
-    NA
-  )
-
   expect_error(
     mostr:::marginalize_sops_array(
       array(1, dim = c(1, 1, 1)),
@@ -662,27 +531,4 @@ test_that("low-level SOP helpers validate model families and state metadata", {
     newdata = data.frame(id = 10)
   )
   expect_equal(no_rowid$rowid, 1)
-})
-
-test_that("low-level SOP helpers reject orm offsets", {
-  skip_if_not_installed("rms")
-
-  offset_data <- data.frame(
-    y = ordered(rep(1:3, length.out = 45)),
-    x = rep(c(0, 1, 2), length.out = 45),
-    off = seq(-0.2, 0.2, length.out = 45)
-  )
-  offset_model <- rms::orm(
-    y ~ x + offset(off),
-    data = offset_data,
-    x = TRUE,
-    y = TRUE
-  )
-  attr(offset_model, "markov_engine") <- "orm"
-
-  expect_error(
-    mostr:::validate_markov_model(offset_model),
-    "Model offsets are not supported",
-    fixed = TRUE
-  )
 })

@@ -353,7 +353,8 @@ plot_sops_summary <- function(
           ribbon_mapping,
           alpha = ribbon_alpha,
           color = NA
-        )
+        ) +
+        ggplot2::labs(fill = "State")
     }
 
     p <- p +
@@ -362,7 +363,6 @@ plot_sops_summary <- function(
         x = "Time",
         y = "Probability",
         color = "State",
-        fill = "State",
         title = "State Occupancy Probabilities Over Time"
       )
 
@@ -417,12 +417,6 @@ plot_sops_draw_data <- function(
   state_levels
 ) {
   draws <- attr(data, "draws")
-  if (is.null(draws)) {
-    draws <- attr(data, "draws")
-  }
-  if (is.null(draws)) {
-    draws <- attr(data, "draws")
-  }
   if (is.null(draws) || !"draw_id" %in% names(draws)) {
     return(NULL)
   }

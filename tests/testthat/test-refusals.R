@@ -258,11 +258,6 @@ fit_refusals <- list(
     "`family` names the link function"
   ),
   refusal(
-    "F14", "a former starting-profile argument",
-    function() refusal_mostm(start_time = 1),
-    "does not accept the former starting-profile argument(s)"
-  ),
-  refusal(
     "F15", "numeric time below 1",
     function() {
       data <- grid_data()
@@ -832,11 +827,6 @@ prediction_refusals <- list(
     "P47", "state sets without unique names",
     function() refusal_call(avg_state_time, state_sets = list(a = "1", a = "2")),
     "`state_sets` must contain nonempty state sets with unique, non-missing names."
-  ),
-  refusal(
-    "P48", "the former `origin_time` argument",
-    function() refusal_contrast(origin_time = 0),
-    "is no longer supported; use `baseline_time` instead."
   ),
   refusal(
     "P49", "a model-based plot given a `time_var` other than the one given to `mostm()`",

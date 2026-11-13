@@ -1,11 +1,6 @@
 # Analytical propagation for average SOP comparisons.
 
-delta_validate_comparison_scope <- function(
-  object,
-  target,
-  vcov,
-  conf_type
-) {
+delta_validate_comparison_scope <- function(object, conf_type) {
   args <- attr(object, "comparison_args")
   avg_args <- attr(object, "avg_args")
   if (is.null(args) || is.null(avg_args)) {
@@ -35,16 +30,7 @@ delta_validate_comparison_scope <- function(
       "Analytical delta inference with `by` is not yet supported."
     )
   }
-
-  target <- delta_validate_target(object, target)
-  if (identical(target, "unconditional") && !is.null(vcov)) {
-    mostr_abort(
-      "A coefficient covariance matrix cannot be supplied for unconditional inference; ",
-      "unconditional inference uses fitted-model score components and the ",
-      "stacked patient influence function."
-    )
-  }
-  list(args = args, avg_args = avg_args, target = target)
+  list(args = args, avg_args = avg_args)
 }
 
 delta_replay_average_comparison <- function(
@@ -82,9 +68,6 @@ delta_trapezoid_weights <- function(times) {
     return(numeric(n))
   }
   steps <- diff(times)
-  if (n == 2L) {
-    return(rep(steps / 2, 2L))
-  }
   c(
     steps[1L] / 2,
     (utils::head(steps, -1L) + utils::tail(steps, -1L)) / 2,
@@ -220,7 +203,7 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
   source_state <- as.character(source$state)
   source_time <- as.character(source$time)
 
-  # ponytail: scan source cells per result; index groups if setup time dominates.
+  # Scan source cells per result; index groups if setup time dominates.
   for (i in seq_len(n_result)) {
     states <- as.character(state_sets[[state_index[i]]])
     level_sign <-
@@ -380,8 +363,6 @@ inferences_delta_comparisons <- function(
 ) {
   scope <- delta_validate_comparison_scope(
     object = object,
-    target = target,
-    vcov = vcov,
     conf_type = conf_type
   )
   avg <- delta_replay_average_comparison(
@@ -396,7 +377,7 @@ inferences_delta_comparisons <- function(
     cluster = cluster,
     conf_level = conf_level,
     conf_type = "wald",
-    target = scope$target
+    target = target
   )
   operator <- delta_comparison_operator(
     object = object,
@@ -410,7 +391,7 @@ inferences_delta_comparisons <- function(
     standard_error = propagated$std.error,
     conf_level = conf_level,
     conf_type = "wald",
-    target = scope$target,
+    target = target,
     analytical = propagated$analytical
   )
 }

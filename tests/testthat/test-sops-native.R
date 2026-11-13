@@ -15,15 +15,3 @@ test_that("PO structure detection requires threshold-invariant slopes", {
   expect_equal(unname(po$beta), c(0, 0.5))
   expect_null(non_po)
 })
-
-test_that("vgam fits are no longer supported", {
-  model <- with_fit_settings(structure(list(), class = "vgam"), y_levels = 1:2)
-  expect_snapshot(
-    error = TRUE,
-    soprob_markov(
-      model,
-      newdata = data.frame(time = 1, yprev = 1),
-      times = 1
-    )
-  )
-})

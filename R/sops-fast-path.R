@@ -3,9 +3,9 @@
 # =============================================================================
 # FAST PATH HELPER FUNCTIONS
 # =============================================================================
-# These internal functions provide the fast path for simulation-based inference
-# on VGLM models by pre-computing design matrices and bypassing VGAM's
-# predict() function.
+# These internal functions provide the fast path for orm and vglm models: the
+# design matrices of all visits are built once, and the recursion then runs
+# for any coefficients without calling the models' predict() functions.
 
 #' Build Fast Markov Simulation Components (Internal)
 #'
@@ -72,14 +72,6 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
     n_cols = ncol(Gamma_template)
   )
 
-  # Prepare data
-  if (!p_var %in% names(data)) {
-    data[[p_var]] <- factor(ylevel_names[1], levels = ylevel_names)
-  }
-  if (!time_var %in% names(data)) {
-    data <- assign_sop_time(data, time_var, times[1], time_info)
-  }
-
   # Terms object
   tt <- if (is_vglm) stats::delete.response(stats::terms(model))
 
@@ -93,9 +85,6 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
       X <- vglm_prediction_design(model, d, tt)
     }
     common <- intersect(colnames(X), common_cols)
-    if (length(common) == 0) {
-      return(NULL)
-    }
     X[, common, drop = FALSE]
   }
 
@@ -111,15 +100,7 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
 
   # A. Baseline matrix for T=1 uses each patient's observed previous state.
   d_init <- set_time(data, 1)
-  d_init[[p_var]] <- normalize_previous_state_column(
-    d_init[[p_var]],
-    data[[p_var]],
-    p_var
-  )
   X_init <- get_X(d_init)
-  if (is.null(X_init)) {
-    mostr_abort("Could not construct a design matrix for the fitted model.")
-  }
   col_names <- colnames(X_init)
 
   align_X <- function(X) {
@@ -156,9 +137,6 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
     }
   }
 
-  design_bytes <- measure_execution_plan_designs(X_init, X_transition)
-  validate_execution_plan_designs(design_bytes, budget$workspace_bytes)
-
   list(
     X_init = align_X(X_init),
     X_transition = X_transition,
@@ -170,7 +148,7 @@ markov_msm_build <- function(model, newdata, times = NULL, settings) {
     transition_layout = "stacked",
     transition_origins = non_absorb_idx,
     workspace_bytes = budget$workspace_bytes,
-    design_bytes = design_bytes
+    design_bytes = budget$design_bytes
   )
 }
 
@@ -233,11 +211,6 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
   }
 
   d_init <- set_time(newdata, 1L)
-  d_init[[p_var]] <- normalize_previous_state_column(
-    d_init[[p_var]],
-    newdata[[p_var]],
-    p_var
-  )
 
   tt <- if (inherits(model, "vglm")) {
     stats::delete.response(stats::terms(model))
@@ -280,9 +253,6 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
     }
   }
 
-  design_bytes <- measure_execution_plan_designs(X_init, X_transition)
-  validate_execution_plan_designs(design_bytes, budget$workspace_bytes)
-
   list(
     X_init = X_init,
     X_transition = X_transition,
@@ -294,7 +264,7 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
     transition_layout = "stacked",
     transition_origins = non_absorb_idx,
     workspace_bytes = budget$workspace_bytes,
-    design_bytes = design_bytes
+    design_bytes = budget$design_bytes
   )
 }
 
@@ -357,25 +327,6 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
   if (n_times >= 2L) {
     for (t_idx in 2:n_times) {
       X_visit <- X_transition[[t_idx]]
-      if (!identical(components$transition_layout, "stacked")) {
-        X_visit <- do.call(rbind, X_visit[non_absorb_idx])
-      } else {
-        built_origins <- components$transition_origins %||% non_absorb_idx
-        origin_positions <- match(non_absorb_idx, built_origins)
-        if (anyNA(origin_positions)) {
-          mostr_abort("Transition design is missing a required origin state.")
-        }
-        if (!identical(origin_positions, seq_along(built_origins))) {
-          block_rows <- unlist(lapply(origin_positions, function(position) {
-            start <- (position - 1L) * n_pat + 1L
-            start:(start + n_pat - 1L)
-          }))
-          X_visit <- X_visit[block_rows, , drop = FALSE]
-        }
-      }
-      if (!is.matrix(X_visit)) {
-        mostr_abort("Missing transition design for SOP visit ", t_idx, ".")
-      }
       if (is.null(po)) {
         logits <- calc_lp(X_visit)
         check_transition_probabilities(logits, paste0("SOP time point ", t_idx))
@@ -472,33 +423,3 @@ normalize_probability_rows <- function(probs) {
   probs
 }
 
-
-#' Compute Effective Coefficients from Beta Vector (Internal)
-#'
-#' Transforms a vector of VGLM coefficients into an effective coefficient matrix
-#' by applying the constraint matrices.
-#'
-#' @param beta Coefficient vector from a VGLM fit
-#' @param C_list Constraint matrices list from VGAM::constraints()
-#' @return Effective coefficient matrix with one row per linear predictor and
-#'   one column per small-design column, including the intercept.
-#'
-#' @keywords internal
-compute_Gamma <- function(beta, C_list) {
-  M <- nrow(C_list[[1]])
-  P <- length(C_list)
-  term_names <- names(C_list)
-
-  G <- matrix(0, nrow = M, ncol = P)
-  colnames(G) <- term_names
-  rownames(G) <- paste0("eta", 1:M)
-
-  curr <- 1
-  for (j in seq_along(C_list)) {
-    k <- ncol(C_list[[j]])
-    chunk <- beta[curr:(curr + k - 1)]
-    G[, j] <- C_list[[j]] %*% chunk
-    curr <- curr + k
-  }
-  G
-}

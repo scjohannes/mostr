@@ -5,9 +5,6 @@ markov_transition_trace <- function(
   data,
   times = NULL,
   settings,
-  include_re = FALSE,
-  n_draws = 100L,
-  seed = NULL,
   return_kernels = FALSE,
   ...
 ) {
@@ -19,7 +16,7 @@ markov_transition_trace <- function(
   if (length(unknown_dots) > 0) {
     mostr_abort("Unused arguments: ", paste(unknown_dots, collapse = ", "))
   }
-  draw_indices_arg <- dots$.draw_indices
+  draw_indices <- dots$.draw_indices
   gamma_draws_arg <- dots$.gamma_draws
   # A caller that traces posterior draws in chunks passes the call's number of
   # draws, which the crossed cut-point error reports.
@@ -73,12 +70,6 @@ markov_transition_trace <- function(
   times <- time_res$times
   time_info <- time_res$time_info
 
-  draw_indices <- NULL
-  if (ftype == "rmsb") {
-    draw_indices <- draw_indices_arg %||%
-      select_posterior_draws(object, n_draws, seed)
-  }
-
   prd <- switch(
     ftype,
     rms = function(obj, d) predict_orm_response_markov(obj, d),
@@ -87,7 +78,7 @@ markov_transition_trace <- function(
       predict_blrm_response_markov(
         obj,
         d,
-        include_re = include_re,
+        include_re = FALSE,
         id_var = settings$id_var,
         draw_indices = draw_indices,
         gamma_draws = gamma_draws_arg
@@ -287,7 +278,6 @@ markov_transition_trace <- function(
       absorb_names = absorb_names,
       settings = settings,
       time_info = time_info,
-      draw_indices = draw_indices,
       n_draws_total = n_draws_total
     ))
   }
@@ -305,7 +295,6 @@ markov_transition_trace <- function(
     absorb_names = absorb_names,
     settings = settings,
     time_info = time_info,
-    draw_indices = draw_indices,
     n_draws_total = n_draws_total
   )
 }
@@ -356,17 +345,13 @@ trace_record_absorbing_transition <- function(
 markov_transition_trace_result <- function(
   P,
   transitions,
-  draw_indices,
   kernels = NULL
 ) {
-  out <- list(
+  list(
     sops = P,
     transitions = transitions,
-    kernels = kernels,
-    draw_indices = draw_indices
+    kernels = kernels
   )
-  class(out) <- "markov_transition_trace"
-  out
 }
 
 markov_transition_trace_first_order <- function(
@@ -382,7 +367,6 @@ markov_transition_trace_first_order <- function(
   absorb_names,
   settings,
   time_info,
-  draw_indices,
   n_draws_total = NULL
 ) {
   p_var <- settings$p_var
@@ -394,12 +378,7 @@ markov_transition_trace_first_order <- function(
   yna <- ylevel_names[non_absorb_idx]
 
   if (n_times < 2) {
-    return(markov_transition_trace_result(
-      P,
-      transitions,
-      draw_indices,
-      kernels
-    ))
+    return(markov_transition_trace_result(P, transitions, kernels))
   }
 
   edata_base <- data[rep(seq_len(n_pat), times = length(yna)), , drop = FALSE]
@@ -493,7 +472,7 @@ markov_transition_trace_first_order <- function(
     }
   }
 
-  markov_transition_trace_result(P, transitions, draw_indices, kernels)
+  markov_transition_trace_result(P, transitions, kernels)
 }
 
 markov_transition_trace_second_order <- function(
@@ -509,7 +488,6 @@ markov_transition_trace_second_order <- function(
   absorb_names,
   settings,
   time_info,
-  draw_indices,
   n_draws_total = NULL
 ) {
   p_var <- settings$p_var
@@ -540,12 +518,7 @@ markov_transition_trace_second_order <- function(
   }
 
   if (n_times < 2) {
-    return(markov_transition_trace_result(
-      P,
-      transitions,
-      draw_indices,
-      kernels
-    ))
+    return(markov_transition_trace_result(P, transitions, kernels))
   }
 
   pair_grid <- expand.grid(
@@ -674,5 +647,5 @@ markov_transition_trace_second_order <- function(
     }
   }
 
-  markov_transition_trace_result(P, transitions, draw_indices, kernels)
+  markov_transition_trace_result(P, transitions, kernels)
 }

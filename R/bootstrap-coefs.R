@@ -12,8 +12,6 @@
 #' @param n_boot Number of bootstrap samples.
 #' @param workers Number of workers for parallel processing. If NULL (default)
 #'   or 1, sequential processing is used. If > 1, uses parallel processing.
-#' @param parallel (Deprecated) Logical indicating whether to use parallel
-#'   processing. Use the \code{workers} parameter instead.
 #' @param use_coefstart Logical. If `TRUE`, each refit starts from the
 #'   original model coefficients, which can speed up convergence. Only models
 #'   fitted with `engine = "vglm"` accept starting coefficients, so `TRUE` with
@@ -98,21 +96,8 @@ bootstrap_model_coefs <- function(
   model,
   n_boot,
   workers = NULL,
-  parallel = NULL,
   use_coefstart = FALSE
 ) {
-  # Handle deprecated parallel parameter
-  if (!is.null(parallel)) {
-    warning(
-      "The 'parallel' argument is deprecated. ",
-      "Please use 'workers' instead.\n",
-      "  - For sequential processing: workers = NULL or workers = 1\n",
-      "  - For parallel processing: workers = N (e.g., workers = 8)"
-    )
-    if (parallel && is.null(workers)) {
-      workers <- parallel::detectCores() - 1
-    }
-  }
 
   # Check model class
   if (!inherits(model, c("orm", "vglm", "robcov_vglm"))) {
@@ -167,8 +152,6 @@ bootstrap_model_coefs <- function(
       model = model,
       factor_cols = factor_cols,
       original_data = data,
-      y_levels = NULL,
-      absorb = NULL,
       use_coefstart = use_coefstart
     )
 

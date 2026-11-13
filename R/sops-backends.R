@@ -60,10 +60,6 @@ validate_markov_model <- function(object) {
     )
   }
 
-  if (model_uses_offset(model_chk)) {
-    stop_unsupported_offset()
-  }
-
   if (inherits(model_chk, "blrm")) {
     return(invisible(NULL))
   }
@@ -127,8 +123,6 @@ validate_markov_model <- function(object) {
       stop_unsupported_markov_link(family)
     }
   }
-
-  # Other model types will be caught by the existing class check in soprob_markov
 
   invisible(NULL)
 }
@@ -201,13 +195,6 @@ vglm_prediction_design <- function(
 }
 
 predict_vglm_response_markov <- function(object, newdata) {
-  if (
-    !isTRUE(attr(object, "markov_vglm")) &&
-      !isTRUE(attr(object, "markov_split_assign"))
-  ) {
-    return(VGAM::predict(object, newdata, type = "response"))
-  }
-
   X <- vglm_prediction_design(object, newdata)
   attr(X, "assign") <- object@assign
 
@@ -489,121 +476,99 @@ predict_blrm_response_markov <- function(
   if (is.null(draw_indices)) {
     draw_indices <- seq_len(nrow(object$draws))
   }
-  manual_error <- NULL
-
-  manual <- tryCatch(
-    {
-      cache_index <- NULL
-      if (!is.null(prediction_cache)) {
-        prediction_cache$cursor <- prediction_cache$cursor + 1L
-        cache_index <- prediction_cache$cursor
-      }
-      X <- if (
-        !is.null(cache_index) && length(prediction_cache$X) >= cache_index
-      ) {
-        prediction_cache$X[[cache_index]]
-      } else {
-        value <- blrm_design_matrix(object, newdata = newdata, second = FALSE)
-        if (!is.null(cache_index)) {
-          prediction_cache$X[[cache_index]] <- value
-        }
-        value
-      }
-      draws <- object$draws[draw_indices, , drop = FALSE]
-      ndraws <- nrow(draws)
-      ns <- object$non.slopes
-      cn <- colnames(draws)
-      tauinfo <- object$tauInfo
-      tau_names <- if (!is.null(tauinfo) && length(tauinfo$name) > 0L) {
-        tauinfo$name
-      } else {
-        character()
-      }
-
-      intercept_draws <- draws[, seq_len(ns), drop = FALSE]
-      beta_names <- setdiff(cn, c(cn[seq_len(ns)], tau_names))
-      if (length(beta_names) == 0) {
-        xb <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
-      } else {
-        beta_draws <- draws[, beta_names, drop = FALSE]
-        missing_beta <- setdiff(beta_names, colnames(X))
-        if (length(missing_beta) > 0) {
-          mostr_abort(
-            "Could not match `blrm` posterior coefficients to prediction ",
-            "design columns. Missing columns: ",
-            paste(utils::head(missing_beta, 10), collapse = ", "),
-            if (length(missing_beta) > 10) " ..." else "",
-            "."
-          )
-        }
-        X <- X[, beta_names, drop = FALSE]
-        xb <- beta_draws %*% t(X)
-      }
-
-      pppo <- object$pppo %||% 0L
-      has_npo <- pppo > 0
-      if (has_npo) {
-        cppo <- resolve_blrm_cppo(object$cppo, envir = parent.frame())
-        Z <- if (
-          !is.null(cache_index) && length(prediction_cache$Z) >= cache_index
-        ) {
-          prediction_cache$Z[[cache_index]]
-        } else {
-          value <- blrm_design_matrix(object, newdata = newdata, second = TRUE)
-          if (!is.null(cache_index)) {
-            prediction_cache$Z[[cache_index]] <- value
-          }
-          value
-        }
-        tau_draws <- draws[, tau_names, drop = FALSE]
-        zt <- tau_draws %*% t(Z)
-        cppos <- vapply(object$ylevels[-1], cppo, numeric(1))
-      }
-
-      u_draws <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
-      if (include_re) {
-        id_var <- markov_require_id_var(object, id_var)
-        u_draws <- blrm_random_effect_matrix(
-          object,
-          newdata,
-          id_var,
-          draw_indices,
-          gamma_draws = gamma_draws
-        )
-      }
-
-      ynam <- if (!is.null(object$yname)) {
-        paste(object$yname, object$ylevels, sep = "=")
-      } else {
-        as_state_labels(object$ylevels)
-      }
-      base_eta <- xb + u_draws
-      out <- blrm_probabilities_native(
-        base_eta,
-        intercept_draws,
-        threshold_eta = if (has_npo) zt else numeric(),
-        threshold_scale = if (has_npo) cppos else numeric()
-      )
-      dimnames(out) <- list(draw_indices, rownames(newdata), ynam)
-      out
-    },
-    error = function(e) {
-      manual_error <<- e
-      NULL
+  cache_index <- NULL
+  if (!is.null(prediction_cache)) {
+    prediction_cache$cursor <- prediction_cache$cursor + 1L
+    cache_index <- prediction_cache$cursor
+  }
+  X <- if (
+    !is.null(cache_index) && length(prediction_cache$X) >= cache_index
+  ) {
+    prediction_cache$X[[cache_index]]
+  } else {
+    value <- blrm_design_matrix(object, newdata = newdata, second = FALSE)
+    if (!is.null(cache_index)) {
+      prediction_cache$X[[cache_index]] <- value
     }
-  )
-
-  if (!is.null(manual)) {
-    return(manual)
+    value
   }
+  draws <- object$draws[draw_indices, , drop = FALSE]
+  ndraws <- nrow(draws)
+  ns <- object$non.slopes
+  cn <- colnames(draws)
+  tauinfo <- object$tauInfo
+  tau_names <- if (!is.null(tauinfo) && length(tauinfo$name) > 0L) {
+    tauinfo$name
+  } else {
+    character()
+  }
+
+  intercept_draws <- draws[, seq_len(ns), drop = FALSE]
+  beta_names <- setdiff(cn, c(cn[seq_len(ns)], tau_names))
+  if (length(beta_names) == 0) {
+    xb <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
+  } else {
+    beta_draws <- draws[, beta_names, drop = FALSE]
+    missing_beta <- setdiff(beta_names, colnames(X))
+    if (length(missing_beta) > 0) {
+      mostr_abort(
+        "Could not match `blrm` posterior coefficients to prediction ",
+        "design columns. Missing columns: ",
+        paste(utils::head(missing_beta, 10), collapse = ", "),
+        if (length(missing_beta) > 10) " ..." else "",
+        "."
+      )
+    }
+    X <- X[, beta_names, drop = FALSE]
+    xb <- beta_draws %*% t(X)
+  }
+
+  pppo <- object$pppo %||% 0L
+  has_npo <- pppo > 0
+  if (has_npo) {
+    cppo <- resolve_blrm_cppo(object$cppo, envir = parent.frame())
+    Z <- if (
+      !is.null(cache_index) && length(prediction_cache$Z) >= cache_index
+    ) {
+      prediction_cache$Z[[cache_index]]
+    } else {
+      value <- blrm_design_matrix(object, newdata = newdata, second = TRUE)
+      if (!is.null(cache_index)) {
+        prediction_cache$Z[[cache_index]] <- value
+      }
+      value
+    }
+    tau_draws <- draws[, tau_names, drop = FALSE]
+    zt <- tau_draws %*% t(Z)
+    cppos <- vapply(object$ylevels[-1], cppo, numeric(1))
+  }
+
+  u_draws <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
   if (include_re) {
-    mostr_abort(manual_error$message)
+    id_var <- markov_require_id_var(object, id_var)
+    u_draws <- blrm_random_effect_matrix(
+      object,
+      newdata,
+      id_var,
+      draw_indices,
+      gamma_draws = gamma_draws
+    )
   }
 
-  mostr_abort(
-    "Manual `blrm` prediction failed: ",
-    manual_error$message
+  ynam <- if (!is.null(object$yname)) {
+    paste(object$yname, object$ylevels, sep = "=")
+  } else {
+    as_state_labels(object$ylevels)
+  }
+  base_eta <- xb + u_draws
+  out <- blrm_probabilities_native(
+    base_eta,
+    intercept_draws,
+    threshold_eta = if (has_npo) zt else numeric(),
+    threshold_scale = if (has_npo) cppos else numeric()
   )
+  dimnames(out) <- list(draw_indices, rownames(newdata), ynam)
+  out
 }
 
 orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
@@ -825,10 +790,6 @@ make_previous_state_column <- function(states, prototype, n, p_var) {
   rep(values, each = n)
 }
 
-normalize_previous_state_column <- function(values, prototype, p_var) {
-  coerce_previous_state_values(values, prototype, p_var)
-}
-
 get_model_factor_levels <- function(model, varname) {
   model_chk <- if (inherits(model, "robcov_vglm")) {
     model$vglm_fit
@@ -889,10 +850,6 @@ get_time_info <- function(model, data, time_var) {
 }
 
 default_sop_times <- function(data, time_var, default) {
-  if (default == "max_sequence") {
-    return(seq_len(max(data[[time_var]], na.rm = TRUE)))
-  }
-
   if (default == "fast") {
     if (!is.null(time_var) && time_var %in% names(data)) {
       return(sort(unique(data[[time_var]])))
@@ -933,7 +890,7 @@ resolve_sop_times <- function(
   data,
   times,
   time_var,
-  default = c("unique", "max_sequence", "fast")
+  default = c("unique", "fast")
 ) {
   default <- match.arg(default)
   time_info <- get_time_info(model, data, time_var)

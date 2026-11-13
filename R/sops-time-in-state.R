@@ -405,74 +405,6 @@ time_in_state_delta <- function(
   result
 }
 
-time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
-  if (!all(c("boot_id", "time", "tx") %in% colnames(sops))) {
-    mostr_abort(
-      "Input data frame must contain 'boot_id', 'time', and 'tx' columns."
-    )
-  }
-
-  state_cols_available <- grep("^state_", colnames(sops), value = TRUE)
-  if (length(state_cols_available) == 0) {
-    mostr_abort(
-      "Input data frame does not contain any columns starting with 'state_'."
-    )
-  }
-
-  target_suffixes <- as.character(target_states)
-  target_cols <- paste0("state_", target_suffixes)
-  missing_cols <- setdiff(target_cols, colnames(sops))
-  if (length(missing_cols) > 0) {
-    mostr_abort(paste(
-      "The following target state columns were not found in the bootstrap output:",
-      paste(missing_cols, collapse = ", ")
-    ))
-  }
-
-  prob_target <- if (length(target_cols) == 1) {
-    sops[[target_cols]]
-  } else {
-    rowSums(sops[, target_cols, drop = FALSE])
-  }
-
-  agg_df <- sops[, c("boot_id", "tx", "time")]
-  agg_df$prob <- prob_target
-
-  if (real_time) {
-    groups <- split(
-      seq_len(nrow(agg_df)),
-      split_key(agg_df, c("boot_id", "tx"))
-    )
-    res_grouped <- bind_rows_fill(lapply(groups, function(idx) {
-      group <- agg_df[idx, , drop = FALSE]
-      data.frame(
-        boot_id = group$boot_id[1],
-        tx = group$tx[1],
-        prob = trapezoid_auc(group$time, group$prob)
-      )
-    }))
-  } else {
-    res_grouped <- stats::aggregate(
-      prob ~ boot_id + tx,
-      data = agg_df,
-      FUN = sum
-    )
-  }
-
-  res_tx <- res_grouped[res_grouped$tx == 1, c("boot_id", "prob")]
-  res_ctrl <- res_grouped[res_grouped$tx == 0, c("boot_id", "prob")]
-  res_wide <- merge(
-    res_tx,
-    res_ctrl,
-    by = "boot_id",
-    suffixes = c("_tx", "_ctrl")
-  )
-
-  colnames(res_wide)[colnames(res_wide) == "prob_tx"] <- "SOP_tx"
-  colnames(res_wide)[colnames(res_wide) == "prob_ctrl"] <- "SOP_ctrl"
-  res_wide$delta <- res_wide$SOP_tx - res_wide$SOP_ctrl
-  res_wide
-}
 
 #' Compute Total Time in Target State(s)
 #'
@@ -492,10 +424,6 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     the totals are computed with the delta method; see Details. SOPs with
 #'     confidence limits but no stored draws give totals with `NA` limits and
 #'     a warning; see Details.
-#'   \item **Legacy Wide Bootstrap-Level:** If input is a data frame with
-#'     `boot_id`, `time`, `tx`, and `state_*` columns, it returns mean
-#'     time-in-state per treatment group and the difference for each bootstrap
-#'     sample.
 #' }
 #'
 #' @param x Input object.
@@ -503,12 +431,9 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     \item **Array:** `[Patients x Time x States]` (Frequentist) or `[Draws x Patients x Time x States]` (Bayes).
 #'     \item **Tidy SOP:** A `markov_sops`, `markov_avg_sops`, or
 #'       `markov_interpolated_sops` object.
-#'     \item **Data Frame:** Legacy wide bootstrap SOP data containing columns
-#'       `boot_id`, `time`, `tx`, and `state_*`.
 #'   }
 #' @param target_states Vector of target state(s) to include in the time calculation.
 #'   Can be integer indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).
-#'   For bootstrap outputs, these must match the suffix of the `state_` columns (e.g., if column is `state_1`, use `1`).
 #' @param time_map Optional named numeric vector or data frame mapping visit
 #'   labels to real elapsed times. Supplying this switches tidy SOP and array
 #'   inputs to trapezoidal real-time AUC.
@@ -538,13 +463,6 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     `NA`. Tests from
 #'     `inferences(null = )` are dropped, because a null value for
 #'     probabilities does not apply to a total time.
-#'   \item **Input = Bootstrap DF:** A data frame with columns:
-#'     \itemize{
-#'       \item `boot_id`: Bootstrap iteration
-#'       \item `SOP_tx`: Mean time in target state (Treatment)
-#'       \item `SOP_ctrl`: Mean time in target state (Control)
-#'       \item `delta`: Difference (Treatment - Control)
-#'     }
 #' }
 #'
 #' @details
@@ -698,9 +616,6 @@ time_in_state <- function(
       ))
     }
     if (use_real_time) {
-      if (is.null(time_map)) {
-        mostr_abort("`time_map` must be supplied for real-time AUC.")
-      }
       target_times <- comparison_real_time_target_times(
         sops,
         time_map,
@@ -730,37 +645,14 @@ time_in_state <- function(
     ))
   }
 
-  # =========================================================================
-  # BRANCH 1: Bootstrap Data Frame Input
-  # =========================================================================
   if (inherits(sops, "data.frame")) {
-    if (baseline_time_supplied && !is.null(baseline_time)) {
-      mostr_abort(
-        "Empirical `baseline_time` anchoring is only supported for tidy SOP ",
-        "outputs."
-      )
-    }
-    if (!is.null(target_times)) {
-      mostr_abort("`target_times` is only supported for tidy SOP outputs.")
-    }
-    if (use_real_time) {
-      if (is.null(time_map)) {
-        mostr_abort("`time_map` must be supplied for real-time AUC.")
-      }
-      time_map <- standardize_time_map(time_map)
-      sops$time <- map_sop_time_values(sops$time, time_map)
-    }
-    return(time_in_state_bootstrap_df(
-      sops,
-      target_states = target_states,
-      real_time = use_real_time
-    ))
+    mostr_abort(
+      "A data frame given to `time_in_state()` must be SOPs from `sops()`, ",
+      "`avg_sops()`, or `interpolate_sops()`."
+    )
   }
 
-  # =========================================================================
-  # BRANCH 2: Array Input (Original Logic)
-  # =========================================================================
-
+  # Array input.
   if (!is.null(target_times)) {
     mostr_abort("`target_times` is only supported for tidy SOP outputs.")
   }
@@ -768,7 +660,7 @@ time_in_state <- function(
   # --- 1. Detect Dimensions ---
   dims <- dim(sops)
   if (is.null(dims)) {
-    mostr_abort("Input 'sops' must be an array or data frame.")
+    mostr_abort("Input 'sops' must be SOPs or an array.")
   }
 
   ndim <- length(dims)
@@ -808,9 +700,6 @@ time_in_state <- function(
 
   # --- 4. Integrate Over Time ---
   if (use_real_time) {
-    if (is.null(time_map)) {
-      mostr_abort("`time_map` must be supplied for real-time AUC.")
-    }
     if (baseline_time_supplied && !is.null(baseline_time)) {
       mostr_abort(
         "Empirical `baseline_time` anchoring is only supported for tidy SOP ",

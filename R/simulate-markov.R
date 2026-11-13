@@ -619,10 +619,8 @@ simulate_markov_trajectories <- function(
 
     # If all patients are in absorbing states, fill remaining time and exit
     if (length(active_idx) == 0) {
-      if (t <= max(times)) {
-        for (i in (t + 1):ncol(state_matrix)) {
-          state_matrix[, i] <- state_matrix[, t]
-        }
+      for (i in (t + 1):ncol(state_matrix)) {
+        state_matrix[, i] <- state_matrix[, t]
       }
       break
     }
@@ -1096,4 +1094,10 @@ normalize_vectorized_markov_lp <- function(lp, n_active, n_thresholds) {
   }
 
   lp
+}
+
+sample_categorical_rows <- function(probabilities) {
+  probabilities <- as.matrix(probabilities)
+  storage.mode(probabilities) <- "double"
+  cpp_sample_categorical_rows(probabilities)
 }

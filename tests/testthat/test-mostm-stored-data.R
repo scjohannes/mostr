@@ -171,27 +171,6 @@ test_that("mostm() validates numeric first follow-up schedules", {
   )
 })
 
-test_that("mostm() rejects former starting-profile arguments", {
-  skip_on_cran()
-  skip_if_not_installed("VGAM")
-  local_reproducible_output(width = 80)
-
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1017)
-  expect_snapshot(
-    mostm(
-      ordered(y) ~ time_lin + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      absorb = 6,
-      start_time = 1,
-      origin_time = 0,
-      time_map = 1:6,
-      engine = "vglm"
-    ),
-    error = TRUE
-  )
-})
 
 test_that("the vglm engine aligns stored fitting data after subset and NA drops", {
   skip_on_cran()

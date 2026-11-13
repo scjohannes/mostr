@@ -624,9 +624,8 @@ test_that("stacked influence matches fitted patients and retains the cross term"
   raw_uncentered <- crossprod(expected_influence) / nrow(values)^2
   influence_mean <- colMeans(expected_influence)
 
-  expect_equal(result$scores, aligned_scores)
-  expect_equal(result$Ainv, Ainv)
-  expect_equal(result$coefficient_influence, coefficient_influence)
+  # The scores are given in another patient order than the profiles, so this
+  # also checks that they are aligned by patient ID.
   expect_equal(result$influence, expected_influence)
   # The result carries no covariance matrix; it is the sample covariance of the
   # returned influence values divided by n.
@@ -705,23 +704,6 @@ test_that("stacked influence rejects patients missing from profiles or scores", 
       info = case$label
     )
   }
-})
-
-test_that("empirical covariance propagates named raw coefficients", {
-  jacobian <- rbind(
-    first = c(beta_2 = 2, beta_1 = 1),
-    second = c(beta_2 = -1, beta_1 = 0.5)
-  )
-  covariance <- matrix(
-    c(4, 1, 1, 2),
-    nrow = 2L,
-    dimnames = list(c("beta_1", "beta_2"), c("beta_1", "beta_2"))
-  )
-  expected <- jacobian %*%
-    covariance[colnames(jacobian), colnames(jacobian)] %*%
-    t(jacobian)
-
-  expect_equal(delta_empirical_covariance(jacobian, covariance), expected)
 })
 
 test_that("unconditional delta standard errors ignore later changes to the user's data frame", {

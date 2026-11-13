@@ -122,62 +122,6 @@ terms_has_offset <- function(terms) {
   !is.null(offset_terms) && length(offset_terms) > 0
 }
 
-model_uses_offset <- function(model) {
-  model_chk <- if (inherits(model, "robcov_vglm")) {
-    model$vglm_fit
-  } else {
-    model
-  }
-
-  terms_obj <- tryCatch(stats::terms(model_chk), error = function(e) NULL)
-  if (!is.null(terms_obj) && terms_has_offset(terms_obj)) {
-    return(TRUE)
-  }
-
-  offset_obj <- tryCatch(
-    {
-      if (inherits(model_chk, "vglm")) {
-        methods::slot(model_chk, "offset")
-      } else {
-        model_chk$offset
-      }
-    },
-    error = function(e) NULL
-  )
-  offset_is_zero <- FALSE
-  if (!is.null(offset_obj) && length(offset_obj) > 0) {
-    offset_num <- suppressWarnings(as.numeric(offset_obj))
-    if (any(!is.na(offset_num) & offset_num != 0)) {
-      return(TRUE)
-    }
-    offset_is_zero <- all(!is.na(offset_num) & offset_num == 0)
-  }
-
-  call_obj <- tryCatch(
-    {
-      if (inherits(model_chk, "vglm")) {
-        methods::slot(model_chk, "call")
-      } else {
-        model_chk$call
-      }
-    },
-    error = function(e) NULL
-  )
-  if (!is.null(call_obj)) {
-    call_args <- as.list(call_obj)
-    if (
-      "offset" %in%
-        names(call_args) &&
-        !is.null(call_args[["offset"]]) &&
-        !offset_is_zero
-    ) {
-      return(TRUE)
-    }
-  }
-
-  FALSE
-}
-
 stop_unsupported_offset <- function() {
   mostr_abort(
     "Model offsets are not supported by mostr Markov SOP workflows. ",

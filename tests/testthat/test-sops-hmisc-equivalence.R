@@ -198,6 +198,26 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
 })
 
 
+# The effective coefficient matrix of a vglm fit, one row per linear predictor
+# and one column per design column, from its coefficient vector `beta` and
+# constraint matrices `C_list` (`VGAM::constraints()`).
+constrained_coefficients <- function(beta, C_list) {
+  M <- nrow(C_list[[1]])
+  G <- matrix(
+    0,
+    nrow = M,
+    ncol = length(C_list),
+    dimnames = list(paste0("eta", 1:M), names(C_list))
+  )
+  curr <- 1
+  for (j in seq_along(C_list)) {
+    k <- ncol(C_list[[j]])
+    G[, j] <- C_list[[j]] %*% beta[curr:(curr + k - 1)]
+    curr <- curr + k
+  }
+  G
+}
+
 test_that("compiled plan matches markov_msm_build() and the R reference for PPO, with and without constraints", {
   skip_on_cran()
   follow_up <- 30
@@ -287,7 +307,10 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
       times = times,
       settings = markov_settings(y_levels = y_levels, absorb = absorb)
     )
-    Gamma_hat <- compute_Gamma(get_coef(fit), VGAM::constraints(fit))
+    Gamma_hat <- constrained_coefficients(
+      get_coef(fit),
+      VGAM::constraints(fit)
+    )
     res_manual <- markov_msm_run(
       components = components,
       Gamma = Gamma_hat,

@@ -436,7 +436,6 @@ compute_scores_orm <- function(model) {
   intercept_scores <- d_eta
   slope_scores <- as.matrix(model$x) * rowSums(d_eta)
   scores <- cbind(intercept_scores, slope_scores)
-  colnames(scores) <- names(beta)
   weights <- orm_case_weights(model, n)
   scores <- scores * weights
   colnames(scores) <- names(beta)

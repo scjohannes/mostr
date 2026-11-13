@@ -215,7 +215,6 @@ test_that("`mostm()` records the settings and checks the previous-state columns"
   expect_identical(settings$p_var, "yprev")
   expect_identical(settings$p2_var, "ypprev")
   expect_identical(settings$order, 2L)
-  expect_identical(settings$engine, "orm")
   expect_identical(as_state_labels(settings$y_levels), as.character(1:4))
 
   vglm_fit <- grid_fit(grid_cell("vglm", order = 2L))

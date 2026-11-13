@@ -19,11 +19,10 @@ test_that("analytical averaging checks scenario and starting-profile order", {
     average,
     model,
     newdata,
-    times = 1:3,
-    output = "average"
+    times = 1:3
   )
   full <- run_sop_delta_plan(plan, model)
-  reference <- delta_average_arrays(
+  reference <- delta_average_profile_arrays(
     full$probabilities,
     full$jacobian,
     grid = do.call(expand.grid, variables),

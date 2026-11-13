@@ -531,13 +531,6 @@ normalize_interpolated_sops <- function(x) {
   x
 }
 
-sop_draw_attr_name <- function(x) {
-  if (!is.null(attr(x, "draws"))) {
-    return("draws")
-  }
-  NULL
-}
-
 warn_missing_interpolation_draws <- function(x) {
   if (!any(c("conf.low", "conf.high", "std.error") %in% names(x))) {
     return(invisible(NULL))
@@ -807,7 +800,7 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #'   fit,
 #'   newdata = baseline,
 #'   variables = list(tx = c(0, 1)),
-#'   times = NULL
+#'   times = 1:4
 #' )
 #' interpolate_sops(
 #'   avg,
@@ -923,13 +916,13 @@ interpolate_sops <- function(
     result <- normalize_interpolated_sops(result)
   }
 
-  draw_attr <- sop_draw_attr_name(x)
-  if (is.null(draw_attr)) {
+  draws <- attr(x, "draws")
+  if (is.null(draws)) {
     warn_missing_interpolation_draws(x)
   }
-  interpolated_draws <- if (!is.null(draw_attr)) {
+  interpolated_draws <- if (!is.null(draws)) {
     interpolate_sop_draws(
-      draws = attr(x, draw_attr),
+      draws = draws,
       time_map = time_map,
       target_times = target_times,
       anchor = anchor,
@@ -954,7 +947,7 @@ interpolate_sops <- function(
     }
   }
   if (!is.null(interpolated_draws)) {
-    attr(result, draw_attr) <- interpolated_draws
+    attr(result, "draws") <- interpolated_draws
   }
   attr(result, "time_map") <- time_map
   attr(result, "baseline_time") <- if (use_baseline) baseline_time else NULL

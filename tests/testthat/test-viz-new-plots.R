@@ -261,7 +261,6 @@ test_that("model-based plots take settings from the fit and refuse others", {
   model <- markov_set_settings(
     structure(list(), class = "vglm", markov_id_var = "id"),
     markov_settings(
-      engine = "vglm",
       id_var = "id",
       p2_var = "ypprev",
       y_levels = 1:2,
@@ -553,7 +552,7 @@ test_that("correlation diagnostics preserve negative correlations", {
   variogram_build <- ggplot2::ggplot_build(variogram)
 
   expect_equal(as.numeric(variogram$data$correlation), -1)
-  expect_equal(variogram$coordinates$limits$y, c(0, 1))
+  expect_equal(variogram$coordinates$limits$y, c(-1, 1))
   expect_equal(variogram_build$data[[1]]$y, -1)
 })
 
@@ -948,4 +947,30 @@ test_that("plot_lp_difference() on a real fit leaves out the absorbing state, fo
       label = engine
     )
   }
+})
+
+test_that("plot_variogram shows correlations below zero", {
+  negative <- data.frame(
+    id = rep(1:4, each = 2),
+    time = rep(1:2, times = 4),
+    y = c(1, 2, 2, 1, 1, 2, 2, 1)
+  )
+  positive <- data.frame(
+    id = rep(1:4, each = 3),
+    time = rep(1:3, times = 4),
+    y = c(1, 1, 1, 1, 2, 2, 2, 3, 3, 2, 3, 3)
+  )
+
+  variogram <- plot_variogram(negative, smooth = FALSE)
+  panel <- ggplot2::ggplot_build(variogram)$layout$panel_params[[1]]
+  expect_equal(as.numeric(variogram$data$correlation), -1)
+  expect_equal(variogram$coordinates$limits$y, c(-1, 1))
+  expect_lte(panel$y.range[1], -1)
+
+  # Without a negative correlation the panel still starts at 0.
+  expect_gt(min(plot_variogram(positive, smooth = FALSE)$data$correlation), 0)
+  expect_equal(
+    plot_variogram(positive, smooth = FALSE)$coordinates$limits$y,
+    c(0, 1)
+  )
 })

@@ -95,7 +95,6 @@ inference_attributes <- function() {
     "method",
     "engine",
     "n_draws",
-    "n_boot",
     "n_successful",
     "conf_level",
     "conf_type",

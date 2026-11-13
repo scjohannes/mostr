@@ -125,7 +125,6 @@ plot_model_trace_summaries <- function(
       data = setup$data,
       times = setup$times,
       settings = setup$settings,
-      n_draws = NULL,
       return_kernels = return_kernels,
       .draw_indices = chunk,
       .n_draws_total = length(draw_indices),

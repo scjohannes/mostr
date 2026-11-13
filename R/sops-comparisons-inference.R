@@ -143,7 +143,6 @@ restore_avg_comparison_inference_attrs <- function(result, object, inferred) {
   }
   for (a in c(
     "n_draws",
-    "n_boot",
     "n_successful",
     "conf_level",
     "conf_type",
@@ -226,13 +225,7 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
   draw_results <- apply_sop_simulation_draws(
     n_draws = nrow(beta_draws),
     analysis_fn = analysis_fn,
-    workers = workers,
-    globals = c(
-      "model",
-      "beta_draws",
-      "setup",
-      "args"
-    )
+    workers = workers
   )
 
   draw_results <- Filter(Negate(is.null), draw_results)
@@ -243,7 +236,6 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
   finalize_avg_comparison_draw_inference(
     object = object,
     draws_df = draws_df,
-    draw_attr = "draws",
     conf_level = conf_level,
     conf_type = conf_type,
     return_draws = return_draws,
@@ -405,7 +397,6 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       state_cols = factor_cols,
       starting_states = bootstrap_starting_states(
         profiles = if (newdata_supplied) setup$newdata_pred,
-        variables = setup$variables,
         state_vars = c(setup$settings$p_var, setup$settings$p2_var)
       )
     )
@@ -424,21 +415,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       data = refit_data,
       id_var = setup$settings$id_var,
       workers = workers,
-      packages = c("rms", "VGAM", "Hmisc", "stats"),
-      globals = c(
-        "model",
-        "setup",
-        "args",
-        "refit_data",
-        "newdata_supplied",
-        "factor_cols",
-        "engine",
-        "use_coefstart",
-        "complete_comparison_sops_array_states",
-        "state_factor",
-        "reduce_time_benefit_array_for_setup",
-        "time_benefit_sops_from_array"
-      )
+      packages = c("rms", "VGAM", "Hmisc", "stats")
     )
   } else {
     fwb_samples <- generate_fwb_bootstrap_weights(
@@ -452,21 +429,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       data = refit_data,
       id_var = setup$settings$id_var,
       workers = workers,
-      packages = c("rms", "VGAM", "Hmisc", "stats"),
-      globals = c(
-        "model",
-        "setup",
-        "args",
-        "refit_data",
-        "newdata_supplied",
-        "factor_cols",
-        "engine",
-        "use_coefstart",
-        "complete_comparison_sops_array_states",
-        "state_factor",
-        "reduce_time_benefit_array_for_setup",
-        "time_benefit_sops_from_array"
-      )
+      packages = c("rms", "VGAM", "Hmisc", "stats")
     )
   }
 
@@ -479,7 +442,6 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   finalize_avg_comparison_draw_inference(
     object = object,
     draws_df = boot_df,
-    draw_attr = "draws",
     conf_level = conf_level,
     conf_type = conf_type,
     return_draws = return_draws,
@@ -626,7 +588,6 @@ complete_comparison_sops_array_states <- function(
 finalize_avg_comparison_draw_inference <- function(
   object,
   draws_df,
-  draw_attr,
   conf_level,
   conf_type,
   return_draws,

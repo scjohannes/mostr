@@ -86,10 +86,6 @@ predict_markov_sops <- function(
     )
   }
   model_fast <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
-  r_engine_supported <- inherits(
-    model,
-    c("vglm", "orm", "blrm", "robcov_vglm")
-  )
   vglm_fast <- inherits(model_fast, "vglm") &&
     methods::is(model_fast, "vglm") &&
     isTRUE(tryCatch(
@@ -97,12 +93,10 @@ predict_markov_sops <- function(
       error = function(e) FALSE
     ))
   orm_fast <- inherits(model_fast, "orm") && !inherits(model_fast, "blrm")
-  use_fast <- (vglm_fast || orm_fast) &&
-    !inherits(model_fast, "blrm") &&
-    length(dots) == 0L
+  use_fast <- (vglm_fast || orm_fast) && length(dots) == 0L
 
   if (!use_fast) {
-    if (r_engine_supported && !inherits(model_fast, "blrm")) {
+    if (!inherits(model_fast, "blrm")) {
       reason <- if (length(dots) > 0L) {
         "additional backend arguments need the R engine."
       } else {
@@ -122,8 +116,7 @@ predict_markov_sops <- function(
       newdata = newdata,
       times = times,
       settings = settings,
-      builder = "batched",
-      output = "array"
+      builder = "batched"
     ),
     mostr_execution_plan_too_large = function(e) {
       fallback_condition <<- e

@@ -10,9 +10,6 @@
 #'   cluster-robust standard errors. Must have the same length as the fitted
 #'   observations, or the same length as the original pre-NA data when the fitted
 #'   model records omitted rows in `fit@na.action`.
-#' @param adjust Deprecated compatibility alias for `cadjust`. A non-missing
-#'   logical value is accepted so existing calls continue to work. Do not
-#'   supply both `adjust` and `cadjust`.
 #' @param bread Character string selecting the sandwich bread. `"observed"`
 #'   (the default) numerically differentiates the summed analytic scores.
 #'   `"vglm"` uses the inverse final VGAM IRLS working information returned by
@@ -82,7 +79,6 @@
 #'   \item{type}{The HC correction type}
 #'   \item{cadjust}{Whether the cluster correction was applied}
 #'   \item{adjustment_factor}{The combined HC and cluster scalar correction}
-#'   \item{adjust}{Compatibility alias for `cadjust`}
 #'
 #' @details
 #' Let \eqn{\beta} be the vector of all \eqn{p} model coefficients and
@@ -174,7 +170,6 @@
 robcov_vglm <- function(
   fit,
   cluster = NULL,
-  adjust = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
   cadjust = NULL
@@ -185,16 +180,14 @@ robcov_vglm <- function(
 
   bread_type <- match.arg(bread)
   type <- match.arg(type)
-  correction <- resolve_vglm_corrections(
-    cluster = cluster,
-    adjust = adjust,
-    cadjust = cadjust,
-    adjust_missing = missing(adjust),
-    cadjust_missing = missing(cadjust)
-  )
-  cadjust <- correction$cadjust
+  # The default G / (G - 1) cluster correction follows sandwich::vcovCL(); see
+  # the comment at the same default in robcov_orm().
+  if (is.null(cadjust)) {
+    cadjust <- !is.null(cluster)
+  } else if (!is.logical(cadjust) || length(cadjust) != 1L || is.na(cadjust)) {
+    mostr_abort("`cadjust` must be TRUE or FALSE.")
+  }
 
-  # --- 1. Extract key quantities from the vglm object ---
   n <- nobs(fit, type = "lm")
   p <- length(coef(fit))
   coefficients <- coef(fit)
@@ -233,10 +226,7 @@ robcov_vglm <- function(
   model_information <- chol2inv(chol(model_vcov))
   dimnames(model_information) <- dimnames(model_vcov)
 
-  # --- 2. Compute observation-level score contributions ---
   scores <- compute_scores_vglm(fit)
-
-  # Validate scores dimensions
 
   if (nrow(scores) != n) {
     mostr_abort("Number of score rows does not match number of observations")
@@ -284,7 +274,6 @@ robcov_vglm <- function(
     names(coefficients)
   )
 
-  # --- 3. Compute the meat matrix ---
   if (!is.null(cluster)) {
     cluster <- align_cluster_vglm(fit, cluster, n)
 
@@ -315,14 +304,10 @@ robcov_vglm <- function(
       )
     }
 
-    # Compute meat matrix from clustered scores
     sandwich_scores <- scores_clustered
-    meat <- crossprod(scores_clustered)
   } else {
     n_clusters <- NULL
-    # Standard (unclustered) meat matrix
     sandwich_scores <- scores
-    meat <- crossprod(scores)
   }
 
   assembled <- markov_assemble_sandwich(
@@ -344,7 +329,6 @@ robcov_vglm <- function(
     positive_semidefinite = TRUE
   )
 
-  # --- 4. Compute the sandwich: V = B * M * B ---
   # The crossproduct form is algebraically equivalent for symmetric bread and
   # remains numerically positive semidefinite for ill-conditioned fits.
   robust_var <- assembled$covariance
@@ -356,23 +340,19 @@ robcov_vglm <- function(
     positive_semidefinite = TRUE
   )
 
-  # Extract standard errors
   robust_se <- sqrt(pmax(diag(robust_var), 0))
   names(robust_se) <- names(coefficients)
 
-  # --- 5. Compute z-statistics and p-values ---
   z_stats <- coefficients / robust_se
   pvalues <- 2 * pnorm(-abs(z_stats))
   names(z_stats) <- names(coefficients)
   names(pvalues) <- names(coefficients)
 
-  # --- 6. Extract model information from vglm object ---
-  # Use slot() for S4 objects, with tryCatch for optional slots
+  # Optional slots may be absent.
   safe_slot <- function(obj, name) {
     tryCatch(methods::slot(obj, name), error = function(e) NULL)
   }
 
-  # --- 7. Build result object with all model information ---
   result <- list(
     # Model coefficients and inference
     coefficients = coefficients,
@@ -403,7 +383,6 @@ robcov_vglm <- function(
     type = type,
     cadjust = cadjust,
     adjustment_factor = adjustment_factor,
-    adjust = cadjust,
     convergence = convergence,
 
     # Original vglm fit (for prediction)
@@ -450,11 +429,6 @@ robcov_vglm <- function(
   attr(result, "markov_split_assign") <- attr(
     fit,
     "markov_split_assign",
-    exact = TRUE
-  )
-  attr(result, "markov_basis_terms") <- attr(
-    fit,
-    "markov_basis_terms",
     exact = TRUE
   )
   result <- markov_inherit_engine(result, fit)
@@ -567,40 +541,6 @@ compute_scores_vglm <- function(fit) {
 }
 
 
-resolve_vglm_corrections <- function(
-  cluster,
-  adjust,
-  cadjust,
-  adjust_missing,
-  cadjust_missing
-) {
-  has_adjust <- !adjust_missing && !is.null(adjust)
-  has_cadjust <- !cadjust_missing && !is.null(cadjust)
-
-  if (has_adjust && has_cadjust) {
-    mostr_abort("Supply only one of legacy `adjust` and `cadjust`, not both.")
-  }
-
-  validate_flag <- function(x, arg) {
-    if (!is.logical(x) || length(x) != 1L || is.na(x)) {
-      mostr_abort("`", arg, "` must be TRUE or FALSE.")
-    }
-    x
-  }
-
-  if (has_adjust) {
-    adjust <- validate_flag(adjust, "adjust")
-    # The legacy argument never adjusted the unclustered covariance.
-    return(list(cadjust = adjust && !is.null(cluster)))
-  }
-  if (has_cadjust) {
-    return(list(cadjust = validate_flag(cadjust, "cadjust")))
-  }
-
-  # The default G / (G - 1) cluster correction follows sandwich::vcovCL(); see
-  # the comment at the same default in robcov_orm().
-  list(cadjust = !is.null(cluster))
-}
 
 
 validate_vglm_matrix <- function(

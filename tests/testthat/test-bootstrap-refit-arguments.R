@@ -162,10 +162,13 @@ expect_refit_weights_follow_rows <- function(backend) {
   ))
 
   expect_false(is.null(boot$model))
-  expect_equal(
-    mostr:::bootstrap_stored_fit_weights(boot$model, boot$data),
-    boot$data$w_copy
-  )
+  # The row weights the engine fitted with.
+  engine_weights <- if (backend == "vglm") {
+    boot$model@prior.weights
+  } else {
+    boot$model$weights
+  }
+  expect_equal(as.numeric(engine_weights), boot$data$w_copy)
 
   # FWB multiplies the original row weights by the random weights.
   fwb <- suppressWarnings(mostr:::bootstrap_analysis_wrapper(

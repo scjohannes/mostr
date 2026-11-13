@@ -425,7 +425,7 @@ test_that("plot_comparisons draws estimates on the difference and ratio scales",
       geom = "GeomPoint",
       reference = 1,
       keys = c(x = "state_set", colour = "initial_y"),
-      labels = list(colour = "initial_y", fill = "initial_y"),
+      labels = list(colour = "initial_y"),
       colour_var = "initial_y"
     )
   )
@@ -546,4 +546,41 @@ test_that("plot_sops and plot_comparisons reject invalid inputs", {
   for (case in cases) {
     expect_error(case$call(), case$error, fixed = TRUE, info = case$label)
   }
+})
+
+test_that("plots label the fill legend only where a ribbon maps fill", {
+  # ggplot2 4.0 reports a legend title set for an aesthetic no layer maps
+  # ("Ignoring unknown labels: fill") when the plot is built.
+  skip_on_cran()
+  comparison <- make_comparison_plot_data()
+  point <- make_comparison_plot_data(comparison = "ratio", with_time = FALSE)
+  point$initial_y <- c("1", "2")
+  sop <- make_avg_sops_plot_data(with_draws = FALSE)
+
+  no_fill <- list(
+    "comparison points" = plot_comparisons(point, color_var = "initial_y"),
+    "comparison lines without intervals" = plot_comparisons(
+      comparison,
+      show_uncertainty = FALSE
+    ),
+    "SOP lines without intervals" = plot_sops(
+      sop,
+      geom = "line",
+      facet_var = "tx",
+      show_uncertainty = FALSE
+    )
+  )
+  for (label in names(no_fill)) {
+    plot <- no_fill[[label]]
+    expect_no_message(ggplot2::ggplot_build(plot))
+    expect_null(plot$labels$fill, info = label)
+  }
+
+  # Both data sets hold interval columns, so the default draws a ribbon.
+  with_ribbon <- plot_comparisons(comparison)
+  expect_no_message(ggplot2::ggplot_build(with_ribbon))
+  expect_identical(with_ribbon$labels$fill, "State set")
+  sop_ribbon <- plot_sops(sop, geom = "line", facet_var = "tx")
+  expect_no_message(ggplot2::ggplot_build(sop_ribbon))
+  expect_identical(sop_ribbon$labels$fill, "State")
 })

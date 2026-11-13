@@ -228,7 +228,6 @@ plot_transition_finalize_summary <- function(
   )
   data$.panel <- plot_transition_panel(data, facet_var)
   data$.panel <- factor(data$.panel, levels = panel_levels)
-  attr(data, "state_levels") <- state_levels
   data
 }
 
@@ -304,7 +303,6 @@ plot_transition_summary <- function(
   )
   out$.panel <- plot_transition_panel(out, facet_var)
   out$.panel <- factor(out$.panel, levels = panel_levels)
-  attr(out, "state_levels") <- state_levels
   out
 }
 
@@ -375,7 +373,6 @@ plot_transition_difference <- function(summary, variable, values, facet_var) {
   )
   out$.panel <- plot_transition_panel(out, c(facet_var, "contrast"))
   out$.panel <- factor(out$.panel, levels = panel_levels)
-  attr(out, "state_levels") <- attr(summary, "state_levels")
   out
 }
 
@@ -403,8 +400,6 @@ plot_transition_state_levels <- function(data, vars, y_levels = NULL) {
 
 plot_transition_panel <- function(data, facet_var) {
   label <- paste0("Time ", data$.time_key)
-  facet_var <- facet_var[!is.na(facet_var)]
-  facet_var <- setdiff(facet_var, character())
   facet_var <- facet_var[facet_var %in% names(data)]
   if (length(facet_var) == 0L) {
     return(label)
@@ -421,8 +416,6 @@ plot_transition_panel <- function(data, facet_var) {
 }
 
 plot_transition_panel_levels <- function(data, time_keys, facet_var) {
-  facet_var <- facet_var[!is.na(facet_var)]
-  facet_var <- setdiff(facet_var, character())
   facet_var <- facet_var[facet_var %in% names(data)]
   if (length(facet_var) == 0L) {
     return(paste0("Time ", time_keys))
