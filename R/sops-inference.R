@@ -546,8 +546,11 @@ inferences_impl <- function(
     )
   }
 
+  # A result passed in again keeps nothing of its earlier inference run, so
+  # every method below starts from the estimates. `blrm` results are left as
+  # they are: their intervals and draws come from the posterior.
   if (!inherits(attr(x, "model"), "blrm")) {
-    attr(x, "baseline_anchor_draws") <- NULL
+    x <- clear_inference_results(x)
   }
 
   if (identical(method, "delta")) {
@@ -617,7 +620,7 @@ inferences_impl <- function(
     method %in% c("bootstrap", "fwb") &&
       sets_starting_state(x)
   ) {
-    stop_starting_state_conditional_only()
+    stop_starting_state_conditional_only(x)
   }
 
   internal_method <- if (identical(method, "mvn")) {

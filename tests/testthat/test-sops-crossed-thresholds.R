@@ -245,3 +245,91 @@ test_that("blrm partial proportional-odds fits stop where cut-points cross", {
     class = "mostr_crossed_thresholds"
   )
 })
+
+# Posterior draws are predicted in chunks, and the error stops at the first
+# chunk that crosses, so it reports the call's number of draws and the count
+# found so far as a lower bound. Draws 2 and 3 cross; chunks of 2 draws stop
+# in the first chunk, which holds only draw 2.
+test_that("crossed cut-points in chunked posterior draws report the call's draws", {
+  local_mocked_bindings(blrm_design_matrix = crossed_fake_design)
+  model <- crossed_fake_blrm()
+  profiles <- data.frame(
+    id = c("a", "b"),
+    time = 1,
+    tx = c(0, 1),
+    yprev = factor(c(1, 2), levels = 1:4)
+  )
+  withr::local_options(mostr.blrm_chunk_size = 2L, mostr.blrm_avg_chunk_size = 2L)
+  calls <- list(
+    sops = function() sops(model, newdata = profiles, times = 1:3, n_draws = NULL),
+    avg_sops = function() {
+      avg_sops(model, newdata = profiles, times = 1:3, n_draws = NULL)
+    }
+  )
+  for (name in names(calls)) {
+    error <- expect_error(
+      calls[[name]](),
+      "at time 3 in at least 1 of the 4 posterior draws",
+      fixed = TRUE,
+      class = "mostr_crossed_thresholds",
+      info = name
+    )
+    expect_identical(error$n_draws, 4L, info = name)
+    expect_identical(error$draws, 1L, info = name)
+    expect_true(error$draws_lower_bound, info = name)
+  }
+})
+
+# The second-order R recursion predicts all draws at once but the pairs of
+# previous states in chunks, so its count is a lower bound when there is more
+# than one pair chunk.
+test_that("crossed cut-points in chunked second-order histories are a lower bound", {
+  design <- fake_blrm_design(c("tx", "time", "yprev", "ypprev"), tau_var = "time")
+  local_mocked_bindings(blrm_design_matrix = design)
+  draws <- cbind(crossed_fake_blrm()$draws, ypprev = -0.2)
+  draws <- draws[, c("y>=2", "y>=3", "y>=4", "tx", "time", "yprev", "ypprev", "tau_time")]
+  model <- fake_blrm(
+    draws,
+    tau = "tau_time",
+    cppo = function(y) as.numeric(y) - 1,
+    p2_var = "ypprev",
+    absorb = 4L
+  )
+  profiles <- data.frame(
+    id = c("a", "b"),
+    time = 1,
+    tx = c(0, 1),
+    yprev = factor(c(1, 2), levels = 1:4),
+    ypprev = factor(c(1, 1), levels = 1:4)
+  )
+  withr::local_options(mostr.second_order_working_bytes = 1)
+  error <- expect_error(
+    sops(model, newdata = profiles, times = 1:3, n_draws = NULL),
+    "at time 3 in at least 2 of the 4 posterior draws",
+    fixed = TRUE,
+    class = "mostr_crossed_thresholds"
+  )
+  expect_identical(error$n_draws, 4L)
+  expect_true(error$draws_lower_bound)
+})
+
+# The diagnostic plots trace posterior draws in chunks too.
+test_that("crossed cut-points in a chunked diagnostic trace report the call's draws", {
+  local_mocked_bindings(blrm_design_matrix = crossed_fake_design)
+  model <- crossed_fake_blrm()
+  profiles <- data.frame(
+    id = c("a", "b"),
+    time = 1,
+    tx = c(0, 1),
+    yprev = factor(c(1, 2), levels = 1:4)
+  )
+  withr::local_options(mostr.blrm_avg_chunk_size = 2L)
+  error <- expect_error(
+    plot_transitions(model, newdata = profiles, times = 1:3, n_draws = NULL),
+    "at time 3 in at least 1 of the 4 posterior draws",
+    fixed = TRUE,
+    class = "mostr_crossed_thresholds"
+  )
+  expect_identical(error$n_draws, 4L)
+  expect_true(error$draws_lower_bound)
+})

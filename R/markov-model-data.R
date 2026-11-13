@@ -634,15 +634,25 @@ markov_prepare_stored_data <- function(
   if (anyNA(fitted_ids) || any(fitted_ids == "")) {
     mostr_abort("Fitted patient IDs must be non-missing and non-empty.")
   }
+  # The fitted cohort is the patients with at least one row in the fit. A
+  # patient whose every row the engine dropped (a model variable is missing on
+  # each) is left out of the stored data as well, so that bootstrap resamples,
+  # and the cohort each draw standardises over, hold the same patients as the
+  # point estimate. Bootstrap refits are unchanged: the engine dropped these
+  # rows anyway. Patients excluded by `subset` were removed above and are not
+  # counted as dropped.
+  in_fit <- as.character(refit_data[[id_var]]) %in% fitted_ids
+  dropped_ids <- unique(as.character(refit_data[[id_var]][!in_fit]))
+  refit_data <- refit_data[in_fit, , drop = FALSE]
+  source_rows <- source$rows[in_fit]
   at_start <- as.character(refit_data[[time_var]]) %in%
     as.character(scheduled_start)
-  in_fit <- as.character(refit_data[[id_var]]) %in% fitted_ids
-  starting_profile_data <- refit_data[at_start & in_fit, , drop = FALSE]
+  starting_profile_data <- refit_data[at_start, , drop = FALSE]
   # Stored row weights are fitting metadata, not prediction variables.
   starting_profile_data[[markov_prior_weight_column()]] <- NULL
   # A bookkeeping column, so it starts with `.markov_`; see
   # `markov_internal_column()`.
-  starting_profile_data$.markov_source_row <- source$rows[at_start & in_fit]
+  starting_profile_data$.markov_source_row <- source_rows[at_start]
 
   predictor_terms <- stats::delete.response(stats::terms(formula, data = data))
   predictor_variables <- all.vars(predictor_terms)
@@ -654,6 +664,7 @@ markov_prepare_stored_data <- function(
 
   list(
     refit_data = refit_data,
+    dropped_ids = dropped_ids,
     starting_profile_data = starting_profile_data,
     starting_profile_metadata = list(
       id_var = id_var,

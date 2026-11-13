@@ -275,16 +275,17 @@ test_that("plot_sops draws model-derived estimates and confidence limits", {
   }
 })
 
-test_that("plot_sops respects stored y_levels for model-derived state order", {
+test_that("plot_sops orders states by the factor levels of the state column", {
   state_levels <- as.character(1:12)
   data <- expand.grid(
     time = 1,
     state = sort(state_levels),
-    KEEP.OUT.ATTRS = FALSE
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
   )
+  data$state <- factor(data$state, levels = state_levels)
   data$estimate <- 1 / length(state_levels)
   class(data) <- c("markov_avg_sops", class(data))
-  attr(data, "y_levels") <- state_levels
 
   plot <- plot_sops(data, geom = "bar", facet_var = NULL, n_draws = 0)
   built <- ggplot2::ggplot_build(plot)
@@ -499,7 +500,6 @@ test_that("plot_comparisons orders numeric state sets naturally", {
   data$conf.low <- data$estimate - 0.05
   data$conf.high <- data$estimate + 0.05
   class(data) <- c("markov_avg_comparisons", class(data))
-  attr(data, "y_levels") <- as.character(1:11)
 
   plot <- plot_comparisons(data)
   built <- ggplot2::ggplot_build(plot)

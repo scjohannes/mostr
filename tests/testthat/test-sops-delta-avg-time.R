@@ -564,3 +564,50 @@ test_that("time_in_state() on per-profile delta SOPs matches state_time()", {
     class = "mostr_error"
   )
 })
+
+test_that("time_in_state() follows the latest inferences() run, not an earlier delta one", {
+  # A second inferences() run replaces the first. The delta run's derivatives
+  # must not stay on the result, or time_in_state() reports delta standard
+  # errors for SOPs whose uncertainty now comes from simulation draws.
+  case <- delta_avg_time_case()
+  sop <- avg_sops(
+    case$fit,
+    variables = list(tx = c(0, 1)),
+    times = case$times
+  )
+  fresh <- inferences(sop, method = "mvn", n_draws = 50, seed = 2718)
+  rerun <- sop |>
+    inferences(method = "delta") |>
+    inferences(method = "mvn", n_draws = 50, seed = 2718)
+  expect_equal(rerun$conf.low, fresh$conf.low)
+  expect_null(attr(rerun, "analytical", exact = TRUE))
+
+  total_fresh <- time_in_state(fresh, target_states = c("1", "2"))
+  total_rerun <- time_in_state(rerun, target_states = c("1", "2"))
+  expect_equal(total_rerun$conf.low, total_fresh$conf.low)
+  expect_equal(total_rerun$conf.high, total_fresh$conf.high)
+  expect_equal(names(total_rerun), names(total_fresh))
+})
+
+test_that("time_in_state() follows a delta inferences() run after an mvn one", {
+  # The reverse order: the simulation draws of the first run must not stay on
+  # the delta result, where they would be read in place of its derivatives.
+  case <- delta_avg_time_case()
+  sop <- avg_sops(
+    case$fit,
+    variables = list(tx = c(0, 1)),
+    times = case$times
+  )
+  fresh <- inferences(sop, method = "delta")
+  rerun <- sop |>
+    inferences(method = "mvn", n_draws = 50, seed = 2718) |>
+    inferences(method = "delta")
+  expect_null(attr(rerun, "draws"))
+  expect_null(attr(rerun, "n_draws"))
+  expect_equal(rerun$std.error, fresh$std.error)
+  expect_equal(rerun$conf.low, fresh$conf.low)
+
+  total_fresh <- time_in_state(fresh, target_states = c("1", "2"))
+  total_rerun <- time_in_state(rerun, target_states = c("1", "2"))
+  expect_equal(total_rerun, total_fresh)
+})

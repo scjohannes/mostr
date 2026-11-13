@@ -376,6 +376,7 @@ test_that("missing values leave complete starting profiles of the fitted patient
         data
       },
       args = vglm_args,
+      dropped = "1",
       check = function(fit, data, profiles) {
         # Such a patient is not part of the fitted cohort.
         fitted_ids <- unique(attr(fit, "markov_data")$id)
@@ -389,7 +390,19 @@ test_that("missing values leave complete starting profiles of the fitted patient
   sop_args <- list(times = 1:2)
   for (case in cases) {
     data <- case$change(base)
-    fit <- do.call(mostm, c(case$args, list(data = data, id_var = "id", absorb = 6)))
+    fit_case <- function() {
+      do.call(mostm, c(case$args, list(data = data, id_var = "id", absorb = 6)))
+    }
+    if (is.null(case$dropped)) {
+      fit <- fit_case()
+    } else {
+      # A patient who loses every row is named when the model is fitted.
+      warning <- expect_warning(
+        fit <- fit_case(),
+        class = "mostr_warning_dropped_patients"
+      )
+      expect_equal(warning$ids, case$dropped, info = case$label)
+    }
     profiles <- markov_validate_starting_profiles(fit)
     case$check(fit, data, profiles)
 

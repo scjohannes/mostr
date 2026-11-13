@@ -188,9 +188,10 @@ time_in_state_tidy_inference <- function(x, target_states, real_time, source = x
   result
 }
 
+# The recorded method alone decides, since `inferences()` replaces it on every
+# run. Delta SOPs that lost their derivatives stop in `time_in_state_delta()`.
 time_in_state_is_delta <- function(x) {
-  !is.null(attr(x, "analytical", exact = TRUE)) ||
-    identical(attr(x, "method"), "delta")
+  identical(attr(x, "method"), "delta")
 }
 
 # Delta-method uncertainty of the totals of SOPs from

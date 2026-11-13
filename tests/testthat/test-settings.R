@@ -411,3 +411,27 @@ test_that("`mostm()` checks that `gap_var` is the time since the previous row", 
   # The rows' order does not matter.
   expect_no_error(fit_gap(data[rev(seq_len(nrow(data))), , drop = FALSE]))
 })
+
+# The default `p_var = "yprev"` is recorded on the fit like a supplied one, so
+# it must name a column of `data` too. Otherwise the fit succeeds, `absorb` is
+# never checked against the real previous states, and the mistake shows only
+# at the first prediction.
+test_that("`mostm()` refuses a default `p_var` that is not a column of `data`", {
+  skip_if_not_installed("rms")
+  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 9461)
+  names(data)[names(data) == "yprev"] <- "prev_state"
+  expect_error(
+    mostm(y ~ time + tx + prev_state, data = data, id_var = "id", absorb = 6),
+    "p_var",
+    class = "mostr_error"
+  )
+  expect_no_error(
+    mostm(
+      y ~ time + tx + prev_state,
+      data = data,
+      id_var = "id",
+      p_var = "prev_state",
+      absorb = 6
+    )
+  )
+})

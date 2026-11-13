@@ -84,7 +84,8 @@ patient's starting row, and \code{\link[=sops]{sops()}} and the other prediction
 set this column to each requested visit.}
 
 \item{p_var}{Name of the column in \code{data} that holds each patient's state at
-the previous visit, \code{"yprev"} by default. The prediction functions replace
+the previous visit, \code{"yprev"} by default. Like a supplied name, the
+default must be a column of \code{data}. The prediction functions replace
 it with each possible previous state as they move from visit to visit.}
 
 \item{p2_var}{For a second-order model, the name of the column that holds
@@ -198,6 +199,20 @@ predictor of the model, the time, and the previous state; the response may
 be missing. A fitted patient without a complete starting row is an error
 when predictions are made: a later row is never used instead. Patients
 without any fitted transition are not part of the fitted cohort.
+}
+
+\subsection{Patients left out of the fit}{
+
+The engine drops every row with a missing value in a model variable (the
+response, the previous state, or a predictor). A patient who loses only
+some rows stays in the fit. A patient who loses every row is not part of
+the fit, and \code{mostm()} warns and names them (a warning of class
+\code{mostr_warning_dropped_patients}, whose \code{ids} field holds all their IDs).
+These patients are left out of predictions from the stored starting rows
+and out of the patients that bootstrap and fractional weighted bootstrap
+resample in \code{\link[=inferences]{inferences()}}, so every draw standardises over the same
+patients as the estimate. Patients whose rows are all excluded by \code{subset}
+are not named: you left them out on purpose.
 }
 
 \subsection{Absorbing states}{

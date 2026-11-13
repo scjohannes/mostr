@@ -1346,6 +1346,37 @@ test_that("inferences() refuses weighted, penalized, second-order and bootstrap 
   check_refusals(inference_refusals_with_extra_fits)
 })
 
+test_that("the set-starting-state refusal offers only methods the model supports", {
+  # Delta inference refuses second-order models, so for them the refusal
+  # names only MVN draws; first-order models are offered both.
+  skip_on_cran()
+  start <- factor(c("1", "2"), levels = levels(grid_data()$ypprev))
+  second <- refusal_call(
+    avg_sops,
+    grid_cell("orm", order = 2L),
+    variables = list(ypprev = start)
+  )
+  second_error <- expect_error(
+    inferences(second, method = "bootstrap", n_draws = 2),
+    "Setting the starting state with `variables` supports only conditional",
+    fixed = TRUE
+  )
+  expect_no_match(conditionMessage(second_error), 'method = "delta"', fixed = TRUE)
+  expect_match(conditionMessage(second_error), 'method = "mvn"', fixed = TRUE)
+
+  first_error <- expect_error(
+    inferences(refusal_set_start(avg_sops), method = "bootstrap", n_draws = 2),
+    "Setting the starting state with `variables` supports only conditional",
+    fixed = TRUE
+  )
+  expect_match(
+    conditionMessage(first_error),
+    'method = "delta", vcov = "conditional"',
+    fixed = TRUE
+  )
+  expect_match(conditionMessage(first_error), 'method = "mvn"', fixed = TRUE)
+})
+
 test_that("a covariance matrix selects conditional variance rather than being refused", {
   # The catalogue listed "a coefficient covariance matrix cannot be supplied
   # for unconditional inference" as a refusal. A matrix passed as `vcov`

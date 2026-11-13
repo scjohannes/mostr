@@ -19,11 +19,18 @@ sets_starting_state <- function(object) {
   any(state_vars %in% names(attr(object, "avg_args")$variables %||% list()))
 }
 
-stop_starting_state_conditional_only <- function() {
+# Delta inference refuses second-order models, so for them only MVN draws
+# are offered.
+stop_starting_state_conditional_only <- function(object) {
+  advice <- if (is.null(markov_result_settings(object)$p2_var)) {
+    'use `method = "delta", vcov = "conditional"` or `method = "mvn"`.'
+  } else {
+    'use `method = "mvn"`.'
+  }
   mostr_abort(
     "Setting the starting state with `variables` supports only conditional ",
-    'variance: use `method = "delta", vcov = "conditional"` or ',
-    '`method = "mvn"`.'
+    "variance: ",
+    advice
   )
 }
 
@@ -76,7 +83,7 @@ delta_resolve_vcov <- function(object, vcov) {
     stop_individual_conditional_only(object)
   }
   if (identical(choice, "unconditional") && sets_starting_state(object)) {
-    stop_starting_state_conditional_only()
+    stop_starting_state_conditional_only(object)
   }
   if (identical(choice, "unconditional") && !is.null(attr(object, "model"))) {
     delta_reject_weighted_unconditional(attr(object, "model"))

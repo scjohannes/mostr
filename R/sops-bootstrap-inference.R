@@ -550,7 +550,7 @@ inferences_bootstrap_sops_fwb <- function(
         times = times,
         settings = markov_settings_update(
           settings,
-          y_levels = factor(boot_ylevels),
+          y_levels = state_factor(boot_ylevels),
           absorb = boot_absorb
         )
       ),
@@ -578,7 +578,7 @@ inferences_bootstrap_sops_fwb <- function(
     array_to_df_individual(
       sops_array,
       times,
-      factor(boot_ylevels),
+      state_factor(boot_ylevels),
       prediction_data,
       weights = prediction_weights,
       weight_col = draw_weight_col

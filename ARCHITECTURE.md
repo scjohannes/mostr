@@ -156,9 +156,9 @@ flowchart TD
   be present, because every fit stores its starting profiles. `p_var`
   (default `"yprev"`) and `p2_var` (default `NULL`, a first-order model) name
   the previous-state columns; `validate_mostm_previous_state_vars()` requires
-  single, distinct names, a supplied `p2_var` and an explicitly supplied
-  `p_var` must be columns of `data`, and the default `p_var` is not checked,
-  so fits without a `yprev` column still work. Duplicate ID-time rows warn
+  single, distinct names, and a supplied `p2_var` and `p_var`, default
+  included, must be columns of `data`; an unchecked default would be recorded
+  on the fit and skip the `absorb` check. Duplicate ID-time rows warn
   (`warn_duplicate_markov_id_time()`).
 - `absorb` and `gap_var` are recorded in the settings and checked before
   fitting, except in coefficient-only bootstrap refits, which reuse the
@@ -294,6 +294,21 @@ calls, `rms::rcs(age, 3)`, `poly()`, and interactions count. Coefficients are
 never inspected. When no formula can be read, or it contains `.`, the result
 is left alone. A column absent from the data is still an error ("Variables not
 in data: ...").
+
+The fitted cohort is the patients with at least one fitted row.
+`markov_prepare_stored_data()` removes the rows of all other patients from the
+stored refit data and returns their IDs (`dropped_ids`), which `mostm()` turns
+into a `mostr_warning_dropped_patients` warning. Bootstrap resamples and the
+cohort each draw standardises over therefore hold the same patients as the
+estimate. Patients excluded by `subset` are not counted as dropped.
+
+An `inferences()` run owns the inference columns (`inference_columns()`) and
+the attributes listed in `inference_attributes()`
+(`R/sops-result-helpers.R`). `inferences_impl()` clears both with
+`clear_inference_results()` before it starts, for all results except `blrm`
+posterior results, so a result passed in again keeps nothing of the earlier
+run and `attr(x, "method")` names the run behind every inference attribute.
+`time_in_state()` chooses its uncertainty from that method alone.
 
 Ordinary and fractional weighted bootstrap refits (`update_bootstrap_model()` in
 `R/bootstrap_helpers.R`) are restricted to `mostm()` fits. They always resample

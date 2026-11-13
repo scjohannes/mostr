@@ -12,6 +12,56 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-13: Patients without a fitted row are named at the fit and left out of resamples
+
+**Decided.** `mostm()` warns when a patient loses every row to missing values
+in model variables and names those patients. The stored refit data holds only
+patients with at least one fitted row, so the bootstrap and the fractional
+weighted bootstrap resample the cohort the estimate uses.
+
+**Why.** The estimate already averaged over fitted patients only, while each
+resample brought the other patients back; prediction then refused their rows
+and every draw failed (80 patients, 3 without `age`: 20 of 20 draws). The
+maintainer wants the user told when the model is fitted, not at the bootstrap.
+
+**Details.** A missing response or previous state on every row counts as well
+as a missing predictor. Patients who lose only some rows are not named.
+Patients excluded by `subset` are not named, because the user left them out.
+
+## 2026-11-13: Two review findings left as they are
+
+**Decided.** Two findings from the review of `feature/bartisan-lessons` are
+known and not fixed, because neither is serious enough to act on now.
+
+1. **Failed simulation draws in comparison results are not summed up.** With
+   `method = "mvn"`, `avg_comparisons()` (time benefit) and `comparisons()`
+   drop a draw whose prediction fails, with one warning per draw that names
+   the internal `soprob_markov` and no summary
+   (`inferences_avg_comparisons_time_benefit_mvn()` in
+   `R/sops-comparisons-inference.R`, and the matching loop in
+   `R/sops-comparisons-individual-inference.R`). The bootstrap paths count
+   failed draws in one warning (`keep_successful_draws()`). No realistic
+   trigger is known: crossed cut-points, the one common per-draw failure, stop
+   the call and are counted separately, and a finite covariance matrix gives
+   finite coefficient draws. If a trigger turns up, send these loops through
+   `keep_successful_draws()`.
+
+2. **Second-order models check crossed cut-points for different histories on
+   the two prediction paths.** The R recursion
+   (`soprob_markov_second_order_run()` in `R/sops-engine.R`) predicts and
+   checks only pairs of (state two visits back, previous state) that some
+   profile can be in at that visit. The compiled path
+   (`R/sops-execution-plan.R`) and the diagnostic trace predict and check
+   every pair. They differ only at the second visit: there, a pair whose
+   older state no profile starts in has probability 0, while from the third
+   visit on every pair of non-absorbing states has some probability. So a
+   call with two time points can stop on the compiled path and return SOPs on
+   the R path, and a longer call stops on both but names different visits.
+   Only models with non-proportional terms are affected. If this is taken up,
+   make the compiled path skip pairs without probability, which also saves
+   their computation. Read from the code on 2026-11-13, not reproduced by a
+   run.
+
 ## 2026-11-13: Keep the new regression tests on CRAN at the edge of the time budget
 
 **Decided.** The tests added on 2026-11-12 and 2026-11-13 that run on CRAN

@@ -24,7 +24,20 @@ crossed_threshold_tolerance <- function() {
 # previous state (or pair of previous states), so row r belongs to profile
 # (r - 1) %% n_profiles + 1. `rows` gives the stacked row number of each row of
 # `probs` when only some rows were predicted. `time` is the visit's time label.
-check_crossed_thresholds <- function(probs, n_profiles, time, rows = NULL) {
+#
+# Posterior draws can be predicted in chunks, and the first chunk that crosses
+# stops the call. `n_draws` is then the call's number of draws (default: the
+# draws in `probs`), and `partial = TRUE` says that `probs` holds only some of
+# the visit's predictions (one chunk of second-order histories). Either way the
+# number of crossing draws is reported as a lower bound.
+check_crossed_thresholds <- function(
+  probs,
+  n_profiles,
+  time,
+  rows = NULL,
+  n_draws = NULL,
+  partial = FALSE
+) {
   tolerance <- crossed_threshold_tolerance()
   crossed_cells <- !is.na(probs) & probs < -tolerance
   if (!any(crossed_cells)) {
@@ -32,14 +45,16 @@ check_crossed_thresholds <- function(probs, n_profiles, time, rows = NULL) {
   }
   dims <- dim(probs)
   draws <- NULL
-  n_draws <- NULL
+  draws_lower_bound <- FALSE
   if (length(dims) == 3L) {
     crossed <- apply(crossed_cells, c(1L, 2L), any)
     draws <- sum(rowSums(crossed) > 0)
-    n_draws <- dims[1L]
+    n_draws <- as.integer(n_draws %||% dims[1L])
+    draws_lower_bound <- isTRUE(partial) || n_draws > dims[1L]
     crossed_rows <- which(colSums(crossed) > 0)
     rows <- rows %||% seq_len(dims[2L])
   } else {
+    n_draws <- NULL
     crossed_rows <- which(rowSums(crossed_cells) > 0)
     rows <- rows %||% seq_len(nrow(probs))
   }
@@ -50,7 +65,8 @@ check_crossed_thresholds <- function(probs, n_profiles, time, rows = NULL) {
     time = time,
     minimum = min(probs[crossed_cells]),
     draws = draws,
-    n_draws = n_draws
+    n_draws = n_draws,
+    draws_lower_bound = draws_lower_bound
   )
 }
 
@@ -75,7 +91,8 @@ stop_crossed_thresholds <- function(
   time,
   minimum,
   draws = NULL,
-  n_draws = NULL
+  n_draws = NULL,
+  draws_lower_bound = FALSE
 ) {
   where <- paste0(
     profiles,
@@ -86,7 +103,14 @@ stop_crossed_thresholds <- function(
     as.character(time)
   )
   if (!is.null(draws)) {
-    where <- paste0(where, " in ", draws, " of the ", n_draws, " posterior draws")
+    where <- paste0(
+      where,
+      if (draws_lower_bound) " in at least " else " in ",
+      draws,
+      " of the ",
+      n_draws,
+      " posterior draws"
+    )
   }
   message <- paste0(
     "The fitted cut-points (thresholds) of the partial proportional-odds ",
@@ -106,7 +130,8 @@ stop_crossed_thresholds <- function(
       time = time,
       minimum_probability = minimum,
       draws = draws,
-      n_draws = n_draws
+      n_draws = n_draws,
+      draws_lower_bound = if (!is.null(draws)) draws_lower_bound
     )
   )
 }

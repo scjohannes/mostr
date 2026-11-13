@@ -81,6 +81,51 @@ inference_columns <- function() {
   )
 }
 
+# The attributes that an `inferences()` run attaches to its result: stored
+# derivatives or influence values (delta), draws, and the metadata of the run.
+# Posterior results of `blrm` models carry some of the same names, but those
+# come from the model's posterior, not from an inference run, and are never
+# passed through `clear_inference_results()`.
+inference_attributes <- function() {
+  c(
+    "analytical",
+    "draws",
+    "baseline_anchor",
+    "baseline_anchor_draws",
+    "method",
+    "engine",
+    "n_draws",
+    "n_boot",
+    "n_successful",
+    "conf_level",
+    "conf_type",
+    "null",
+    "target",
+    "covariance_source",
+    "covariance_metadata",
+    "fwb_weight_type",
+    "fwb_weight_scale",
+    "draw_weights_attached",
+    "draw_weight_col",
+    "draw_weight_omission_reason"
+  )
+}
+
+# `x` as before any inference run: estimates only. A result can be passed to
+# `inferences()` again, and the new run replaces the old one, so nothing of the
+# old run may survive into it. Functions that read the uncertainty of a result
+# (such as `time_in_state()`) decide how by these attributes, so a stale
+# `analytical` or `draws` would give the old run's uncertainty.
+clear_inference_results <- function(x) {
+  for (column in setdiff(inference_columns(), "estimate")) {
+    x[[column]] <- NULL
+  }
+  for (name in inference_attributes()) {
+    attr(x, name) <- NULL
+  }
+  x
+}
+
 order_estimate_columns <- function(x) {
   original_class <- class(x)
   extra_attrs <- attributes(x)

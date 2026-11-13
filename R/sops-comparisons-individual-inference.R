@@ -416,7 +416,7 @@ comparison_fwb_draws <- function(
         times = setup$times,
         settings = markov_settings_update(
           setup$settings,
-          y_levels = factor(boot_result$ylevels %||% boot_result$y_levels),
+          y_levels = state_factor(boot_result$ylevels %||% boot_result$y_levels),
           absorb = boot_result$absorb
         )
       ),

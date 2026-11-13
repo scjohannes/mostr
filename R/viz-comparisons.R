@@ -290,29 +290,6 @@ plot_comparisons_state_set_levels <- function(data) {
     return(intersect(levels(data$state_set), values))
   }
 
-  parsed <- strsplit(values, "+", fixed = TRUE)
-  y_levels <- attr(data, "y_levels", exact = TRUE)
-  if (!is.null(y_levels)) {
-    state_levels <- as_state_labels(y_levels)
-    state_order <- stats::setNames(seq_along(state_levels), state_levels)
-    keys <- vapply(
-      parsed,
-      function(x) {
-        if (all(x %in% names(state_order))) {
-          return(min(state_order[x]))
-        }
-        NA_real_
-      },
-      numeric(1)
-    )
-    if (any(!is.na(keys))) {
-      known <- which(!is.na(keys))
-      unknown <- which(is.na(keys))
-      known <- known[order(keys[known], lengths(parsed)[known], values[known])]
-      return(c(values[known], values[unknown]))
-    }
-  }
-
   numeric_values <- suppressWarnings(as.numeric(values))
   if (all(!is.na(numeric_values))) {
     return(values[order(numeric_values)])

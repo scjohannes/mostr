@@ -15,6 +15,8 @@
   are declared when the model is fitted too: `mostm(..., absorb = "8")` and
   `mostm(..., gap_var = "gap")`. `mostm()` checks them against the data:
 
+  * the `p_var` column must be in `data`, also when it is the default
+    `"yprev"`, so that `absorb` is checked against the real previous states;
   * every `absorb` label must be a state of the response;
   * no fitted row may have an absorbing state as its previous state, or, for
     a second-order model, as the state two visits back (remove such rows
@@ -245,6 +247,28 @@
   weight.
 
 ## Bug fixes
+
+* `mostm()` now warns (class `mostr_warning_dropped_patients`) when patients
+  lose every row because a model variable (a predictor, the response, or the
+  previous state) is missing on each, and names them. The bootstrap and the
+  fractional weighted bootstrap in `inferences()` now leave these patients out
+  of the resamples, as the estimate does. Before, every draw failed with a
+  missing-predictor error.
+
+* `inferences()` run again on its own result now fully replaces the earlier
+  run. Before, the stored derivatives of a `method = "delta"` run stayed on
+  the result after a later `"mvn"`, `"bootstrap"` or `"fwb"` run, so
+  `time_in_state()` reported delta-method standard errors and intervals
+  instead of ones from the new draws.
+
+* For `blrm` fits, the crossed cut-point error now reports the call's number
+  of posterior draws. Draws are predicted in chunks and the first chunk with
+  crossed cut-points stops the call, so the error then says "at least X of
+  the N posterior draws" instead of counting only that chunk.
+
+* When `variables` sets the starting state of a second-order model, the
+  bootstrap refusal now recommends only `method = "mvn"`. It also named
+  `method = "delta"`, which refuses second-order models.
 
 * `time_in_state()` on SOPs that have confidence limits but no stored draws
   (posterior SOPs from `sops()` or `avg_sops()` with the default

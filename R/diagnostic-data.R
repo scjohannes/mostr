@@ -128,6 +128,7 @@ plot_model_trace_summaries <- function(
       n_draws = NULL,
       return_kernels = return_kernels,
       .draw_indices = chunk,
+      .n_draws_total = length(draw_indices),
       .gamma_draws = subset_cached_draw_matrix(gamma_draws, draw_indices, chunk)
     )
     summaries[[i]] <- summarize_trace(trace, draw = TRUE)

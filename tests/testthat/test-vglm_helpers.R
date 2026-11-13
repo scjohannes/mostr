@@ -100,6 +100,9 @@ test_that("the vglm engine accepts family names and requires a data frame", {
     id = rep(1:4, each = 2),
     time = rep(1:2, 4),
     y = c(0, 1, 0, 1, 0, 1, 0, 1),
+    # `mostm()` requires the previous-state column even when the formula
+    # does not use it; every patient starts in state 0.
+    yprev = 0,
     x = c(0, 0, 1, 1, 2, 2, 3, 3),
     w = c(1, 2, 1, 2, 1, 2, 1, 2)
   )
@@ -147,6 +150,7 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
     id = c(1, 1, 2, 2),
     time = c(1, 2, 1, 2),
     y = c(0, 1, 0, 1),
+    yprev = 0,
     x = c(0, 0, 1, 1),
     bad_w = c(1, 1, -1, 1)
   )
@@ -198,6 +202,7 @@ test_that("the vglm engine records NA actions after dropping incomplete rows", {
     id = c(1, 1, 2, 2, 3, 3),
     time = c(1, 2, 1, 2, 1, 2),
     y = c(0, 1, 0, 1, NA, 1),
+    yprev = c(0, 0, 0, 0, 0, NA),
     x = c(0, 0, 1, 1, 2, 2)
   )
   fit_binomial <- function(formula) {
@@ -293,6 +298,7 @@ test_that("the vglm engine stores form2 design slots", {
     id = rep(1:4, each = 2),
     time = rep(1:2, 4),
     y = c(0, 1, 0, 1, 0, 1, 0, 1),
+    yprev = 0,
     x = c(0, 0, 1, 1, 2, 2, 3, 3),
     z = c(1, 2, 1, 2, 1, 2, 1, 2)
   )
@@ -323,6 +329,7 @@ test_that("the vglm engine validates form2 row alignment", {
     id = rep(1:4, each = 2),
     time = rep(1:2, 4),
     y = c(0, 1, 0, 1, 0, 1, 0, 1),
+    yprev = 0,
     x = c(0, 0, 1, 1, 2, 2, 3, 3)
   )
   env <- list2env(

@@ -442,6 +442,7 @@ sops_blrm <- function(
       include_re = include_re,
       n_draws = NULL,
       .draw_indices = chunk,
+      .n_draws_total = length(draw_indices),
       .gamma_draws = subset_cached_draw_matrix(
         gamma_draws,
         draw_indices,
@@ -1127,6 +1128,7 @@ avg_sops_blrm <- function(
       include_re = include_re,
       n_draws = NULL,
       .draw_indices = chunk,
+      .n_draws_total = length(draw_indices),
       .gamma_draws = subset_cached_draw_matrix(
         gamma_draws,
         draw_indices,

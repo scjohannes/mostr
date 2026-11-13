@@ -135,10 +135,17 @@ bootstrap_model_coefs <- function(
   }
 
   # The state columns whose factor levels lose a state that a resample lacks:
-  # the response and `yprev`. Other factor columns are covariates, whose
-  # levels are not states. A numeric yprev keeps its values for linear/spline
-  # previous-state models.
-  factor_cols <- bootstrap_state_columns(model, data, p_var = "yprev")
+  # the response and the previous-state columns the fit records (`p_var`, and
+  # `p2_var` for a second-order fit). Other factor columns are covariates,
+  # whose levels are not states. A numeric previous state keeps its values for
+  # linear/spline previous-state models.
+  settings <- markov_model_settings(model)
+  factor_cols <- bootstrap_state_columns(
+    model,
+    data,
+    settings$p_var,
+    settings$p2_var
+  )
 
   # Generate bootstrap ID samples using fast helper (memory-efficient JIT approach)
   boot_ids <- fast_group_bootstrap(

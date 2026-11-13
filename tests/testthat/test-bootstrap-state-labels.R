@@ -123,3 +123,50 @@ test_that("bootstrap_model_coefs() relabels only the response and yprev", {
   expect_true(is.finite(as_factor[["(Intercept)"]]))
   expect_false("(Intercept):2" %in% names(as_factor))
 })
+
+# The previous-state column is the one named in `mostm(p_var = )`, whatever it
+# is called. A resample that lacks a state must drop that state's level from
+# it, as from a column called `yprev`; `rms::orm()` cannot fit with an empty
+# level.
+test_that("bootstrap_model_coefs() drops absent states from a renamed previous-state column", {
+  skip_on_cran()
+  skip_if_not_installed("rms")
+  data <- make_test_data(n_patients = 120, follow_up_time = 6, seed = 9461)
+  data$yprev <- factor(data$yprev)
+  renamed <- data
+  names(renamed)[names(renamed) == "yprev"] <- "prev_state"
+  fit_yprev <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 6
+  )
+  fit_renamed <- mostm(
+    ordered(y) ~ time + tx + prev_state,
+    data = renamed,
+    id_var = "id",
+    p_var = "prev_state",
+    absorb = 6
+  )
+
+  # Every resample holds only the patients who were never in state 1.
+  ids <- setdiff(unique(data$id), data$id[data$y == 1 | data$yprev == 1])
+  local_mocked_bindings(
+    fast_group_bootstrap = function(data, id_var, n_boot) {
+      replicate(
+        n_boot,
+        data.frame(original_id = ids, new_id = paste0(ids, "_1"), boot_id = 1),
+        simplify = FALSE
+      )
+    }
+  )
+  with_yprev <- bootstrap_model_coefs(fit_yprev, n_boot = 1)
+  expect_no_warning(
+    with_renamed <- bootstrap_model_coefs(fit_renamed, n_boot = 1)
+  )
+  expect_equal(
+    unname(unlist(with_renamed)),
+    unname(unlist(with_yprev)),
+    tolerance = 1e-8
+  )
+})

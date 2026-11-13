@@ -90,7 +90,8 @@
 #'   patient's starting row, and [sops()] and the other prediction functions
 #'   set this column to each requested visit.
 #' @param p_var Name of the column in `data` that holds each patient's state at
-#'   the previous visit, `"yprev"` by default. The prediction functions replace
+#'   the previous visit, `"yprev"` by default. Like a supplied name, the
+#'   default must be a column of `data`. The prediction functions replace
 #'   it with each possible previous state as they move from visit to visit.
 #' @param p2_var For a second-order model, the name of the column that holds
 #'   each patient's state two visits back, for example `"ypprev"`. `NULL` (the
@@ -147,6 +148,19 @@
 #' be missing. A fitted patient without a complete starting row is an error
 #' when predictions are made: a later row is never used instead. Patients
 #' without any fitted transition are not part of the fitted cohort.
+#'
+#' ## Patients left out of the fit
+#'
+#' The engine drops every row with a missing value in a model variable (the
+#' response, the previous state, or a predictor). A patient who loses only
+#' some rows stays in the fit. A patient who loses every row is not part of
+#' the fit, and `mostm()` warns and names them (a warning of class
+#' `mostr_warning_dropped_patients`, whose `ids` field holds all their IDs).
+#' These patients are left out of predictions from the stored starting rows
+#' and out of the patients that bootstrap and fractional weighted bootstrap
+#' resample in [inferences()], so every draw standardises over the same
+#' patients as the estimate. Patients whose rows are all excluded by `subset`
+#' are not named: you left them out on purpose.
 #'
 #' ## Absorbing states
 #'
@@ -413,12 +427,14 @@ mostm <- function(
     )
   }
   validate_mostm_previous_state_vars(p_var, p2_var, data)
-  if (!missing(p_var) && !p_var %in% names(data)) {
+  # The default is checked like a supplied name: the fit records it, and
+  # `absorb` is checked against this column.
+  if (!p_var %in% names(data)) {
     mostr_abort(
       "The column `p_var = \"",
       p_var,
       "\"` is not in `data`. Set `p_var` to the column that holds each ",
-      "patient's previous state."
+      "patient's previous state (the default is \"yprev\")."
     )
   }
   # Bootstrap refits use only the coefficients, so they skip the duplicate
@@ -496,6 +512,11 @@ mostm <- function(
     first_followup_time = first_followup_time,
     starting_profiles = !coefficients_only
   )
+  # Bootstrap refits store no starting profiles, so they find no dropped
+  # patients and stay silent.
+  if (length(stored$dropped_ids)) {
+    warn_dropped_patients(stored$dropped_ids, id_var)
+  }
   # The column names and model settings that every later call on the fit
   # reads, built once here. The engines record the states in fitted order
   # (VGAM as the response's column names, rms and rmsb as its levels); an
@@ -557,6 +578,37 @@ mostm <- function(
     )
   )
   attach_data(robust)
+}
+
+# Patients with no row left in the fit are silently absent from every result
+# otherwise, and a user who expects them in the standardised cohort would not
+# know. `$ids` holds every ID; the message shows at most ten.
+warn_dropped_patients <- function(ids, id_var, limit = 10L) {
+  n <- length(ids)
+  shown <- paste(utils::head(ids, limit), collapse = ", ")
+  if (n > limit) {
+    shown <- paste0(shown, " and ", n - limit, " more")
+  }
+  several <- n > 1L
+  warning(warningCondition(
+    paste0(
+      n,
+      if (several) " patients have" else " patient has",
+      " a missing value in a model variable on every row, so ",
+      if (several) "they are" else "the patient is",
+      " not part of the fit (`",
+      id_var,
+      "`: ",
+      shown,
+      "). ",
+      if (several) "They are" else "The patient is",
+      " left out of predictions from the stored starting rows and out of ",
+      "bootstrap resamples."
+    ),
+    ids = ids,
+    class = "mostr_warning_dropped_patients",
+    call = NULL
+  ))
 }
 
 mostm_fit_orm <- function(setup, ...) {

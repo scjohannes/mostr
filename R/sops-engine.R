@@ -107,13 +107,16 @@ soprob_markov_r_engine <- function(
   dots <- list(...)
   unknown_dots <- setdiff(
     names(dots),
-    c(".draw_indices", ".gamma_draws", ".prediction_cache")
+    c(".draw_indices", ".gamma_draws", ".prediction_cache", ".n_draws_total")
   )
   if (length(unknown_dots) > 0) {
     mostr_abort("Unused arguments: ", paste(unknown_dots, collapse = ", "))
   }
   draw_indices_arg <- dots$.draw_indices
   gamma_draws_arg <- dots$.gamma_draws
+  # A caller that predicts posterior draws in chunks passes the call's number
+  # of draws, which the crossed cut-point error reports.
+  n_draws_total <- dots$.n_draws_total
   prediction_cache_arg <- if (is.null(p2_var)) dots$.prediction_cache else NULL
 
   cl <- if (inherits(object, "blrm")) {
@@ -238,7 +241,7 @@ soprob_markov_r_engine <- function(
   # Predict probabilities at T1
   p_t1 <- prd(object, data) # Returns [n_pat x n_states] or [nd x n_pat x n_states]
   check_transition_probabilities(p_t1, "the first SOP time point")
-  check_crossed_thresholds(p_t1, n_pat, times[1L])
+  check_crossed_thresholds(p_t1, n_pat, times[1L], n_draws = n_draws_total)
 
   if (nd == 0) {
     P[, 1, ] <- p_t1
@@ -257,7 +260,8 @@ soprob_markov_r_engine <- function(
       ylevel_names = ylevel_names,
       absorb_names = absorb_names,
       settings = settings,
-      time_info = time_info
+      time_info = time_info,
+      n_draws_total = n_draws_total
     ))
   }
 
@@ -297,7 +301,12 @@ soprob_markov_r_engine <- function(
     # Rows 1:N are transitions from State 1, Rows N+1:2N from State 2, etc.
     trans_probs <- prd(object, edata_base)
     check_transition_probabilities(trans_probs, paste0("SOP time point ", it))
-    check_crossed_thresholds(trans_probs, n_pat, times[it])
+    check_crossed_thresholds(
+      trans_probs,
+      n_pat,
+      times[it],
+      n_draws = n_draws_total
+    )
 
     # --- 5. The Update Step (Markov) ---
     # S_it(l) sums S_i,t-1(k) * T_it(l | k) over previous states k.
@@ -392,7 +401,8 @@ soprob_markov_second_order_run <- function(
   ylevel_names,
   absorb_names,
   settings,
-  time_info
+  time_info,
+  n_draws_total = NULL
 ) {
   p_var <- settings$p_var
   p2_var <- settings$p2_var
@@ -566,7 +576,13 @@ soprob_markov_second_order_run <- function(
           trans_probs,
           paste0("second-order SOP time point ", it)
         )
-        check_crossed_thresholds(trans_probs, n_pat, times[it])
+        check_crossed_thresholds(
+          trans_probs,
+          n_pat,
+          times[it],
+          n_draws = n_draws_total,
+          partial = length(chunks) > 1L
+        )
         for (chunk_pos in seq_along(chunk)) {
           pair_i <- chunk[chunk_pos]
           h <- pair_grid$h[pair_i]

@@ -12,12 +12,18 @@ markov_transition_trace <- function(
   ...
 ) {
   dots <- list(...)
-  unknown_dots <- setdiff(names(dots), c(".draw_indices", ".gamma_draws"))
+  unknown_dots <- setdiff(
+    names(dots),
+    c(".draw_indices", ".gamma_draws", ".n_draws_total")
+  )
   if (length(unknown_dots) > 0) {
     mostr_abort("Unused arguments: ", paste(unknown_dots, collapse = ", "))
   }
   draw_indices_arg <- dots$.draw_indices
   gamma_draws_arg <- dots$.gamma_draws
+  # A caller that traces posterior draws in chunks passes the call's number of
+  # draws, which the crossed cut-point error reports.
+  n_draws_total <- dots$.n_draws_total
 
   cl <- if (inherits(object, "blrm")) {
     "blrm"
@@ -209,7 +215,8 @@ markov_transition_trace <- function(
         p_t1,
         n_pat,
         times[1L],
-        rows = which(predict_rows)
+        rows = which(predict_rows),
+        n_draws = n_draws_total
       )
       P[predict_rows, 1, ] <- p_t1
       transitions <- trace_record_first_transition(
@@ -240,7 +247,8 @@ markov_transition_trace <- function(
         p_t1,
         n_pat,
         times[1L],
-        rows = which(predict_rows)
+        rows = which(predict_rows),
+        n_draws = n_draws_total
       )
       P[, predict_rows, 1, ] <- p_t1
       transitions <- trace_record_first_transition(
@@ -279,7 +287,8 @@ markov_transition_trace <- function(
       absorb_names = absorb_names,
       settings = settings,
       time_info = time_info,
-      draw_indices = draw_indices
+      draw_indices = draw_indices,
+      n_draws_total = n_draws_total
     ))
   }
 
@@ -296,7 +305,8 @@ markov_transition_trace <- function(
     absorb_names = absorb_names,
     settings = settings,
     time_info = time_info,
-    draw_indices = draw_indices
+    draw_indices = draw_indices,
+    n_draws_total = n_draws_total
   )
 }
 
@@ -372,7 +382,8 @@ markov_transition_trace_first_order <- function(
   absorb_names,
   settings,
   time_info,
-  draw_indices
+  draw_indices,
+  n_draws_total = NULL
 ) {
   p_var <- settings$p_var
   n_pat <- nrow(data)
@@ -413,7 +424,12 @@ markov_transition_trace_first_order <- function(
       trans_probs,
       paste0("transition time point ", it)
     )
-    check_crossed_thresholds(trans_probs, n_pat, times[it])
+    check_crossed_thresholds(
+      trans_probs,
+      n_pat,
+      times[it],
+      n_draws = n_draws_total
+    )
 
     if (nd == 0) {
       transition_current <- array(
@@ -493,7 +509,8 @@ markov_transition_trace_second_order <- function(
   absorb_names,
   settings,
   time_info,
-  draw_indices
+  draw_indices,
+  n_draws_total = NULL
 ) {
   p_var <- settings$p_var
   p2_var <- settings$p2_var
@@ -573,7 +590,13 @@ markov_transition_trace_second_order <- function(
       trans_probs,
       paste0("second-order transition time point ", it)
     )
-    check_crossed_thresholds(trans_probs, n_pat, times[it], rows = predict_rows)
+    check_crossed_thresholds(
+      trans_probs,
+      n_pat,
+      times[it],
+      rows = predict_rows,
+      n_draws = n_draws_total
+    )
     cursor <- 1L
 
     if (nd == 0) {
