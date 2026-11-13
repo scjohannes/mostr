@@ -1094,3 +1094,58 @@ describe("robcov_vglm() stress tests", {
     )
   })
 })
+
+# One positive-definiteness rule for orm and vglm, written before the fix as a known bug.
+
+test_that("orm and vglm accept or refuse a covariance by the same rule, the orm rule", {
+  # robcov_orm() (orm_model_bread()) checks the correlation matrix: it refuses
+  # when the smallest eigenvalue is at most p * 1e-10 times the largest, the
+  # reason given in its comment. The vglm check (validate_vglm_matrix()) uses
+  # the raw matrix and a tolerance of 100 * machine epsilon * p * max(1, largest
+  # eigenvalue). So vglm accepts a correlation nearly as singular as 1e-11,
+  # and refuses a well-conditioned covariance whose coefficients are on a
+  # small scale (variances 1e-16), which orm accepts.
+  coefficients <- c("y>=2" = 0.4, "y>=3" = -0.6, x = 0.3)
+  coefficient_names <- names(coefficients)
+  accepts <- function(engine, covariance) {
+    dimnames(covariance) <- list(coefficient_names, coefficient_names)
+    tryCatch(
+      {
+        if (engine == "orm") {
+          fit <- structure(
+            list(
+              coefficients = coefficients,
+              orig.var = covariance,
+              non.slopes = 2L
+            ),
+            class = "orm"
+          )
+          orm_model_bread(fit)
+        } else {
+          validate_vglm_matrix(
+            covariance,
+            coefficient_names,
+            "bread",
+            positive_definite = TRUE
+          )
+        }
+        TRUE
+      },
+      mostr_error = function(e) FALSE
+    )
+  }
+
+  # Unit variances; eigenvalues 2, 1 - 1e-11 and 1e-11.
+  rotation <- qr.Q(qr(matrix(c(1, 2, 3, 4, 5, 7, 2, 1, 9), 3)))
+  nearly_singular <- rotation %*% diag(c(2, 1 - 1e-11, 1e-11)) %*% t(rotation)
+  nearly_singular <- (nearly_singular + t(nearly_singular)) / 2
+  small_scale <- diag(1e-16, 3)
+
+  expect_false(accepts("orm", nearly_singular))
+  expect_true(accepts("orm", small_scale))
+  expect_identical(
+    accepts("vglm", nearly_singular),
+    accepts("orm", nearly_singular)
+  )
+  expect_identical(accepts("vglm", small_scale), accepts("orm", small_scale))
+})
