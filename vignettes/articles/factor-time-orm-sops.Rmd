@@ -116,6 +116,7 @@ fit_visit <- mostm(
   y ~ tx + time + yprev,
   data = model_data,
   id_var = "id",
+  absorb = ABSORB,
   first_followup_time = "1",
   opt_method = "LM",
   scale = TRUE,
@@ -125,8 +126,7 @@ fit_visit <- mostm(
 sop_visit <- avg_sops(
   fit_visit,
   variables = list(tx = c(0, 1)),
-  times = names(VISIT_DAYS),
-  absorb = as.character(ABSORB)
+  times = names(VISIT_DAYS)
 ) |>
   inferences(method = "delta", vcov = "unconditional")
 
@@ -185,7 +185,6 @@ cmp_days <- avg_comparisons(
   state_sets = NULL,
   comparison = "difference",
   times = names(VISIT_DAYS),
-  absorb = as.character(ABSORB),
   time_map = VISIT_DAYS,
   target_times = 1:max(VISIT_DAYS),
   baseline_time = 0,

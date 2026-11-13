@@ -130,13 +130,18 @@ converge reliably.
 In both fits, `id_var = "id"` tells mostr which rows belong to the same
 patient. mostr uses it to compute standard errors that account for repeated
 observations of the same patient, and it stores the patient data needed later
-to estimate SOPs and their confidence intervals.
+to estimate SOPs and their confidence intervals. `absorb = ABSORB` names
+death as the absorbing state. The fit records it, so every later prediction
+keeps patients who die dead, and `mostm()` checks that no fitted row starts
+in it. A state that occurs as an outcome but never as a previous state, and
+is not named in `absorb`, makes `mostm()` warn that it may be absorbing.
 
 ```{r fit-models}
 fit_vglm <- mostm(
   ordered(y) ~ tx + rcs(time, 4) + yprev,
   data = model_data,
   id_var = "id",
+  absorb = ABSORB,
   engine = "vglm"
 )
 
@@ -144,6 +149,7 @@ fit_orm <- mostm(
   y ~ tx + rcs(time, 4) + yprev,
   data = model_data,
   id_var = "id",
+  absorb = ABSORB,
   opt_method = "LM",
   scale = TRUE,
   maxit = 100
@@ -177,8 +183,7 @@ each arm.
 The main arguments are:
 
 - `variables = list(tx = c(0, 1))`: the treatment values to compare;
-- `times`: the days for which to report SOPs;
-- `absorb`: the absorbing state, so that patients who die stay dead.
+- `times`: the days for which to report SOPs.
 
 `inferences()` then adds standard errors and 95% confidence intervals.
 `method = "delta"` computes them analytically, which is fast and needs no
@@ -191,8 +196,7 @@ details and alternatives.
 sop_vglm <- avg_sops(
   fit_vglm,
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  absorb = ABSORB
+  times = seq_len(FOLLOW_UP)
 ) |>
   inferences(
     method = "delta",
@@ -202,8 +206,7 @@ sop_vglm <- avg_sops(
 sop_orm <- avg_sops(
   fit_orm,
   variables = list(tx = c(0, 1)),
-  times = seq_len(FOLLOW_UP),
-  absorb = ABSORB
+  times = seq_len(FOLLOW_UP)
 ) |>
   inferences(
     method = "delta",
@@ -328,8 +331,7 @@ mc <- plot_correlation(
   time_var = "time",
   y_var = "y",
   times = seq_len(FOLLOW_UP),
-  y_levels = fit_orm$yunique,
-  absorb = ABSORB
+  y_levels = fit_orm$yunique
 )
 
 ec
@@ -363,7 +365,6 @@ mt <- plot_transitions(
   y_var = "y",
   times = diagnostic_times,
   y_levels = fit_orm$yunique,
-  absorb = ABSORB,
   show_values = FALSE
 )
 
@@ -385,7 +386,6 @@ td <- plot_transitions(
   y_var = "y",
   times = diagnostic_times,
   y_levels = fit_orm$yunique,
-  absorb = ABSORB,
   show_values = FALSE
 )
 td
@@ -414,8 +414,7 @@ plot_variogram(
   time_var = "time",
   y_var = "y",
   times = seq_len(FOLLOW_UP),
-  y_levels = fit_orm$yunique,
-  absorb = ABSORB
+  y_levels = fit_orm$yunique
 ) +
   coord_cartesian(ylim = c(0, 1))
 ```
