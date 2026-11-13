@@ -12,6 +12,23 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-13: Keep the new regression tests on CRAN at the edge of the time budget
+
+**Decided.** The tests added on 2026-11-12 and 2026-11-13 that run on CRAN
+stay there, although the CRAN-mode suite is now at its 60-second budget.
+
+**Why.** The maintainer chose to keep them. Measured on a quiet machine
+(Ryzen AI 9 HX 370): 57 s and 65 s with the AGENTS.md command, and 56 s in the
+tests step of `R CMD check --as-cran` on a built tarball, whose whole check
+took about 6.5 minutes. The 30 tests added since 12 November that run on CRAN
+cost 6.1 s together; the slowest (`time_in_state()` on delta and blrm SOPs, a
+second-order prediction check and a real-fit `plot_lp_difference()` test) take
+0.4 to 1 s each.
+
+**Decided against.** Skipping the slowest of them on CRAN, which would have
+saved about 4 s but removed regression tests for bugs fixed this week from
+CRAN's runs.
+
 ## 2026-11-13: Check prediction rows where they enter the engines
 
 **Decided.** Prediction rows are checked and put in the form the model reads
