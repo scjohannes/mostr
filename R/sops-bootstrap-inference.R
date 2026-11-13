@@ -11,8 +11,9 @@
 #' bootstrap sample.
 #'
 #' @param object A `markov_avg_sops` object, or a `markov_sops` object when
-#'   `engine = "fwb"`.
-#' @param engine Bootstrap engine, `"standard"` or `"fwb"`.
+#'   `method = "fwb"`.
+#' @param method `"bootstrap"`, which resamples patients, or `"fwb"`, which
+#'   reweights them.
 #' @param n_boot Number of bootstrap iterations.
 #' @param workers Number of parallel workers. If NULL or 1, uses sequential
 #'   processing. If > 1, uses parallel processing.
@@ -25,7 +26,7 @@
 #' @keywords internal
 inferences_bootstrap <- function(
   object,
-  engine,
+  method,
   n_boot,
   workers,
   conf_level,
@@ -34,7 +35,7 @@ inferences_bootstrap <- function(
   use_coefstart
 ) {
   if (!inherits(object, "markov_avg_sops")) {
-    if (engine != "fwb") {
+    if (method != "fwb") {
       mostr_abort(
         "Standard refit bootstrap is not supported for individual-level ",
         "SOPs because ordinary resampling can drop outcome-state support ",
@@ -70,7 +71,7 @@ inferences_bootstrap <- function(
   refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, id_var, settings$time_var)
 
-  if (newdata_supplied && engine == "fwb") {
+  if (newdata_supplied && method == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
   }
 
@@ -89,7 +90,7 @@ inferences_bootstrap <- function(
   # --- 3. Define Analysis Function ---
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
     baseline_anchor <- NULL
-    if (engine == "standard") {
+    if (method == "bootstrap") {
       # A patient sampled more than once represents distinct bootstrap
       # patients, so the ID column takes the unique bootstrap identifier
       # instead of the repeated source identifier.
@@ -97,7 +98,7 @@ inferences_bootstrap <- function(
     }
 
     fit_weights <- NULL
-    if (engine == "fwb") {
+    if (method == "fwb") {
       fit_weights <- boot_data$fwb_weight
     }
 
@@ -142,7 +143,7 @@ inferences_bootstrap <- function(
     } else {
       # B. Compute standardized SOPs using G-computation on bootstrap data
       # Extract baseline data (one row per patient)
-      if (engine == "standard") {
+      if (method == "bootstrap") {
         baseline_boot <- resolve_markov_prediction_data(
           boot_data,
           id_var = "new_id",
@@ -285,7 +286,7 @@ inferences_bootstrap <- function(
   }
 
   # --- 4. Apply to Bootstrap Samples ---
-  if (engine == "standard") {
+  if (method == "bootstrap") {
     boot_ids <- fast_group_bootstrap(
       data = refit_data,
       id_var = id_var,
@@ -392,7 +393,7 @@ inferences_bootstrap <- function(
 
   # Add bootstrap metadata
   attr(final_result, "n_successful") <- length(boot_results)
-  if (engine == "fwb") {
+  if (method == "fwb") {
     attr(final_result, "fwb_weight_type") <- "exponential"
     attr(final_result, "fwb_weight_scale") <- "cluster_mean_1"
     attr(final_result, "draw_weights_attached") <- FALSE

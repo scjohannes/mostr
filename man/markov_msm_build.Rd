@@ -17,7 +17,7 @@ markov_msm_build(model, newdata, times = NULL, settings)
 (\code{resolve_markov_settings()}): the state labels \code{y_levels}, the absorbing
 states \code{absorb} (their transition matrices are not needed, because
 absorbing states keep their prior probability mass), and the columns
-\code{time_var}, \code{p_var} and \code{gap_var}.}
+\code{time_var}, \code{p_var}, \code{p2_var} and \code{gap_var}.}
 }
 \value{
 A list containing pre-calculated matrices and metadata.
@@ -26,5 +26,14 @@ A list containing pre-calculated matrices and metadata.
 Pre-calculates design matrices for fast Markov simulation. This is the
 "heavy lifting" step that should be done ONCE before running thousands of
 simulation draws.
+}
+\details{
+The first visit is predicted from each patient's own previous state(s).
+Every later visit needs the transition probabilities from each previous
+state a patient may be in: each non-absorbing state for a first-order model,
+and each pair of non-absorbing states (two visits back, one visit back) for
+a second-order model (\code{settings$p2_var}). The design of a later visit stacks
+one block of patient rows per such combination, in the order of
+\code{previous_states}.
 }
 \keyword{internal}

@@ -6,7 +6,7 @@
 \usage{
 inferences_bootstrap(
   object,
-  engine,
+  method,
   n_boot,
   workers,
   conf_level,
@@ -17,9 +17,10 @@ inferences_bootstrap(
 }
 \arguments{
 \item{object}{A \code{markov_avg_sops} object, or a \code{markov_sops} object when
-\code{engine = "fwb"}.}
+\code{method = "fwb"}.}
 
-\item{engine}{Bootstrap engine, \code{"standard"} or \code{"fwb"}.}
+\item{method}{\code{"bootstrap"}, which resamples patients, or \code{"fwb"}, which
+reweights them.}
 
 \item{n_boot}{Number of bootstrap iterations.}
 

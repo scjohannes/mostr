@@ -637,18 +637,6 @@ inferences_impl <- function(
     stop_starting_state_conditional_only(x)
   }
 
-  internal_method <- if (identical(method, "mvn")) {
-    "simulation"
-  } else {
-    "bootstrap"
-  }
-  engine <- switch(
-    method,
-    mvn = "mvn",
-    bootstrap = "standard",
-    fwb = "fwb"
-  )
-
   if (inherits(x, "markov_avg_state_time")) {
     result <- inferences_avg_time(
       object = x,
@@ -677,8 +665,7 @@ inferences_impl <- function(
   } else if (inherits(x, "markov_avg_comparisons")) {
     result <- inferences_avg_comparisons(
       object = x,
-      method = internal_method,
-      engine = engine,
+      method = method,
       n_draws = n_draws,
       vcov = vcov,
       cluster = cluster,
@@ -688,7 +675,7 @@ inferences_impl <- function(
       return_draws = return_draws,
       use_coefstart = use_coefstart
     )
-  } else if (internal_method == "simulation") {
+  } else if (method == "mvn") {
     result <- inferences_simulation(
       object = x,
       n_draws = n_draws,
@@ -701,7 +688,7 @@ inferences_impl <- function(
   } else {
     result <- inferences_bootstrap(
       object = x,
-      engine = engine,
+      method = method,
       n_boot = n_draws,
       workers = workers,
       conf_level = conf_level,

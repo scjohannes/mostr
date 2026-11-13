@@ -1,9 +1,9 @@
 # Average comparison inference helpers.
 
+# `method` is the `method` of `inferences()`: "mvn", "bootstrap" or "fwb".
 inferences_avg_comparisons <- function(
   object,
   method,
-  engine,
   n_draws,
   vcov,
   cluster,
@@ -20,7 +20,6 @@ inferences_avg_comparisons <- function(
     return(inferences_avg_comparisons_linear(
       object = object,
       method = method,
-      engine = engine,
       n_draws = n_draws,
       vcov = vcov,
       cluster = cluster,
@@ -32,10 +31,9 @@ inferences_avg_comparisons <- function(
     ))
   }
 
-  if (method == "simulation") {
+  if (method == "mvn") {
     return(inferences_avg_comparisons_time_benefit_simulation(
       object = object,
-      engine = engine,
       n_draws = n_draws,
       vcov = vcov,
       workers = workers,
@@ -45,10 +43,9 @@ inferences_avg_comparisons <- function(
     ))
   }
 
-  bootstrap_engine <- if (engine == "mvn") "standard" else engine
   inferences_avg_comparisons_time_benefit_bootstrap(
     object = object,
-    engine = bootstrap_engine,
+    method = method,
     n_boot = n_draws,
     workers = workers,
     conf_level = conf_level,
@@ -61,7 +58,6 @@ inferences_avg_comparisons <- function(
 inferences_avg_comparisons_linear <- function(
   object,
   method,
-  engine,
   n_draws,
   vcov,
   cluster,
@@ -96,13 +92,7 @@ inferences_avg_comparisons_linear <- function(
   )
   avg <- inferences_internal(
     avg,
-    method = if (method == "simulation") {
-      engine
-    } else if (engine == "standard") {
-      "bootstrap"
-    } else {
-      "fwb"
-    },
+    method = method,
     n_draws = n_draws,
     vcov = vcov,
     cluster = cluster,
@@ -164,7 +154,6 @@ restore_avg_comparison_inference_attrs <- function(result, object, inferred) {
 
 inferences_avg_comparisons_time_benefit_simulation <- function(
   object,
-  engine,
   n_draws,
   vcov,
   workers,
@@ -172,14 +161,6 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
   conf_type,
   return_draws
 ) {
-  if (engine %in% c("standard", "fwb")) {
-    mostr_abort(
-      "`engine = \"",
-      engine,
-      "\"` is only used when `method = \"bootstrap\"`."
-    )
-  }
-
   setup <- setup_from_avg_comparison_object(object)
   args <- attr(object, "comparison_args")
   model <- attr(object, "model")
@@ -245,14 +226,16 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       method = "mvn",
-      engine = engine
+      engine = "mvn"
     )
   )
 }
 
+# `method` is "bootstrap", which resamples patients, or "fwb", which reweights
+# them.
 inferences_avg_comparisons_time_benefit_bootstrap <- function(
   object,
-  engine,
+  method,
   n_boot,
   workers,
   conf_level,
@@ -260,7 +243,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   return_draws,
   use_coefstart
 ) {
-  engine <- match.arg(engine, choices = c("standard", "fwb"))
+  method <- match.arg(method, choices = c("bootstrap", "fwb"))
   setup <- setup_from_avg_comparison_object(object)
   args <- attr(object, "comparison_args")
   model <- attr(object, "model")
@@ -272,7 +255,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
     setup$settings$id_var,
     setup$settings$time_var
   )
-  if (newdata_supplied && engine == "fwb") {
+  if (newdata_supplied && method == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
   }
 
@@ -284,7 +267,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
   )
 
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
-    fit_weights <- if (engine == "fwb") boot_data$fwb_weight else NULL
+    fit_weights <- if (method == "fwb") boot_data$fwb_weight else NULL
     boot_result <- bootstrap_analysis_wrapper(
       boot_data = boot_data,
       model = model,
@@ -304,7 +287,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       newdata_cf <- setup$newdata_pred
       baseline_data <- setup$baseline_data
       baseline_weights <- NULL
-    } else if (engine == "standard") {
+    } else if (method == "bootstrap") {
       baseline_data <- resolve_markov_prediction_data(
         boot_result$data,
         id_var = "new_id",
@@ -382,7 +365,7 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
     )
   }
 
-  if (engine == "standard") {
+  if (method == "bootstrap") {
     boot_ids <- fast_group_bootstrap(
       data = refit_data,
       id_var = setup$settings$id_var,
@@ -450,9 +433,10 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       n_successful = length(boot_results),
       conf_level = conf_level,
       method = "bootstrap",
-      engine = engine,
-      fwb_weight_type = if (engine == "fwb") "exponential" else NULL,
-      fwb_weight_scale = if (engine == "fwb") "cluster_mean_1" else NULL
+      # The stored name of the resampling scheme.
+      engine = if (method == "fwb") "fwb" else "standard",
+      fwb_weight_type = if (method == "fwb") "exponential" else NULL,
+      fwb_weight_scale = if (method == "fwb") "cluster_mean_1" else NULL
     )
   )
 }
