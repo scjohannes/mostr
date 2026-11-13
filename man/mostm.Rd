@@ -117,7 +117,8 @@ be below 1, and a value you supply must be the earliest time in the data.
 Factor and character time need an explicit value, such as \code{"day 1"}.}
 
 \item{weights}{Optional non-negative row weights: a column of \code{data} or a
-vector with one value per row of \code{data}. Not available for
+vector with one value per row of \code{data}. \code{engine = "vglm"} needs
+positive weights on the rows it fits. Not available for
 \code{engine = "blrm"}. The weights are used only to fit the model:
 \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_state_time]{avg_state_time()}}, and \code{\link[=avg_comparisons]{avg_comparisons()}} give every
 profile the same weight, and \code{\link[=inferences]{inferences()}} offers only conditional
@@ -269,7 +270,9 @@ say how much time passes between visits.
 
 \code{weights} and \code{subset} are evaluated once, first in \code{data} and then where
 \code{mostm()} was called, so they can refer to vectors outside \code{data}. The
-weights must be finite and non-negative. The data stored on the fit contain
+weights must be finite and non-negative. \code{engine = "orm"} fits a row with
+zero weight as if it were left out; \code{engine = "vglm"} cannot fit such a
+row, so leave it out with \code{subset}. The data stored on the fit contain
 only the rows selected by \code{subset}, and each row keeps its weight, so
 bootstrap refits resample rows together with their weights.
 }

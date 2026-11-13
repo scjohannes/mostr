@@ -526,3 +526,29 @@ test_that("sim_markov supports threshold-specific linear predictors", {
   expect_equal(nrow(ppo), 12)
   expect_true(all(ppo$y %in% 1:3))
 })
+
+test_that("sim_markov refuses baseline_data columns it creates itself", {
+  simulate <- function(baseline) {
+    sim_markov(
+      NULL,
+      baseline_data = baseline,
+      follow_up_time = 3,
+      intercepts = c(-1, 1),
+      lp_function = function(yprev, t, tx, ...) rep(0, length(yprev)),
+      seed = 1
+    )
+  }
+  baseline <- data.frame(id = 1:4, yprev = 2, tx = c(0, 1, 0, 1))
+
+  expect_named(simulate(baseline), c("id", "time", "y", "yprev", "tx"))
+  expect_error(
+    simulate(cbind(baseline, time = 0)),
+    "`time`",
+    class = "mostr_error"
+  )
+  expect_error(
+    simulate(cbind(baseline, y = 2)),
+    "`y`",
+    class = "mostr_error"
+  )
+})

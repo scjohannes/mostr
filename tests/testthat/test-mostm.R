@@ -780,3 +780,34 @@ test_that("a weighted orm fit does not show rms's warning that its bootstrap ign
     message = "weights are ignored"
   )
 })
+
+test_that("a vglm fit refuses zero weights and points to subset; orm accepts them", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+  data <- make_test_data(n_patients = 40, follow_up_time = 5, seed = 32)
+  w <- rep(1, nrow(data))
+  w[c(3, 10)] <- 0
+
+  expect_error(
+    mostm(
+      ordered(y) ~ time + tx + yprev,
+      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+      data = data,
+      id_var = "id",
+      absorb = 6,
+      engine = "vglm",
+      weights = w
+    ),
+    "subset",
+    class = "mostr_error"
+  )
+  expect_no_error(
+    mostm(
+      ordered(y) ~ time + tx + yprev,
+      data = data,
+      id_var = "id",
+      absorb = 6,
+      weights = w
+    )
+  )
+})

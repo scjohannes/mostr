@@ -36,7 +36,8 @@ patient weights.
 }}
 
 \item{n_draws}{Number of simulation draws (for simulation) or bootstrap
-iterations (for bootstrap). Default is 1000. For \code{blrm} SOP objects this
+iterations (for bootstrap). Default is 1000. Must be a single whole number
+of at least 2; \code{method = "delta"} does not use it. For \code{blrm} SOP objects this
 argument is ignored; rerun \code{sops()}/\code{avg_sops()} with \code{n_draws} and \code{seed}
 to change posterior draws.}
 

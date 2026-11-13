@@ -118,7 +118,8 @@
 #'   be below 1, and a value you supply must be the earliest time in the data.
 #'   Factor and character time need an explicit value, such as `"day 1"`.
 #' @param weights Optional non-negative row weights: a column of `data` or a
-#'   vector with one value per row of `data`. Not available for
+#'   vector with one value per row of `data`. `engine = "vglm"` needs
+#'   positive weights on the rows it fits. Not available for
 #'   `engine = "blrm"`. The weights are used only to fit the model:
 #'   [avg_sops()], [avg_state_time()], and [avg_comparisons()] give every
 #'   profile the same weight, and [inferences()] offers only conditional
@@ -213,7 +214,9 @@
 #'
 #' `weights` and `subset` are evaluated once, first in `data` and then where
 #' `mostm()` was called, so they can refer to vectors outside `data`. The
-#' weights must be finite and non-negative. The data stored on the fit contain
+#' weights must be finite and non-negative. `engine = "orm"` fits a row with
+#' zero weight as if it were left out; `engine = "vglm"` cannot fit such a
+#' row, so leave it out with `subset`. The data stored on the fit contain
 #' only the rows selected by `subset`, and each row keeps its weight, so
 #' bootstrap refits resample rows together with their weights.
 #'
@@ -463,6 +466,18 @@ mostm <- function(
   }
   subset_rows <- if (!is.null(model_call$subset)) {
     eval(model_call$subset, data, eval_env)
+  }
+  # VGAM::vglm() replaces a zero weight by a tiny positive one and then fails
+  # in its log-likelihood; rms::orm() fits zero weights as dropped rows.
+  if (engine == "vglm" && !is.null(prior_weight_column)) {
+    fitted_rows <- mostm_subset_row_index(subset_rows, nrow(data))
+    if (any(as.matrix(prior_weights)[fitted_rows, ] == 0)) {
+      mostr_abort(
+        "`VGAM::vglm()` cannot fit rows with zero weight. Leave those rows ",
+        "out with `subset`, or use `engine = \"orm\"`, which fits them as ",
+        "dropped rows."
+      )
+    }
   }
 
   # Bootstrap refits reuse the checked absorbing states and gap column; a

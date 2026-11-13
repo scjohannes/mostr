@@ -437,14 +437,14 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
     withr::with_seed(61053, mostr::inferences(
       full,
       method = "bootstrap",
-      n_draws = 1,
+      n_draws = 2,
       return_draws = TRUE
     ))
   }
   boot_default <- bootstrap_full(fit_default)
   boot_scaled <- bootstrap_full(fit_scaled)
   expect_equal(attr(boot_scaled, "method"), "bootstrap")
-  expect_equal(attr(boot_scaled, "n_successful"), 1L)
+  expect_equal(attr(boot_scaled, "n_successful"), 2L)
   expect_false(anyNA(boot_scaled$conf.low))
   expect_equal(boot_scaled$conf.low, boot_default$conf.low, tolerance = 1e-6)
   expect_equal(boot_scaled$conf.high, boot_default$conf.high, tolerance = 1e-6)

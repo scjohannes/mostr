@@ -1178,7 +1178,7 @@ inference_refusals <- list(
       profiles <- refusal_profiles()
       profiles$yprev[1] <- "2"
       average <- refusal_call(avg_sops, newdata = profiles)
-      inferences(average, method = "bootstrap", n_draws = 1)
+      inferences(average, method = "bootstrap", n_draws = 2)
     },
     "The ordinary bootstrap left out every patient who was ever in state 2"
   )

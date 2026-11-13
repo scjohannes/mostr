@@ -248,7 +248,10 @@ delta_validate_cluster <- function(cluster, n_rows) {
 
 # Resolve the patient of each fitting row for analytical inference with
 # conditional or unconditional variance. Explicit row-level IDs take
-# precedence; fitting rows are never implicit clusters.
+# precedence; fitting rows are never implicit clusters. The data stored by
+# `mostm()` are the fitted rows in the order of the score rows, so an ID column
+# is read from them as it is. The data frame the user fitted to is not looked
+# up again: it may have been reordered, filtered or removed since the fit.
 resolve_delta_cluster <- function(model, cluster = NULL) {
   delta_validate_full_po_model(model)
   n_rows <- delta_fitting_row_count(model)
@@ -273,8 +276,6 @@ resolve_delta_cluster <- function(model, cluster = NULL) {
           "` requires that column in the model's stored fitting data."
         )
       }
-      fit <- delta_unconditional_model(model)
-      data <- markov_align_model_data(data, fit)
       cluster <- data[[id_var]]
       source <- "explicit_formula"
     } else {
@@ -300,8 +301,6 @@ resolve_delta_cluster <- function(model, cluster = NULL) {
         "` is absent from the stored fitting data."
       )
     }
-    fit <- delta_unconditional_model(model)
-    data <- markov_align_model_data(data, fit)
     cluster <- data[[id_var]]
     source <- "stored_id_var"
   }
@@ -881,25 +880,26 @@ delta_stacked_influence <- function(
   dimnames(influence) <- list(profile_ids, cell_names)
 
   # Each estimate is an average over the n patients, so its variance is the
-  # variance of the patients' influence values divided by n. cov() divides by
-  # n - 1, which gives the same n / (n - 1) factor as the default conditional
-  # variance (HC0 with `cadjust = TRUE`); test-sops-delta-unconditional-identity.R
-  # relies on this. With `cadjust = FALSE` only the conditional variance loses the
-  # factor. The centring cov() does is harmless: summed scores are 0 at the fit
-  # (vglm stops early, but that moves standard errors by less than 1e-11).
-  covariance <- stats::cov(influence) / n
-  covariance <- (covariance + t(covariance)) / 2
-  dimnames(covariance) <- list(cell_names, cell_names)
-  profile_covariance <- stats::cov(values) / n
-  dimnames(profile_covariance) <- list(cell_names, cell_names)
+  # variance of the patients' influence values divided by n. The sample variance
+  # divides by n - 1, as cov() does, which gives the same n / (n - 1) factor as
+  # the default conditional variance (HC0 with `cadjust = TRUE`);
+  # test-sops-delta-unconditional-identity.R relies on this. With
+  # `cadjust = FALSE` only the conditional variance loses the factor. Centring
+  # at the column means is harmless: summed scores are 0 at the fit (vglm stops
+  # early, but that moves standard errors by less than 1e-11).
+  #
+  # Only the column variances are computed here. The full covariance has one
+  # row and column per cell, so vcov() builds it on request from `influence`,
+  # under the `mostr.delta_max_bytes` limit.
+  centered_influence <- sweep(influence, 2L, colMeans(influence), "-")
+  variance <- colSums(centered_influence^2) / (n - 1) / n
+  names(variance) <- cell_names
 
   list(
     influence = influence,
-    covariance = covariance,
-    std.error = sqrt(pmax(diag(covariance), 0)),
+    std.error = sqrt(pmax(variance, 0)),
     estimate = estimate,
     profile_component = profile_component,
-    profile_covariance = profile_covariance,
     coefficient_influence = coefficient_influence,
     Ainv = Ainv,
     scores = aligned_scores,

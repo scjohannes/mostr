@@ -23,7 +23,8 @@
 #'       patient weights.
 #'   }
 #' @param n_draws Number of simulation draws (for simulation) or bootstrap
-#'   iterations (for bootstrap). Default is 1000. For `blrm` SOP objects this
+#'   iterations (for bootstrap). Default is 1000. Must be a single whole number
+#'   of at least 2; `method = "delta"` does not use it. For `blrm` SOP objects this
 #'   argument is ignored; rerun `sops()`/`avg_sops()` with `n_draws` and `seed`
 #'   to change posterior draws.
 #' @param vcov For `method = "delta"`, `"conditional"` treats prediction or
@@ -614,6 +615,19 @@ inferences_impl <- function(
       )
     }
     return(x)
+  }
+
+  # Every draw-based method (mvn, bootstrap, fwb) passes here; the delta
+  # method and `blrm` results returned above and never use `n_draws`. One draw
+  # gives no spread, so the smallest number accepted is 2.
+  if (
+    !is.numeric(n_draws) ||
+      length(n_draws) != 1L ||
+      !is.finite(n_draws) ||
+      n_draws != round(n_draws) ||
+      n_draws < 2
+  ) {
+    mostr_abort("`n_draws` must be a single whole number of at least 2.")
   }
 
   if (

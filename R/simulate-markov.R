@@ -45,7 +45,9 @@
 #'   patients that a preset would sample. It must contain `id`, `yprev` (the
 #'   state on the day before the first simulated day), and every covariate
 #'   that the model uses: `tx` for `"actt1"` and `"actt2"`, and `age`, `sofa`,
-#'   and `tx` for `"violet"`. Required when `preset = NULL`.
+#'   and `tx` for `"violet"`. It must not contain a `time` or a `y` column,
+#'   because `sim_markov()` creates these itself. Required when
+#'   `preset = NULL`.
 #' @param intercepts Numeric vector of thresholds, one fewer than the number of
 #'   states, in increasing order. With `K` states numbered from 1 (best) to `K`
 #'   (worst), `intercepts[j]` plus the linear predictor is the log odds of
@@ -567,6 +569,15 @@ simulate_markov_trajectories <- function(
     mostr_abort(
       "baseline_data must contain columns: ",
       paste(missing_cols, collapse = ", ")
+    )
+  }
+
+  created_cols <- intersect(c("time", "y"), names(baseline_data))
+  if (length(created_cols) > 0) {
+    mostr_abort(
+      "baseline_data must not contain columns: ",
+      paste0("`", created_cols, "`", collapse = ", "),
+      ". sim_markov() creates these columns itself."
     )
   }
 

@@ -628,18 +628,22 @@ test_that("stacked influence matches fitted patients and retains the cross term"
   expect_equal(result$Ainv, Ainv)
   expect_equal(result$coefficient_influence, coefficient_influence)
   expect_equal(result$influence, expected_influence)
-  expect_equal(result$covariance, expected_covariance)
+  # The result carries no covariance matrix; it is the sample covariance of the
+  # returned influence values divided by n.
+  result_covariance <- stats::cov(result$influence) / nrow(values)
+  expect_equal(result_covariance, expected_covariance)
   expect_equal(result$std.error, sqrt(diag(expected_covariance)))
+  expect_equal(result$std.error, sqrt(diag(result_covariance)))
   expect_equal(
-    result$covariance,
+    result_covariance,
     crossprod(centered) / (nrow(values) * (nrow(values) - 1L))
   )
   expect_equal(
-    result$covariance,
+    result_covariance,
     centered_hc0 * nrow(values) / (nrow(values) - 1L)
   )
   expect_equal(
-    result$covariance,
+    result_covariance,
     nrow(values) /
       (nrow(values) - 1L) *
       raw_uncentered -
@@ -658,7 +662,7 @@ test_that("stacked influence matches fitted patients and retains the cross term"
   additive_covariance <- stats::cov(profile_component) /
     nrow(values) +
     stats::cov(coefficient_influence) / nrow(values)
-  expect_gt(max(abs(result$covariance - additive_covariance)), 1e-8)
+  expect_gt(max(abs(result_covariance - additive_covariance)), 1e-8)
 })
 
 test_that("stacked influence rejects patients missing from profiles or scores", {
@@ -718,4 +722,69 @@ test_that("empirical covariance propagates named raw coefficients", {
     t(jacobian)
 
   expect_equal(delta_empirical_covariance(jacobian, covariance), expected)
+})
+
+test_that("unconditional delta standard errors ignore later changes to the user's data frame", {
+  skip_on_cran()
+  skip_if_not_installed("rms")
+  d <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 2402)
+  fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = d,
+    id_var = "id",
+    absorb = 6
+  )
+  infer <- function() {
+    avg <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:3)
+    inferences(avg, method = "delta", vcov = "unconditional")
+  }
+  before <- infer()
+
+  # The fit carries its own data: reordering or filtering the data frame it
+  # was fitted to must not change which patient each score row belongs to.
+  d <- d[order(d$tx, -d$time), ]
+  expect_equal(infer()$std.error, before$std.error)
+
+  d <- d[d$tx == 0, ]
+  expect_equal(infer()$std.error, before$std.error)
+})
+
+test_that("stacked influence gives standard errors without a cells-by-cells covariance", {
+  values <- rbind(
+    p1 = c(cell_a = 0.2, cell_b = 0.8),
+    p2 = c(cell_a = 0.5, cell_b = 0.5),
+    p3 = c(cell_a = 0.9, cell_b = 0.1)
+  )
+  jacobian <- rbind(
+    cell_a = c(beta_1 = 1, beta_2 = 0.5),
+    cell_b = c(beta_1 = -1, beta_2 = -0.5)
+  )
+  scores <- rbind(
+    p1 = c(beta_1 = 0.2, beta_2 = -0.1),
+    p2 = c(beta_1 = -0.3, beta_2 = 0.4),
+    p3 = c(beta_1 = 0.1, beta_2 = -0.3)
+  )
+  Ainv <- diag(c(2, 1))
+  dimnames(Ainv) <- list(c("beta_1", "beta_2"), c("beta_1", "beta_2"))
+
+  result <- delta_stacked_influence(
+    individual_values = values,
+    average_jacobian = jacobian,
+    profile_ids = rownames(values),
+    score_components = list(
+      ids = rownames(scores),
+      scores = scores,
+      Ainv = Ainv,
+      n = nrow(scores)
+    )
+  )
+
+  # The full covariance grows with the square of the number of cells; it is
+  # built only on request, by vcov() on the result, under the memory limit.
+  expect_false(any(c("covariance", "profile_covariance") %in% names(result)))
+  expect_equal(
+    result$std.error,
+    sqrt(diag(stats::cov(result$influence)) / nrow(values)),
+    ignore_attr = TRUE
+  )
 })

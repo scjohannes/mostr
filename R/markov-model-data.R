@@ -698,40 +698,26 @@ drop_markov_internal_columns <- function(data) {
   data
 }
 
-markov_align_model_data <- function(data, model_or_frame) {
+# The rows of `data` that a fit used, in fitted order. `frame` is the model
+# frame built from `data` when the model was fitted, whose row names are those
+# of the rows left after `subset` and `na.action`. A fitted model is not
+# accepted: `stats::model.frame()` on a model evaluates the `data` of its call
+# again, and by then the user may have changed that data frame.
+markov_align_model_data <- function(data, frame) {
   if (!is.data.frame(data)) {
     return(NULL)
   }
-
-  rn <- NULL
-  if (is.data.frame(model_or_frame)) {
-    rn <- rownames(model_or_frame)
-  } else {
-    mf <- tryCatch(stats::model.frame(model_or_frame), error = function(e) NULL)
-    if (!is.null(mf)) {
-      rn <- rownames(mf)
-    }
+  if (!is.data.frame(frame)) {
+    mostr_abort(
+      "Internal error: `markov_align_model_data()` needs the model frame of ",
+      "the fit, not the fitted model."
+    )
   }
 
-  if (!is.null(rn) && length(rn) > 0 && all(rn %in% rownames(data))) {
+  rn <- rownames(frame)
+  if (length(rn) > 0 && all(rn %in% rownames(data))) {
     return(data[rn, , drop = FALSE])
   }
-
-  model_n <- tryCatch(stats::nobs(model_or_frame), error = function(e) NULL)
-  if (!is.null(model_n) && nrow(data) != model_n) {
-    model_vars <- tryCatch(
-      all.vars(stats::formula(model_or_frame)),
-      error = function(e) character()
-    )
-    model_vars <- intersect(model_vars, names(data))
-    if (length(model_vars) > 0) {
-      keep <- stats::complete.cases(data[, model_vars, drop = FALSE])
-      if (sum(keep) == model_n) {
-        return(data[keep, , drop = FALSE])
-      }
-    }
-  }
-
   data
 }
 

@@ -124,7 +124,7 @@ test_that("inferences() validates the homogenized method interface", {
       out <- inferences(
         object,
         method = "fwb",
-        n_draws = 1
+        n_draws = 2
       )
     }
   )
@@ -843,4 +843,27 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
   expect_equal(attr(out, "fwb_weight_type"), "exponential")
   expect_equal(attr(out, "fwb_weight_scale"), "cluster_mean_1")
   expect_s3_class(attr(out, "draws"), "data.frame")
+})
+
+test_that("inferences() refuses an n_draws that is not a whole number of at least 2", {
+  skip_if_not_installed("rms")
+  data <- make_test_data(n_patients = 40, follow_up_time = 5, seed = 31)
+  fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 6
+  )
+  avg <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:2)
+
+  for (bad in list(0, -1, 1, 2.7, "a", NA, c(10, 20))) {
+    for (method in c("mvn", "bootstrap", "fwb")) {
+      expect_error(
+        inferences(avg, method = method, n_draws = bad),
+        "`n_draws`",
+        class = "mostr_error"
+      )
+    }
+  }
+  expect_no_error(inferences(avg, method = "mvn", n_draws = 2, seed = 1))
 })

@@ -512,7 +512,7 @@ describe("avg_sops() and inferences() pipeline", {
 
     cases <- list(
       list(method = "mvn", seed = 4413, n_draws = 2, return_draws = TRUE),
-      list(method = "bootstrap", seed = 4414, n_draws = 1, return_draws = TRUE)
+      list(method = "bootstrap", seed = 4414, n_draws = 2, return_draws = TRUE)
     )
 
     for (row in cases) {

@@ -248,6 +248,31 @@
 
 ## Bug fixes
 
+* Analytical standard errors with unconditional variance no longer depend on
+  the data frame the model was fitted to. `inferences(method = "delta")` took
+  the patient of each fitted row by evaluating the `data` of the `mostm()`
+  call again, so a data frame that was reordered after the fit gave wrong
+  standard errors without a message, and a filtered one gave an error. The
+  patients now come from the data stored on the fit.
+
+* `inferences()` refuses an `n_draws` that is not a single whole number of at
+  least 2 for `method = "mvn"`, `"bootstrap"` and `"fwb"`. Before, 0, a
+  negative or missing value gave an R error that did not name the argument,
+  and 1 returned missing standard errors and equal confidence limits.
+
+* `mostm(engine = "vglm")` refuses a zero weight on a fitted row and says to
+  leave the row out with `subset`. Before, the fit stopped inside VGAM with
+  "missing value where TRUE/FALSE needed". `engine = "orm"` still fits a
+  zero-weight row as if it were left out.
+
+* `sim_markov()` refuses a `baseline_data` with a `time` or a `y` column,
+  which it creates itself. Before, the result had two columns of that name.
+
+* Analytical standard errors with unconditional variance no longer build the
+  covariance between all pairs of cells to take its diagonal, which took 20
+  seconds and 380 MB for 5,000 cells and was not counted against
+  `mostr.delta_max_bytes`. `vcov()` on the result still gives the covariance.
+
 * `mostm()` now warns (class `mostr_warning_dropped_patients`) when patients
   lose every row because a model variable (a predictor, the response, or the
   previous state) is missing on each, and names them. The bootstrap and the

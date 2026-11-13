@@ -668,7 +668,7 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
         inferred <- inferences(
           out,
           method = "fwb",
-          n_draws = 1,
+          n_draws = 2,
           return_draws = TRUE,
           use_coefstart = FALSE
         ),
@@ -676,7 +676,7 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
         fixed = TRUE
       )
     })
-    expect_equal(attr(inferred, "n_successful"), 1L, info = case$label)
+    expect_equal(attr(inferred, "n_successful"), 2L, info = case$label)
     if (each_row) {
       draws <- get_draws(inferred)
       expect_equal(sort(unique(draws$rowid)), sort(unique(case$rowid)), info = case$label)

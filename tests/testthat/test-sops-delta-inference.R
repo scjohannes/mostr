@@ -576,7 +576,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
   )
   expect_equal(
     stats::vcov(inferred, rows = 1:5),
-    direct$covariance[1:5, 1:5],
+    stats::cov(direct$influence[, 1:5, drop = FALSE]) / length(profile_ids),
     tolerance = 1e-12,
     ignore_attr = TRUE
   )
