@@ -66,9 +66,12 @@
 #' size fits comfortably in the available memory.
 #'
 #' @name mostr_options
-#' @aliases mostr.max_batched_design_rows mostr.second_order_working_bytes
-#'   mostr.execution_plan_max_bytes mostr.delta_max_bytes
-#'   mostr.posterior_working_bytes mostr.max_sops_draw_cells
+#' @aliases mostr.max_batched_design_rows
+#' @aliases mostr.second_order_working_bytes
+#' @aliases mostr.execution_plan_max_bytes
+#' @aliases mostr.delta_max_bytes
+#' @aliases mostr.posterior_working_bytes
+#' @aliases mostr.max_sops_draw_cells
 #' @seealso [inferences()], [sops()], [avg_sops()]
 #' @examples
 #' # Allow delta-method inference to use up to 512 MiB, then restore the
