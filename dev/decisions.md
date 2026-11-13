@@ -264,7 +264,17 @@ state 3's probability under state 2. For matching `variables` by label, the
 reason is not recorded beyond the commit message.
 
 **Decided against.** Dropping the affected bootstrap draws instead of
-stopping: the maintainer chose to stop; reason not recorded. (For `by` groups,
+stopping: the maintainer chose to stop. The reason, as for per-profile
+`comparisons()` (2026-10-17 entry): a supplied profile that starts in a state
+missing from a resample has no prediction in that draw, and dropping the draw
+would silently rest the interval on the resamples that happen to contain the
+state. Checked 2026-11-13 (200 patients, a state 5 patients were ever in):
+averages over the stored patients ran and gave that state probability 0 in
+resamples without it, while supplied `newdata` with a profile starting there
+stopped because 2 of 200 resamples lacked the state. A resample lacks a state
+that m patients were ever in with probability about e^-m, so with m = 5 and
+1,000 draws the call almost always stops; with m = 10 it stops about 4% of
+the time. (For `by` groups,
 the 2026-10-17 entry rejected dropping because the interval would silently rest
 on fewer resamples.)
 
@@ -311,7 +321,8 @@ the global environment, and `update_datadist = FALSE` together with a
 - No check with 30 states: dropped as unnecessary.
 
 **Deferred.** Refusing time, gap and time-covariate columns in `variables`
-(issue #29, "not now"; reason not recorded). Slow `interpolate_sops()` (issue
+(issue #29, "not now": the maintainer trusts users not to put time columns
+in `variables` for now). Slow `interpolate_sops()` (issue
 #28).
 
 ## 2026-11-10: A CRAN release is planned
@@ -337,7 +348,8 @@ and #27 (let the user choose the parallel backend). On 2026-11-08 it was also
 decided that bugs found by the overhaul are fixed on the same branch.
 
 **Decided against.** A separate `fix/` branch per bug, as the test overhaul
-plan had proposed. Reason not recorded.
+plan had proposed: the maintainer's preference, which they see no need to
+justify.
 
 ## 2026-11-09: Behaviour for the problems found by the test overhaul
 
@@ -351,7 +363,7 @@ plan had proposed. Reason not recorded.
   refused, vglm ran.
 - **Averages give every profile the same weight.** Case weights are used only
   to fit the model; this is now documented. Weighting the averages by case
-  weights was not chosen; reason not recorded.
+  weights was not chosen, to mirror marginaleffects.
 - **`include_re = TRUE` is an error except for blrm fits.** It was silently
   ignored for orm and vglm.
 - **Crossed thresholds stop with an error.** In a partial proportional-odds
@@ -363,7 +375,10 @@ plan had proposed. Reason not recorded.
   Values between -1e-10 and 0 come from rounding and are still set to zero.
   Clipping and rescaling, and dropping draws with a warning, were rejected.
 - **The score bootstrap is removed from `inferences()`.** Its code stays as the
-  internal `inferences_score_bootstrap()`. Reason not recorded.
+  internal `inferences_score_bootstrap()`. The maintainer was never sure the
+  score bootstrap has a sound theoretical basis, or where it would fail and
+  where not, so it was never planned for release; it is being removed
+  entirely (2026-11-13).
 
 ## 2026-11-09: `by` groups
 
@@ -478,7 +493,8 @@ pairs" start fit, which would remove the need for transitions with both states
 observed, worked in an in-memory patch but is not implemented.
 `rms::orm()` fits `Ocens(-Inf, b)` with one state too few (confirmed on rms
 8.2-1); `mostm()` is unaffected because it reads `Ocens()` itself. Not reported
-upstream; reason not recorded.
+upstream yet: the maintainer wants to investigate it in more detail before
+opening an issue on the rms GitHub repository.
 
 **Decided against, for now.** SQUAREM, because it gave no measurable gain at
 realistic amounts of missing data.
@@ -572,7 +588,15 @@ estimate in that resample, so its interval silently rested on fewer
 resamples.
 
 **Decided against.** Dropping such resamples. The ordinary bootstrap for
-`comparisons()` per profile was not offered; reason not recorded.
+`comparisons()` per profile was not offered. The maintainer's reason
+(2026-11-13): an average over patients still works when a resample lacks a
+rare state, because that state then simply has probability 0 and the other
+patients are still predicted. A single profile that starts in the missing
+state has no prediction at all in that resample, and nothing can stand in for
+it, so the per-profile interval is not defined. The maintainer wants to look
+at this in more detail. Checked 2026-11-13: per-profile `comparisons()`
+refuses `method = "boot"` and points to FWB, which ran for a profile starting
+in a state that 5 of 200 patients ever had.
 
 ## 2026-10-12: ACTT-2 model refitted with states 1 and 2 merged
 
@@ -586,7 +610,7 @@ rehospitalized about 29% of control patients (2% observed); the new one about
 ## 2026-10-01: Waning-effect vignette kept out of the repository
 
 **Decided.** `vignettes/waning-treatment-effect-sops.Rmd` is local only, "for
-now" (`5f46e20`). Reason not recorded.
+now" (`5f46e20`), because it is not ready.
 
 ## 2026-09-23: Spearman correlation by default in diagnostics
 
