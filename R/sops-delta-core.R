@@ -271,7 +271,6 @@ sop_delta_validate_plan <- function(plan, model, map, coef) {
       "Analytical SOP inference supports only frequentist `vglm` and `orm` models."
     )
   }
-  validate_markov_model(backend)
   if (!identical(class(backend)[1L], plan$model_class)) {
     mostr_abort(
       "The execution plan and fitted model use different backends."

@@ -99,10 +99,10 @@ test_that("inferences() validates the homogenized method interface", {
     fixed = TRUE
   )
 
-  seen_engine <- NULL
+  seen_method <- NULL
   with_mocked_bindings(
-    inferences_bootstrap = function(object, engine, ...) {
-      seen_engine <<- engine
+    inferences_bootstrap = function(object, method, ...) {
+      seen_method <<- method
       object
     },
     {
@@ -114,7 +114,7 @@ test_that("inferences() validates the homogenized method interface", {
     }
   )
 
-  expect_equal(seen_engine, "fwb")
+  expect_equal(seen_method, "fwb")
   expect_equal(attr(out, "method"), "fwb")
 })
 
@@ -352,7 +352,7 @@ test_that("FWB draw weights are normalized within by groups", {
       run = function(object) {
         mostr:::inferences_bootstrap(
           object,
-          engine = "fwb",
+          method = "fwb",
           n_boot = 1,
           workers = NULL,
           conf_level = 0.95,
@@ -573,7 +573,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
   expect_error(
     mostr:::inferences_bootstrap(
       no_data,
-      engine = "standard",
+      method = "bootstrap",
       n_boot = 1,
       workers = NULL,
       conf_level = 0.95,
@@ -590,7 +590,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
   expect_error(
     mostr:::inferences_bootstrap(
       missing_id,
-      engine = "standard",
+      method = "bootstrap",
       n_boot = 1,
       workers = NULL,
       conf_level = 0.95,
@@ -673,7 +673,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
         expect_warning(
           out <- mostr:::inferences_bootstrap(
             object,
-            engine = "standard",
+            method = "bootstrap",
             n_boot = 3,
             workers = NULL,
             conf_level = 0.8,
@@ -711,7 +711,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       expect_error(
         mostr:::inferences_bootstrap(
           object,
-          engine = "standard",
+          method = "bootstrap",
           n_boot = 1,
           workers = NULL,
           conf_level = 0.95,
@@ -791,7 +791,7 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
     {
       out <- mostr:::inferences_bootstrap(
         object,
-        engine = "fwb",
+        method = "fwb",
         n_boot = 1,
         workers = NULL,
         conf_level = 0.95,

@@ -449,47 +449,48 @@ avg_comparison_time_benefit_point <- function(
     ...
   )
 
-  if (!is.null(time_map)) {
-    target_times <- comparison_real_time_target_times(
-      ind,
-      time_map,
-      target_times,
-      baseline_time
-    )
-    ind <- interpolate_sops(
-      ind,
-      time_map = time_map,
-      target_times = target_times,
-      baseline_time = baseline_time
+  # Each profile's time benefit, as in `comparisons()`, then the average over
+  # the profiles.
+  reducer <- profile_array_reducer(
+    "comparison",
+    list(estimand = "time_benefit", comparison = comparison, time_map = time_map)
+  )
+  tidy <- profile_tidy_reducer(
+    ind,
+    setup = setup,
+    reducer = reducer,
+    time_map = time_map,
+    baseline_time = baseline_time,
+    target_times = target_times
+  )
+  ind <- tidy$x
+  average <- function(data, value_col) {
+    average_time_benefit(
+      tidy$reduce(data, value_col),
+      setup = setup,
+      weights = NULL,
+      value_col = value_col
     )
   }
-
-  setup$times <- sort(unique(ind$time))
-  setup$settings$y_levels <- markov_result_settings(ind)$y_levels
-  point <- reduce_time_benefit_sops_df(
-    data = as.data.frame(ind),
-    setup = setup,
-    comparison = comparison,
-    value_col = "estimate",
-    real_time = inherits(ind, "markov_interpolated_sops"),
-    weights = NULL,
-    time_unit = time_unit
-  )
+  point <- average(as.data.frame(ind), "estimate")
+  if (!is.null(time_unit)) {
+    point$time_unit <- time_unit
+  }
 
   draws <- attr(ind, "draws")
   if (!is.null(draws)) {
     value_col <- sop_draw_value_col(draws)
-    draw_reduced <- reduce_time_benefit_sops_df(
-      data = as.data.frame(draws),
-      setup = setup,
-      comparison = comparison,
-      value_col = value_col,
-      real_time = inherits(ind, "markov_interpolated_sops"),
-      weights = NULL,
-      time_unit = time_unit
-    )
-    if (value_col != "estimate") {
-      names(draw_reduced)[names(draw_reduced) == value_col] <- "estimate"
+    draws <- as.data.frame(draws)
+    draw_reduced <- bind_rows_fill(lapply(
+      sort(unique(draws$draw_id)),
+      function(draw_id) {
+        out <- average(draws[draws$draw_id == draw_id, , drop = FALSE], value_col)
+        out$draw_id <- draw_id
+        out
+      }
+    ))
+    if (!is.null(time_unit)) {
+      draw_reduced$time_unit <- time_unit
     }
 
     group_cols <- setdiff(names(draw_reduced), c("estimate", "draw_id"))
@@ -514,50 +515,6 @@ copy_sops_attrs_to_setup <- function(setup, x) {
   setup$call_args <- call_args %||% setup$call_args
   setup$settings <- markov_result_settings(x)
   setup
-}
-
-reduce_time_benefit_sops_df <- function(
-  data,
-  setup,
-  comparison,
-  value_col,
-  real_time,
-  weights,
-  time_unit
-) {
-  draw_ids <- if ("draw_id" %in% names(data)) sort(unique(data$draw_id)) else NA
-  pieces <- vector("list", length(draw_ids))
-
-  for (i in seq_along(draw_ids)) {
-    draw_id <- draw_ids[i]
-    work <- if (is.na(draw_id)) {
-      data
-    } else {
-      data[data$draw_id == draw_id, , drop = FALSE]
-    }
-    arr <- counterfactual_array_from_tidy(
-      data = work,
-      value_col = value_col,
-      setup = setup
-    )
-    out <- time_benefit_from_counterfactual_array(
-      sops_array = arr,
-      setup = setup,
-      comparison = comparison,
-      weights = weights,
-      real_time = real_time
-    )
-    if (!is.na(draw_id)) {
-      out$draw_id <- draw_id
-    }
-    pieces[[i]] <- out
-  }
-
-  out <- bind_rows_fill(pieces)
-  if (!is.null(time_unit)) {
-    out$time_unit <- time_unit
-  }
-  out
 }
 
 counterfactual_array_from_tidy <- function(data, value_col, setup) {
@@ -590,64 +547,42 @@ counterfactual_array_from_tidy <- function(data, value_col, setup) {
   arr
 }
 
-time_benefit_from_counterfactual_array <- function(
-  sops_array,
+# The averaged time benefit, from each profile's time benefit. `profile_rows`
+# has one row per profile and comparison level, the profiles of a level in one
+# block of `setup$n_each` rows (`individual_comparisons_from_array()`). They
+# are averaged over the profiles of each `setup$by` group, with `weights` if
+# given.
+average_time_benefit <- function(
+  profile_rows,
   setup,
-  comparison,
   weights,
-  real_time
+  value_col = "estimate"
 ) {
-  values <- setup$variables[[1]]
-  varname <- names(setup$variables)[1]
-  ref_idx <- 1L
-  comp_idx <- seq.int(2L, length(values))
-  times <- setup$times
-  by <- setup$by
-  baseline <- setup$baseline_data
-  pieces <- vector("list", length(comp_idx))
-
-  for (i in seq_along(comp_idx)) {
-    level_idx <- comp_idx[i]
-    profile_value <- time_benefit_profile_values(
-      comparison_scenario(sops_array, ref_idx),
-      comparison_scenario(sops_array, level_idx),
-      times = times,
-      real_time = real_time
-    )
-
-    summary <- average_profile_values(
-      profile_value = profile_value,
-      baseline = baseline,
-      by = by,
-      weights = weights
-    )
-    summary$estimand <- "time_benefit"
-    summary$term <- varname
-    summary$reference_level <- values[1]
-    summary$comparison_level <- values[level_idx]
-    summary$contrast <- comparison_contrast_label(
-      values[level_idx],
-      values[1],
-      comparison
-    )
-    summary$comparison <- comparison
-    pieces[[i]] <- summary
-  }
-
-  out <- bind_rows_fill(pieces)
-  reorder_columns(
-    out,
-    c(
-      "estimand",
-      "term",
-      "reference_level",
-      "comparison_level",
-      "contrast",
-      "comparison",
-      by,
-      "estimate"
-    )
+  labels <- c(
+    "estimand",
+    "term",
+    "reference_level",
+    "comparison_level",
+    "contrast",
+    "comparison"
   )
+  rows <- seq_len(nrow(profile_rows))
+  pieces <- lapply(
+    unname(split(rows, (rows - 1L) %/% setup$n_each)),
+    function(level_rows) {
+      summary <- average_profile_values(
+        profile_value = profile_rows[[value_col]][level_rows],
+        baseline = setup$baseline_data,
+        by = setup$by,
+        weights = weights
+      )
+      for (label in labels) {
+        summary[[label]] <- profile_rows[[label]][level_rows[1L]]
+      }
+      summary
+    }
+  )
+  reorder_columns(bind_rows_fill(pieces), c(labels, setup$by, "estimate"))
 }
 
 # [scenario, profile, time, state] -> [profile, time, state] for one scenario.

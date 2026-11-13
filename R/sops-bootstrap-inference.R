@@ -11,8 +11,9 @@
 #' bootstrap sample.
 #'
 #' @param object A `markov_avg_sops` object, or a `markov_sops` object when
-#'   `engine = "fwb"`.
-#' @param engine Bootstrap engine, `"standard"` or `"fwb"`.
+#'   `method = "fwb"`.
+#' @param method `"bootstrap"`, which resamples patients, or `"fwb"`, which
+#'   reweights them.
 #' @param n_boot Number of bootstrap iterations.
 #' @param workers Number of parallel workers. If NULL or 1, uses sequential
 #'   processing. If > 1, uses parallel processing.
@@ -25,7 +26,7 @@
 #' @keywords internal
 inferences_bootstrap <- function(
   object,
-  engine,
+  method,
   n_boot,
   workers,
   conf_level,
@@ -34,7 +35,7 @@ inferences_bootstrap <- function(
   use_coefstart
 ) {
   if (!inherits(object, "markov_avg_sops")) {
-    if (engine != "fwb") {
+    if (method != "fwb") {
       mostr_abort(
         "Standard refit bootstrap is not supported for individual-level ",
         "SOPs because ordinary resampling can drop outcome-state support ",
@@ -70,7 +71,7 @@ inferences_bootstrap <- function(
   refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, id_var, settings$time_var)
 
-  if (newdata_supplied && engine == "fwb") {
+  if (newdata_supplied && method == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
   }
 
@@ -89,7 +90,7 @@ inferences_bootstrap <- function(
   # --- 3. Define Analysis Function ---
   analysis_fn <- function(boot_data, fwb_weights = NULL) {
     baseline_anchor <- NULL
-    if (engine == "standard") {
+    if (method == "bootstrap") {
       # A patient sampled more than once represents distinct bootstrap
       # patients, so the ID column takes the unique bootstrap identifier
       # instead of the repeated source identifier.
@@ -97,7 +98,7 @@ inferences_bootstrap <- function(
     }
 
     fit_weights <- NULL
-    if (engine == "fwb") {
+    if (method == "fwb") {
       fit_weights <- boot_data$fwb_weight
     }
 
@@ -142,7 +143,7 @@ inferences_bootstrap <- function(
     } else {
       # B. Compute standardized SOPs using G-computation on bootstrap data
       # Extract baseline data (one row per patient)
-      if (engine == "standard") {
+      if (method == "bootstrap") {
         baseline_boot <- resolve_markov_prediction_data(
           boot_data,
           id_var = "new_id",
@@ -285,7 +286,7 @@ inferences_bootstrap <- function(
   }
 
   # --- 4. Apply to Bootstrap Samples ---
-  if (engine == "standard") {
+  if (method == "bootstrap") {
     boot_ids <- fast_group_bootstrap(
       data = refit_data,
       id_var = id_var,
@@ -355,44 +356,22 @@ inferences_bootstrap <- function(
     seq_along(boot_results)
   )
 
-  # Add draw_id and combine
-  for (i in seq_along(boot_results)) {
-    boot_results[[i]]$draw_id <- i
-  }
-  boot_df <- bind_rows_fill(boot_results)
-
-  # Compute confidence intervals
   group_cols <- c("time", "state", names(variables))
   if (!is.null(by)) {
     group_cols <- unique(c(group_cols, by))
   }
-
-  summary_stats <- compute_ci_from_draws(
-    draws_df = boot_df,
+  summarized <- summarize_refit_draws(
+    object,
+    boot_results,
     group_cols = group_cols,
     conf_level = conf_level,
-    conf_type = conf_type,
-    point_estimates = as.data.frame(object)
+    conf_type = conf_type
   )
-
-  # Merge with original object
-  object$.sop_order <- seq_len(nrow(object))
-  final_result <- merge(
-    object,
-    summary_stats,
-    by = group_cols,
-    all.x = TRUE,
-    sort = FALSE
-  )
-  final_result <- final_result[order(final_result$.sop_order), , drop = FALSE]
-  final_result$.sop_order <- NULL
-  rownames(final_result) <- NULL
-
-  final_result <- restore_sops_attrs(final_result, object)
+  final_result <- summarized$result
+  boot_df <- summarized$draws
 
   # Add bootstrap metadata
-  attr(final_result, "n_successful") <- length(boot_results)
-  if (engine == "fwb") {
+  if (method == "fwb") {
     attr(final_result, "fwb_weight_type") <- "exponential"
     attr(final_result, "fwb_weight_scale") <- "cluster_mean_1"
     attr(final_result, "draw_weights_attached") <- FALSE
@@ -548,35 +527,15 @@ inferences_bootstrap_sops_fwb <- function(
 
   boot_results <- keep_successful_draws(boot_results)
 
-  for (i in seq_along(boot_results)) {
-    boot_results[[i]]$draw_id <- i
-  }
-  boot_df <- bind_rows_fill(boot_results)
-
-  group_cols <- c("rowid", "time", "state")
-
-  summary_stats <- compute_ci_from_draws(
-    draws_df = boot_df,
-    group_cols = group_cols,
-    conf_level = conf_level,
-    conf_type = conf_type,
-    point_estimates = as.data.frame(object)
-  )
-
-  object$.sop_order <- seq_len(nrow(object))
-  final_result <- merge(
+  summarized <- summarize_refit_draws(
     object,
-    summary_stats,
-    by = group_cols,
-    all.x = TRUE,
-    sort = FALSE
+    boot_results,
+    group_cols = c("rowid", "time", "state"),
+    conf_level = conf_level,
+    conf_type = conf_type
   )
-  final_result <- final_result[order(final_result$.sop_order), , drop = FALSE]
-  final_result$.sop_order <- NULL
-  rownames(final_result) <- NULL
-  final_result <- restore_sops_attrs(final_result, object)
-
-  attr(final_result, "n_successful") <- length(boot_results)
+  final_result <- summarized$result
+  boot_df <- summarized$draws
   attr(final_result, "fwb_weight_type") <- "exponential"
   attr(final_result, "fwb_weight_scale") <- "cluster_mean_1"
   attr(final_result, "draw_weights_attached") <- draw_weights_attached
@@ -597,6 +556,47 @@ inferences_bootstrap_sops_fwb <- function(
 # =============================================================================
 # HELPER FUNCTIONS FOR INFERENCE
 # =============================================================================
+
+# The results of the successful refits as one data frame of draws, and
+# `object` with the standard error and interval that these draws give each of
+# its cells (the rows identified by `group_cols`).
+summarize_refit_draws <- function(
+  object,
+  boot_results,
+  group_cols,
+  conf_level,
+  conf_type
+) {
+  for (i in seq_along(boot_results)) {
+    boot_results[[i]]$draw_id <- i
+  }
+  boot_df <- bind_rows_fill(boot_results)
+
+  summary_stats <- compute_ci_from_draws(
+    draws_df = boot_df,
+    group_cols = group_cols,
+    conf_level = conf_level,
+    conf_type = conf_type,
+    point_estimates = as.data.frame(object)
+  )
+
+  # merge() reorders the rows, so the cells are put back in their order.
+  object$.sop_order <- seq_len(nrow(object))
+  result <- merge(
+    object,
+    summary_stats,
+    by = group_cols,
+    all.x = TRUE,
+    sort = FALSE
+  )
+  result <- result[order(result$.sop_order), , drop = FALSE]
+  result$.sop_order <- NULL
+  rownames(result) <- NULL
+  result <- restore_sops_attrs(result, object)
+  attr(result, "n_successful") <- length(boot_results)
+
+  list(result = result, draws = boot_df)
+}
 
 # Refit bootstraps resample the refit data that `mostm()` stores on the
 # model: they already exclude rows removed by `subset` and carry the row

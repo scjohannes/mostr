@@ -396,16 +396,17 @@ profile_array_reducer <- function(kind, args) {
   list(reduce_array = reduce_array, real_time = real_time)
 }
 
-profile_results_from_individual_sops <- function(
+# Prepares the reduction of the tidy SOPs `x` of every scenario and profile to
+# one row per profile. Returns `x`, interpolated to real time when `reducer`
+# works in real time, and a function that reduces its rows, or the rows of one
+# of its draws, with the values in `value_col`.
+profile_tidy_reducer <- function(
   x,
   setup,
   reducer,
   time_map,
   baseline_time,
-  target_times,
-  posterior_summary,
-  conf_level,
-  return_draws
+  target_times
 ) {
   real_time <- reducer$real_time
   if (real_time) {
@@ -439,6 +440,30 @@ profile_results_from_individual_sops <- function(
       value_col = value_col
     )
   }
+  list(x = x, reduce = reduce)
+}
+
+profile_results_from_individual_sops <- function(
+  x,
+  setup,
+  reducer,
+  time_map,
+  baseline_time,
+  target_times,
+  posterior_summary,
+  conf_level,
+  return_draws
+) {
+  tidy <- profile_tidy_reducer(
+    x,
+    setup = setup,
+    reducer = reducer,
+    time_map = time_map,
+    baseline_time = baseline_time,
+    target_times = target_times
+  )
+  x <- tidy$x
+  reduce <- tidy$reduce
   point <- reduce(as.data.frame(x), "estimate")
 
   draws <- attr(x, "draws")

@@ -41,6 +41,7 @@ soprob_markov <- function(
   if (is.null(settings$y_levels)) {
     stop_no_fitted_states()
   }
+  validate_markov_model(model)
   predict_markov_sops(
     model,
     newdata,
@@ -56,7 +57,9 @@ soprob_markov <- function(
 # The SOP array for `newdata` under resolved `settings` (from
 # `resolve_markov_settings()`). Package code calls this rather than
 # `soprob_markov()`, because its settings are already resolved and bootstrap
-# refits pass only the states present in their resample.
+# refits pass only the states present in their resample. The model is checked
+# once by the public function that was called (`validate_markov_model()`), and
+# the prediction rows are prepared once, here.
 predict_markov_sops <- function(
   model,
   newdata,
@@ -107,7 +110,6 @@ predict_markov_sops <- function(
     return(run_r_engine())
   }
 
-  validate_markov_model(model_fast)
   validate_fast_previous_state_support(model_fast, settings)
   fallback_condition <- NULL
   plan <- tryCatch(
@@ -116,7 +118,7 @@ predict_markov_sops <- function(
       newdata = newdata,
       times = times,
       settings = settings,
-      builder = "batched"
+      rows_prepared = TRUE
     ),
     mostr_execution_plan_too_large = function(e) {
       fallback_condition <<- e
@@ -300,8 +302,8 @@ stop_missing_predictors <- function(
 # The rows the engines predict from, checked and with their previous states
 # in the form the model reads them. Both are needed wherever prediction rows
 # enter an engine: `predict_markov_sops()`, which every SOP route passes
-# through, and `compile_sop_execution_plan()`, which the analytical inference
-# paths call directly on the rows of an earlier result.
+# through, and `compile_sop_execution_plan()` when the inference paths call
+# it directly on the rows of an earlier result.
 prepare_prediction_rows <- function(model, data, settings) {
   stop_missing_predictors(model, data, settings)
   normalize_prediction_states(model, data, settings)

@@ -637,18 +637,6 @@ inferences_impl <- function(
     stop_starting_state_conditional_only(x)
   }
 
-  internal_method <- if (identical(method, "mvn")) {
-    "simulation"
-  } else {
-    "bootstrap"
-  }
-  engine <- switch(
-    method,
-    mvn = "mvn",
-    bootstrap = "standard",
-    fwb = "fwb"
-  )
-
   if (inherits(x, "markov_avg_state_time")) {
     result <- inferences_avg_time(
       object = x,
@@ -677,8 +665,7 @@ inferences_impl <- function(
   } else if (inherits(x, "markov_avg_comparisons")) {
     result <- inferences_avg_comparisons(
       object = x,
-      method = internal_method,
-      engine = engine,
+      method = method,
       n_draws = n_draws,
       vcov = vcov,
       cluster = cluster,
@@ -688,7 +675,7 @@ inferences_impl <- function(
       return_draws = return_draws,
       use_coefstart = use_coefstart
     )
-  } else if (internal_method == "simulation") {
+  } else if (method == "mvn") {
     result <- inferences_simulation(
       object = x,
       n_draws = n_draws,
@@ -701,7 +688,7 @@ inferences_impl <- function(
   } else {
     result <- inferences_bootstrap(
       object = x,
-      engine = engine,
+      method = method,
       n_boot = n_draws,
       workers = workers,
       conf_level = conf_level,
@@ -863,130 +850,78 @@ inferences_simulation <- function(
   }
   object_keys <- sop_draw_cell_key(object, group_cols)
 
-  # --- 4. Detect Fast Path Eligibility ---
-  # The fast path uses pre-computed design matrix decompositions for supported
-  # ordinal model backends.
+  # --- 4. From one draw of the coefficients to its SOPs ---
+  # orm and vglm fits build their designs once and run them with each draw's
+  # coefficients. Other fits, and designs that cannot be built, predict with
+  # the model's coefficients replaced.
   model_chk <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
-  use_fast_path <- inherits(model_chk, c("vglm", "orm")) &&
-    !inherits(model_chk, "blrm")
-
-  if (use_fast_path) {
-    # --- FAST PATH: Pre-build components once, then run efficient Markov loop ---
+  execution_plan <- NULL
+  if (inherits(model_chk, c("vglm", "orm")) && !inherits(model_chk, "blrm")) {
     execution_plan <- tryCatch(
       compile_sop_execution_plan(
         model = model_chk,
         newdata = newdata_pred,
         times = times,
-        settings = settings,
-        builder = "streamed"
+        settings = settings
       ),
       error = function(e) {
         notify_sop_r_engine_fallback(conditionMessage(e))
         NULL
       }
     )
-
-    if (!is.null(execution_plan)) {
-      # Define fast analysis function
-      analysis_fn <- function(i) {
-        # Compute effective coefficients from beta draw
-        Gamma_i <- get_effective_coefs(model_chk, beta = beta_draws[i, ])
-
-        # Run fast Markov simulation
-        sops_array <- tryCatch(
-          run_sop_execution_plan(execution_plan, Gamma_i),
-          error = function(e) {
-            rethrow_crossed_thresholds(e)
-            warning("markov_msm_run failed in draw ", i, ": ", e$message)
-            return(NULL)
-          }
-        )
-
-        if (is.null(sops_array)) {
-          return(NULL)
-        }
-
-        # Marginalize if needed (for avg_sops)
-        if (is_avg) {
-          result <- marginalize_sops_array(
-            sops_array = sops_array,
-            grid = grid,
-            times = times,
-            y_levels = y_levels,
-            variables = variables,
-            n_cf = n_cf,
-            n_each = n_each,
-            by = by,
-            newdata = newdata_pred
-          )
-        } else {
-          # Individual-level: convert array to data frame
-          result <- array_to_df_individual(
-            sops_array,
-            times,
-            y_levels,
-            newdata_pred
-          )
-        }
-
-        pack_sop_draw_result(result, group_cols, object_keys)
-      }
-    } else {
-      # Fast path build failed, fall back to slow path
-      use_fast_path <- FALSE
+  }
+  if (!is.null(execution_plan)) {
+    draw_coefs <- function(i) {
+      get_effective_coefs(model_chk, beta = beta_draws[i, ])
     }
+    draw_sops <- function(Gamma_i) {
+      run_sop_execution_plan(execution_plan, Gamma_i)
+    }
+    failed <- "markov_msm_run"
+  } else {
+    draw_coefs <- function(i) set_coef(model, beta_draws[i, ])
+    draw_sops <- function(model_i) {
+      predict_markov_sops(
+        model = model_i,
+        newdata = newdata_pred,
+        times = times,
+        settings = settings
+      )
+    }
+    failed <- "soprob_markov"
   }
 
-  if (!use_fast_path) {
-    # --- SLOW PATH: predict with the coefficients replaced ---
-    analysis_fn <- function(i) {
-      # Replace coefficients
-      model_i <- set_coef(model, beta_draws[i, ])
-
-      # Compute SOPs
-      sops_array <- tryCatch(
-        predict_markov_sops(
-          model = model_i,
-          newdata = newdata_pred,
-          times = times,
-          settings = settings
-        ),
-        error = function(e) {
-          rethrow_crossed_thresholds(e)
-          warning("soprob_markov failed in draw ", i, ": ", e$message)
-          return(NULL)
-        }
-      )
-
-      if (is.null(sops_array)) {
+  analysis_fn <- function(i) {
+    coefs_i <- draw_coefs(i)
+    sops_array <- tryCatch(
+      draw_sops(coefs_i),
+      error = function(e) {
+        rethrow_crossed_thresholds(e)
+        warning(failed, " failed in draw ", i, ": ", e$message)
         return(NULL)
       }
-
-      # Marginalize if needed (for avg_sops)
-      if (is_avg) {
-        result <- marginalize_sops_array(
-          sops_array = sops_array,
-          grid = grid,
-          times = times,
-          y_levels = y_levels,
-          variables = variables,
-          n_cf = n_cf,
-          n_each = n_each,
-          by = by,
-          newdata = newdata_pred
-        )
-      } else {
-        # Individual-level: convert array to data frame
-        result <- array_to_df_individual(
-          sops_array,
-          times,
-          y_levels,
-          newdata_pred
-        )
-      }
-
-      pack_sop_draw_result(result, group_cols, object_keys)
+    )
+    if (is.null(sops_array)) {
+      return(NULL)
     }
+
+    result <- if (is_avg) {
+      marginalize_sops_array(
+        sops_array = sops_array,
+        grid = grid,
+        times = times,
+        y_levels = y_levels,
+        variables = variables,
+        n_cf = n_cf,
+        n_each = n_each,
+        by = by,
+        newdata = newdata_pred
+      )
+    } else {
+      # One row per profile: the array as a data frame.
+      array_to_df_individual(sops_array, times, y_levels, newdata_pred)
+    }
+    pack_sop_draw_result(result, group_cols, object_keys)
   }
 
   # --- 5. Apply Across All Draws ---
@@ -1062,38 +997,24 @@ pack_sop_draw_result <- function(result, group_cols, object_keys) {
   result$estimate[index]
 }
 
+# Interval and standard error of each column of `draw_values` [draw, cell],
+# from the same summary of one cell's draws as `compute_ci_from_draws()`.
 summarize_sop_draw_matrix <- function(
   draw_values,
   conf_level,
   conf_type,
   point_estimates
 ) {
-  alpha <- 1 - validate_conf_level(conf_level)
-  standard_error <- apply(draw_values, 2L, stats::sd, na.rm = TRUE)
-  if (identical(conf_type, "perc")) {
-    lower <- apply(
-      draw_values,
-      2L,
-      stats::quantile,
-      probs = alpha / 2,
-      na.rm = TRUE,
-      names = FALSE,
-      type = 7L
-    )
-    upper <- apply(
-      draw_values,
-      2L,
-      stats::quantile,
-      probs = 1 - alpha / 2,
-      na.rm = TRUE,
-      names = FALSE,
-      type = 7L
-    )
-  } else {
-    critical <- abs(stats::qnorm(alpha / 2))
-    lower <- point_estimates - critical * standard_error
-    upper <- point_estimates + critical * standard_error
-  }
+  stats <- apply(
+    draw_values,
+    2L,
+    draw_summary_function(validate_conf_level(conf_level), conf_type)
+  )
+  # A Wald interval is centred at the point estimate.
+  center <- if (identical(conf_type, "perc")) 0 else point_estimates
+  lower <- center + stats["conf.low", ]
+  upper <- center + stats["conf.high", ]
+  standard_error <- stats["std.error", ]
   data.frame(
     conf.low = as.numeric(lower),
     conf.high = as.numeric(upper),

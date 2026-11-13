@@ -424,6 +424,38 @@ avg_comparison_replay_avg_sops <- function(
   do.call(avg_sops_impl, args)
 }
 
+# The average SOPs behind `object`, a result of `avg_comparisons()` or
+# `avg_state_time()`, computed again from the arguments stored on it. `args`
+# is its `comparison_args` or `time_args`.
+replay_result_avg_sops <- function(
+  object,
+  args,
+  conf_level,
+  return_draws = FALSE
+) {
+  avg_args <- attr(object, "avg_args")
+  avg_comparison_replay_avg_sops(
+    model = attr(object, "model"),
+    newdata = if (isTRUE(attr(object, "newdata_supplied"))) {
+      attr(object, "newdata_orig")
+    } else {
+      NULL
+    },
+    variables = avg_args$variables,
+    by = avg_args$by,
+    times = avg_args$times,
+    settings = markov_result_settings(object),
+    include_re = args$include_re,
+    n_draws = args$n_draws,
+    seed = args$seed,
+    posterior_summary = args$posterior_summary,
+    conf_level = conf_level,
+    return_draws = return_draws,
+    extra_args = args$extra_args,
+    warn_skipped_visits = FALSE
+  )
+}
+
 normalize_comparison_state_sets <- function(states, y_levels) {
   state_labels <- as_state_labels(y_levels)
   if (is.null(states)) {

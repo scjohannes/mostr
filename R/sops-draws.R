@@ -1,5 +1,29 @@
 # SOP draw summaries and extraction.
 
+# The summary of one estimate's draws `x`: its standard error (their standard
+# deviation) and its interval. A percentile interval is given as it is; a Wald
+# interval as the two distances from its centre, which the caller adds.
+draw_summary_function <- function(conf_level, conf_type) {
+  alpha <- 1 - conf_level
+  function(x) {
+    if (conf_type == "perc") {
+      return(c(
+        conf.low = unname(stats::quantile(x, alpha / 2, na.rm = TRUE)),
+        conf.high = unname(stats::quantile(x, 1 - alpha / 2, na.rm = TRUE)),
+        std.error = stats::sd(x, na.rm = TRUE)
+      ))
+    }
+
+    se <- stats::sd(x, na.rm = TRUE)
+    critical <- abs(stats::qnorm(alpha / 2))
+    c(
+      conf.low = -critical * se,
+      conf.high = critical * se,
+      std.error = se
+    )
+  }
+}
+
 #' Compute Confidence Intervals from Draws
 #'
 #' Computes confidence intervals from simulation or bootstrap draws.
@@ -34,25 +58,7 @@ compute_ci_from_draws <- function(
   ) {
     mostr_abort("conf_type must be 'perc' or 'wald'")
   }
-  alpha <- 1 - conf_level
-
-  summarize_values <- function(x) {
-    if (conf_type == "perc") {
-      return(c(
-        conf.low = unname(stats::quantile(x, alpha / 2, na.rm = TRUE)),
-        conf.high = unname(stats::quantile(x, 1 - alpha / 2, na.rm = TRUE)),
-        std.error = stats::sd(x, na.rm = TRUE)
-      ))
-    }
-
-    se <- stats::sd(x, na.rm = TRUE)
-    critical <- abs(stats::qnorm(alpha / 2))
-    c(
-      conf.low = -critical * se,
-      conf.high = critical * se,
-      std.error = se
-    )
-  }
+  summarize_values <- draw_summary_function(conf_level, conf_type)
 
   if (length(group_cols) == 0L) {
     stats <- summarize_values(draws_df$estimate)

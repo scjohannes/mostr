@@ -129,13 +129,10 @@ inferences_delta_avg_time <- function(
   # These time weights are also applied to the SOP derivatives, so first check
   # that they rebuild the stored totals; otherwise the standard errors would
   # belong to other numbers. Rounding differences are below 2e-15 on the test
-  # grid; the tolerance (as in delta_match_cells()) only catches real changes.
+  # grid; the tolerance of estimates_differ() only catches real changes.
   if (
     any(!is.finite(calculated)) ||
-      any(
-        abs(calculated - object$estimate) >
-          1e-12 + 1e-10 * pmax(abs(calculated), abs(object$estimate))
-      )
+      estimates_differ(calculated, object$estimate)
   ) {
     mostr_abort(
       "The analytical average-time operator did not reproduce the stored point estimates."

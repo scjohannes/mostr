@@ -78,56 +78,57 @@ preflight_execution_plan_designs <- function(
 }
 
 # A plan for the SOPs of `newdata` at `times`: the prediction designs of every
-# visit, built once, with the columns and states named in `settings`
-# (`resolve_markov_settings()`). `run_sop_execution_plan()` runs it for any
-# coefficients.
+# visit, built once (`markov_msm_build()`), with the columns and states named
+# in `settings` (`resolve_markov_settings()`). `run_sop_execution_plan()` runs
+# it for any coefficients. The model is one that a public function has checked
+# (`validate_markov_model()`). `predict_markov_sops()` passes rows it has
+# prepared (`rows_prepared = TRUE`); inference code passes the rows stored on
+# an earlier result, which are prepared here.
 compile_sop_execution_plan <- function(
   model,
   newdata,
   times,
   settings,
-  builder = c("batched", "streamed")
+  rows_prepared = FALSE
 ) {
-  builder <- match.arg(builder)
-  validate_markov_model(model)
-  newdata <- prepare_prediction_rows(model, newdata, settings)
-  Gamma_template <- get_effective_coefs(model)
-  validate_sop_threshold_count(Gamma_template, settings$y_levels)
-  if (!is.null(settings$p2_var)) {
-    return(compile_second_order_execution_plan(
-      model = model,
-      newdata = newdata,
-      times = times,
-      settings = settings,
-      Gamma = Gamma_template
-    ))
+  if (!rows_prepared) {
+    newdata <- prepare_prediction_rows(model, newdata, settings)
   }
-  resolved_times <- resolve_sop_times(
-    model,
-    newdata,
-    times,
-    settings$time_var,
-    default = "fast"
-  )$times
-  build <- if (identical(builder, "batched")) {
-    markov_msm_build_batched
-  } else {
-    markov_msm_build
-  }
-  components <- build(
+  components <- markov_msm_build(
     model = model,
     newdata = newdata,
-    times = resolved_times,
+    times = times,
     settings = settings
   )
+  second_order <- !is.null(settings$p2_var)
+  if (second_order) {
+    # What the second-order recursion reads besides the designs: each
+    # patient's starting state and, for each block of a later visit's design,
+    # the state two visits back (`older`) and one visit back (`current`).
+    non_absorb <- components$transition_origins
+    components <- c(
+      components,
+      list(
+        previous = match_state_indices(
+          newdata[[settings$p_var]],
+          components$y_levels,
+          settings$p_var
+        ),
+        older = components$previous_states[[settings$p2_var]],
+        current = components$previous_states[[settings$p_var]],
+        absorb = setdiff(seq_len(components$n_states), non_absorb),
+        non_absorb = non_absorb
+      )
+    )
+  }
   structure(
     list(
       version = 1L,
       model_class = class(model)[1L],
       link = "logit",
-      recursion_order = 1L,
-      times = resolved_times,
-      y_levels = as_state_labels(settings$y_levels),
+      recursion_order = if (second_order) 2L else 1L,
+      times = components$times,
+      y_levels = components$y_levels,
       absorb = as_state_labels(settings$absorb),
       workspace_bytes = components$workspace_bytes,
       design_bytes = components$design_bytes,
@@ -141,7 +142,6 @@ run_sop_execution_plan <- function(plan, Gamma) {
   if (!inherits(plan, "markov_sop_exec_plan") || plan$version != 1L) {
     mostr_abort("Invalid or unsupported SOP execution plan.")
   }
-  validate_sop_threshold_count(Gamma, plan$y_levels)
   if (identical(plan$recursion_order, 2L)) {
     return(run_second_order_execution_plan(plan, Gamma))
   }
@@ -150,132 +150,6 @@ run_sop_execution_plan <- function(plan, Gamma) {
     Gamma,
     times = plan$times,
     absorb = plan$absorb
-  )
-}
-
-compile_second_order_execution_plan <- function(
-  model,
-  newdata,
-  times,
-  settings,
-  Gamma
-) {
-  y_levels <- settings$y_levels
-  absorb <- settings$absorb
-  p_var <- settings$p_var
-  p2_var <- settings$p2_var
-  if (!inherits(model, c("orm", "vglm")) || inherits(model, "blrm")) {
-    mostr_abort(
-      "Compiled second-order plans require a frequentist orm or vglm model."
-    )
-  }
-  if (!all(c(p_var, p2_var) %in% names(newdata))) {
-    mostr_abort("Second-order prediction variables are missing from `newdata`.")
-  }
-  time_res <- resolve_sop_times(
-    model,
-    newdata,
-    times,
-    settings$time_var,
-    default = "fast"
-  )
-  times <- time_res$times
-  time_info <- time_res$time_info
-  ylevel_names <- as_state_labels(y_levels)
-  absorb_idx <- which(ylevel_names %in% as_state_labels(absorb))
-  non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)
-  pair_grid <- expand.grid(
-    older = non_absorb_idx,
-    current = non_absorb_idx,
-    KEEP.OUT.ATTRS = FALSE
-  )
-  validate_sop_threshold_count(Gamma, y_levels)
-  budget <- preflight_execution_plan_designs(
-    n_pat = nrow(newdata),
-    n_times = length(times),
-    rows_per_transition = nrow(newdata) * nrow(pair_grid),
-    n_cols = ncol(Gamma)
-  )
-  terms <- if (inherits(model, "vglm")) {
-    stats::delete.response(stats::terms(model))
-  } else {
-    NULL
-  }
-  get_X <- function(data) {
-    X <- if (inherits(model, "orm")) {
-      orm_model_matrix(model, data, include_intercept = TRUE)
-    } else {
-      vglm_prediction_design(model, data, terms)
-    }
-    missing <- setdiff(colnames(Gamma), colnames(X))
-    if (length(missing) > 0L) {
-      mostr_abort(
-        "Second-order design is missing fitted columns: ",
-        paste(missing, collapse = ", ")
-      )
-    }
-    X[, colnames(Gamma), drop = FALSE]
-  }
-  set_visit <- function(data, index) {
-    assign_sop_visit(
-      data,
-      settings = settings,
-      times = times,
-      index = index,
-      time_info = time_info
-    )
-  }
-  initial_data <- set_visit(newdata, 1L)
-  X_init <- get_X(initial_data)
-  designs <- vector("list", length(times))
-  if (length(times) >= 2L) {
-    for (visit in 2:length(times)) {
-      data_visit <- set_visit(newdata, visit)
-      expanded <- data_visit[
-        rep(seq_len(nrow(newdata)), times = nrow(pair_grid)),
-        ,
-        drop = FALSE
-      ]
-      expanded[[p2_var]] <- make_previous_state_column(
-        ylevel_names[pair_grid$older],
-        newdata[[p2_var]],
-        nrow(newdata),
-        p2_var
-      )
-      expanded[[p_var]] <- make_previous_state_column(
-        ylevel_names[pair_grid$current],
-        newdata[[p_var]],
-        nrow(newdata),
-        p_var
-      )
-      designs[[visit]] <- get_X(expanded)
-    }
-  }
-  structure(
-    list(
-      version = 1L,
-      model_class = class(model)[1L],
-      link = "logit",
-      recursion_order = 2L,
-      times = times,
-      y_levels = ylevel_names,
-      absorb = as_state_labels(absorb),
-      workspace_bytes = budget$workspace_bytes,
-      design_bytes = budget$design_bytes,
-      components = list(
-        X_init = X_init,
-        X_transition = designs,
-        previous = match_state_indices(newdata[[p_var]], ylevel_names, p_var),
-        older = pair_grid$older,
-        current = pair_grid$current,
-        absorb = absorb_idx,
-        non_absorb = non_absorb_idx,
-        n_pat = nrow(newdata),
-        n_states = length(ylevel_names),
-        col_names = colnames(X_init)
-      )
-    ),
-    class = "markov_sop_exec_plan"
   )
 }
 

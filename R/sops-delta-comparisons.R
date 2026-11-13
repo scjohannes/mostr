@@ -33,35 +33,10 @@ delta_validate_comparison_scope <- function(object, conf_type) {
   list(args = args, avg_args = avg_args)
 }
 
-delta_replay_average_comparison <- function(
-  object,
-  args,
-  avg_args,
-  conf_level
-) {
-  newdata <- if (isTRUE(attr(object, "newdata_supplied"))) {
-    attr(object, "newdata_orig")
-  } else {
-    NULL
-  }
-  avg_comparison_replay_avg_sops(
-    model = attr(object, "model"),
-    newdata = newdata,
-    variables = avg_args$variables,
-    by = avg_args$by,
-    times = avg_args$times,
-    settings = markov_result_settings(object),
-    include_re = args$include_re,
-    n_draws = args$n_draws,
-    seed = args$seed,
-    posterior_summary = args$posterior_summary,
-    conf_level = conf_level,
-    return_draws = FALSE,
-    extra_args = args$extra_args,
-    warn_skipped_visits = FALSE
-  )
-}
-
+# The trapezoid rule as one weight per time, so that the integral is a
+# weighted sum of the values and the same weights apply to their derivatives.
+# `trapezoid_row_totals()` sums over the intervals instead; the two agree to
+# rounding only, so point estimates keep that function.
 delta_trapezoid_weights <- function(times) {
   n <- length(times)
   if (n < 2L) {
@@ -252,13 +227,10 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
   # This operator is later applied to the derivatives and influence values, so
   # check that it rebuilds the stored contrasts; a mismatch means edited
   # estimates or a wrong weight. Rounding differences are below 5e-15 on the
-  # test grid; the tolerance is the one in delta_match_cells().
+  # test grid.
   if (
     any(!is.finite(propagated)) ||
-      any(
-        abs(propagated - object$estimate) >
-          1e-12 + 1e-10 * pmax(abs(propagated), abs(object$estimate))
-      )
+      estimates_differ(propagated, object$estimate)
   ) {
     mostr_abort(
       "The analytical comparison operator did not reproduce the stored point ",
@@ -365,12 +337,7 @@ inferences_delta_comparisons <- function(
     object = object,
     conf_type = conf_type
   )
-  avg <- delta_replay_average_comparison(
-    object = object,
-    args = scope$args,
-    avg_args = scope$avg_args,
-    conf_level = conf_level
-  )
+  avg <- replay_result_avg_sops(object, scope$args, conf_level)
   avg <- inferences_delta_sops(
     object = avg,
     vcov = vcov,

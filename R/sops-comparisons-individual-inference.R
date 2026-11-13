@@ -178,6 +178,25 @@ clear_comparison_inference <- function(object) {
 profile_draw_reducer <- function(object, setup) {
   args <- attr(object, "comparison_args")
   reducer <- profile_array_reducer(profile_result_kind(object), args)
+  function(sops_array) {
+    profile_rows_from_stacked_sops(sops_array, setup, reducer, args)$estimate
+  }
+}
+
+# One stacked SOP array [scenario x profile, time, state] reduced to one row
+# per profile by `reducer` (`profile_array_reducer()`); `args` holds the
+# `time_map`, `baseline_time` and `target_times` of a real-time reduction.
+profile_rows_from_stacked_sops <- function(sops_array, setup, reducer, args) {
+  if (!reducer$real_time) {
+    return(reducer$reduce_array(
+      stacked_to_counterfactual_array(
+        sops_array,
+        n_cf = setup$n_cf,
+        n_each = setup$n_each
+      ),
+      setup = setup
+    ))
+  }
   # Interpolation needs each row's starting state only; the other profile
   # columns would be copied into every interpolated row.
   slim_setup <- setup
@@ -185,32 +204,15 @@ profile_draw_reducer <- function(object, setup) {
     intersect(setup$settings$p_var, names(setup$newdata_pred)),
     drop = FALSE
   ]
-
-  function(sops_array) {
-    out <- if (reducer$real_time) {
-      profile_results_from_individual_sops(
-        x = time_benefit_sops_from_array(sops_array, slim_setup),
-        setup = setup,
-        reducer = reducer,
-        time_map = args$time_map,
-        baseline_time = args$baseline_time,
-        target_times = args$target_times,
-        posterior_summary = "mean",
-        conf_level = 0.95,
-        return_draws = FALSE
-      )
-    } else {
-      reducer$reduce_array(
-        stacked_to_counterfactual_array(
-          sops_array,
-          n_cf = setup$n_cf,
-          n_each = setup$n_each
-        ),
-        setup = setup
-      )
-    }
-    out$estimate
-  }
+  tidy <- profile_tidy_reducer(
+    time_benefit_sops_from_array(sops_array, slim_setup),
+    setup = setup,
+    reducer = reducer,
+    time_map = args$time_map,
+    baseline_time = args$baseline_time,
+    target_times = args$target_times
+  )
+  tidy$reduce(as.data.frame(tidy$x), "estimate")
 }
 
 # [scenario x profile, time, state], with scenarios in consecutive blocks of
@@ -248,10 +250,7 @@ check_comparison_replay <- function(object, setup, reduce_draw, model) {
   if (
     length(replayed) != length(stored) ||
       !same_missing ||
-      any(
-        abs(replayed[ok] - stored[ok]) >
-          1e-12 + 1e-10 * pmax(abs(replayed[ok]), abs(stored[ok]))
-      )
+      estimates_differ(replayed[ok], stored[ok])
   ) {
     mostr_abort(
       "Replaying `comparisons()` did not reproduce the stored estimates."
@@ -269,8 +268,7 @@ comparison_coefficient_predictor <- function(model, setup) {
         model = model_plan,
         newdata = setup$newdata_pred,
         times = setup$times,
-        settings = setup$settings,
-        builder = "streamed"
+        settings = setup$settings
       ),
       error = function(e) {
         notify_sop_r_engine_fallback(conditionMessage(e))

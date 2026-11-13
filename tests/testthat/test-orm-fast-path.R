@@ -3,11 +3,12 @@ add_test_age <- function(data) {
   data
 }
 
-# SOPs from the streamed design builder, markov_msm_build() followed by
-# markov_msm_run(), which MVN draws and analytical inference use. `args` are
-# the arguments of sops(); the settings, absorbing states included, come from
-# the fit as in sops().
+# SOPs from markov_msm_build() followed by markov_msm_run(), with each visit's
+# design built one previous state at a time, as for large designs (option
+# `mostr.max_batched_design_rows`). `args` are the arguments of sops(); the
+# settings, absorbing states included, come from the fit as in sops().
 streamed_builder_sops <- function(fit, profiles, args) {
+  withr::local_options(mostr.max_batched_design_rows = 0)
   settings <- mostr:::resolve_markov_settings(fit)
   components <- mostr:::markov_msm_build(
     model = fit,
@@ -23,17 +24,17 @@ streamed_builder_sops <- function(fit, profiles, args) {
   )
 }
 
-# Public sops() uses the batched design builder and is checked against the
-# readable loop on every grid set-up in test-sops-native-slow-loop.R, so
-# agreeing with sops() checks the streamed builder against that loop too.
-test_that("the streamed design builder matches sops() on every model set-up", {
+# Public sops() builds these small designs in one piece and is checked against
+# the readable loop on every grid set-up in test-sops-native-slow-loop.R, so
+# agreeing with sops() checks the piecewise build against that loop too.
+test_that("designs built one previous state at a time match sops() on every model set-up", {
   skip_on_cran()
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
-  # The streamed builder handles first-order recursion only, so the
-  # second-order cells (orm and vglm with linear, rcs and factor time, and vglm
-  # with partial odds) are left out.
+  # markov_msm_run() handles first-order recursion only, so the second-order
+  # cells (orm and vglm with linear, rcs and factor time, and vglm with partial
+  # odds) are left out.
   grid_cells <- Filter(
     function(cell) cell$order == 1L,
     grid_consistency_cells()
@@ -286,14 +287,14 @@ test_that("execution-plan budgets bound all retained first-order designs", {
   expect_no_message(expected <- do.call(mostr::soprob_markov, args))
 
   withr::local_options(mostr.execution_plan_max_bytes = 1)
-  for (builder in c("batched", "streamed")) {
+  for (max_rows in c(5e4, 0)) {
+    withr::local_options(mostr.max_batched_design_rows = max_rows)
     condition <- tryCatch(
       mostr:::compile_sop_execution_plan(
         fit,
         baseline,
         times = 1:5,
-        settings = mostr:::resolve_markov_settings(fit),
-        builder = builder
+        settings = mostr:::resolve_markov_settings(fit)
       ),
       error = function(e) e
     )
@@ -520,13 +521,13 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
     factor(values, levels = levels(data[[column]]))
   }
 
-  run_plan <- function(newdata, builder) {
+  run_plan <- function(newdata, max_rows) {
+    withr::local_options(mostr.max_batched_design_rows = max_rows)
     plan <- mostr:::compile_sop_execution_plan(
       first_fit,
       newdata,
       times = 1:3,
-      settings = mostr:::markov_settings(y_levels = 1:8, absorb = 8),
-      builder = builder
+      settings = mostr:::markov_settings(y_levels = 1:8, absorb = 8)
     )
     mostr:::run_sop_execution_plan(plan, mostr::get_effective_coefs(first_fit))
   }
@@ -562,8 +563,8 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
             mostr:::predict_orm_response_markov(first_fit, newdata),
           markov_linear_predictor_matrix =
             mostr:::markov_linear_predictor_matrix(first_fit, newdata),
-          batched = run_plan(newdata, "batched"),
-          streamed = run_plan(newdata, "streamed")
+          in_one_piece = run_plan(newdata, 5e4),
+          by_previous_state = run_plan(newdata, 0)
         )
       }
     ),

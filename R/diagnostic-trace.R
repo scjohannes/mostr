@@ -45,8 +45,6 @@ markov_transition_trace <- function(
     mostr_abort("Object class not supported")
   }
 
-  validate_markov_model(object)
-
   p_var <- settings$p_var
   p2_var <- settings$p2_var
   if (!p_var %in% names(data)) {
@@ -107,84 +105,28 @@ markov_transition_trace <- function(
     0L
   }
 
-  kernels <- NULL
-  if (nd == 0) {
-    P <- array(
+  # Every array has the posterior draws as its first dimension. A fit without
+  # draws is traced as a single draw, and `markov_transition_trace_result()`
+  # drops that dimension at the end.
+  n_layers <- max(nd, 1L)
+  trace_array <- function(n_state_dims) {
+    array(
       0,
-      dim = c(n_pat, n_times, n_states),
-      dimnames = list(rownames(data), times, ylevel_names)
-    )
-    transitions <- array(
-      0,
-      dim = c(n_pat, n_times, n_states, n_states),
-      dimnames = list(rownames(data), times, ylevel_names, ylevel_names)
-    )
-    if (isTRUE(return_kernels)) {
-      kernels <- if (is.null(p2_var)) {
-        array(
-          0,
-          dim = c(n_pat, n_times, n_states, n_states),
-          dimnames = list(rownames(data), times, ylevel_names, ylevel_names)
-        )
-      } else {
-        array(
-          0,
-          dim = c(n_pat, n_times, n_states, n_states, n_states),
-          dimnames = list(
-            rownames(data),
-            times,
-            ylevel_names,
-            ylevel_names,
-            ylevel_names
-          )
-        )
-      }
-    }
-  } else {
-    P <- array(
-      0,
-      dim = c(nd, n_pat, n_times, n_states),
-      dimnames = list(draw_indices, rownames(data), times, ylevel_names)
-    )
-    transitions <- array(
-      0,
-      dim = c(nd, n_pat, n_times, n_states, n_states),
-      dimnames = list(
-        draw_indices,
-        rownames(data),
-        times,
-        ylevel_names,
-        ylevel_names
+      dim = c(n_layers, n_pat, n_times, rep(n_states, n_state_dims)),
+      dimnames = c(
+        list(if (nd > 0) draw_indices, rownames(data), times),
+        rep(list(ylevel_names), n_state_dims)
       )
     )
-    if (isTRUE(return_kernels)) {
-      kernels <- if (is.null(p2_var)) {
-        array(
-          0,
-          dim = c(nd, n_pat, n_times, n_states, n_states),
-          dimnames = list(
-            draw_indices,
-            rownames(data),
-            times,
-            ylevel_names,
-            ylevel_names
-          )
-        )
-      } else {
-        array(
-          0,
-          dim = c(nd, n_pat, n_times, n_states, n_states, n_states),
-          dimnames = list(
-            draw_indices,
-            rownames(data),
-            times,
-            ylevel_names,
-            ylevel_names,
-            ylevel_names
-          )
-        )
-      }
-    }
+  }
+  # [draw, patient, time, state]
+  P <- trace_array(1L)
+  # [draw, patient, time, previous state, state]
+  transitions <- trace_array(2L)
+  # As `transitions`; a second-order model has the state before the previous
+  # one in front of the previous state.
+  kernels <- if (isTRUE(return_kernels)) {
+    trace_array(if (is.null(p2_var)) 2L else 3L)
   }
 
   data <- assign_sop_visit(
@@ -198,91 +140,37 @@ markov_transition_trace <- function(
   prev_idx <- match_state_indices(data[[p_var]], ylevel_names, p_var)
   predict_rows <- !prev_idx %in% absorb_idx
 
-  if (nd == 0) {
-    if (any(predict_rows)) {
-      p_t1 <- prd(object, data[predict_rows, , drop = FALSE])
-      check_transition_probabilities(p_t1, "the first transition time point")
-      check_crossed_thresholds(
-        p_t1,
-        n_pat,
-        times[1L],
-        rows = which(predict_rows),
-        n_draws = n_draws_total
-      )
-      P[predict_rows, 1, ] <- p_t1
-      transitions <- trace_record_first_transition(
-        transitions = transitions,
-        probs = p_t1,
-        rows = which(predict_rows),
-        prev_idx = prev_idx,
-        time_index = 1L
-      )
+  if (any(predict_rows)) {
+    p_t1 <- prd(object, data[predict_rows, , drop = FALSE])
+    check_transition_probabilities(p_t1, "the first transition time point")
+    check_crossed_thresholds(
+      p_t1,
+      n_pat,
+      times[1L],
+      rows = which(predict_rows),
+      n_draws = n_draws_total
+    )
+    p_t1 <- trace_draw_layers(p_t1, nd)
+    P[, predict_rows, 1, ] <- p_t1
+    rows <- which(predict_rows)
+    for (pos in seq_along(rows)) {
+      row <- rows[pos]
+      transitions[, row, 1L, prev_idx[row], ] <- p_t1[, pos, ]
     }
-    if (any(!predict_rows)) {
-      recorded <- trace_record_absorbing_transition(
-        P = P,
-        transitions = transitions,
-        rows = which(!predict_rows),
-        prev_idx = prev_idx,
-        time_index = 1L,
-        draw = FALSE
-      )
-      P <- recorded$P
-      transitions <- recorded$transitions
-    }
+  }
+  # A patient who starts in an absorbing state stays there.
+  for (row in which(!predict_rows)) {
+    state <- prev_idx[row]
+    P[, row, 1L, state] <- 1
+    transitions[, row, 1L, state, state] <- 1
+  }
+
+  trace_later_visits <- if (is.null(p2_var)) {
+    markov_transition_trace_first_order
   } else {
-    if (any(predict_rows)) {
-      p_t1 <- prd(object, data[predict_rows, , drop = FALSE])
-      check_transition_probabilities(p_t1, "the first transition time point")
-      check_crossed_thresholds(
-        p_t1,
-        n_pat,
-        times[1L],
-        rows = which(predict_rows),
-        n_draws = n_draws_total
-      )
-      P[, predict_rows, 1, ] <- p_t1
-      transitions <- trace_record_first_transition(
-        transitions = transitions,
-        probs = p_t1,
-        rows = which(predict_rows),
-        prev_idx = prev_idx,
-        time_index = 1L
-      )
-    }
-    if (any(!predict_rows)) {
-      recorded <- trace_record_absorbing_transition(
-        P = P,
-        transitions = transitions,
-        rows = which(!predict_rows),
-        prev_idx = prev_idx,
-        time_index = 1L,
-        draw = TRUE
-      )
-      P <- recorded$P
-      transitions <- recorded$transitions
-    }
+    markov_transition_trace_second_order
   }
-
-  if (!is.null(p2_var)) {
-    return(markov_transition_trace_second_order(
-      P = P,
-      transitions = transitions,
-      kernels = kernels,
-      object = object,
-      data = data,
-      prd = prd,
-      nd = nd,
-      times = times,
-      ylevel_names = ylevel_names,
-      absorb_names = absorb_names,
-      settings = settings,
-      time_info = time_info,
-      n_draws_total = n_draws_total
-    ))
-  }
-
-  markov_transition_trace_first_order(
+  trace_later_visits(
     P = P,
     transitions = transitions,
     kernels = kernels,
@@ -299,58 +187,28 @@ markov_transition_trace <- function(
   )
 }
 
-trace_record_first_transition <- function(
-  transitions,
-  probs,
-  rows,
-  prev_idx,
-  time_index
-) {
-  if (length(dim(probs)) == 2L) {
-    for (pos in seq_along(rows)) {
-      row <- rows[pos]
-      transitions[row, time_index, prev_idx[row], ] <- probs[pos, ]
-    }
-    return(transitions)
+# Predicted probabilities as [draw, row, state]: a fit without posterior draws
+# (`nd` of 0) returns [row, state], which becomes one draw.
+trace_draw_layers <- function(probs, nd) {
+  if (nd > 0) {
+    return(probs)
   }
-
-  for (pos in seq_along(rows)) {
-    row <- rows[pos]
-    transitions[, row, time_index, prev_idx[row], ] <- probs[, pos, ]
-  }
-  transitions
+  array(probs, dim = c(1L, dim(probs)))
 }
 
-trace_record_absorbing_transition <- function(
-  P,
-  transitions,
-  rows,
-  prev_idx,
-  time_index,
-  draw
-) {
-  for (row in rows) {
-    state <- prev_idx[row]
-    if (isTRUE(draw)) {
-      P[, row, time_index, state] <- 1
-      transitions[, row, time_index, state, state] <- 1
-    } else {
-      P[row, time_index, state] <- 1
-      transitions[row, time_index, state, state] <- 1
+# The trace as its callers read it: with the draws as first dimension for a
+# fit with posterior draws, and without that dimension otherwise.
+markov_transition_trace_result <- function(P, transitions, kernels, nd) {
+  drop_layer <- function(x) {
+    if (nd > 0 || is.null(x)) {
+      return(x)
     }
+    array(x, dim = dim(x)[-1L], dimnames = dimnames(x)[-1L])
   }
-  list(P = P, transitions = transitions)
-}
-
-markov_transition_trace_result <- function(
-  P,
-  transitions,
-  kernels = NULL
-) {
   list(
-    sops = P,
-    transitions = transitions,
-    kernels = kernels
+    sops = drop_layer(P),
+    transitions = drop_layer(transitions),
+    kernels = drop_layer(kernels)
   )
 }
 
@@ -378,7 +236,7 @@ markov_transition_trace_first_order <- function(
   yna <- ylevel_names[non_absorb_idx]
 
   if (n_times < 2) {
-    return(markov_transition_trace_result(P, transitions, kernels))
+    return(markov_transition_trace_result(P, transitions, kernels, nd))
   }
 
   edata_base <- data[rep(seq_len(n_pat), times = length(yna)), , drop = FALSE]
@@ -409,70 +267,38 @@ markov_transition_trace_first_order <- function(
       times[it],
       n_draws = n_draws_total
     )
+    trans_probs <- trace_draw_layers(trans_probs, nd)
 
-    if (nd == 0) {
-      transition_current <- array(
-        0,
-        dim = c(n_pat, n_states, n_states),
-        dimnames = list(rownames(data), ylevel_names, ylevel_names)
-      )
-      for (i in seq_along(yna)) {
-        prev_state_name <- yna[i]
-        prev_state_idx <- match(prev_state_name, ylevel_names)
-        prob_prev <- P[, it - 1, prev_state_name]
-        row_indices <- ((i - 1) * n_pat + 1):(i * n_pat)
-        probs_transition <- trans_probs[row_indices, ]
-        if (!is.null(kernels)) {
-          kernels[, it, prev_state_idx, ] <- probs_transition
-        }
-        transition_current[, prev_state_idx, ] <-
-          probs_transition * prob_prev
+    # [draw, patient, previous state, state]
+    transition_current <- array(
+      0,
+      dim = c(dim(P)[1L], n_pat, n_states, n_states)
+    )
+    for (i in seq_along(yna)) {
+      prev_state_name <- yna[i]
+      prev_state_idx <- match(prev_state_name, ylevel_names)
+      prob_prev <- P[,, it - 1, prev_state_name]
+      row_indices <- ((i - 1) * n_pat + 1):(i * n_pat)
+      probs_transition <- trans_probs[, row_indices, , drop = FALSE]
+      if (!is.null(kernels)) {
+        kernels[,, it, prev_state_idx, ] <- probs_transition
       }
-      for (a_state in absorb_idx) {
-        transition_current[, a_state, a_state] <- P[, it - 1, a_state]
-        if (!is.null(kernels)) {
-          kernels[, it, a_state, a_state] <- 1
-        }
+      for (k in seq_len(n_states)) {
+        transition_current[,, prev_state_idx, k] <-
+          probs_transition[,, k] * prob_prev
       }
-      transitions[, it, , ] <- transition_current
-      P[, it, ] <- apply(transition_current, c(1, 3), sum)
-    } else {
-      transition_current <- array(
-        0,
-        dim = c(nd, n_pat, n_states, n_states),
-        dimnames = list(
-          dimnames(P)[[1]],
-          rownames(data),
-          ylevel_names,
-          ylevel_names
-        )
-      )
-      for (i in seq_along(yna)) {
-        prev_state_name <- yna[i]
-        prev_state_idx <- match(prev_state_name, ylevel_names)
-        prob_prev <- P[,, it - 1, prev_state_name]
-        row_indices <- ((i - 1) * n_pat + 1):(i * n_pat)
-        probs_transition <- trans_probs[, row_indices, , drop = FALSE]
-        if (!is.null(kernels)) {
-          kernels[,, it, prev_state_idx, ] <- probs_transition
-        }
-        for (k in seq_len(n_states)) {
-          transition_current[,, prev_state_idx, k] <-
-            probs_transition[,, k] * prob_prev
-        }
-      }
-      for (a_state in absorb_idx) {
-        transition_current[,, a_state, a_state] <- P[,, it - 1, a_state]
-        if (!is.null(kernels)) {
-          kernels[,, it, a_state, a_state] <- 1
-        }
-      }
-      transitions[,, it, , ] <- transition_current
-      P[,, it, ] <- apply(transition_current, c(1, 2, 4), sum)
     }
+    for (a_state in absorb_idx) {
+      transition_current[,, a_state, a_state] <- P[,, it - 1, a_state]
+      if (!is.null(kernels)) {
+        kernels[,, it, a_state, a_state] <- 1
+      }
+    }
+    transitions[,, it, , ] <- transition_current
+    P[,, it, ] <- apply(transition_current, c(1, 2, 4), sum)
   }
 
-  markov_transition_trace_result(P, transitions, kernels)
+  markov_transition_trace_result(P, transitions, kernels, nd)
 }
 
 markov_transition_trace_second_order <- function(
@@ -498,28 +324,13 @@ markov_transition_trace_second_order <- function(
   absorb_idx <- which(ylevel_names %in% absorb_names)
   non_absorb_idx <- setdiff(seq_len(n_states), absorb_idx)
 
-  if (nd == 0) {
-    joint_prev <- array(
-      transitions[, 1, , ],
-      dim = c(n_pat, n_states, n_states),
-      dimnames = list(rownames(data), ylevel_names, ylevel_names)
-    )
-  } else {
-    joint_prev <- array(
-      transitions[,, 1, , ],
-      dim = c(nd, n_pat, n_states, n_states),
-      dimnames = list(
-        dimnames(P)[[1]],
-        rownames(data),
-        ylevel_names,
-        ylevel_names
-      )
-    )
+  if (n_times < 2) {
+    return(markov_transition_trace_result(P, transitions, kernels, nd))
   }
 
-  if (n_times < 2) {
-    return(markov_transition_trace_result(P, transitions, kernels))
-  }
+  # [draw, patient, state before the previous one, previous state]
+  joint_dim <- c(dim(P)[1L], n_pat, n_states, n_states)
+  joint_prev <- array(transitions[,, 1, , ], dim = joint_dim)
 
   pair_grid <- expand.grid(
     h = seq_len(n_states),
@@ -570,82 +381,39 @@ markov_transition_trace_second_order <- function(
       rows = predict_rows,
       n_draws = n_draws_total
     )
+    trans_probs <- trace_draw_layers(trans_probs, nd)
     cursor <- 1L
 
-    if (nd == 0) {
-      joint_current <- array(
-        0,
-        dim = c(n_pat, n_states, n_states),
-        dimnames = list(rownames(data), ylevel_names, ylevel_names)
-      )
-      for (pair_i in seq_len(n_pairs)) {
-        h <- pair_grid$h[pair_i]
-        j <- pair_grid$j[pair_i]
-        prob_prev <- joint_prev[, h, j]
-        if (j %in% absorb_idx) {
-          joint_current[, j, j] <- joint_current[, j, j] + prob_prev
-          if (!is.null(kernels)) {
-            kernels[, it, h, j, j] <- 1
-          }
-        } else if (predictable_pair[pair_i]) {
-          rows <- cursor:(cursor + n_pat - 1L)
-          transition <- trans_probs[rows, , drop = FALSE]
-          if (!is.null(kernels)) {
-            kernels[, it, h, j, ] <- transition
-          }
-          if (any(prob_prev > 0)) {
-            for (l in seq_len(n_states)) {
-              joint_current[, j, l] <- joint_current[, j, l] +
-                transition[, l] * prob_prev
-            }
-          }
-          cursor <- cursor + n_pat
+    joint_current <- array(0, dim = joint_dim)
+    for (pair_i in seq_len(n_pairs)) {
+      h <- pair_grid$h[pair_i]
+      j <- pair_grid$j[pair_i]
+      if (j %in% absorb_idx) {
+        joint_current[,, j, j] <- joint_current[,, j, j] +
+          joint_prev[,, h, j]
+        if (!is.null(kernels)) {
+          kernels[,, it, h, j, j] <- 1
         }
-      }
-      transitions[, it, , ] <- joint_current
-      P[, it, ] <- apply(joint_current, c(1, 3), sum)
-      joint_prev <- joint_current
-    } else {
-      joint_current <- array(
-        0,
-        dim = c(nd, n_pat, n_states, n_states),
-        dimnames = list(
-          dimnames(P)[[1]],
-          rownames(data),
-          ylevel_names,
-          ylevel_names
-        )
-      )
-      for (pair_i in seq_len(n_pairs)) {
-        h <- pair_grid$h[pair_i]
-        j <- pair_grid$j[pair_i]
-        if (j %in% absorb_idx) {
-          joint_current[,, j, j] <- joint_current[,, j, j] +
-            joint_prev[,, h, j]
-          if (!is.null(kernels)) {
-            kernels[,, it, h, j, j] <- 1
-          }
-        } else if (predictable_pair[pair_i]) {
-          rows <- cursor:(cursor + n_pat - 1L)
-          prob_prev <- joint_prev[,, h, j]
-          transition <- trans_probs[, rows, , drop = FALSE]
-          if (!is.null(kernels)) {
-            kernels[,, it, h, j, ] <- transition
-          }
-          if (any(prob_prev > 0)) {
-            for (l in seq_len(n_states)) {
-              joint_current[,, j, l] <- joint_current[,, j, l] +
-                transition[,, l] * prob_prev
-            }
-          }
-          cursor <- cursor + n_pat
+      } else if (predictable_pair[pair_i]) {
+        rows <- cursor:(cursor + n_pat - 1L)
+        prob_prev <- joint_prev[,, h, j]
+        transition <- trans_probs[, rows, , drop = FALSE]
+        if (!is.null(kernels)) {
+          kernels[,, it, h, j, ] <- transition
         }
+        if (any(prob_prev > 0)) {
+          for (l in seq_len(n_states)) {
+            joint_current[,, j, l] <- joint_current[,, j, l] +
+              transition[,, l] * prob_prev
+          }
+        }
+        cursor <- cursor + n_pat
       }
-      transitions[,, it, , ] <- joint_current
-      P[,, it, ] <- apply(joint_current, c(1, 2, 4), sum)
-      joint_prev <- joint_current
     }
+    transitions[,, it, , ] <- joint_current
+    P[,, it, ] <- apply(joint_current, c(1, 2, 4), sum)
+    joint_prev <- joint_current
   }
 
-  markov_transition_trace_result(P, transitions, kernels)
+  markov_transition_trace_result(P, transitions, kernels, nd)
 }

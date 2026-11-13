@@ -451,7 +451,6 @@ test_that("time-benefit simulation inference uses real-time comparison scale", {
       withr::local_seed(1)
       out <- mostr:::inferences_avg_comparisons_time_benefit_simulation(
         object = object,
-        engine = "mvn",
         n_draws = 2,
         vcov = NULL,
         workers = NULL,
@@ -585,8 +584,7 @@ test_that("comparison inference centers Wald intervals on point comparisons", {
       {
         out <- mostr:::inferences_avg_comparisons_linear(
           object = cmp,
-          method = "simulation",
-          engine = "mvn",
+          method = "mvn",
           n_draws = 2,
           vcov = NULL,
           cluster = NULL,

@@ -13,6 +13,14 @@
 #' "heavy lifting" step that should be done ONCE before running thousands of
 #' simulation draws.
 #'
+#' The first visit is predicted from each patient's own previous state(s).
+#' Every later visit needs the transition probabilities from each previous
+#' state a patient may be in: each non-absorbing state for a first-order model,
+#' and each pair of non-absorbing states (two visits back, one visit back) for
+#' a second-order model (`settings$p2_var`). The design of a later visit stacks
+#' one block of patient rows per such combination, in the order of
+#' `previous_states`.
+#'
 #' @param model Fitted vglm or orm model
 #' @param newdata Baseline data frame (one row per patient)
 #' @param times Time points to predict
@@ -20,147 +28,21 @@
 #'   (`resolve_markov_settings()`): the state labels `y_levels`, the absorbing
 #'   states `absorb` (their transition matrices are not needed, because
 #'   absorbing states keep their prior probability mass), and the columns
-#'   `time_var`, `p_var` and `gap_var`.
+#'   `time_var`, `p_var`, `p2_var` and `gap_var`.
 #'
 #' @return A list containing pre-calculated matrices and metadata.
 #'
 #' @keywords internal
 markov_msm_build <- function(model, newdata, times = NULL, settings) {
-  data <- newdata
-  y_levels <- settings$y_levels
-  time_var <- settings$time_var
-  p_var <- settings$p_var
   if (inherits(model, "robcov_vglm")) {
     model <- model$vglm_fit
   }
-  n_pat <- nrow(data)
-  ylevel_names <- as_state_labels(y_levels)
-  absorb_names <- as_state_labels(settings$absorb)
-  n_states <- length(ylevel_names)
-  M <- n_states - 1
-  absorb_idx <- if (length(absorb_names)) {
-    which(ylevel_names %in% absorb_names)
-  } else {
-    integer(0)
-  }
-
-  time_res <- resolve_sop_times(
-    model,
-    data,
-    times,
-    time_var,
-    default = "fast"
-  )
-  times <- time_res$times
-  time_info <- time_res$time_info
-
-  is_vglm <- inherits(model, "vglm")
   is_orm <- inherits(model, "orm")
-  if (!is_vglm && !is_orm) {
+  if (!is_orm && !inherits(model, "vglm")) {
     mostr_abort("markov_msm_build() supports only vglm and orm models.")
   }
-
-  # Need Gamma structure to know which columns to keep
-  Gamma_template <- get_effective_coefs(model)
-  validate_sop_threshold_count(Gamma_template, y_levels)
-  common_cols <- colnames(Gamma_template)
-  non_absorb_idx <- setdiff(seq_len(n_states), absorb_idx)
-  budget <- preflight_execution_plan_designs(
-    n_pat = n_pat,
-    n_times = length(times),
-    rows_per_transition = n_pat * length(non_absorb_idx),
-    n_cols = ncol(Gamma_template)
-  )
-
-  # Terms object
-  tt <- if (is_vglm) stats::delete.response(stats::terms(model))
-
-  # Helper to get design matrix columns used by the effective coefficient
-  # matrix. For inline transforms such as rms::rcs(), model.matrix() uses the
-  # fitted terms object's predvars, including stored knot locations.
-  get_X <- function(d) {
-    if (is_orm) {
-      X <- orm_model_matrix(model, d, include_intercept = TRUE)
-    } else {
-      X <- vglm_prediction_design(model, d, tt)
-    }
-    common <- intersect(colnames(X), common_cols)
-    X[, common, drop = FALSE]
-  }
-
-  set_time <- function(d, time_idx) {
-    assign_sop_visit(
-      d,
-      settings = settings,
-      times = times,
-      index = time_idx,
-      time_info = time_info
-    )
-  }
-
-  # A. Baseline matrix for T=1 uses each patient's observed previous state.
-  d_init <- set_time(data, 1)
-  X_init <- get_X(d_init)
-  col_names <- colnames(X_init)
-
-  align_X <- function(X) {
-    missing_cols <- setdiff(col_names, colnames(X))
-    if (length(missing_cols) > 0) {
-      mostr_abort(
-        "Design matrix columns missing during fast path build: ",
-        paste(missing_cols, collapse = ", ")
-      )
-    }
-    X[, col_names, drop = FALSE]
-  }
-
-  # B. Retained transition designs. Each visit stores one stacked matrix
-  # with patient rows nested inside non-absorbing origin-state blocks.
-  X_transition <- vector("list", length(times))
-  if (length(times) >= 2L) {
-    for (time_idx in 2:length(times)) {
-      origin_blocks <- vector("list", length(non_absorb_idx))
-      d_time <- set_time(data, time_idx)
-
-      for (origin_pos in seq_along(non_absorb_idx)) {
-        k <- non_absorb_idx[origin_pos]
-        d_k <- d_time
-        d_k[[p_var]] <- make_previous_state_column(
-          states = ylevel_names[k],
-          prototype = data[[p_var]],
-          n = nrow(d_k),
-          p_var = p_var
-        )
-        origin_blocks[[origin_pos]] <- align_X(get_X(d_k))
-      }
-      X_transition[[time_idx]] <- do.call(rbind, origin_blocks)
-    }
-  }
-
-  list(
-    X_init = align_X(X_init),
-    X_transition = X_transition,
-    n_pat = n_pat,
-    n_states = n_states,
-    M = M,
-    y_levels = ylevel_names,
-    col_names = col_names,
-    transition_layout = "stacked",
-    transition_origins = non_absorb_idx,
-    workspace_bytes = budget$workspace_bytes,
-    design_bytes = budget$design_bytes
-  )
-}
-
-# The same designs as `markov_msm_build()`, built for all previous states of a
-# visit at once.
-markov_msm_build_batched <- function(model, newdata, times, settings) {
-  y_levels <- settings$y_levels
-  p_var <- settings$p_var
-  n_pat <- nrow(newdata)
-  ylevel_names <- as_state_labels(y_levels)
-  absorb_idx <- which(ylevel_names %in% as_state_labels(settings$absorb))
-  non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)
+  Gamma <- get_effective_coefs(model)
+  validate_sop_threshold_count(Gamma, settings$y_levels)
   time_res <- resolve_sop_times(
     model,
     newdata,
@@ -169,96 +51,118 @@ markov_msm_build_batched <- function(model, newdata, times, settings) {
     default = "fast"
   )
   times <- time_res$times
-  time_info <- time_res$time_info
 
-  Gamma <- get_effective_coefs(model)
-  validate_sop_threshold_count(Gamma, y_levels)
+  n_pat <- nrow(newdata)
+  ylevel_names <- as_state_labels(settings$y_levels)
+  absorb_idx <- which(ylevel_names %in% as_state_labels(settings$absorb))
+  non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)
+  # One row per combination of previous states, as state indices; with two
+  # columns the state two visits back changes fastest.
+  state_vars <- c(settings$p2_var, settings$p_var)
+  previous_states <- expand.grid(
+    rep(list(non_absorb_idx), length(state_vars)),
+    KEEP.OUT.ATTRS = FALSE
+  )
+  names(previous_states) <- state_vars
   budget <- preflight_execution_plan_designs(
     n_pat = n_pat,
     n_times = length(times),
-    rows_per_transition = n_pat * length(non_absorb_idx),
+    rows_per_transition = n_pat * nrow(previous_states),
     n_cols = ncol(Gamma)
   )
-
-  if (!p_var %in% names(newdata)) {
-    mostr_abort("Previous-state variable `", p_var, "` not found in `newdata`.")
-  }
-
-  rows_per_visit <- n_pat * length(non_absorb_idx)
-  # Above this many rows per visit, markov_msm_build() builds the same designs
-  # one origin state at a time, with identical results. Measured Nov 2026 (orm,
-  # 11 design columns, Ryzen AI 9 HX 370): the batched build is faster only
-  # below about 25k rows; from 50k it is 1.3 to 1.9 times slower with up to 1.8
-  # times the peak memory (at 2e6, 8.6 s and 0.93 GB against 5.2 s and
-  # 0.51 GB). The default was 2e6 until then. See dev/decisions.md.
-  if (rows_per_visit > getOption("mostr.max_batched_design_rows", 5e4)) {
-    return(markov_msm_build(
-      model = model,
-      newdata = newdata,
-      times = times,
-      settings = settings
-    ))
-  }
-
-  set_time <- function(d, time_idx) {
-    assign_sop_visit(
-      d,
-      settings = settings,
-      times = times,
-      index = time_idx,
-      time_info = time_info
+  missing_vars <- setdiff(state_vars, names(newdata))
+  if (length(missing_vars) > 0L) {
+    mostr_abort(
+      "Previous-state variable ",
+      paste0("`", missing_vars, "`", collapse = ", "),
+      " not found in `newdata`."
     )
   }
 
-  d_init <- set_time(newdata, 1L)
-
-  tt <- if (inherits(model, "vglm")) {
-    stats::delete.response(stats::terms(model))
-  } else {
-    NULL
-  }
-  get_X <- function(d) {
-    X <- if (inherits(model, "orm")) {
-      orm_model_matrix(model, d, include_intercept = TRUE)
+  # The design matrix columns used by the effective coefficient matrix. For
+  # inline transforms such as rms::rcs(), model.matrix() uses the fitted terms
+  # object's predvars, including stored knot locations.
+  terms <- if (!is_orm) stats::delete.response(stats::terms(model))
+  design <- function(data) {
+    X <- if (is_orm) {
+      orm_model_matrix(model, data, include_intercept = TRUE)
     } else {
-      vglm_prediction_design(model, d, tt)
+      vglm_prediction_design(model, data, terms)
     }
     missing_cols <- setdiff(colnames(Gamma), colnames(X))
     if (length(missing_cols) > 0L) {
       mostr_abort(
-        "Design matrix columns missing during batched build: ",
+        "Design matrix columns missing from the prediction design: ",
         paste(missing_cols, collapse = ", ")
       )
     }
     X[, colnames(Gamma), drop = FALSE]
   }
-
-  X_init <- get_X(d_init)
-  X_transition <- vector("list", length(times))
-  if (length(times) >= 2L) {
-    for (time_idx in 2:length(times)) {
-      d_time <- set_time(newdata, time_idx)
-      d_visit <- d_time[
-        rep(seq_len(n_pat), times = length(non_absorb_idx)),
+  visit_rows <- function(index) {
+    assign_sop_visit(
+      newdata,
+      settings = settings,
+      times = times,
+      index = index,
+      time_info = time_res$time_info
+    )
+  }
+  # The patient rows once per combination in `combinations` (rows of
+  # `previous_states`), with the previous-state columns set to it.
+  with_previous_states <- function(data, combinations) {
+    if (length(combinations) > 1L) {
+      data <- data[
+        rep(seq_len(n_pat), times = length(combinations)),
         ,
         drop = FALSE
       ]
-      d_visit[[p_var]] <- make_previous_state_column(
-        states = ylevel_names[non_absorb_idx],
-        prototype = newdata[[p_var]],
-        n = n_pat,
-        p_var = p_var
-      )
-      X_transition[[time_idx]] <- get_X(d_visit)
     }
+    for (column in state_vars) {
+      data[[column]] <- make_previous_state_column(
+        states = ylevel_names[previous_states[[column]][combinations]],
+        prototype = newdata[[column]],
+        n = n_pat,
+        p_var = column
+      )
+    }
+    data
+  }
+
+  # A visit's design is built in one piece up to this many rows, and one
+  # combination of previous states at a time above it, with identical results.
+  # Measured Nov 2026 (orm, 11 design columns, Ryzen AI 9 HX 370): building in
+  # one piece is faster only below about 25k rows; from 50k it is 1.3 to 1.9
+  # times slower with up to 1.8 times the peak memory (at 2e6, 8.6 s and
+  # 0.93 GB against 5.2 s and 0.51 GB). The default was 2e6 until then. See
+  # dev/decisions.md.
+  in_one_piece <- n_pat * nrow(previous_states) <=
+    getOption("mostr.max_batched_design_rows", 5e4)
+  pieces <- if (in_one_piece) {
+    list(seq_len(nrow(previous_states)))
+  } else {
+    as.list(seq_len(nrow(previous_states)))
+  }
+
+  X_init <- design(visit_rows(1L))
+  X_transition <- vector("list", length(times))
+  for (index in seq_along(times)[-1L]) {
+    data_visit <- visit_rows(index)
+    X_transition[[index]] <- do.call(
+      rbind,
+      lapply(pieces, function(combinations) {
+        design(with_previous_states(data_visit, combinations))
+      })
+    )
   }
 
   list(
     X_init = X_init,
     X_transition = X_transition,
+    times = times,
+    previous_states = previous_states,
     n_pat = n_pat,
     n_states = length(ylevel_names),
-    M = length(ylevel_names) - 1L,
+    M = length(ylevel_names) - 1,
     y_levels = ylevel_names,
     col_names = colnames(X_init),
     transition_layout = "stacked",
@@ -293,7 +197,6 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
   y_levels <- components$y_levels
   col_names <- components$col_names
   n_times <- length(times)
-  validate_sop_threshold_count(Gamma, y_levels)
 
   # Align Gamma to components
   Gamma <- Gamma[, col_names, drop = FALSE]

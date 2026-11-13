@@ -1,5 +1,7 @@
 # SOP time-in-state summaries.
 
+# Trapezoidal integral of `value` over `time`, for values in any order:
+# missing pairs are dropped and values at the same time are added.
 trapezoid_auc <- function(time, value) {
   ok <- !is.na(time) & !is.na(value)
   time <- time[ok]
@@ -12,8 +14,7 @@ trapezoid_auc <- function(time, value) {
   if (nrow(agg) < 2) {
     return(0)
   }
-  dt <- diff(agg$time)
-  sum(dt * (utils::head(agg$value, -1L) + utils::tail(agg$value, -1L)) / 2)
+  trapezoid_row_totals(matrix(agg$value, nrow = 1L), agg$time)
 }
 
 time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
@@ -359,10 +360,7 @@ time_in_state_delta <- function(
   # standard errors would then belong to a different total, so stop instead.
   if (
     any(!is.finite(calculated)) ||
-      any(
-        abs(calculated - result$total_time) >
-          1e-12 + 1e-10 * pmax(abs(calculated), abs(result$total_time))
-      )
+      estimates_differ(calculated, result$total_time)
   ) {
     mostr_abort(
       "With `time_map`, delta-method standard errors of the total time need ",

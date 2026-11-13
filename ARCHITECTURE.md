@@ -253,7 +253,12 @@ flowchart TD
 - `validate_markov_model()` in `R/sops-backends.R` accepts a model only when
   `markov_model_engine()` matches its class. Raw engine fits and fits from the
   removed `orm_markov()`, `vglm_markov()`, and `blrm_markov()` lack the
-  attribute and are rejected with a pointer to `mostm(engine = ...)`.
+  attribute and are rejected with a pointer to `mostm(engine = ...)`. The
+  public function that was called checks the model once; the engines, the
+  execution plan and the analytical inference code below it take a checked
+  model. Likewise the number of thresholds is checked once per call, when
+  `markov_msm_build()` builds the designs, and not again for each set of
+  coefficients.
 - Fits that reach mostr without passing `mostm()`'s formula checks are caught
   later. `validate_markov_model()` and `validate_robcov_orm_fit()` in
   `R/robcov_orm.R` reject orm fits that hold random effects
@@ -583,7 +588,7 @@ flowchart LR
   `sops_blrm()`, `avg_sops_blrm()`, `predict_markov_sops()` (the internal
   form of `soprob_markov()`, used by every package caller),
   `soprob_markov_r_engine()`, `compile_sop_execution_plan()`,
-  `markov_msm_build()`, `markov_msm_build_batched()`, `assign_sop_visit()`,
+  `markov_msm_build()`, `assign_sop_visit()`,
   `stop_absorbing_start()`, `resolve_markov_source_data()`,
   `resolve_prediction_variables()`, `resolve_comparison_variables()`,
   `match_previous_state_variables()`, `warn_skipped_sop_visits()`,
@@ -638,8 +643,10 @@ treat the stored starting profiles as supplied rows and accept `times` that
 begin after the first follow-up visit. `comparisons()` and `state_time()` hand
 `by` averages to `avg_comparisons()` and `avg_state_time()` before the check,
 so it still runs once. Internal `sops()` calls and inference replays
-(`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, used by
-`replay_avg_time_sops()` and the comparison replays) run inside
+(`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, which
+`replay_result_avg_sops()` calls with the arguments stored on an
+`avg_comparisons()` or `avg_state_time()` result, for every inference method)
+run inside
 `muffle_skipped_sop_visits()`. The per-profile intervals
 (`inferences_profile_results()`, `inferences_delta_profile_results()`) call
 `soprob_markov()` or the native recursion without going through `sops()`, so
@@ -690,8 +697,9 @@ Rows enter the engines through `prepare_prediction_rows()` in
 `R/sops-dispatch.R`, called by `predict_markov_sops()` (every SOP route:
 the public SOP, time and comparison functions, `soprob_markov()`, and the
 bootstrap, draw and comparison replays) and by `compile_sop_execution_plan()`
-(also called directly by the analytical inference paths on the rows of an
-earlier result). It runs after `stop_absorbing_start()` and after
+when the inference paths call it directly on the rows of an earlier result
+(`predict_markov_sops()` passes it rows that are already prepared, with
+`rows_prepared = TRUE`). It runs after `stop_absorbing_start()` and after
 `variables` has set its columns, so a column that `variables` sets may be
 missing in `newdata`. It does two things:
 
@@ -1043,8 +1051,11 @@ flowchart TD
   and applies `comparison_value()`. Rows are ordered by state set, comparison
   level, visit, then profile. Time benefit uses
   `time_benefit_profile_values()`, `comparison_scenario()`, and
-  `trapezoid_row_totals()` in `R/sops-comparisons-reduce.R`, which
-  `time_benefit_from_counterfactual_array()` also uses before averaging.
+  `trapezoid_row_totals()` in `R/sops-comparisons-reduce.R`. The averaged
+  time benefit of `avg_comparisons()` is this per-profile result followed by
+  `average_time_benefit()`, the mean over the profiles of each `by` group, for
+  the point estimate (`profile_tidy_reducer()`) and for every draw
+  (`profile_rows_from_stacked_sops()`).
 - The output keeps each profile's observed covariates and starting state; in
   `comparisons()` the compared variable keeps its observed value (the contrast
   spans the scenarios), while in `state_time()` it holds the scenario's value.
@@ -1100,7 +1111,9 @@ unchanged and sends frequentist ones to `inferences_profile_results()`
   requires them to reproduce the stored estimates, because draws are matched
   to rows by position. `validate_comparison_draw_cells()` stops before drawing
   when draws x rows exceeds `mostr.max_sops_draw_cells`.
-- Intervals come from `summarize_sop_draw_matrix()`; returned draws carry only
+- Intervals come from `summarize_sop_draw_matrix()`, which summarises each
+  cell's draws with the same function as `compute_ci_from_draws()`
+  (`draw_summary_function()`); returned draws carry only
   the comparison key columns (plus any draw weight), and `get_draws()` joins
   the profile columns.
   Earlier inference columns and metadata are cleared first
@@ -1420,8 +1433,13 @@ variance and the coverage of the intervals are not tests: they are a one-off
 validation study in the ignored `benchmarks/local/validation-unconditional/`,
 whose scenarios and acceptance bands are in its README.
 
-Results built by the streamed design builder (`markov_msm_build()` and
-`markov_msm_run()`, which MVN draws and delta inference use) are compared with
+One function, `markov_msm_build()`, builds the prediction designs of every
+visit for first- and second-order orm and vglm fits; `sops()`, MVN draws and
+delta inference all use it through `compile_sop_execution_plan()`. It builds a
+visit's design in one piece, or one combination of previous states at a time
+above `mostr.max_batched_design_rows` rows, with identical results. Designs
+built one previous state at a time (`markov_msm_build()` and
+`markov_msm_run()`) are compared with
 public `sops()` on every first-order grid set-up, plus spline, numeric
 previous-state and factor-time set-ups, in `tests/testthat/test-orm-fast-path.R`.
 Since `sops()` is checked against the readable loop, this check is indirectly

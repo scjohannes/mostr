@@ -127,9 +127,6 @@ soprob_markov_r_engine <- function(
     "vglm"
   }
 
-  # `soprob_markov()` reaches this engine without an earlier check of the fit.
-  validate_markov_model(object)
-
   if (!p_var %in% names(data)) {
     mostr_abort("Previous-state variable `", p_var, "` not found in `data`.")
   }
