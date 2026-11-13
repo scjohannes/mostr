@@ -16,8 +16,6 @@ delta_validate_full_po_model <- function(model) {
     )
   }
 
-  validate_markov_model(fit)
-
   if (inherits(fit, "vglm")) {
     constraints <- VGAM::constraints(fit)
     constraint_names <- names(constraints)

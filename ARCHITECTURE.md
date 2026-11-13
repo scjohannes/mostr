@@ -253,7 +253,12 @@ flowchart TD
 - `validate_markov_model()` in `R/sops-backends.R` accepts a model only when
   `markov_model_engine()` matches its class. Raw engine fits and fits from the
   removed `orm_markov()`, `vglm_markov()`, and `blrm_markov()` lack the
-  attribute and are rejected with a pointer to `mostm(engine = ...)`.
+  attribute and are rejected with a pointer to `mostm(engine = ...)`. The
+  public function that was called checks the model once; the engines, the
+  execution plan and the analytical inference code below it take a checked
+  model. Likewise the number of thresholds is checked once per call, when
+  `markov_msm_build()` builds the designs, and not again for each set of
+  coefficients.
 - Fits that reach mostr without passing `mostm()`'s formula checks are caught
   later. `validate_markov_model()` and `validate_robcov_orm_fit()` in
   `R/robcov_orm.R` reject orm fits that hold random effects
@@ -690,8 +695,9 @@ Rows enter the engines through `prepare_prediction_rows()` in
 `R/sops-dispatch.R`, called by `predict_markov_sops()` (every SOP route:
 the public SOP, time and comparison functions, `soprob_markov()`, and the
 bootstrap, draw and comparison replays) and by `compile_sop_execution_plan()`
-(also called directly by the analytical inference paths on the rows of an
-earlier result). It runs after `stop_absorbing_start()` and after
+when the inference paths call it directly on the rows of an earlier result
+(`predict_markov_sops()` passes it rows that are already prepared, with
+`rows_prepared = TRUE`). It runs after `stop_absorbing_start()` and after
 `variables` has set its columns, so a column that `variables` sets may be
 missing in `newdata`. It does two things:
 

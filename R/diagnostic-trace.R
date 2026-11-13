@@ -45,8 +45,6 @@ markov_transition_trace <- function(
     mostr_abort("Object class not supported")
   }
 
-  validate_markov_model(object)
-
   p_var <- settings$p_var
   p2_var <- settings$p2_var
   if (!p_var %in% names(data)) {

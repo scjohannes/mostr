@@ -80,10 +80,20 @@ preflight_execution_plan_designs <- function(
 # A plan for the SOPs of `newdata` at `times`: the prediction designs of every
 # visit, built once (`markov_msm_build()`), with the columns and states named
 # in `settings` (`resolve_markov_settings()`). `run_sop_execution_plan()` runs
-# it for any coefficients.
-compile_sop_execution_plan <- function(model, newdata, times, settings) {
-  validate_markov_model(model)
-  newdata <- prepare_prediction_rows(model, newdata, settings)
+# it for any coefficients. The model is one that a public function has checked
+# (`validate_markov_model()`). `predict_markov_sops()` passes rows it has
+# prepared (`rows_prepared = TRUE`); inference code passes the rows stored on
+# an earlier result, which are prepared here.
+compile_sop_execution_plan <- function(
+  model,
+  newdata,
+  times,
+  settings,
+  rows_prepared = FALSE
+) {
+  if (!rows_prepared) {
+    newdata <- prepare_prediction_rows(model, newdata, settings)
+  }
   components <- markov_msm_build(
     model = model,
     newdata = newdata,
@@ -132,7 +142,6 @@ run_sop_execution_plan <- function(plan, Gamma) {
   if (!inherits(plan, "markov_sop_exec_plan") || plan$version != 1L) {
     mostr_abort("Invalid or unsupported SOP execution plan.")
   }
-  validate_sop_threshold_count(Gamma, plan$y_levels)
   if (identical(plan$recursion_order, 2L)) {
     return(run_second_order_execution_plan(plan, Gamma))
   }

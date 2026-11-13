@@ -197,7 +197,6 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
   y_levels <- components$y_levels
   col_names <- components$col_names
   n_times <- length(times)
-  validate_sop_threshold_count(Gamma, y_levels)
 
   # Align Gamma to components
   Gamma <- Gamma[, col_names, drop = FALSE]
