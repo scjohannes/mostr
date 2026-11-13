@@ -160,6 +160,32 @@ flowchart TD
   `p_var` must be columns of `data`, and the default `p_var` is not checked,
   so fits without a `yprev` column still work. Duplicate ID-time rows warn
   (`warn_duplicate_markov_id_time()`).
+- `absorb` and `gap_var` are recorded in the settings and checked before
+  fitting, except in coefficient-only bootstrap refits, which reuse the
+  checked values (a resample without a death would fail the first check).
+  `validate_mostm_absorb()` (`R/markov-settings.R`) evaluates the response on
+  the rows `subset` selects (`mostm_subset_row_index()`) and refuses labels
+  that are not states of the response, and rows whose `p_var`, or for a
+  second-order fit `p2_var`, is absorbing; states are compared by label. It
+  warns (`warn_outcome_only_states()`, class
+  `mostr_warning_outcome_only_states`) about a state that occurs as an
+  outcome but never as `p_var` and is not in `absorb`. Absorbing states are
+  never inferred from the data, and there is no per-call `absorb`, so
+  first-passage probabilities (treating a non-absorbing state as absorbing at
+  prediction) are not available. `validate_mostm_gap_var()` requires a numeric
+  gap column and numeric time, and on every row after a patient's first a gap
+  equal to the time since the patient's previous row, within
+  `sqrt(.Machine$double.eps)` relative; the full `data` is used, so a
+  `subset` that leaves out visits does not create false mismatches.
+- For `"orm"` and `"blrm"`, `mostm_check_data_dependent_bases()` refuses
+  `splines::ns()`, `splines::bs()` and `stats::poly()` (unless `raw = TRUE`)
+  anywhere on the right-hand side. `orm_model_matrix()` and
+  `rms::predictrms()` evaluate the stored formula again on the prediction
+  rows, so these terms get knots or orthogonal polynomials from those rows: on
+  2026-11-13 their design matrices for 40 profiles differed from the fitted
+  ones by up to 0.5, and the average SOPs by up to 0.04
+  (`benchmarks/local/settings-refactor/spline-covariates.R`). VGAM keeps the
+  fitted `predvars`, and its SOPs agreed to 1e-16.
 - For `"orm"` and `"blrm"`, `mostm_check_inline_factors()` stops before
   fitting when the right-hand side of the formula calls `factor()`,
   `as.factor()`, `ordered()`, or `as.ordered()` (found at any depth by
@@ -484,8 +510,7 @@ result attributes.
 ```mermaid
 flowchart LR
     A["mostm()"] -->|markov_settings, from_fit| B[(fit attribute markov_settings)]
-    B --> C["resolve_markov_settings(model, absorb, gap_var, time_covariates)"]
-    D["Public call: absorb, gap_var, time_covariates"] --> C
+    B --> C["resolve_markov_settings(model)"]
     P["Plots: also id_var, time_var, p_var, p2_var, y_levels"] -.->|checked against the fit| C
     C --> E["internal functions: settings argument"]
     E --> F[(result attribute settings)]
@@ -493,17 +518,18 @@ flowchart LR
 ```
 
 - Fields: `engine`, `id_var`, `time_var`, `p_var`, `p2_var`, `order` (1 or
-  2, from `p2_var`), `y_levels`, `absorb`, `gap_var`, `time_covariates`,
-  `first_followup_time`, and `from_fit`, the names of the fields the fit
-  fixes. `markov_settings()` is the one constructor and validates the column
-  names (single non-empty strings, `p2_var` different from `p_var`);
+  2, from `p2_var`), `y_levels`, `absorb`, `gap_var`, `first_followup_time`,
+  and `from_fit`, the names of the fields the fit fixes. `markov_settings()`
+  is the one constructor and validates the column names (single non-empty
+  strings, `p2_var` different from `p_var`);
   `markov_settings_update()` replaces fields and validates again, for example
   for the states present in a bootstrap resample.
 - Built once: `mostm()` stores the settings of every fit, including
   coefficient-only bootstrap refits, with `markov_set_settings()` in the
   `markov_settings` attribute. `engine`, `id_var`, `time_var`, `p_var`,
-  `p2_var` and `y_levels` (`markov_model_ylevels()` of the engine fit) are
-  fixed. `robcov_vglm()` and derived models (`bootstrap_refit_model()`,
+  `p2_var`, `y_levels` (`markov_model_ylevels()` of the engine fit), `absorb`
+  and `gap_var` are fixed. `robcov_vglm()` and derived models
+  (`bootstrap_refit_model()`,
   `update_bootstrap_model()`) copy them through `markov_inherit_engine()`.
   `markov_model_settings()` reads them, from the inner `vglm_fit` when needed.
   The hand-made fits of the tests record settings the same way:
@@ -516,21 +542,24 @@ flowchart LR
   with nothing fixed.
 - The prediction functions (`sops()`, `avg_sops()`, `state_time()`,
   `avg_state_time()`, `comparisons()`, `avg_comparisons()`, `soprob_markov()`,
-  and `plot_lp_difference()`) have no `id_var`, `time_var`, `p_var`, `p2_var`
-  or `y_levels` argument: the columns, the Markov order and the states come
+  and `plot_lp_difference()`) have no `id_var`, `time_var`, `p_var`, `p2_var`,
+  `y_levels`, `absorb`, `gap_var` or `time_covariates` argument: the columns,
+  the Markov order, the states, the absorbing states and the gap column come
   from the fit only, so a second-order fit always predicts with the
-  second-order recursion. Each calls `resolve_markov_settings(model, absorb =,
-  gap_var =, time_covariates =)` once. Their `...` would swallow a removed
-  argument silently, so each first calls `stop_removed_fit_arguments(...)`
-  (`R/markov-settings.R`), which names the argument and says that the fit
-  records it; `plot_lp_difference()` has no `...`, so R refuses the argument
+  second-order recursion. Each calls `resolve_markov_settings(model)` once.
+  Their `...` would swallow a removed argument silently, so each first calls
+  `stop_removed_fit_arguments(...)` (`R/markov-settings.R`), which names the
+  argument and says that the fit records it (for `time_covariates`, that it
+  was removed and time terms go inline in the formula); `plot_lp_difference()` has no `...`, so R refuses the argument
   itself. The `state` column of their results takes the type of the fit's
   state labels. A fit without state labels stops with
   `stop_no_fitted_states()`.
 - The diagnostic plots that also take observed data (`plot_transitions()`,
   `plot_correlation()` and `plot_variogram()`, through
   `plot_markov_settings()` in `R/markov-plot-helpers.R`) keep the five
-  arguments, because for a data frame nothing else names the columns; they
+  column and state arguments, because for a data frame nothing else names the
+  columns; they lost `absorb`, `gap_var` and `time_covariates`, which only
+  their model-based recursions used and which now come from the fit; they
   build settings with `markov_settings()` and the defaults. For a fit they
   pass them to `resolve_markov_settings()`, where `NULL` means the fit's value
   and a supplied value of a fixed field must agree, or
@@ -563,11 +592,16 @@ flowchart LR
 ### Requested visit times
 
 The recursion takes one transition per value of `times`, in the order given:
-each value sets the time variable for that step, and, when `gap_var` is
-supplied without a column in `time_covariates`, the elapsed gap is the
-difference from the previous value (`assign_sop_visit()` in
-`R/sops-backends.R`). A request that leaves out visits therefore relabels later
-transitions rather than skipping time.
+each value sets the time variable for that step, and so every inline time
+term of the formula, and, for a fit with `gap_var`, the elapsed gap is the
+difference from the previous value (`assign_sop_visit()` and
+`assign_sop_gap()` in `R/sops-backends.R`). The first transition's gap is
+the first requested time itself, the time since time 0, also when supplied
+`newdata` starts at a later visit; `?mostm` and `?sops` document this rule.
+There is no lookup table of visit-specific columns any more
+(`time_covariates` was removed on 2026-11-13; see `dev/decisions.md`), and
+`mostm()` accepts `gap_var` only with numeric time. A request that leaves
+out visits therefore relabels later transitions rather than skipping time.
 
 `warn_skipped_sop_visits()` in `R/sops-times.R` compares the requested times
 with the fitted visit schedule: the fitted levels for factor time
@@ -578,8 +612,8 @@ start before the first follow-up visit of the stored starting profiles, or
 leave out fitted visits between the starting visit and the last requested
 time. The starting visit is the stored `first_followup_time` when `newdata` is
 omitted and the first requested visit when `newdata` is supplied, because
-supplied rows may hold the state before a later visit. There is no check when
-`gap_var` is supplied, when the schedule is unknown, or when requested times
+supplied rows may hold the state before a later visit. There is no check for a
+fit with `gap_var`, when the schedule is unknown, or when requested times
 inside the schedule's range are not fitted visits; times after the last fitted
 visit are allowed.
 
@@ -605,8 +639,9 @@ in `R/markov-plot-helpers.R`) and never call `sops()`.
 
 ### Starting states
 
-A patient cannot start in an absorbing state. When `absorb` is non-empty,
-`stop_absorbing_start()` in `R/sops-dispatch.R` refuses starting rows whose
+A patient cannot start in an absorbing state. When the fit records absorbing
+states (`mostm(absorb = )`, which also refuses fitted rows that start in
+one), `stop_absorbing_start()` in `R/sops-dispatch.R` refuses starting rows whose
 previous state (`p_var`) is absorbing and, for second-order calls, rows whose
 state two visits back (`p2_var`) is absorbing, an impossible history. It
 compares state labels (`as_state_labels()`), so factor, character, and numeric
@@ -1239,8 +1274,8 @@ call no package code and take transition probabilities only from the fitting
 package's `predict()`. `tests/testthat/test-sops-native-slow-loop.R` compares
 public `sops()` and `avg_sops()` with those loops on a shared grid of model set-ups
 from `tests/testthat/helper-grid.R` (engine, Markov order, time coding, odds
-structure, absorbing states, gaps, explicit time bases, numeric previous states,
-and weights). It also compares analytical derivatives with numerical differences
+structure, absorbing states recorded by `mostm()` including an inner one, gaps,
+an inline `log(time)` term, numeric previous states, and weights). It also compares analytical derivatives with numerical differences
 (`tests/testthat/helper-numeric-jacobian.R`). Every finite-difference check
 over model coefficients uses that file's one central-difference routine,
 `central_difference_jacobian()`, which takes a function of the coefficients,
