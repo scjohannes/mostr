@@ -68,28 +68,7 @@ inferences_avg_comparisons_linear <- function(
   use_coefstart
 ) {
   args <- attr(object, "comparison_args")
-  avg_args <- attr(object, "avg_args")
-  newdata <- if (isTRUE(attr(object, "newdata_supplied"))) {
-    attr(object, "newdata_orig")
-  } else {
-    NULL
-  }
-  avg <- avg_comparison_replay_avg_sops(
-    model = attr(object, "model"),
-    newdata = newdata,
-    variables = avg_args$variables,
-    by = avg_args$by,
-    times = avg_args$times,
-    settings = markov_result_settings(object),
-    include_re = args$include_re,
-    n_draws = args$n_draws,
-    seed = args$seed,
-    posterior_summary = args$posterior_summary,
-    conf_level = conf_level,
-    return_draws = FALSE,
-    extra_args = args$extra_args,
-    warn_skipped_visits = FALSE
-  )
+  avg <- replay_result_avg_sops(object, args, conf_level)
   avg <- inferences_internal(
     avg,
     method = method,

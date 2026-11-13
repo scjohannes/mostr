@@ -643,8 +643,10 @@ treat the stored starting profiles as supplied rows and accept `times` that
 begin after the first follow-up visit. `comparisons()` and `state_time()` hand
 `by` averages to `avg_comparisons()` and `avg_state_time()` before the check,
 so it still runs once. Internal `sops()` calls and inference replays
-(`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, used by
-`replay_avg_time_sops()` and the comparison replays) run inside
+(`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, which
+`replay_result_avg_sops()` calls with the arguments stored on an
+`avg_comparisons()` or `avg_state_time()` result, for every inference method)
+run inside
 `muffle_skipped_sop_visits()`. The per-profile intervals
 (`inferences_profile_results()`, `inferences_delta_profile_results()`) call
 `soprob_markov()` or the native recursion without going through `sops()`, so
@@ -1109,7 +1111,9 @@ unchanged and sends frequentist ones to `inferences_profile_results()`
   requires them to reproduce the stored estimates, because draws are matched
   to rows by position. `validate_comparison_draw_cells()` stops before drawing
   when draws x rows exceeds `mostr.max_sops_draw_cells`.
-- Intervals come from `summarize_sop_draw_matrix()`; returned draws carry only
+- Intervals come from `summarize_sop_draw_matrix()`, which summarises each
+  cell's draws with the same function as `compute_ci_from_draws()`
+  (`draw_summary_function()`); returned draws carry only
   the comparison key columns (plus any draw weight), and `get_draws()` joins
   the profile columns.
   Earlier inference columns and metadata are cleared first

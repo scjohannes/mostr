@@ -250,10 +250,7 @@ check_comparison_replay <- function(object, setup, reduce_draw, model) {
   if (
     length(replayed) != length(stored) ||
       !same_missing ||
-      any(
-        abs(replayed[ok] - stored[ok]) >
-          1e-12 + 1e-10 * pmax(abs(replayed[ok]), abs(stored[ok]))
-      )
+      estimates_differ(replayed[ok], stored[ok])
   ) {
     mostr_abort(
       "Replaying `comparisons()` did not reproduce the stored estimates."

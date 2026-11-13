@@ -105,14 +105,10 @@ inferences_delta_profile_results <- function(
   stored <- object$estimate
   # The derivatives come from the same per-scenario blocks, so check that the
   # blocks rebuild the stored rows; otherwise the standard errors would describe
-  # other numbers. Rounding differences are below 1e-14 on the test grid; the
-  # tolerance is the one in delta_match_cells().
+  # other numbers. Rounding differences are below 1e-14 on the test grid.
   if (
     any(!is.finite(estimate)) ||
-      any(
-        abs(estimate - stored) >
-          1e-12 + 1e-10 * pmax(abs(estimate), abs(stored))
-      )
+      estimates_differ(estimate, stored)
   ) {
     mostr_abort(
       "The analytical calculation did not reproduce the stored point ",

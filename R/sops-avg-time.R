@@ -348,26 +348,7 @@ replay_avg_time_sops <- function(object, conf_level, return_draws = FALSE) {
   if (is.null(args) || is.null(avg_args)) {
     mostr_abort("Stored average-time arguments are required for inference.")
   }
-  avg_comparison_replay_avg_sops(
-    model = attr(object, "model"),
-    newdata = if (isTRUE(attr(object, "newdata_supplied"))) {
-      attr(object, "newdata_orig")
-    } else {
-      NULL
-    },
-    variables = avg_args$variables,
-    by = avg_args$by,
-    times = avg_args$times,
-    settings = markov_result_settings(object),
-    include_re = args$include_re,
-    n_draws = args$n_draws,
-    seed = args$seed,
-    posterior_summary = args$posterior_summary,
-    conf_level = conf_level,
-    return_draws = return_draws,
-    extra_args = args$extra_args,
-    warn_skipped_visits = FALSE
-  )
+  replay_result_avg_sops(object, args, conf_level, return_draws)
 }
 
 reduce_avg_time_df <- function(

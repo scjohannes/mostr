@@ -234,25 +234,31 @@ delta_match_cells <- function(object, calculated, key_cols) {
   # inferences() recomputes the SOPs with the code that also computes their
   # derivatives. If these differ from the stored estimates (an edited
   # `estimate` column, or a bug in either path), the standard errors would
-  # belong to other numbers. The two paths agree to about 1e-14 on the test
-  # grid (measured Nov 2026), so 1e-10 relative leaves ample headroom; the
-  # 1e-12 absolute part covers estimates near 0.
+  # belong to other numbers.
   if (
     !is.numeric(object_estimate) ||
       !is.numeric(calculated_estimate) ||
       length(object_estimate) != length(calculated_estimate) ||
       any(!is.finite(object_estimate)) ||
       any(!is.finite(calculated_estimate)) ||
-      any(
-        abs(object_estimate - calculated_estimate) >
-          1e-12 + 1e-10 * pmax(abs(object_estimate), abs(calculated_estimate))
-      )
+      estimates_differ(object_estimate, calculated_estimate)
   ) {
     mostr_abort(
       "Analytical SOP replay did not reproduce the stored point estimates."
     )
   }
   index
+}
+
+# Whether estimates calculated again differ from the stored ones by more than
+# rounding. Two routes to the same estimate agree to about 1e-14 on the test
+# grid (measured Nov 2026), so 1e-10 relative leaves ample headroom and still
+# catches an edited estimate; the 1e-12 absolute part covers estimates near 0.
+estimates_differ <- function(calculated, stored) {
+  any(
+    abs(calculated - stored) >
+      1e-12 + 1e-10 * pmax(abs(calculated), abs(stored))
+  )
 }
 
 delta_align_coefficient_vcov <- function(result, coefficient_names) {
