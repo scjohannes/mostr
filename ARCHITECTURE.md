@@ -1043,8 +1043,11 @@ flowchart TD
   and applies `comparison_value()`. Rows are ordered by state set, comparison
   level, visit, then profile. Time benefit uses
   `time_benefit_profile_values()`, `comparison_scenario()`, and
-  `trapezoid_row_totals()` in `R/sops-comparisons-reduce.R`, which
-  `time_benefit_from_counterfactual_array()` also uses before averaging.
+  `trapezoid_row_totals()` in `R/sops-comparisons-reduce.R`. The averaged
+  time benefit of `avg_comparisons()` is this per-profile result followed by
+  `average_time_benefit()`, the mean over the profiles of each `by` group, for
+  the point estimate (`profile_tidy_reducer()`) and for every draw
+  (`profile_rows_from_stacked_sops()`).
 - The output keeps each profile's observed covariates and starting state; in
   `comparisons()` the compared variable keeps its observed value (the contrast
   spans the scenarios), while in `state_time()` it holds the scenario's value.

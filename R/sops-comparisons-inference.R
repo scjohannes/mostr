@@ -477,6 +477,9 @@ setup_from_avg_comparison_object <- function(object) {
   )
 }
 
+# The averaged time benefit of one stacked SOP array
+# [scenario x profile, time, state]: each profile's time benefit, as in
+# `comparisons()`, averaged over the profiles of each `setup$by` group.
 reduce_time_benefit_array_for_setup <- function(
   sops_array,
   setup,
@@ -487,49 +490,22 @@ reduce_time_benefit_array_for_setup <- function(
   baseline_time = 0,
   target_times = NULL
 ) {
-  if (!is.null(time_map)) {
-    ind <- time_benefit_sops_from_array(sops_array, setup)
-    target_times <- comparison_real_time_target_times(
-      ind,
-      time_map,
-      target_times,
-      baseline_time
-    )
-    ind <- interpolate_sops(
-      ind,
-      time_map = time_map,
-      target_times = target_times,
-      baseline_time = baseline_time
-    )
-    real_setup <- setup
-    real_setup$times <- sort(unique(ind$time))
-    real_setup$settings$y_levels <- markov_result_settings(ind)$y_levels
-    out <- reduce_time_benefit_sops_df(
-      data = as.data.frame(ind),
-      setup = real_setup,
-      comparison = comparison,
-      value_col = "estimate",
-      real_time = TRUE,
-      weights = weights,
-      time_unit = time_unit
-    )
-    return(out)
-  }
-
-  arr <- array(
-    NA_real_,
-    dim = c(setup$n_cf, setup$n_each, dim(sops_array)[2], dim(sops_array)[3])
-  )
-  for (cf_i in seq_len(setup$n_cf)) {
-    rows <- ((cf_i - 1L) * setup$n_each + 1L):(cf_i * setup$n_each)
-    arr[cf_i, , , ] <- sops_array[rows, , , drop = FALSE]
-  }
-  out <- time_benefit_from_counterfactual_array(
-    sops_array = arr,
-    setup = setup,
+  args <- list(
+    estimand = "time_benefit",
     comparison = comparison,
-    weights = weights,
-    real_time = FALSE
+    time_map = time_map,
+    baseline_time = baseline_time,
+    target_times = target_times
+  )
+  out <- average_time_benefit(
+    profile_rows_from_stacked_sops(
+      sops_array,
+      setup = setup,
+      reducer = profile_array_reducer("comparison", args),
+      args = args
+    ),
+    setup = setup,
+    weights = weights
   )
   if (!is.null(time_unit)) {
     out$time_unit <- time_unit
