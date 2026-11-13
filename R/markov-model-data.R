@@ -240,10 +240,15 @@ markov_model_variables <- function(model) {
   ) {
     return(NULL)
   }
-  variables <- unique(unlist(lapply(formulas, function(formula) {
-    all.vars(formula[[length(formula)]])
-  })))
-  if ("." %in% variables) {
+  # An object that only looks like a fit, such as a robcov_vglm without its
+  # vglm fit, can give an empty formula, whose right-hand side can't be read.
+  variables <- tryCatch(
+    unique(unlist(lapply(formulas, function(formula) {
+      all.vars(formula[[length(formula)]])
+    }))),
+    error = function(e) NULL
+  )
+  if (is.null(variables) || "." %in% variables) {
     return(NULL)
   }
   # rmsb::blrm() keeps `cluster(id)` out of its stored formula. The random

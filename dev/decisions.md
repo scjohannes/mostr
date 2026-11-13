@@ -12,6 +12,40 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-13: Check prediction rows where they enter the engines
+
+**Decided.** Prediction rows are checked and put in the form the model reads
+them in one helper, `prepare_prediction_rows()` (`R/sops-dispatch.R`), called
+by `predict_markov_sops()`, which every SOP route passes through, and by
+`compile_sop_execution_plan()`, which the analytical inference paths call
+directly. It refuses missing values in the columns the fitted formula uses
+(`stop_missing_predictors()`), and turns the previous-state columns into the
+model's fitted states and type (`fitted_state_values()`), refusing values
+that are not fitted states. `plot_lp_difference()` makes the same check on
+its `profile`. vglm designs are built with `na.action = na.pass` and refused
+when they hold a missing value (`vglm_prediction_design()`), as a second line
+of defence.
+
+**Why.** A missing covariate made vglm drop the row and return another
+profile's probabilities, and a profile factor with only its own states made
+the recursion's later previous states NA on every engine. The rows are
+checked after `variables` has set its columns, because a column that
+`variables` sets may be missing in `newdata` without harm. The previous-state
+columns are converted only in the rows handed to the engines, so the
+profile columns that results copy keep the user's types.
+
+**Decided against.**
+- Checking in `resolve_markov_source_data()`, where absorbing starts are
+  refused: it sees `newdata` before `variables` sets its columns, so it would
+  refuse `avg_comparisons(variables = "tx")` on profiles with a missing `tx`.
+  The cost is that the error counts prediction rows, which `variables`
+  multiplies, rather than the user's profiles.
+- Taking the type and levels from the model at each of the dozen places the
+  recursion builds a previous-state column: converting the starting rows once
+  fixes them all, and new engines can't miss it.
+- Converting the columns in the user's `newdata`: results copy the profile
+  columns, so a character `yprev` would come back as a factor.
+
 ## 2026-11-13: Remove the score bootstrap
 
 **Decided.** The score bootstrap, hidden from `inferences()` since 2026-11-09,

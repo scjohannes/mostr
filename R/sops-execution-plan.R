@@ -107,6 +107,7 @@ compile_sop_execution_plan <- function(
 ) {
   builder <- match.arg(builder)
   validate_markov_model(model)
+  newdata <- prepare_prediction_rows(model, newdata, settings)
   Gamma_template <- get_effective_coefs(model)
   validate_sop_threshold_count(Gamma_template, settings$y_levels)
   if (!is.null(settings$p2_var)) {
@@ -229,12 +230,7 @@ compile_second_order_execution_plan <- function(
     X <- if (inherits(model, "orm")) {
       orm_model_matrix(model, data, include_intercept = TRUE)
     } else {
-      stats::model.matrix(
-        terms,
-        data = data,
-        contrasts.arg = if (length(model@contrasts)) model@contrasts else NULL,
-        xlev = model@xlevels
-      )
+      vglm_prediction_design(model, data, terms)
     }
     missing <- setdiff(colnames(Gamma), colnames(X))
     if (length(missing) > 0L) {

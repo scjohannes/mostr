@@ -252,6 +252,28 @@
   The totals themselves are unchanged. `state_time()` and `avg_state_time()`
   were not affected.
 
+* A missing value in a column the model uses, in `newdata` or in the
+  `profile` of `plot_lp_difference()`, is now an error that names each such
+  column and counts its rows, for every engine. Before, `"vglm"` fits dropped
+  the row: with two profiles, the other profile's probabilities filled both
+  rows and were returned without a warning, and with other numbers of
+  profiles the call stopped with an error from base R. `"orm"` and `"blrm"`
+  fits stopped with an error about invalid probabilities that named no
+  column. Columns the model doesn't use may still hold missing values, and
+  so may a column that `variables` sets.
+
+* The previous-state column of `newdata` (and, for a second-order model, the
+  column with the state two visits back) may now be a factor with only the
+  profiles' own states, or integers or text, whatever type the model was
+  fitted with; predictions use the model's fitted states. Before, a factor
+  with fewer levels than the fit stopped `"orm"`, `"vglm"`, and `"blrm"`
+  fits with misleading errors about missing transition probabilities or
+  mismatched dimensions, and integers stopped `"vglm"` fits with "contrasts
+  apply only to factors". A value that is not a fitted state is now an error
+  that names the column for every engine; before, `"vglm"` stopped with an
+  error from base R, and a fit that reads the previous state as a number
+  predicted from it as if it were a state.
+
 * The robust variance of `"vglm"` fits now accepts or refuses a nearly
   singular covariance by the same rule as `"orm"` fits: it checks the
   correlation matrix, so the units of the covariates no longer matter. Before,
