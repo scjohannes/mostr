@@ -266,19 +266,7 @@ markov_inherit_engine <- function(model, source) {
 }
 
 markov_model_data <- function(model) {
-  data <- attr(model, "markov_data", exact = TRUE)
-  if (!is.null(data)) {
-    return(data)
-  }
-
-  if (inherits(model, "robcov_vglm") && !is.null(model$vglm_fit)) {
-    data <- attr(model$vglm_fit, "markov_data", exact = TRUE)
-    if (!is.null(data)) {
-      return(data)
-    }
-  }
-
-  NULL
+  markov_model_metadata_attr(model, "markov_data")
 }
 
 # The states that occur as the previous state in the data the model was fitted
@@ -295,23 +283,7 @@ markov_fitted_previous_states <- function(model, p_var) {
 }
 
 markov_model_id_var <- function(model, id_var = NULL) {
-  if (!is.null(id_var)) {
-    return(id_var)
-  }
-
-  out <- attr(model, "markov_id_var", exact = TRUE)
-  if (!is.null(out)) {
-    return(out)
-  }
-
-  if (inherits(model, "robcov_vglm") && !is.null(model$vglm_fit)) {
-    out <- attr(model$vglm_fit, "markov_id_var", exact = TRUE)
-    if (!is.null(out)) {
-      return(out)
-    }
-  }
-
-  NULL
+  id_var %||% markov_model_metadata_attr(model, "markov_id_var")
 }
 
 # The patient-ID column: `id_var` when given, otherwise the column named in the
@@ -328,6 +300,9 @@ markov_require_id_var <- function(model, id_var = NULL) {
   id_var
 }
 
+# What `mostm()` recorded on the fit under `name`. A `robcov_vglm` fit may
+# carry the record on the vglm fit inside it, so every reader of fit metadata
+# goes through here.
 markov_model_metadata_attr <- function(model, name) {
   value <- attr(model, name, exact = TRUE)
   if (!is.null(value)) {
