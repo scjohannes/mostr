@@ -491,7 +491,10 @@ describe("avg_sops() and inferences() pipeline", {
         draws = draw_signature(draws)
       ),
       style = "json2",
-      tolerance = 1e-7,
+      # The signatures are rounded to 8 decimals, so a value near 0.04 that
+      # rounds the other way on another platform moves by 2.5e-7 in relative
+      # terms; 1e-6 allows that last digit to flip.
+      tolerance = 1e-6,
       cran = TRUE
     )
   })
@@ -580,7 +583,10 @@ describe("avg_sops() and inferences() pipeline", {
         draws = draw_signature(draws)
       ),
       style = "json2",
-      tolerance = 1e-7,
+      # The signatures are rounded to 8 decimals, so a value near 0.04 that
+      # rounds the other way on another platform moves by 2.5e-7 in relative
+      # terms; 1e-6 allows that last digit to flip.
+      tolerance = 1e-6,
       cran = TRUE
     )
   })
