@@ -6,11 +6,8 @@
 \usage{
 inferences_simulation(
   object,
-  engine,
-  score_weight_dist,
   n_draws,
   vcov,
-  cluster,
   conf_level,
   conf_type,
   workers,
@@ -20,15 +17,9 @@ inferences_simulation(
 \arguments{
 \item{object}{A \code{markov_avg_sops} or \code{markov_sops} object.}
 
-\item{engine}{Simulation engine (\code{"mvn"} or \code{"score_bootstrap"}).}
-
-\item{score_weight_dist}{Cluster weight distribution for score bootstrap.}
-
 \item{n_draws}{Number of simulation draws.}
 
 \item{vcov}{Custom variance-covariance matrix (optional, overrides model vcov).}
-
-\item{cluster}{Row-level cluster vector for orm score bootstrap.}
 
 \item{conf_level}{Confidence level.}
 

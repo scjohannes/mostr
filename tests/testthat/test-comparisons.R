@@ -303,7 +303,7 @@ paired_sop_draws <- function(case, method, n_draws, seed, state = "1", ...) {
   hi <- case$profiles
   hi$tx <- 1
   # User-supplied profiles get no draw weights; that warning is expected.
-  inferred <- suppressWarnings(run_inferences_method(
+  inferred <- suppressWarnings(inferences(
     sops(case$model, newdata = rbind(lo, hi), times = 1:4, absorb = 3, ...),
     method = method,
     n_draws = n_draws,
@@ -340,11 +340,10 @@ test_that("draw-based intervals reduce each draw to paired profile comparisons",
   )
   for (setting in list(
     list(method = "mvn", n_draws = 8L, seed = 101),
-    list(method = "score_bootstrap", n_draws = 6L, seed = 102),
     list(method = "fwb", n_draws = 3L, seed = 103)
   )) {
     run <- function() {
-      run_inferences_method(
+      inferences(
         cmp,
         method = setting$method,
         n_draws = setting$n_draws,
@@ -368,7 +367,7 @@ test_that("draw-based intervals reduce each draw to paired profile comparisons",
     expect_equal(inferred$estimate, cmp$estimate)
     draws <- attr(inferred, "draws")
     expect_identical(nrow(draws), setting$n_draws * nrow(cmp))
-    expect_false(any(c("score_weight", "fwb_weight") %in% names(draws)))
+    expect_false("fwb_weight" %in% names(draws))
     expected <- paired_sop_draws(
       case,
       setting$method,
@@ -459,10 +458,9 @@ expect_comparisons_match_paired_sops <- function(case, ..., info = NULL) {
 
   for (setting in list(
     list(method = "mvn", n_draws = 5L, seed = 401),
-    list(method = "score_bootstrap", n_draws = 4L, seed = 402),
     list(method = "fwb", n_draws = 2L, seed = 403)
   )) {
-    inferred <- suppressWarnings(run_inferences_method(
+    inferred <- suppressWarnings(inferences(
       cmp,
       method = setting$method,
       n_draws = setting$n_draws,

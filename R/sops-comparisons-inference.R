@@ -4,7 +4,6 @@ inferences_avg_comparisons <- function(
   object,
   method,
   engine,
-  score_weight_dist,
   n_draws,
   vcov,
   cluster,
@@ -22,7 +21,6 @@ inferences_avg_comparisons <- function(
       object = object,
       method = method,
       engine = engine,
-      score_weight_dist = score_weight_dist,
       n_draws = n_draws,
       vcov = vcov,
       cluster = cluster,
@@ -38,10 +36,8 @@ inferences_avg_comparisons <- function(
     return(inferences_avg_comparisons_time_benefit_simulation(
       object = object,
       engine = engine,
-      score_weight_dist = score_weight_dist,
       n_draws = n_draws,
       vcov = vcov,
-      cluster = cluster,
       workers = workers,
       conf_level = conf_level,
       conf_type = conf_type,
@@ -66,7 +62,6 @@ inferences_avg_comparisons_linear <- function(
   object,
   method,
   engine,
-  score_weight_dist,
   n_draws,
   vcov,
   cluster,
@@ -154,7 +149,6 @@ restore_avg_comparison_inference_attrs <- function(result, object, inferred) {
     "conf_type",
     "method",
     "engine",
-    "score_weight_dist",
     "fwb_weight_type",
     "fwb_weight_scale",
     "draw_weights_attached",
@@ -172,10 +166,8 @@ restore_avg_comparison_inference_attrs <- function(result, object, inferred) {
 inferences_avg_comparisons_time_benefit_simulation <- function(
   object,
   engine,
-  score_weight_dist,
   n_draws,
   vcov,
-  cluster,
   workers,
   conf_level,
   conf_type,
@@ -192,25 +184,12 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
   setup <- setup_from_avg_comparison_object(object)
   args <- attr(object, "comparison_args")
   model <- attr(object, "model")
-  newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
 
-  simulation_draws <- generate_sop_coefficient_draws(
+  beta_draws <- generate_sop_coefficient_draws(
     model = model,
-    engine = engine,
-    score_weight_dist = score_weight_dist,
     n_draws = n_draws,
-    vcov = vcov,
-    cluster = cluster,
-    baseline_data = setup$baseline_data,
-    id_var = setup$settings$id_var,
-    newdata_supplied = newdata_supplied,
-    is_avg = TRUE,
-    return_draws = return_draws,
-    prediction_data = setup$newdata_pred,
-    attach_individual_weights = FALSE
+    vcov = vcov
   )
-  beta_draws <- simulation_draws$beta_draws
-  baseline_weights_draws <- simulation_draws$baseline_weights_draws
 
   analysis_fn <- function(i) {
     model_i <- set_coef(model, beta_draws[i, ])
@@ -230,16 +209,11 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
     if (is.null(sops_array)) {
       return(NULL)
     }
-    baseline_weights <- if (!is.null(baseline_weights_draws)) {
-      baseline_weights_draws[i, ]
-    } else {
-      NULL
-    }
     draw_i <- reduce_time_benefit_array_for_setup(
       sops_array = sops_array,
       setup = setup,
       comparison = args$comparison,
-      weights = baseline_weights,
+      weights = NULL,
       time_unit = args$time_unit,
       time_map = args$time_map,
       baseline_time = args$baseline_time,
@@ -257,8 +231,7 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
       "model",
       "beta_draws",
       "setup",
-      "args",
-      "baseline_weights_draws"
+      "args"
     )
   )
 
@@ -280,13 +253,7 @@ inferences_avg_comparisons_time_benefit_simulation <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       method = "mvn",
-      engine = engine,
-      score_weight_dist = if (engine == "score_bootstrap") {
-        score_weight_dist
-      } else {
-        NULL
-      },
-      draw_weight_omission_reason = simulation_draws$draw_weight_omission_reason
+      engine = engine
     )
   )
 }

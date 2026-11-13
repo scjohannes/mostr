@@ -488,20 +488,12 @@ test_that("draw weights let users average per-profile draws themselves", {
   cases <- list(
     setting("sops(), mvn", sops, avg_sops, sop_args, "mvn", 4L, 501,
       keys = sop_keys, profile = "rowidcf"),
-    setting("sops(), score bootstrap", sops, avg_sops, sop_args, "score_bootstrap",
-      4L, 502, "score_weight", sop_keys, "rowidcf"),
     setting("sops(), fwb", sops, avg_sops, sop_args, "fwb", 2L, 503, "fwb_weight",
       sop_keys, "rowidcf"),
     setting("sops() on stored profiles, mvn", sops, avg_sops, observed_args, "mvn",
       4L, 4211, keys = c("draw_id", "time", "state"), profile = "rowid"),
-    setting("sops() on stored profiles, score bootstrap", sops, avg_sops,
-      observed_args, "score_bootstrap", 4L, 4211, "score_weight",
-      c("draw_id", "time", "state"), "rowid"),
     setting("state_time(), mvn", state_time, avg_state_time, state_time_args,
       "mvn", 4L, 601, keys = c("draw_id", "tx"), profile = "rowidcf"),
-    setting("state_time(), score bootstrap", state_time, avg_state_time,
-      state_time_args, "score_bootstrap", 4L, 602, "score_weight",
-      c("draw_id", "tx"), "rowidcf"),
     setting("state_time(), fwb", state_time, avg_state_time, state_time_args,
       "fwb", 2L, 603, "fwb_weight", c("draw_id", "tx"), "rowidcf"),
     setting("comparisons(), real-time time in state, mvn", comparisons,
@@ -510,16 +502,13 @@ test_that("draw weights let users average per-profile draws themselves", {
     setting("comparisons(), real-time time benefit, mvn", comparisons,
       avg_comparisons, real_time_args("time_benefit"), "mvn", 6L, 202,
       keys = "draw_id", profile = "rowid"),
-    setting("comparisons(), score bootstrap", comparisons, avg_comparisons,
-      comparison_args, "score_bootstrap", 4L, 301, "score_weight",
-      c("draw_id", "time"), "rowid"),
     setting("comparisons(), fwb", comparisons, avg_comparisons, comparison_args,
       "fwb", 3L, 302, "fwb_weight", c("draw_id", "time"), "rowid")
   )
 
   for (row in cases) {
     infer <- function(fun) {
-      run_inferences_method(
+      inferences(
         do.call(fun, row$args),
         method = row$method,
         n_draws = row$n_draws,

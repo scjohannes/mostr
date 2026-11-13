@@ -607,7 +607,7 @@ repeat_anchor_for_draws <- function(
     anchor_i
   }))
 
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(draws))
+  weight_cols <- intersect("fwb_weight", names(draws))
   if (length(weight_cols) == 0L) {
     return(draw_anchor)
   }
@@ -665,7 +665,7 @@ interpolate_sop_draws <- function(
   )
   work <- bind_rows_fill(list(draw_anchor, work))
 
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(work))
+  weight_cols <- intersect("fwb_weight", names(work))
   group_cols <- setdiff(
     names(work),
     c("time", value_col, ".sop_real_time", weight_cols)
@@ -717,7 +717,7 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
   if (value_col != "estimate") {
     draws_for_ci$estimate <- draws_for_ci[[value_col]]
   }
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(draws))
+  weight_cols <- intersect("fwb_weight", names(draws))
   group_cols <- setdiff(names(draws), c(value_col, "draw_id", weight_cols))
   join_cols <- intersect(group_cols, names(result))
   point_estimates <- result[, c(join_cols, "estimate"), drop = FALSE]

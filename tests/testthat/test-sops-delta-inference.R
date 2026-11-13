@@ -784,11 +784,6 @@ test_that("delta vcov validates strings and does not silently change targets", {
     inferences(object, method = "delta", target = "empirical"),
     error = TRUE
   )
-  expect_error(
-    mostr:::inferences_score_bootstrap(object, vcov = "conditional"),
-    "Character `vcov` choices are only available with `method = \"delta\"`.",
-    fixed = TRUE
-  )
 })
 
 test_that("variance and covariance-matrix checks respect covariance units", {

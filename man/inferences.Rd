@@ -281,8 +281,8 @@ averaging each draw's comparisons with these weights reproduces the
 \code{\link[=avg_comparisons]{avg_comparisons()}} draws. \code{avg_sops()} uses the weights internally and
 returns already averaged draws.
 Prediction data for such per-profile draw output must not already contain a
-column named \code{fwb_weight} or \code{score_weight}, because those names are reserved
-for bootstrap draw weights.
+column named \code{fwb_weight}, because that name is reserved for bootstrap draw
+weights.
 
 For marginal \code{avg_sops()} objects built from user-supplied \code{newdata}, the
 supplied patients' starting states and covariates are treated as given.

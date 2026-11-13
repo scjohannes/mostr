@@ -634,7 +634,7 @@ test_that("individual bootstrap weights propagate through baseline interpolation
     lapply(1:2, function(draw_id) {
       draw <- x
       draw$draw_id <- draw_id
-      draw$score_weight <- c(0.25, 1.75)[draw$rowid]
+      draw$fwb_weight <- c(0.25, 1.75)[draw$rowid]
       draw
     })
   )
@@ -649,9 +649,9 @@ test_that("individual bootstrap weights propagate through baseline interpolation
   early <- out_draws[out_draws$time < 3, , drop = FALSE]
 
   expect_false(anyNA(early$estimate))
-  expect_false(anyNA(early$score_weight))
+  expect_false(anyNA(early$fwb_weight))
   expect_equal(
-    early$score_weight,
+    early$fwb_weight,
     c(0.25, 1.75)[early$rowid]
   )
   baseline <- early[early$time == 0, , drop = FALSE]

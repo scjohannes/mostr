@@ -114,7 +114,7 @@
 
 * `inferences()` no longer offers `method = "score_bootstrap"`; asking for it
   is an error. Use `method = "mvn"`, `"delta"`, `"bootstrap"`, or `"fwb"`
-  instead.
+  instead. The score bootstrap has been removed from the package entirely.
 
 * `inferences(method = "delta")` refuses unconditional variance for every
   model fitted with case weights (`mostm(weights = )`), whatever the engine,

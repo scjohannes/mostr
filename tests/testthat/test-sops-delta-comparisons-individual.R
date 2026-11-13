@@ -278,23 +278,4 @@ test_that("delta comparison inference keeps its restrictions", {
     ),
     fixed = TRUE
   )
-
-  # Comparisons for each profile are not averaged over patients, so a set
-  # starting state keeps the patient-weighted draw methods.
-  starts <- factor(c("1", "2"), levels = levels(case$profiles$yprev))
-  set_start <- comparisons(
-    case$model,
-    variables = list(yprev = starts),
-    estimand = "time_in_state",
-    state_sets = "1",
-    times = 1:4,
-    absorb = 3,
-    time_map = case$time_map
-  )
-  scored <- mostr:::inferences_score_bootstrap(
-    set_start,
-    n_draws = 3,
-    seed = 21
-  )
-  expect_true(all(is.finite(scored$std.error)))
 })

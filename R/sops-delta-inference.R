@@ -444,7 +444,6 @@ delta_finalize_result <- function(
     "n_boot",
     "n_successful",
     "engine",
-    "score_weight_dist",
     "fwb_weight_type",
     "fwb_weight_scale",
     "null",

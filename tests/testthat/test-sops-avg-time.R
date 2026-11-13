@@ -297,14 +297,14 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
     times = 1:3,
     state_sets = list(alive = 1:2, all = 1:3)
   )
-  for (method in c("mvn", "score_bootstrap", "bootstrap", "fwb")) {
-    inferred <- run_inferences_method(
+  for (method in c("mvn", "bootstrap", "fwb")) {
+    inferred <- inferences(
       avg,
       method = method,
       n_draws = 6,
       seed = 9322
     )
-    result <- run_inferences_method(
+    result <- inferences(
       total,
       method = method,
       n_draws = 6,
@@ -348,14 +348,14 @@ test_that("mapped resampling uses the baseline anchor of each draw", {
     time_map = c("1" = 4, "2" = 7),
     target_times = c(0, 4, 7)
   )
-  for (method in c("score_bootstrap", "bootstrap", "fwb")) {
-    inferred <- run_inferences_method(
+  for (method in c("bootstrap", "fwb")) {
+    inferred <- inferences(
       avg,
       method = method,
       n_draws = 6,
       seed = 9323
     )
-    result <- run_inferences_method(
+    result <- inferences(
       total,
       method = method,
       n_draws = 6,

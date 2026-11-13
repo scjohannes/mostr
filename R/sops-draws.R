@@ -138,7 +138,7 @@ compute_ci_from_draws <- function(
 #'     \item draw: Draw-specific estimate of the requested quantity
 #'     \item estimate: The original point estimate from the model
 #'     \item conf.low, conf.high, std.error: Summary statistics from the point estimate object
-#'     \item fwb_weight or score_weight: Optional draw-specific patient weight
+#'     \item fwb_weight: Optional draw-specific patient weight
 #'       for eligible stored-data `sops()` or [comparisons()] draws
 #'     \item Additional columns from the original object (covariates, etc.)
 #'   }

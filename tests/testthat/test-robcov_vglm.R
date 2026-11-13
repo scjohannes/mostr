@@ -904,60 +904,7 @@ test_that("observed bread supports proportional-odds deviation geometries", {
     expect_gte(min(eigen(robust$var, symmetric = TRUE)$values), -1e-10)
     expect_equal(all(is.finite(robust$se)), TRUE, info = label)
     expect_equal(all(robust$se > 0), TRUE, info = label)
-
-    draws <- generate_score_bootstrap_draws(
-      robust,
-      baseline_data = data.frame(id = seq_len(n_fit)),
-      id_var = "id",
-      n_draws = 1
-    )
-    expect_equal(
-      dim(draws$beta_draws),
-      c(1L, length(stats::coef(fit))),
-      info = label
-    )
   }
-})
-
-describe("Score bootstrap compatibility", {
-  it("uses the selected bread directly for one-step score updates", {
-    skip_if_not_installed("VGAM")
-
-    withr::local_seed(304)
-    n_clusters <- 30
-    n_per_cluster <- 4
-    n <- n_clusters * n_per_cluster
-    cluster <- rep(sprintf("id%02d", seq_len(n_clusters)), each = n_per_cluster)
-    x <- rnorm(n)
-    y <- rbinom(n, 1, plogis(-0.2 + 0.4 * x))
-    test_data <- data.frame(y = y, x = x, id = cluster)
-
-    m <- VGAM::vglm(y ~ x, family = VGAM::binomialff, data = test_data)
-    robust <- robcov_vglm(m, cluster = test_data$id, adjust = FALSE)
-    baseline_data <- data.frame(id = unique(test_data$id))
-
-    cluster_ids <- unique(as.character(robust$cluster))
-    scores_clustered <- rowsum(
-      robust$scores,
-      factor(as.character(robust$cluster), levels = cluster_ids),
-      reorder = FALSE
-    )
-
-    withr::local_seed(305)
-    w_cluster <- stats::rexp(length(cluster_ids), rate = 1)
-    U_star <- as.vector(crossprod(w_cluster - 1, scores_clustered))
-    expected_beta <- robust$coefficients + as.vector(robust$bread %*% U_star)
-
-    withr::local_seed(305)
-    draws <- generate_score_bootstrap_draws(
-      robust,
-      baseline_data = baseline_data,
-      id_var = "id",
-      n_draws = 1
-    )
-
-    expect_equal(unname(draws$beta_draws[1, ]), unname(expected_beta))
-  })
 })
 
 describe("Utility methods", {
