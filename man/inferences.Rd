@@ -290,6 +290,28 @@ This also applies to \code{sops(newdata = ...)}. FWB uses the
 data stored on the fitted model for refit uncertainty, but does
 not attach or apply draw weights to the supplied prediction profiles because
 those rows cannot be assumed to align with the bootstrap patients.
+
+This holds even when \code{newdata} holds the very patients the model was
+fitted to. Both calls below refit the model to resamples of the stored
+data, so both reflect the uncertainty of the coefficients; they differ in
+whom each draw predicts for:
+\itemize{
+\item \code{avg_sops(fit)} predicts, in each draw, the patients of that resample,
+so the draws also vary in which starting states and covariates are
+averaged over. Its intervals match unconditional variance.
+\item \code{avg_sops(fit, newdata = profiles)} predicts the same profiles in every
+draw, so their starting states and covariates are held fixed. Its
+intervals match conditional variance and are narrower.
+}
+
+In one simulated trial (200 patients, 400 draws) with \code{newdata} set to the
+fitted patients' own starting rows, the standard errors with \code{newdata} were
+a median of 0.82 times those without it, and 0.23 times for an early visit
+whose probability depends mostly on the starting state. Leave out \code{newdata}
+to include the variation between patients; supply it to describe fixed
+profiles. A profile that starts in a state that some resample lacks has
+no prediction in that draw, so \code{inferences()} then stops and suggests
+\code{method = "fwb"}.
 }
 
 \subsection{Starting values in refits}{

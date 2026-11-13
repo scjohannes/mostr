@@ -229,6 +229,11 @@
 
 ## Documentation
 
+* `?inferences` now explains that a bootstrap with `newdata`, even when it
+  holds the fitted patients themselves, keeps the profiles fixed: its
+  intervals match conditional variance and are narrower than those of the
+  same call without `newdata`, which match unconditional variance.
+
 * The new help page `?mostr_options` describes the options that limit memory
   use, their defaults, and when to change them. It replaces
   `?mostr.delta_max_bytes`, which now opens the same page.
