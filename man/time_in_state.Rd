@@ -52,7 +52,9 @@ columns. When stored draws are available, draw-based \code{conf.low},
 are retained in a \code{draws} attribute. Any draw-specific baseline anchors
 have already been propagated by \code{\link[=interpolate_sops]{interpolate_sops()}}. For SOPs from
 \code{inferences(method = "delta")}, \code{conf.low}, \code{conf.high}, and
-\code{std.error} are delta-method results for the totals. Tests from
+\code{std.error} are delta-method results for the totals. For SOPs with
+limits but neither draws nor delta-method results, these columns are
+\code{NA}. Tests from
 \code{inferences(null = )} are dropped, because a null value for
 probabilities does not apply to a total time.
 \item \strong{Input = Bootstrap DF:} A data frame with columns:
@@ -78,7 +80,9 @@ object, it returns grouped total time. Stored simulation, bootstrap, or
 posterior draws are reduced identically and used to recompute confidence
 intervals and standard errors. For SOPs from
 \code{inferences(method = "delta")}, standard errors and confidence limits of
-the totals are computed with the delta method; see Details.
+the totals are computed with the delta method; see Details. SOPs with
+confidence limits but no stored draws give totals with \code{NA} limits and
+a warning; see Details.
 \item \strong{Legacy Wide Bootstrap-Level:} If input is a data frame with
 \code{boot_id}, \code{time}, \code{tx}, and \verb{state_*} columns, it returns mean
 time-in-state per treatment group and the difference for each bootstrap
@@ -86,6 +90,19 @@ sample.
 }
 }
 \details{
+\subsection{SOPs with limits but no draws}{
+
+The confidence limits of a total cannot be computed from the limits of the
+SOPs it adds up, because those limits ignore how the SOPs vary together.
+\code{time_in_state()} therefore needs the draws behind them. Posterior SOPs from
+\code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}} keep their draws only with \code{return_draws = TRUE},
+and SOPs from \code{\link[=inferences]{inferences()}} keep them unless \code{return_draws = FALSE}.
+Without the draws, the totals are still computed from the estimates, but
+\code{conf.low}, \code{conf.high}, and \code{std.error} are \code{NA}, and a warning says which
+call to rerun. \code{\link[=state_time]{state_time()}} and \code{\link[=avg_state_time]{avg_state_time()}} compute posterior
+totals with their limits directly, without \code{return_draws = TRUE}.
+}
+
 \subsection{Delta-method uncertainty}{
 
 A total time is a weighted sum of SOPs: each visit counts once without

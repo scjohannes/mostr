@@ -161,6 +161,45 @@ stop_unsupported_markov_link <- function(link = NULL) {
   )
 }
 
+# The vglm design matrix of `newdata`, one row per row of `newdata`.
+# stats::model.matrix() given a data frame builds its model frame with the
+# default `na.action`, stats::na.omit(), which drops rows with a missing value
+# without a word; the recursion then matched the remaining rows' probabilities
+# to the wrong profiles. The frame is built with stats::na.pass() instead, and
+# a missing value in the design is refused. The public routes refuse missing
+# predictor values earlier, naming the column (`stop_missing_predictors()`);
+# this keeps any other route from returning shifted probabilities.
+vglm_prediction_design <- function(
+  model,
+  newdata,
+  terms = stats::delete.response(stats::terms(model))
+) {
+  frame <- stats::model.frame(
+    terms,
+    newdata,
+    na.action = stats::na.pass,
+    xlev = model@xlevels
+  )
+  X <- stats::model.matrix(
+    terms,
+    frame,
+    contrasts.arg = if (length(model@contrasts)) model@contrasts else NULL
+  )
+  if (anyNA(X)) {
+    columns <- colnames(X)[colSums(is.na(X)) > 0]
+    mostr_abort(
+      "The vglm design matrix has missing values in ",
+      sum(rowSums(is.na(X)) > 0),
+      " of the ",
+      nrow(X),
+      " prediction rows, in columns ",
+      paste0("`", columns, "`", collapse = ", "),
+      ". Supply prediction rows with a value of every column the model uses."
+    )
+  }
+  X
+}
+
 predict_vglm_response_markov <- function(object, newdata) {
   if (
     !isTRUE(attr(object, "markov_vglm")) &&
@@ -169,13 +208,7 @@ predict_vglm_response_markov <- function(object, newdata) {
     return(VGAM::predict(object, newdata, type = "response"))
   }
 
-  tt <- stats::delete.response(stats::terms(object))
-  X <- stats::model.matrix(
-    tt,
-    newdata,
-    contrasts.arg = if (length(object@contrasts)) object@contrasts else NULL,
-    xlev = object@xlevels
-  )
+  X <- vglm_prediction_design(object, newdata)
   attr(X, "assign") <- object@assign
 
   lm2vlm <- utils::getFromNamespace("lm2vlm.model.matrix", "VGAM")
@@ -713,6 +746,80 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
   labels
 }
 
+# `values` of the previous-state column `column` (`p_var`, or `p2_var` for the
+# state two visits back) in the form the model reads them, whatever their own
+# type or factor levels. The recursion builds the previous states of later
+# visits with the type and levels of the starting rows' column
+# (`make_previous_state_column()`), so a factor holding only the profiles' own
+# states turned every other state into NA: orm then stopped with an error
+# about missing transition probabilities, vglm with a dimension error from
+# src/sops.cpp. A column the model reads as a factor gets its fitted levels in
+# fitted order; one it reads as a number gets numbers; with neither recorded
+# (a fit without its metadata) a factor gets the fitted states as levels.
+# Values that are not fitted states are refused, naming the column, because
+# vglm would otherwise stop in stats::model.frame() ("factor yprev has new
+# levels 9") and blrm would predict from a state the model never saw.
+# Missing values are left for stop_missing_predictors().
+fitted_state_values <- function(model, values, column, states) {
+  labels <- as_state_labels(values)
+  fitted <- markov_model_refit_data(model)[[column]]
+  levels <- get_model_factor_levels(model, column) %||%
+    (if (is.factor(fitted)) levels(fitted))
+  allowed <- levels %||% as_state_labels(states)
+  unknown <- !is.na(values) & !labels %in% allowed
+  if (any(unknown)) {
+    shown <- unique(labels[unknown])
+    mostr_abort(
+      "`",
+      column,
+      "` holds ",
+      paste(utils::head(shown, 5L), collapse = ", "),
+      if (length(shown) > 5L) ", ...",
+      " in ",
+      sum(unknown),
+      " of the ",
+      length(values),
+      " prediction rows, which ",
+      if (length(shown) == 1L) "is not a state" else "are not states",
+      " the model can predict from. The states of `",
+      column,
+      "` in the fitted model are ",
+      paste(allowed, collapse = ", "),
+      "."
+    )
+  }
+  if (!is.null(levels)) {
+    return(factor(
+      labels,
+      levels = levels,
+      ordered = is.ordered(if (is.null(fitted)) values else fitted)
+    ))
+  }
+  if (is.numeric(fitted) && !is.numeric(values)) {
+    return(if (is.integer(fitted)) as.integer(labels) else as.numeric(labels))
+  }
+  if (is.null(fitted) && is.factor(values)) {
+    return(factor(labels, levels = allowed, ordered = is.ordered(values)))
+  }
+  values
+}
+
+# The prediction rows with their previous-state columns in the form the model
+# reads them (`fitted_state_values()`).
+normalize_prediction_states <- function(model, data, settings) {
+  for (column in c(settings$p_var, settings$p2_var)) {
+    if (column %in% names(data)) {
+      data[[column]] <- fitted_state_values(
+        model,
+        data[[column]],
+        column,
+        settings$y_levels
+      )
+    }
+  }
+  data
+}
+
 make_previous_state_column <- function(states, prototype, n, p_var) {
   values <- coerce_previous_state_values(states, prototype, p_var)
   rep(values, each = n)
@@ -740,12 +847,13 @@ get_model_factor_levels <- function(model, varname) {
   }
 
   if (inherits(model_chk, c("orm", "blrm"))) {
-    parms <- tryCatch(
-      model_chk$Design$parms,
-      error = function(e) NULL
-    )
-    if (!is.null(parms[[varname]])) {
-      return(as.character(parms[[varname]]))
+    design <- tryCatch(model_chk$Design, error = function(e) NULL)
+    # rms keeps other settings in `parms` too, such as the knots of
+    # rcs(yprev, 4), which are not levels. Only categorical terms (the codes
+    # that normalize_orm_prediction_data() turns into factors) have levels.
+    categorical <- design$name[design$assume.code %in% c(5L, 8L)]
+    if (varname %in% categorical && !is.null(design$parms[[varname]])) {
+      return(as.character(design$parms[[varname]]))
     }
   }
 

@@ -670,6 +670,43 @@ first-order start in an absorbing state was predicted from a previous state the
 model never saw, and the second-order engines kept such a patient in the
 absorbing state.
 
+### Prediction rows
+
+Rows enter the engines through `prepare_prediction_rows()` in
+`R/sops-dispatch.R`, called by `predict_markov_sops()` (every SOP route:
+the public SOP, time and comparison functions, `soprob_markov()`, and the
+bootstrap, draw and comparison replays) and by `compile_sop_execution_plan()`
+(also called directly by the analytical inference paths on the rows of an
+earlier result). It runs after `stop_absorbing_start()` and after
+`variables` has set its columns, so a column that `variables` sets may be
+missing in `newdata`. It does two things:
+
+- `stop_missing_predictors()` refuses missing values in the columns the
+  fitted formula uses (`markov_model_variables()`), naming each column and
+  counting its prediction rows. The time, gap and ID columns are left out:
+  the recursion sets the first two at every visit, and the ID only looks up
+  blrm random effects. Columns the model does not use are not checked, and
+  nor is a model whose columns cannot be read. `plot_lp_difference()` runs
+  the same check on its `profile`, leaving out the columns its grid sets.
+- `normalize_prediction_states()` puts `p_var` and `p2_var` in the form the
+  model reads them (`fitted_state_values()` in `R/sops-backends.R`): a factor
+  with the fitted levels in fitted order (`get_model_factor_levels()`, which
+  reads orm and blrm levels only for categorical terms, because
+  `Design$parms` also holds the knots of terms such as `rcs(yprev, 4)`), or
+  numbers when the model reads the column as a number, whatever the type or
+  levels of the user's column. Values that are not fitted states are refused,
+  naming the column. The recursion builds the previous states of later visits
+  with the type and levels of these starting rows
+  (`make_previous_state_column()`), so before this a factor with only the
+  profiles' own states turned the other states into NA.
+
+Only the rows handed to the engines are converted; the profile columns copied
+into results keep the user's types. vglm designs are built by
+`vglm_prediction_design()`, with `na.action = na.pass` and an error for a
+missing value in the design, because `stats::model.matrix()` on a data frame
+drops such rows and the remaining probabilities would be matched to the
+wrong profiles.
+
 ### Crossed thresholds
 
 In a partial proportional-odds model (`"vglm"` with `parallel = FALSE ~ ...`,
@@ -907,6 +944,18 @@ starting-state term adds each patient's influence as in
 Rows are matched to the stored derivatives by row key, and the weights must
 reproduce the reported totals. Delta SOPs already passed through
 `interpolate_sops()` are refused.
+
+Other tidy SOPs get the limits of their totals from stored draws
+(`time_in_state_tidy_inference()` reduces each draw and calls
+`compute_ci_from_draws()`). SOPs with `conf.low`, `conf.high`, or `std.error`
+but no draw table (`sop_has_draw_table()`), such as posterior SOPs with
+`return_draws = FALSE` or SOPs from `inferences(return_draws = FALSE)`, go
+through `time_in_state_without_draws()`: the totals keep those columns as `NA`
+and a warning names `return_draws = TRUE`, because limits of a sum cannot be
+computed from the limits of its terms. With `time_map`, such SOPs lose their
+interval columns (`sop_point_estimates()`) before `interpolate_sops()`, so its
+warning about interpolating interval endpoints is not raised for values that
+would be discarded.
 
 `sops(variables = ...)` predicts each profile once per combination of values,
 as marginaleffects' `predictions()`: `stack_prediction_profiles()` stacks the

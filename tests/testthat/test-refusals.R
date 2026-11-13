@@ -865,21 +865,11 @@ prediction_refusals <- list(
       )
     },
     "`previous_states` includes state(s) that never occur in `yprev`"
-  ),
-  refusal(
-    "P55", "a linear-predictor plot of a profile missing factor levels of yprev",
-    function() {
-      profile <- grid_profiles(refusal_vglm)[1, , drop = FALSE]
-      profile$yprev <- factor(as.character(profile$yprev))
-      plot_lp_difference(
-        grid_fit(refusal_vglm),
-        profile = profile,
-        variables = list(tx = c(0, 1)),
-        times = 1:4
-      )
-    },
-    "The model returned linear predictors for 8 of the 24 plotted rows"
   )
+  # P55, a linear-predictor plot of a profile whose factor `yprev` has only its
+  # own level, was refused here because vglm silently dropped the rows it could
+  # not predict. Such profiles now take the fitted states and are plotted; see
+  # test-sops-prediction-rows.R.
 )
 
 test_that("SOP and summary functions refuse what they cannot compute", {

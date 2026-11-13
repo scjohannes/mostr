@@ -12,6 +12,40 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-13: Check prediction rows where they enter the engines
+
+**Decided.** Prediction rows are checked and put in the form the model reads
+them in one helper, `prepare_prediction_rows()` (`R/sops-dispatch.R`), called
+by `predict_markov_sops()`, which every SOP route passes through, and by
+`compile_sop_execution_plan()`, which the analytical inference paths call
+directly. It refuses missing values in the columns the fitted formula uses
+(`stop_missing_predictors()`), and turns the previous-state columns into the
+model's fitted states and type (`fitted_state_values()`), refusing values
+that are not fitted states. `plot_lp_difference()` makes the same check on
+its `profile`. vglm designs are built with `na.action = na.pass` and refused
+when they hold a missing value (`vglm_prediction_design()`), as a second line
+of defence.
+
+**Why.** A missing covariate made vglm drop the row and return another
+profile's probabilities, and a profile factor with only its own states made
+the recursion's later previous states NA on every engine. The rows are
+checked after `variables` has set its columns, because a column that
+`variables` sets may be missing in `newdata` without harm. The previous-state
+columns are converted only in the rows handed to the engines, so the
+profile columns that results copy keep the user's types.
+
+**Decided against.**
+- Checking in `resolve_markov_source_data()`, where absorbing starts are
+  refused: it sees `newdata` before `variables` sets its columns, so it would
+  refuse `avg_comparisons(variables = "tx")` on profiles with a missing `tx`.
+  The cost is that the error counts prediction rows, which `variables`
+  multiplies, rather than the user's profiles.
+- Taking the type and levels from the model at each of the dozen places the
+  recursion builds a previous-state column: converting the starting rows once
+  fixes them all, and new engines can't miss it.
+- Converting the columns in the user's `newdata`: results copy the profile
+  columns, so a character `yprev` would come back as a factor.
+
 ## 2026-11-13: Remove the score bootstrap
 
 **Decided.** The score bootstrap, hidden from `inferences()` since 2026-11-09,
@@ -117,6 +151,41 @@ execution plans, delta method, bootstrap replays and diagnostic traces all
 had to carry. Refusing `ns()`, `bs()` and `poly()` only on the time variable:
 the measurement showed the same wrong answer for any covariate. Changing the
 fit when the warning fires: the user decides whether the state is absorbing.
+
+## 2026-11-13: One positive-definiteness rule for the orm and vglm robust variance
+
+**Decided.** `orm_model_bread()` and the vglm checks of `vcov(fit)`, the
+chosen bread and the observed information use one helper,
+`markov_correlation_positive_definite()` in `R/robcov_orm.R`. It refuses a
+matrix with a non-positive diagonal entry and otherwise checks the
+correlation matrix: the smallest eigenvalue must exceed p * 1e-10 * max(1,
+largest), the orm rule. `robcov_vglm()` now inverts `vcov(fit)` with
+`chol2inv(chol())` instead of `solve()`.
+
+**Why.** vglm checked the raw matrix with tolerance 100 * eps * p * max(1,
+largest), so the two engines disagreed (measured with 3 coefficients):
+
+- a covariance with correlation eigenvalues 2.07 and 1.3e-11 (built from
+  eigenvalues 2, 1 - 1e-11 and 1e-11): orm refused, vglm accepted;
+- `diag(1e-16, 3)`: orm accepted, vglm refused, although its correlation
+  matrix is the identity.
+
+On a real fit (40 simulated patients, `ordered(y) ~ time + tx + yprev + bmi`,
+12 coefficients) the smallest correlation eigenvalue of `vcov(fit)` is 0.0039,
+5e5 times above the cut-off, and it stays there when `bmi` is multiplied by
+1e-6 or 1e6; the old raw rule refused both. With `bmi` multiplied by 1e-6 the
+vglm fit now works and its conditional delta standard errors match the unit
+scale to a relative 1e-10. With `bmi` multiplied by 1e6, `solve()` refused
+`vcov(fit)` (reciprocal condition number 2e-18 on the raw scale), hence the
+Cholesky inverse; that fit still stops, now at the observed information,
+because the finite-difference step of the observed bread,
+eps^(1/3) * max(1, |coefficient|), is 6e-6 for a coefficient of 1e-7 and moves
+the linear predictor by up to 157. That step is a separate problem, not changed
+here.
+
+**Decided against.** Keeping the raw rule for vglm: it makes the result depend
+on the units of the covariates. Two separate copies of the correlation rule:
+the two had already drifted apart once.
 
 ## 2026-11-12: Keep the blrm options as separate arguments
 

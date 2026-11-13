@@ -72,6 +72,7 @@ predict_markov_sops <- function(
   # profiles; this also covers direct calls and `variables` that set the
   # previous state.
   stop_absorbing_start(newdata, settings, source = "rows")
+  newdata <- prepare_prediction_rows(model, newdata, settings)
   run_r_engine <- function() {
     soprob_markov_r_engine(
       model = model,
@@ -246,6 +247,71 @@ stop_absorbing_start <- function(
     )
   }
   invisible(NULL)
+}
+
+# Every column the model uses needs a value in every prediction row. Without
+# this check a missing value reached the engines: vglm's
+# stats::model.matrix() dropped the row, so with two profiles the other
+# profile's probabilities filled both rows and were returned without a word,
+# and orm and blrm stopped with errors about invalid probabilities that named
+# no column. The columns are those of the fitted formula
+# (`markov_model_variables()`); a model whose columns can't be read is not
+# checked, and columns the model doesn't use may hold missing values. The visit
+# time and the gap since the last visit are set at every step of the recursion
+# (`assign_sop_visit()`), and the patient ID only looks up blrm random
+# effects, so missing values there never reach a prediction. `set_columns`
+# names further columns the caller replaces before predicting, and `data_arg`
+# the argument the rows came from, for the advice.
+stop_missing_predictors <- function(
+  model,
+  data,
+  settings,
+  set_columns = character(),
+  data_arg = "newdata"
+) {
+  used <- markov_model_variables(model)
+  if (is.null(used) || !is.data.frame(data) || nrow(data) == 0L) {
+    return(invisible(NULL))
+  }
+  columns <- setdiff(
+    intersect(used, names(data)),
+    c(settings$time_var, settings$gap_var, settings$id_var, set_columns)
+  )
+  counts <- vapply(
+    columns,
+    function(column) {
+      missing <- is.na(data[[column]])
+      if (!is.null(dim(missing))) {
+        missing <- rowSums(missing) > 0
+      }
+      sum(missing)
+    },
+    numeric(1)
+  )
+  counts <- counts[counts > 0]
+  if (length(counts) == 0L) {
+    return(invisible(NULL))
+  }
+  mostr_abort(
+    "The model's predictors have missing values: ",
+    paste0("`", names(counts), "` in ", counts, collapse = ", "),
+    " of the ",
+    nrow(data),
+    " prediction rows. Predictions need a value of every column the model ",
+    "uses; fill in those values or remove those rows from `",
+    data_arg,
+    "`."
+  )
+}
+
+# The rows the engines predict from, checked and with their previous states
+# in the form the model reads them. Both are needed wherever prediction rows
+# enter an engine: `predict_markov_sops()`, which every SOP route passes
+# through, and `compile_sop_execution_plan()`, which the analytical inference
+# paths call directly on the rows of an earlier result.
+prepare_prediction_rows <- function(model, data, settings) {
+  stop_missing_predictors(model, data, settings)
+  normalize_prediction_states(model, data, settings)
 }
 
 validate_fast_previous_state_support <- function(model, settings) {

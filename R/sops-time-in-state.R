@@ -93,13 +93,69 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
   out
 }
 
-time_in_state_tidy_inference <- function(x, target_states, real_time) {
-  result <- time_in_state_tidy(x, target_states, real_time = real_time)
+# Whether `x` stores its draws in a table with a `draw_id` column, from which
+# the limits of any total of its SOPs can be recomputed.
+sop_has_draw_table <- function(x) {
   draws <- attr(x, "draws")
-  if (is.null(draws) || !is.data.frame(draws) || !"draw_id" %in% names(draws)) {
+  is.data.frame(draws) && "draw_id" %in% names(draws)
+}
+
+# The uncertainty columns that the totals of SOPs with draws carry, in that
+# order.
+time_in_state_uncertainty_cols <- function(x) {
+  intersect(c("conf.low", "conf.high", "std.error"), names(x))
+}
+
+# `x` without its uncertainty and test columns, so that its totals come from
+# the estimates alone.
+sop_point_estimates <- function(x) {
+  for (column in setdiff(inference_columns(), "estimate")) {
+    x[[column]] <- NULL
+  }
+  x
+}
+
+# Totals of SOPs that have limits but no draws: posterior SOPs from `sops()`
+# or `avg_sops()` with `return_draws = FALSE`, or SOPs from
+# `inferences(return_draws = FALSE)`. The limits of a sum cannot be computed
+# from the limits of its terms, which ignore how the SOPs vary together, so the
+# totals get NA limits and a warning instead of losing the columns silently.
+# `source` is the SOPs as the user passed them, before any interval columns
+# were dropped for interpolation.
+time_in_state_without_draws <- function(result, source) {
+  columns <- time_in_state_uncertainty_cols(source)
+  if (length(columns) == 0L) {
     return(result)
   }
+  rerun <- if (identical(attr(source, "method"), "posterior")) {
+    paste0(
+      "rerun `sops()` or `avg_sops()` with `return_draws = TRUE`, or use ",
+      "`state_time()` or `avg_state_time()`."
+    )
+  } else {
+    "rerun `inferences()` with `return_draws = TRUE`."
+  }
+  warning(
+    "`time_in_state()` found uncertainty columns but no stored draws, and ",
+    "the limits of a total cannot be computed from the limits of its SOPs. ",
+    "The totals have NA `",
+    paste(columns, collapse = "`, `"),
+    "`. To compute them, ",
+    rerun,
+    call. = FALSE
+  )
+  for (column in columns) {
+    result[[column]] <- rep(NA_real_, nrow(result))
+  }
+  result
+}
 
+time_in_state_tidy_inference <- function(x, target_states, real_time, source = x) {
+  result <- time_in_state_tidy(x, target_states, real_time = real_time)
+  if (!sop_has_draw_table(x)) {
+    return(time_in_state_without_draws(result, source))
+  }
+  draws <- attr(x, "draws")
   draws <- draws[draws$time %in% x$time, , drop = FALSE]
   draw_result <- time_in_state_tidy(
     draws,
@@ -168,10 +224,7 @@ time_in_state_delta <- function(
   # The totals come from the estimates alone. Without the interval columns,
   # `interpolate_sops()` does not warn that it interpolates interval endpoints,
   # which are replaced below.
-  point <- x
-  for (column in setdiff(inference_columns(), "estimate")) {
-    point[[column]] <- NULL
-  }
+  point <- sop_point_estimates(x)
   result <- if (is.null(time_map)) {
     time_in_state_tidy(point, target_states, real_time = FALSE)
   } else {
@@ -435,7 +488,9 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     posterior draws are reduced identically and used to recompute confidence
 #'     intervals and standard errors. For SOPs from
 #'     `inferences(method = "delta")`, standard errors and confidence limits of
-#'     the totals are computed with the delta method; see Details.
+#'     the totals are computed with the delta method; see Details. SOPs with
+#'     confidence limits but no stored draws give totals with `NA` limits and
+#'     a warning; see Details.
 #'   \item **Legacy Wide Bootstrap-Level:** If input is a data frame with
 #'     `boot_id`, `time`, `tx`, and `state_*` columns, it returns mean
 #'     time-in-state per treatment group and the difference for each bootstrap
@@ -477,7 +532,9 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #'     are retained in a `draws` attribute. Any draw-specific baseline anchors
 #'     have already been propagated by [interpolate_sops()]. For SOPs from
 #'     `inferences(method = "delta")`, `conf.low`, `conf.high`, and
-#'     `std.error` are delta-method results for the totals. Tests from
+#'     `std.error` are delta-method results for the totals. For SOPs with
+#'     limits but neither draws nor delta-method results, these columns are
+#'     `NA`. Tests from
 #'     `inferences(null = )` are dropped, because a null value for
 #'     probabilities does not apply to a total time.
 #'   \item **Input = Bootstrap DF:** A data frame with columns:
@@ -490,6 +547,18 @@ time_in_state_bootstrap_df <- function(sops, target_states, real_time = FALSE) {
 #' }
 #'
 #' @details
+#' ## SOPs with limits but no draws
+#'
+#' The confidence limits of a total cannot be computed from the limits of the
+#' SOPs it adds up, because those limits ignore how the SOPs vary together.
+#' `time_in_state()` therefore needs the draws behind them. Posterior SOPs from
+#' [sops()] or [avg_sops()] keep their draws only with `return_draws = TRUE`,
+#' and SOPs from [inferences()] keep them unless `return_draws = FALSE`.
+#' Without the draws, the totals are still computed from the estimates, but
+#' `conf.low`, `conf.high`, and `std.error` are `NA`, and a warning says which
+#' call to rerun. [state_time()] and [avg_state_time()] compute posterior
+#' totals with their limits directly, without `return_draws = TRUE`.
+#'
 #' ## Delta-method uncertainty
 #'
 #' A total time is a weighted sum of SOPs: each visit counts once without
@@ -637,16 +706,20 @@ time_in_state <- function(
         target_times,
         baseline_time
       )
-      sops <- interpolate_sops(
-        sops,
+      # Without draws the totals get NA limits, so the interval columns are
+      # dropped first: `interpolate_sops()` would otherwise warn that it
+      # interpolates interval endpoints, which would then be discarded.
+      interpolated <- interpolate_sops(
+        if (sop_has_draw_table(sops)) sops else sop_point_estimates(sops),
         time_map = time_map,
         target_times = target_times,
         baseline_time = baseline_time
       )
       return(time_in_state_tidy_inference(
-        sops,
+        interpolated,
         target_states,
-        real_time = TRUE
+        real_time = TRUE,
+        source = sops
       ))
     }
     return(time_in_state_tidy_inference(

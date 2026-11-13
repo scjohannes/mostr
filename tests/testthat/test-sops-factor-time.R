@@ -687,6 +687,67 @@ test_that("time_in_state restricts stored draws to the requested time range", {
   expect_equal(result$std.error, c(0.2, 0.2))
 })
 
+test_that("time_in_state() gives NA limits and one warning for SOPs with limits but no draws", {
+  # SOPs from `inferences(return_draws = FALSE)` (here method "mvn") or from
+  # posterior `sops()` without draws. The limits of a total cannot be added up
+  # from the limits of its SOPs, so they must come out NA, with a warning that
+  # names the argument that keeps the draws, and never be dropped silently.
+  collect_warnings <- function(expr) {
+    warnings <- character()
+    value <- withCallingHandlers(expr, warning = function(w) {
+      warnings <<- c(warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+    list(value = value, warnings = warnings)
+  }
+  point <- make_interpolation_case()
+  time_map <- c(v1 = 3, v2 = 7)
+  for (method in c("mvn", "posterior")) {
+    x <- add_interpolation_intervals(point)
+    attr(x, "method") <- method
+    calls <- list(
+      visits = function(sops) time_in_state(sops, target_states = "1"),
+      real_time = function(sops) {
+        time_in_state(sops, target_states = "1", time_map = time_map)
+      },
+      interpolated = function(sops) {
+        interpolated <- suppressWarnings(
+          interpolate_sops(sops, time_map = time_map, target_times = 0:7)
+        )
+        time_in_state(interpolated, target_states = "1")
+      }
+    )
+    for (label in names(calls)) {
+      info <- paste(method, label)
+      result <- collect_warnings(calls[[label]](x))
+      # One warning: with `time_map`, `interpolate_sops()` must not also
+      # announce interval endpoints that are then discarded.
+      expect_length(result$warnings, 1L)
+      expect_match(result$warnings, "return_draws = TRUE", fixed = TRUE, info = info)
+      expect_no_match(result$warnings, "interval endpoints", fixed = TRUE, info = info)
+      # The call to rerun is the one that computed the limits.
+      rerun <- if (method == "posterior") "`avg_sops()`" else "`inferences()`"
+      expect_match(result$warnings, rerun, fixed = TRUE, info = info)
+      totals <- result$value
+      expect_identical(
+        intersect(c("total_time", "conf.low", "conf.high", "std.error"), names(totals)),
+        c("total_time", "conf.low", "conf.high", "std.error"),
+        info = info
+      )
+      for (column in c("conf.low", "conf.high", "std.error")) {
+        expect_true(all(is.na(totals[[column]])), info = paste(info, column))
+      }
+      # The totals are those of the SOPs without any limits.
+      expected <- calls[[label]](point)
+      expect_equal(totals$total_time, expected$total_time, info = info)
+    }
+  }
+
+  # SOPs without limits give totals without limits and no warning.
+  expect_no_warning(totals <- time_in_state(point, target_states = "1"))
+  expect_false(any(c("conf.low", "conf.high", "std.error") %in% names(totals)))
+})
+
 test_that("time_in_state uses trapezoidal AUC on mapped real time", {
   x <- make_interpolation_case()
 
