@@ -103,6 +103,7 @@ flowchart TD
 | Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`, `violet_baseline`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
+| Unobserved states | `R/missing-states-plan.R`, `R/missing-states-fit.R`, `R/missing-states-blrm.R`, `src/paths.cpp`, `inst/stan/po_paths.stan` | `markov_state_ranges` (the response as a range of states per row, `Ocens()` read by mostr), `markov_path_plan` (which rows form stretches, de-duplicated), `cpp_path_loglik` (likelihood, score, Hessian), `mostm_fit_orm_paths`, `mostm_fit_blrm_paths`, `robcov_orm_paths`; see "Unobserved states" below |
 | Settings | `R/markov-settings.R` | `markov_settings` (validating constructor), `markov_model_settings` (a fit's settings), `resolve_markov_settings` (a public call's settings), `markov_result_settings` (a result's settings); see "Settings" below |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
 | Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `R/sops-crossed-thresholds.R`, `src/sops.cpp` | Native propagation, with an engine in R for `blrm` and oversized designs; first- and second-order histories; errors for crossed thresholds |
@@ -514,6 +515,101 @@ called first in every public function with the argument (`sops()`,
 `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
 `avg_comparisons()`, and `soprob_markov()`) and stops for any other fit,
 instead of letting the frequentist paths ignore it.
+
+### Unobserved states
+
+A visit's state is observed, known to lie in a range (`Ocens(lower, upper)`
+as the response), or unknown (`NA`). `mostm()` reads the response with
+`markov_state_ranges()` (`R/missing-states-plan.R`) before fitting. If no
+fitted row has an unobserved state or previous state, nothing below runs and
+the fit is the engine's own, unchanged. Otherwise `missing_states` decides
+(`mostm_missing_states_method()`): `"average"` (default for orm and blrm)
+fits the path likelihood; `"drop"` fits the fully observed transitions;
+vglm has only `"drop"` and stops unless it is asked for.
+
+**Likelihood.** For a first-order model with transition probabilities
+`P(z_t | z_{t-1}, x_t)`, a patient contributes the ordinary probability of
+each transition whose state and previous state are both observed, and, for
+each *stretch*, the sum over all state sequences inside the allowed ranges:
+
+`f = sum over z_1..z_T, z_t in [lo_t, hi_t], of P(z_1 | known previous state) * P(z_2 | z_1) * ... * P(z_T | z_{T-1})`
+
+A stretch is a run of consecutive rows of a patient without an exactly
+observed state, together with the first exactly observed row after it, if
+any. `NA` means the range of non-absorbing states: absorbing states are
+taken as always recorded, so a patient is alive during a gap whether they are
+seen alive or die afterwards, and a gap up to the patient's last row
+contributes the probability of not being absorbed. From an absorbing state
+inside a range the transition is the identity. Trailing steps whose range is
+every state are removed, because they contribute a factor of 1. The sum is
+valid for inference when states are missing at random.
+
+```mermaid
+flowchart TD
+    A[mostm: markov_state_ranges] --> B{unobserved states and missing_states = average?}
+    B -->|no| C[engine fit as before]
+    B -->|yes| D[engine fit to fully observed transitions: structure and starting values]
+    D --> E[markov_path_plan: stretches, design rows per step and previous state, de-duplicated]
+    E --> F{engine}
+    F -->|orm| G[markov_path_maximise: Newton-Raphson on cpp_path_loglik]
+    F -->|blrm| H[markov_path_stan_model: sample inst/stan/po_paths.stan]
+    G --> I[orm object with new coefficients, information, patient scores]
+    H --> J[blrm object with new draws]
+    I --> K[robcov_orm_paths: sandwich from patient scores]
+```
+
+- `markov_path_plan()` sorts rows by patient and time and requires the rows
+  of a patient to be consecutive visits: the previous state must be `NA`
+  exactly on rows that follow a row without an exactly observed state.
+  Leading rows of a patient before any known previous state are not used.
+  A first step of a stretch has one design row; a later step has one design
+  row for each non-absorbing state in the range of the step before it, built
+  by setting `p_var` to that state. Design rows that are equal are stored
+  once (`x_gap`), and stretches with the same design rows and ranges are
+  stored once with the summed weight of their patients, so the cost grows
+  with the number of distinct stretches.
+- `cpp_path_loglik()` (`src/paths.cpp`) returns the log-likelihood, the score
+  of the observed transitions summed by patient, the score of each distinct
+  stretch, and the exact Hessian. Observed transitions use the closed-form
+  proportional-odds derivatives. A stretch carries the vector of state
+  probabilities forward one visit at a time together with its first and
+  second derivatives with respect to the coefficients; paths are never
+  listed. Indices are 1-based.
+- orm: the model structure (design columns, knots, factor levels, state
+  labels) and the starting values come from `rms::orm()` on the fully
+  observed transitions, so every state must occur there
+  (`markov_check_observed_states()`). `markov_path_maximise()` iterates
+  Newton-Raphson with step halving. The result is that `orm` object with new
+  `coefficients`, `info.matrix` (rms's list form), `deviance` and
+  `linear.predictors`; statistics rms computed for the other fit are set to
+  `NA`. `fit$x` and `fit$y`, and the stored `markov_data`, hold the fully
+  observed transitions only. `attr(fit, "markov_path_fit")` holds the patient
+  IDs, one score row per patient, the information matrix and counts.
+- Covariance: a stretch has one likelihood term for all its rows, so scores
+  can't be rebuilt row by row. `robcov_orm_paths()` builds the
+  patient-clustered sandwich from the stored patient scores and writes it in
+  the form `robcov_orm()` uses; `get_delta_score_components()` returns the
+  stored scores for unconditional variance. A `cluster` other than the fit's
+  patients is refused (`stop_path_fit_cluster()`).
+- blrm: `rmsb::blrm()` runs a few iterations on the fully observed
+  transitions to build the object; `po_paths.stan` then samples the same
+  parameters with rmsb's priors (Dirichlet on the state probabilities at the
+  mean predictors, optional contrast priors) and its centred QR
+  parametrisation, and the draws replace those of the object. The program is
+  compiled on first use by `markov_path_stan_model()` and cached in
+  `tools::R_user_dir("mostr", "cache")` (`options(mostr.stan_cache = )`),
+  keyed by the program, the rstan version and the R version.
+- The fitted cohort is every patient with an observed transition or a
+  stretch (`fitted_ids` passed to `markov_prepare_stored_data()`).
+  Bootstrap and fractional weighted refits call `mostm()` again and so use
+  the same likelihood; weights must be constant within a stretch.
+- Refused with unobserved states (`mostm_check_path_fit_args()`): `p2_var`,
+  orm penalties and links other than the logit, blrm `ppo`, `cppo`,
+  `cluster()` and `iprior`.
+- Tests: `test-path-likelihood-kernel.R` compares the kernel with
+  `path_loglik_bruteforce()` (`helper-path-likelihood.R`), which lists every
+  path; the `test-missing-states-*.R` files compare whole fits with a
+  reference that works from the data frame.
 
 ### Settings
 

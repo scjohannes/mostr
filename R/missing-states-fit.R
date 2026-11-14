@@ -10,12 +10,12 @@
 
 # Arguments of `mostm()` that the path likelihood has not been worked out for.
 mostm_check_path_fit_args <- function(engine, dots, p2_var, formula) {
-  refuse <- function(what, why) {
+  refuse <- function(what, ...) {
     mostr_abort(
       what,
       " can't be combined with unobserved states (a missing state, a missing ",
       "previous state, or a range of states given with `Ocens()`): ",
-      why,
+      ...,
       " Use `missing_states = \"drop\"` to fit only the visits whose state ",
       "and previous state are both observed."
     )
@@ -76,13 +76,27 @@ markov_observed_transition_setup <- function(setup, ranges) {
   exact <- !is.na(ranges$lo) & ranges$lo == ranges$hi
   state <- rep(NA_character_, nrow(setup$data))
   state[exact] <- ranges$labels[ranges$lo[exact]]
+  # Only states that are observed exactly become levels: rms stops with an
+  # obscure error on a level without observations.
   setup$data$.markov_state <- factor(
     state,
-    levels = ranges$labels,
+    levels = ranges$labels[ranges$labels %in% state],
     ordered = TRUE
   )
   setup$formula[[2L]] <- quote(.markov_state)
   setup
+}
+
+# Stop before the engine's fit when a state never occurs at a visit whose
+# state and previous state are both observed: `rms::orm()` would stop first,
+# with "missing value where TRUE/FALSE needed", on the empty factor level.
+mostm_check_observed_states <- function(setup, ranges, path) {
+  rows <- mostm_subset_row_index(setup$subset_rows, nrow(setup$data))
+  lo <- ranges$lo[rows]
+  hi <- ranges$hi[rows]
+  observed <- !is.na(lo) & lo == hi & !is.na(setup$data[[path$p_var]][rows])
+  present <- ranges$labels[sort(unique(lo[observed]))]
+  markov_check_observed_states(present, ranges$labels)
 }
 
 markov_check_observed_states <- function(fitted_labels, labels) {
@@ -183,22 +197,23 @@ markov_path_maximise <- function(
       converged <- TRUE
       break
     }
-    # A Newton step can overshoot far from the maximum; halve it until the
-    # log-likelihood goes up.
-    accepted <- FALSE
+    # The full step is evaluated with its derivatives straight away, because
+    # it is nearly always accepted. A Newton step can overshoot far from the
+    # maximum; it is then halved until the log-likelihood goes up.
+    accepted <- NULL
     for (halving in 0:30) {
       candidate <- theta + step / 2^halving
-      trial <- evaluate(candidate, 0L)
+      trial <- evaluate(candidate, if (halving == 0L) 2L else 0L)
       if (is.finite(trial$loglik) && trial$loglik >= current$loglik) {
-        accepted <- TRUE
+        accepted <- trial
         break
       }
     }
-    if (!accepted) {
+    if (is.null(accepted)) {
       break
     }
     theta <- candidate
-    current <- evaluate(theta, 2L)
+    current <- if (halving == 0L) accepted else evaluate(theta, 2L)
   }
   if (!converged) {
     mostr_abort(
@@ -244,9 +259,42 @@ markov_path_observed <- function(x, y, labels, weights, ids, patient_ids) {
   )
 }
 
+# The stretches of the rows `subset` keeps. Without `design`, only whether
+# there are any.
+mostm_path_plan <- function(setup, ranges, path, design = NULL) {
+  rows <- mostm_subset_row_index(setup$subset_rows, nrow(setup$data))
+  data <- setup$data[rows, , drop = FALSE]
+  markov_path_plan(
+    data = data,
+    ranges = list(
+      labels = ranges$labels,
+      lo = ranges$lo[rows],
+      hi = ranges$hi[rows]
+    ),
+    absorb = match(as_state_labels(path$absorb), ranges$labels),
+    id_var = path$id_var,
+    time_var = path$time_var,
+    p_var = path$p_var,
+    weights = if (!is.null(setup$prior_weight_column)) {
+      data[[setup$prior_weight_column]]
+    },
+    design = design
+  )
+}
+
 mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   observed_setup <- markov_observed_transition_setup(setup, ranges)
+  if (mostm_path_plan(setup, ranges, path)$n_steps_total) {
+    mostm_check_observed_states(setup, ranges, path)
+  }
   fitted <- mostm_fit_orm(observed_setup, ...)
+  # Unobserved states that say nothing about the model leave no stretch: a
+  # patient's first row without a previous state, or unobserved visits at the
+  # end when no state is absorbing. The engine's fit to the observed
+  # transitions is then the maximum likelihood fit.
+  if (!mostm_path_plan(setup, ranges, path)$n_steps_total) {
+    return(fitted)
+  }
   start <- fitted$fit
   if (!identical(start$family, "logistic")) {
     stop_unsupported_markov_link(start$family)
@@ -254,22 +302,10 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   labels <- ranges$labels
   markov_check_observed_states(start$yunique, labels)
 
-  rows <- mostm_subset_row_index(setup$subset_rows, nrow(setup$data))
-  data <- setup$data[rows, , drop = FALSE]
-  plan <- markov_path_plan(
-    data = data,
-    ranges = list(
-      labels = labels,
-      lo = ranges$lo[rows],
-      hi = ranges$hi[rows]
-    ),
-    absorb = match(as_state_labels(path$absorb), labels),
-    id_var = path$id_var,
-    time_var = path$time_var,
-    p_var = path$p_var,
-    weights = if (!is.null(setup$prior_weight_column)) {
-      data[[setup$prior_weight_column]]
-    },
+  plan <- mostm_path_plan(
+    setup,
+    ranges,
+    path,
     design = function(rows) orm_model_matrix(start, rows)
   )
   if (is.null(plan$x_gap)) {

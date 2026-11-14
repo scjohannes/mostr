@@ -211,7 +211,8 @@ test_that("the vglm engine records NA actions after dropping incomplete rows", {
       family = VGAM::binomialff,
       data = data,
       id_var = "id",
-      engine = "vglm"
+      engine = "vglm",
+      missing_states = "drop"
     )
   }
 

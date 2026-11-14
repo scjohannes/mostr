@@ -13,6 +13,7 @@ test_that("the kernel log-likelihood equals the path enumeration", {
     theta <- path_theta(case$K)
     kernel <- path_kernel(theta, case$K, case$plan)
     reference <- path_loglik_bruteforce(theta, case$K, case$plan)
+    expect_true(is.finite(kernel$loglik), info = name)
     expect_equal(kernel$loglik, reference$loglik, tolerance = 1e-12, info = name)
     expect_equal(kernel$stretch_loglik, reference$stretch_loglik,
                  tolerance = 1e-12, info = name)
@@ -59,6 +60,43 @@ test_that("the Hessian is the derivative of the analytical score", {
     expect_equal(kernel$hessian, t(kernel$hessian), tolerance = 1e-14, info = name)
     expect_equal(kernel$hessian, unname(numeric_hessian),
                  tolerance = 1e-6, info = name)
+  }
+})
+
+test_that("long stretches with tiny probabilities keep exact derivatives", {
+  # The kernel rescales the forward vector at every step. Without that, f
+  # below would be about 1e-40 in the first case and would underflow to 0
+  # (log f < log(.Machine$double.xmin)) in the second.
+  K <- 4L
+  T_s <- 60L
+  narrow <- list(prev = 1, time = 1, z = 0.2,
+                 lo = rep(c(1, 3), length.out = T_s), hi = rep(c(1, 4), length.out = T_s),
+                 weight = 1)
+  narrow$lo[T_s] <- narrow$hi[T_s] <- 3
+  alternating <- list(prev = 1, time = 1, z = 0,
+                      lo = rep(c(4, 1), length.out = T_s), hi = rep(c(4, 1), length.out = T_s),
+                      weight = 2)
+  cases <- list(
+    list(stretch = narrow, theta = path_theta(K), below = log(1e-40)),
+    # P(4 | 1) = plogis(-10) and P(1 | 4) = plogis(-18): about 1e-364 in all.
+    list(stretch = alternating, theta = c(10, 0, -10, 0, 0, 8, 0, 0),
+         below = log(.Machine$double.xmin))
+  )
+  for (case in cases) {
+    plan <- build_path_plan(K, integer(0), path_observed_rows(K)[0, ],
+                            list(case$stretch), n_groups = 1L)
+    theta <- case$theta
+    kernel <- path_kernel(theta, K, plan)
+    expect_true(is.finite(kernel$loglik))
+    expect_lt(kernel$stretch_loglik, case$below)
+    numeric_score <- central_difference_jacobian(
+      function(th) path_kernel(th, K, plan, order = 0L)$stretch_loglik, theta
+    )
+    expect_equal(kernel$stretch_scores, unname(numeric_score), tolerance = 1e-7)
+    numeric_hessian <- central_difference_jacobian(
+      function(th) total_score(path_kernel(th, K, plan, order = 1L), plan), theta
+    )
+    expect_equal(kernel$hessian, unname(numeric_hessian), tolerance = 1e-6)
   }
 })
 

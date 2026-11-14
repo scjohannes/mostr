@@ -1,6 +1,44 @@
 # mostr (development version)
 
+## New features
+
+* `mostm()` now uses visits whose state was not observed. Give a patient one
+  row per visit with a missing state (`NA`) where the state is unknown, and
+  `NA` as the previous state on the row after it. With `engine = "orm"` or
+  `"blrm"`, the likelihood then adds up the probabilities of every sequence
+  of states the patient can have passed through at those visits, so a
+  patient who is seen, missed for some days, and seen again or dies later
+  contributes everything that is known. Absorbing states (`absorb`) count as
+  always recorded: a visit with a missing state is in one of the other
+  states. The fit is valid when states are missing at random.
+
+  When part of the state is known, give the possible states as a range with
+  the response `Ocens(lower, upper)`, for example "in hospital, states 3 to
+  9". `mostm()` reads the ranges itself, so `Ocens(-Inf, 2)` and
+  `Ocens(1, 2)` give the same fit (in `rms::orm()` 8.2-1 they do not).
+
+  The new argument `missing_states` chooses between `"average"` (this
+  likelihood, the default for `"orm"` and `"blrm"`) and `"drop"` (leave the
+  rows out, as before). Standard errors, `inferences()` with every method,
+  and the prediction functions work with these fits. For `"blrm"`, mostr
+  compiles its own Stan program the first time such a model is fitted and
+  keeps it in the user's cache directory. Not available together with
+  unobserved states: second-order models, penalties, partial proportional
+  odds, random effects, and row weights that differ within a run of
+  unobserved visits. See "Unobserved states" in `?mostm`.
+
 ## Breaking changes
+
+* Rows with a missing state or a missing previous state are no longer
+  dropped by `mostm()` with `engine = "orm"` or `"blrm"`: they are fitted by
+  adding up over the states the patient can have been in (see "New
+  features"). Leaving them out is biased when some states, such as death,
+  are always recorded. `missing_states = "drop"` gives the previous fit. The
+  rows of a patient must be consecutive visits in this case: a missing
+  previous state after an observed visit, or a recorded previous state after
+  an unobserved one, is an error. `engine = "vglm"` can only leave the rows
+  out and now stops unless you set `missing_states = "drop"`. Fits to data
+  without missing states are unchanged.
 
 * A second-order model is declared once, when it is fitted:
   `mostm(..., p2_var = "ypprev")` names the column with the state two visits

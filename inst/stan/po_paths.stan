@@ -15,11 +15,18 @@
 // P(Y >= j + 1 | x) = inv_logit(alpha[j] + x * beta).
 
 data {
-  int<lower=0> N;                       // observed transitions
   int<lower=1> p;                       // predictors
   int<lower=2> k;                       // states
-  matrix[N, p] X;                       // centered, orthogonalised predictors
-  array[N] int<lower=1, upper=k> y;
+  // Observed transitions, counted: transitions with the same predictors and
+  // the same state have the same probability, so each distinct design row
+  // is evaluated once and each (design row, state) pair enters with the
+  // number of transitions it stands for.
+  int<lower=0> Go;                      // distinct design rows
+  matrix[Go, p] Xo;                     // centered, orthogonalised predictors
+  int<lower=0> n_cells;                 // (design row, state) pairs observed
+  // position of the pair in the Go x k matrix of probabilities, by column
+  array[n_cells] int<lower=1, upper=Go * k> cell;
+  vector<lower=0>[n_cells] cell_count;
 
   int<lower=0> G;                       // distinct design rows of stretches
   matrix[G, p] Xg;                      // on the scale of X
@@ -42,6 +49,19 @@ data {
   vector[cn] csds;
 }
 
+transformed data {
+  // Whether the previous step's range of a step includes an absorbing state.
+  array[T] int has_absorbing = rep_array(0, T);
+  for (s in 1:S) {
+    for (t in 2:n_steps[s]) {
+      int u = first_step[s] + t - 1;
+      for (j in lo[u - 1]:hi[u - 1]) {
+        if (absorbing[j]) has_absorbing[u] = 1;
+      }
+    }
+  }
+}
+
 parameters {
   vector[p] beta;
   simplex[k] pi;
@@ -53,37 +73,62 @@ transformed parameters {
 }
 
 model {
-  // ordered_logistic has P(Y > j) = inv_logit(eta - c[j]), so c = -alpha.
-  if (N > 0) target += ordered_logistic_lpmf(y | X * beta, -alpha);
+  if (n_cells > 0) {
+    matrix[Go, k - 1] c = inv_logit(rep_matrix(Xo * beta, k - 1)
+                                    + rep_matrix(alpha', Go));
+    matrix[Go, k] prob;
+    prob[, 1] = 1 - c[, 1];
+    for (j in 2:(k - 1)) prob[, j] = c[, j - 1] - c[, j];
+    prob[, k] = c[, k - 1];
+    target += dot_product(cell_count, log(to_vector(prob)[cell]));
+  }
 
   if (S > 0) {
-    // Probability of each state for each distinct design row, once.
-    vector[G] eta = Xg * beta;
+    // Probability of each state for each distinct design row, once, as
+    // whole-matrix operations: design rows are shared between steps and
+    // stretches, and few large operations differentiate much faster than
+    // many scalar ones.
+    matrix[G, k - 1] c = inv_logit(rep_matrix(Xg * beta, k - 1)
+                                   + rep_matrix(alpha', G));
     matrix[G, k] prob;
-    for (g in 1:G) {
-      vector[k - 1] c = inv_logit(alpha + eta[g]);
-      prob[g, 1] = 1 - c[1];
-      for (j in 2:(k - 1)) prob[g, j] = c[j - 1] - c[j];
-      prob[g, k] = c[k - 1];
-    }
+    prob[, 1] = 1 - c[, 1];
+    for (j in 2:(k - 1)) prob[, j] = c[, j - 1] - c[, j];
+    prob[, k] = c[, k - 1];
+
     for (s in 1:S) {
       int u = first_step[s];
-      vector[k] a = rep_vector(0, k);
-      for (c in lo[u]:hi[u]) a[c] = prob[first_row[s], c];
+      // State probabilities at the current step; zero outside its range.
+      row_vector[k] a = rep_row_vector(0, k);
+      real scale = 0;
+      a[lo[u]:hi[u]] = prob[first_row[s], lo[u]:hi[u]];
       for (t in 2:n_steps[s]) {
-        vector[k] b = rep_vector(0, k);
+        row_vector[k] b = rep_row_vector(0, k);
+        int from_lo = lo[u];
+        int from_hi = hi[u];
         u += 1;
-        for (j in lo[u - 1]:hi[u - 1]) {
-          if (absorbing[j]) {
-            // An absorbing state is never left.
-            if (j >= lo[u] && j <= hi[u]) b[j] += a[j];
-          } else {
-            for (c in lo[u]:hi[u]) b[c] += a[j] * prob[step_rows[u, j], c];
+        if (has_absorbing[u]) {
+          // A range that includes an absorbing state: that state is never
+          // left, so its row of the transition matrix is the identity.
+          for (j in from_lo:from_hi) {
+            if (absorbing[j]) {
+              if (j >= lo[u] && j <= hi[u]) b[j] += a[j];
+            } else {
+              b[lo[u]:hi[u]] += a[j] * prob[step_rows[u, j], lo[u]:hi[u]];
+            }
           }
+        } else {
+          b[lo[u]:hi[u]] = a[from_lo:from_hi]
+                           * prob[step_rows[u, from_lo:from_hi], lo[u]:hi[u]];
         }
         a = b;
+        // Rescale now and then, so that a long stretch can't underflow.
+        if (t % 16 == 0) {
+          real total = sum(a);
+          scale += log(total);
+          a /= total;
+        }
       }
-      target += weight[s] * log(sum(a));
+      target += weight[s] * (scale + log(sum(a)));
     }
   }
 

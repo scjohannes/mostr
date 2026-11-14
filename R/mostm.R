@@ -38,8 +38,10 @@
 #' comes from rounding, not from crossed thresholds, and is set to zero.
 #'
 #' @param formula A model formula with the current state as the response, for
-#'   example `ordered(y) ~ yprev + rms::rcs(time, 4) + tx`. Offsets are not
-#'   supported. For the `"orm"` and `"blrm"` engines, categorical predictors,
+#'   example `ordered(y) ~ yprev + rms::rcs(time, 4) + tx`. For the `"orm"`
+#'   and `"blrm"` engines the response can also be a range of states,
+#'   `Ocens(lower, upper)`, for visits where the state is only partly known;
+#'   see "Unobserved states" below. Offsets are not supported. For the `"orm"` and `"blrm"` engines, categorical predictors,
 #'   including time, must be factor or character columns of `data` rather
 #'   than converted with `factor()` inside the formula; for factor time, also
 #'   set `first_followup_time`. Random-effect terms are available only for the
@@ -136,6 +138,15 @@
 #'   number of patients? `NULL` (the default) applies this correction. It is
 #'   independent of `type`, so `type = "HC1"` with `cadjust = TRUE` applies
 #'   both factors.
+#' @param missing_states What to do with visits whose state is not observed:
+#'   a missing state, a missing previous state, or a range of states given
+#'   with `Ocens()`. `"average"` adds up the probabilities of all sequences
+#'   of states the patient can have passed through at those visits; it is
+#'   available for the `"orm"` and `"blrm"` engines and is their default.
+#'   `"drop"` leaves out every row with a missing state or previous state.
+#'   `engine = "vglm"` can only drop these rows, and you must ask for it with
+#'   `missing_states = "drop"`. The argument has no effect when every state
+#'   is observed. See "Unobserved states" below.
 #'
 #' @details
 #' ## Starting rows
@@ -150,9 +161,73 @@
 #' when predictions are made: a later row is never used instead. Patients
 #' without any fitted transition are not part of the fitted cohort.
 #'
+#' ## Unobserved states
+#'
+#' A patient's state is often not recorded at every visit: a visit is
+#' skipped, and the patient is seen again later or dies later. Give such a
+#' patient one row for every visit all the same, in time order, with a
+#' missing state (`NA`) at the visits that were not observed. The previous
+#' state on the row after an unobserved visit is unknown as well, so it must
+#' be `NA` too; do not carry the last observed state forward.
+#'
+#' With `missing_states = "average"`, the default for the `"orm"` and
+#' `"blrm"` engines, such a patient still contributes everything that is
+#' known. Suppose a patient is in state 3 on day 4, is not observed on days 5
+#' and 6, and is in state 2 on day 7. The model gives a probability to every
+#' sequence of states on days 5 and 6, and the patient's contribution to the
+#' likelihood is the probability of reaching state 2 on day 7 from state 3 on
+#' day 4, added up over all those sequences. Visits whose state and previous
+#' state are both observed contribute as usual. `"orm"` maximises this
+#' likelihood and `"blrm"` samples from the posterior distribution it gives.
+#'
+#' Absorbing states are treated as always recorded: a death has a date. A
+#' missing state therefore means "one of the states that are not absorbing".
+#' A patient who is not observed for some days and then dies was alive on
+#' those days, and so was a patient who is not observed up to their last row.
+#' If you do not know whether a patient was still alive at a visit, for
+#' example after loss to follow-up, remove the patient's rows from that visit
+#' on instead of giving them missing states.
+#'
+#' When more is known about a visit than nothing, give the possible states as
+#' a range with `Ocens(lower, upper)` as the response, where `lower` and
+#' `upper` are columns of `data` that hold the lowest and the highest state
+#' the patient can have been in. For example, with states 1 and 2 at home,
+#' 3 to 9 in hospital and 10 dead, a patient known to be in hospital on a day
+#' without a recorded state has `lower = 3` and `upper = 9`. An observed
+#' state has `lower` equal to `upper`, `-Inf` and `Inf` stand for the lowest
+#' and the highest state, and `NA` in both means that nothing is known, as
+#' above. The likelihood then adds up only the sequences of states inside the
+#' ranges. `mostm()` reads the ranges itself, so the two ways of writing an
+#' open range, such as `Ocens(-Inf, 2)` and `Ocens(1, 2)`, give the same fit.
+#'
+#' This is valid when states are missing at random: whether a visit is
+#' observed may depend on the predictors and on the patient's observed
+#' states, before or after it, but not on the unobserved state itself. If
+#' sicker patients are less likely to be assessed on the very day they are
+#' sicker, no method that uses only the recorded states is free of bias.
+#' `missing_states = "drop"` is biased even when states are missing at
+#' random if some states are always recorded: with deaths always known and
+#' other states sometimes missing, the fitted rows contain too many deaths.
+#'
+#' Every visit in a run of unobserved visits needs all predictors of the
+#' model, because the model predicts the transitions into and out of it. The
+#' model is set up, with its spline knots and factor levels, from the visits
+#' whose state and previous state are both observed, so every state must
+#' occur at least once at such a visit. Unobserved states can't be combined
+#' with a second-order model (`p2_var`), with a penalty, with partial
+#' proportional odds or random effects for `"blrm"`, or with row weights
+#' that differ within a patient's run of unobserved visits. For `"orm"`,
+#' the standard errors and [inferences()] work as for other fits. For
+#' `"blrm"`, mostr compiles its own Stan program the first time such a model
+#' is fitted, which takes a minute or more and needs a C++ toolchain; the
+#' compiled program is kept in the directory `tools::R_user_dir("mostr",
+#' "cache")` for later sessions (set `options(mostr.stan_cache = )` to
+#' another directory, or to `FALSE` to keep it for the session only).
+#'
 #' ## Patients left out of the fit
 #'
-#' The engine drops every row with a missing value in a model variable (the
+#' Without unobserved states, or with `missing_states = "drop"`, the engine
+#' drops every row with a missing value in a model variable (the
 #' response, the previous state, or a predictor). A patient who loses only
 #' some rows stays in the fit. A patient who loses every row is not part of
 #' the fit, and `mostm()` warns and names them (a warning of class

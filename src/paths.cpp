@@ -13,8 +13,8 @@ using namespace cpp11;
 // states it could be in) enters as the probability of all state paths
 // consistent with the ranges, summed by a forward recursion over the states
 // in each step's range. Derivatives with respect to
-// theta = c(alpha, beta) are exact: the recursion carries the gradient and
-// Hessian of its forward vector (forward-mode differentiation).
+// theta = c(alpha, beta) are exact: they come from a forward and a backward
+// pass over each stretch (see the stretch section below).
 //
 // Model: for a design row x and cut-point k = 1..K-1,
 //   c_k = plogis(alpha_k + x'beta) = P(Y >= k + 1),
@@ -24,28 +24,52 @@ using namespace cpp11;
 
 namespace {
 
-double logistic(const double value) {
-  if (value >= 0.0) {
-    return 1.0 / (1.0 + std::exp(-value));
-  }
-  const double exponent = std::exp(value);
-  return exponent / (1.0 + exponent);
-}
-
-// Cut-point quantities of one design row. Both c_k and 1 - c_k are evaluated
-// by their own logistic, because a cell probability c_{y-1} - c_y computed
-// from c alone loses all its digits when both are close to 1.
+// Cut-point quantities of one design row. Both c_k and 1 - c_k are kept
+// to full relative precision, because a cell probability c_{y-1} - c_y
+// computed from c alone loses all its digits when both are close to 1.
 struct CutPoints {
   std::vector<double> upper;  // c_k
   std::vector<double> lower;  // 1 - c_k
+  std::vector<double> exp_alpha;      // exp(alpha_k)
+  std::vector<double> exp_neg_alpha;  // exp(-alpha_k)
+  bool factor = true;
 
-  explicit CutPoints(const int thresholds)
-      : upper(thresholds), lower(thresholds) {}
+  CutPoints(const double* alpha, const int thresholds)
+      : upper(thresholds), lower(thresholds), exp_alpha(thresholds),
+        exp_neg_alpha(thresholds) {
+    for (int k = 0; k < thresholds; ++k) {
+      exp_alpha[k] = std::exp(alpha[k]);
+      exp_neg_alpha[k] = std::exp(-alpha[k]);
+      if (!(std::fabs(alpha[k]) < kFactorLimit)) factor = false;
+    }
+  }
+
+  // exp is slow (about 40 ns per call in the Windows runtime) and caching
+  // the x_gap rows was dominated by it, so exp(-|alpha_k + eta|) is formed
+  // as exp(-+alpha_k) * exp(-+eta): one exp per row instead of K - 1. The
+  // product is within a few ulps of the direct exp. Beyond kFactorLimit
+  // the factors could overflow to Inf while the product is finite, so
+  // large values take the direct exp.
+  static constexpr double kFactorLimit = 300.0;
 
   void set(const double* alpha, const int thresholds, const double eta) {
+    // c_k = plogis(z) and 1 - c_k = plogis(-z), each from the form that
+    // cannot overflow.
+    const bool use_factor = factor && std::fabs(eta) < kFactorLimit;
+    const double exp_eta = use_factor ? std::exp(eta) : 0.0;
+    const double exp_neg_eta = use_factor ? 1.0 / exp_eta : 0.0;
     for (int k = 0; k < thresholds; ++k) {
-      upper[k] = logistic(alpha[k] + eta);
-      lower[k] = logistic(-(alpha[k] + eta));
+      const double z = alpha[k] + eta;
+      double e;
+      if (use_factor) {
+        e = z >= 0.0 ? exp_neg_alpha[k] * exp_neg_eta : exp_alpha[k] * exp_eta;
+      } else {
+        e = std::exp(-std::fabs(z));
+      }
+      const double big = 1.0 / (1.0 + e);
+      const double small = e / (1.0 + e);
+      upper[k] = z >= 0.0 ? big : small;
+      lower[k] = z >= 0.0 ? small : big;
     }
   }
 };
@@ -238,7 +262,7 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
   // of x x', accumulated over rows and expanded once at the end.
   {
     const double* x_ptr = real_pointer(SEXP(x_obs));
-    CutPoints cuts(thresholds);
+    CutPoints cuts(alpha_ptr, thresholds);
     std::vector<double> xx(order >= 2 ? static_cast<size_t>(p) * p : 0, 0.0);
     std::vector<double> alpha_x(order >= 2 ? static_cast<size_t>(thresholds) * p : 0, 0.0);
     std::vector<double> alpha_alpha(order >= 2 ? static_cast<size_t>(thresholds) * thresholds : 0, 0.0);
@@ -334,22 +358,41 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
     }
   }
 
-  // Stretches: forward recursion over the states allowed at each step. The
-  // forward vector a has one entry per state (index state - 1); only the
-  // entries in the current step's range are non-zero, and only those are
-  // touched. a_t(k) = sum_j a_{t-1}(j) P(k | j) for k in [lo_t, hi_t].
+  // Stretches. Write f = a_0' M_1 M_2 ... M_T 1, where M_t is the transition
+  // matrix of step t restricted to the ranges (rows: previous states in the
+  // previous range, identity rows for absorbing ones; columns: states in the
+  // step's range) and a_0 picks the known previous state of step 1. Three
+  // passes per stretch:
+  // 1. forward: a_t = a_{t-1}' M_t, rescaled by c_t = sum(a_t) at every step
+  //    so that long stretches cannot underflow; log f = sum_t log c_t.
+  // 2. backward: b_T = 1 on the final range, b_{t-1} = M_t b_t / c_t, scaled
+  //    so that sum(a_t * b_t) = 1 at every t.
+  // 3. derivatives. With the scaled vectors,
+  //      d log f = sum_t a_{t-1}' (dM_t) b_t / c_t,
+  //    and, because f is multilinear in the M_t,
+  //      D2 f / f = sum_t [a_{t-1}' (D2 M_t) b_t + (Da_{t-1})' (dM_t) b_t
+  //                        + its transpose] / c_t,
+  //    where Da_t = (Da_{t-1} M_t + a_{t-1}' dM_t) / c_t is the scaled
+  //    gradient of the forward vector. Only first derivatives are carried
+  //    through the recursion, and D2 log f = D2 f / f - (d log f)(d log f)'.
+  // For a non-absorbing previous state j with design row x_j,
+  //   sum_y dP(y | j) b(y) = sum_k s_jk (b(k+1) - b(k)) g_jk,
+  //   sum_y D2P(y | j) b(y) = sum_k u_jk (b(k+1) - b(k)) g_jk g_jk',
+  // with g_jk = (e_k, x_j) and b = 0 outside the step's range, because
+  // P(y | j) = c_{y-1} - c_y.
   writable::doubles stretch_loglik(m);
   std::vector<double> stretch_scores(order >= 1 ? static_cast<size_t>(m) * q : 0, 0.0);
   if (m > 0) {
-    // Rows of x_gap are shared by many stretches and steps, so their
-    // cut-points are computed once per call; the rows are also stored
-    // transposed so that one row is contiguous.
+    // Rows of x_gap are shared by many stretches and steps, so their cell
+    // probabilities, s_k and u_k are computed once per call; the rows are
+    // also stored transposed so that one row is contiguous.
     const double* gap_ptr = real_pointer(SEXP(x_gap));
     std::vector<double> gap_rows(static_cast<size_t>(n_gap) * p);
-    std::vector<double> gap_upper(static_cast<size_t>(n_gap) * thresholds);
-    std::vector<double> gap_lower(static_cast<size_t>(n_gap) * thresholds);
+    std::vector<double> gap_prob(static_cast<size_t>(n_gap) * states);
+    std::vector<double> gap_s(static_cast<size_t>(n_gap) * thresholds);
+    std::vector<double> gap_u(order >= 2 ? static_cast<size_t>(n_gap) * thresholds : 0);
     {
-      CutPoints cuts(thresholds);
+      CutPoints cuts(alpha_ptr, thresholds);
       for (int r = 0; r < n_gap; ++r) {
         double eta = 0.0;
         for (int l = 0; l < p; ++l) {
@@ -358,139 +401,90 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
           eta += value * beta_ptr[l];
         }
         cuts.set(alpha_ptr, thresholds, eta);
-        std::copy(cuts.upper.begin(), cuts.upper.end(),
-                  gap_upper.begin() + static_cast<size_t>(r) * thresholds);
-        std::copy(cuts.lower.begin(), cuts.lower.end(),
-                  gap_lower.begin() + static_cast<size_t>(r) * thresholds);
+        const double* up = cuts.upper.data();
+        const double* low = cuts.lower.data();
+        for (int y = 1; y <= states; ++y) {
+          gap_prob[static_cast<size_t>(r) * states + (y - 1)] =
+              cell_probability(up, low, thresholds, y);
+        }
+        for (int k = 1; k <= thresholds; ++k) {
+          gap_s[static_cast<size_t>(r) * thresholds + (k - 1)] =
+              slope_at(up, low, thresholds, k);
+          if (order >= 2) {
+            gap_u[static_cast<size_t>(r) * thresholds + (k - 1)] =
+                curvature_at(up, low, thresholds, k);
+          }
+        }
       }
     }
 
-    const size_t qq = static_cast<size_t>(q) * q;
-    std::vector<double> a_in(states), a_out(states);
-    std::vector<double> da_in(order >= 1 ? static_cast<size_t>(states) * q : 0);
-    std::vector<double> da_out(da_in.size());
-    std::vector<double> d2a_in(order >= 2 ? states * qq : 0);
-    std::vector<double> d2a_out(d2a_in.size());
-    std::vector<double> zero_q(q, 0.0), zero_qq(order >= 2 ? qq : 0, 0.0);
-    std::vector<double> dp(q), g_lo(q), g_hi(q);
-    std::vector<double> df(q), d2f(qq);
-    bool negative_cell = false;
+    // The curvature terms g_jk g_jk' depend on the stretch only through a
+    // scalar weight per (x_gap row, k), so they are summed into gap_curv and
+    // expanded into the Hessian once at the end.
+    std::vector<double> gap_curv(order >= 2 ? static_cast<size_t>(n_gap) * thresholds : 0, 0.0);
 
-    // Adds the transitions out of one non-absorbing previous state, with
-    // forward weight a_j (and its derivatives), through design row `row` to
-    // the states out_lo..out_hi.
-    auto add_transitions = [&](const int row, const double a_j,
-                               const double* da_j, const double* d2a_j,
-                               const int out_lo, const int out_hi) {
-      const double* up = gap_upper.data() + static_cast<size_t>(row) * thresholds;
-      const double* low = gap_lower.data() + static_cast<size_t>(row) * thresholds;
-      const double* x = gap_rows.data() + static_cast<size_t>(row) * p;
-      for (int y = out_lo; y <= out_hi; ++y) {
-        const double prob = cell_probability(up, low, thresholds, y);
-        if (prob < 0.0) negative_cell = true;
-        a_out[y - 1] += a_j * prob;
-        if (order < 1) continue;
-        // dP = s_{y-1} g_{y-1} - s_y g_y
-        const int lo = y - 1;
-        const int hi = y;
-        const double s_lo = slope_at(up, low, thresholds, lo);
-        const double s_hi = slope_at(up, low, thresholds, hi);
-        std::fill(g_lo.begin(), g_lo.end(), 0.0);
-        std::fill(g_hi.begin(), g_hi.end(), 0.0);
-        if (lo >= 1) g_lo[lo - 1] = 1.0;
-        if (hi <= thresholds) g_hi[hi - 1] = 1.0;
-        for (int l = 0; l < p; ++l) {
-          g_lo[thresholds + l] = lo >= 1 ? x[l] : 0.0;
-          g_hi[thresholds + l] = hi <= thresholds ? x[l] : 0.0;
-        }
-        for (int b = 0; b < q; ++b) dp[b] = s_lo * g_lo[b] - s_hi * g_hi[b];
-        // Da'_y += Da_j P + a_j dP
-        double* da_y = da_out.data() + static_cast<size_t>(y - 1) * q;
-        for (int b = 0; b < q; ++b) da_y[b] += da_j[b] * prob + a_j * dp[b];
-        if (order < 2) continue;
-        // D2a'_y += D2a_j P + Da_j dP' + dP Da_j'
-        //           + a_j (u_{y-1} g_{y-1} g_{y-1}' - u_y g_y g_y')
-        const double c_lo = a_j * curvature_at(up, low, thresholds, lo);
-        const double c_hi = -a_j * curvature_at(up, low, thresholds, hi);
-        double* d2a_y = d2a_out.data() + (y - 1) * qq;
-        for (int b2 = 0; b2 < q; ++b2) {
-          const double da_b2 = da_j[b2];
-          const double dp_b2 = dp[b2];
-          const double glo_b2 = c_lo * g_lo[b2];
-          const double ghi_b2 = c_hi * g_hi[b2];
-          double* col = d2a_y + static_cast<size_t>(q) * b2;
-          const double* col_in = d2a_j + static_cast<size_t>(q) * b2;
-          // Only the upper triangle (b1 <= b2) is carried; the matrices
-          // are symmetric and the stretch total is mirrored at the end.
-          for (int b1 = 0; b1 <= b2; ++b1) {
-            col[b1] += col_in[b1] * prob + da_j[b1] * dp_b2 + dp[b1] * da_b2 +
-                       g_lo[b1] * glo_b2 + g_hi[b1] * ghi_b2;
-          }
-        }
-      }
-    };
+    int longest = 1;
+    for (int s = 0; s < m; ++s) longest = std::max(longest, n_steps_ptr[s]);
+    // fwd[t * K + state - 1] holds the scaled a_t (t = 1..T); bwd the same
+    // for b_t; scale[t] = c_t.
+    std::vector<double> fwd(static_cast<size_t>(longest + 1) * states, 0.0);
+    std::vector<double> bwd(static_cast<size_t>(longest + 1) * states, 0.0);
+    std::vector<double> scale(longest + 1, 1.0);
+    std::vector<double> diff(thresholds);
+    std::vector<double> da_in(order >= 2 ? static_cast<size_t>(states) * q : 0);
+    std::vector<double> da_out(da_in.size());
+    std::vector<double> cross(order >= 2 ? static_cast<size_t>(q) * q : 0);
+    std::vector<double> v(q);
 
     for (int s = 0; s < m; ++s) {
-      negative_cell = false;
       const int first = first_step_ptr[s] - 1;
       const int steps = n_steps_ptr[s];
-      int in_lo = 0;
-      int in_hi = 0;
-      for (int t = 0; t < steps; ++t) {
-        const int u = first + t;
+      const int first_gap_row = first_row_ptr[s] - 1;
+      const double weight = sw_ptr[s];
+
+      // Pass 1: forward values.
+      bool negative_cell = false;
+      bool possible = true;
+      double log_f = 0.0;
+      for (int t = 1; t <= steps && possible; ++t) {
+        const int u = first + t - 1;
         const int out_lo = lo_ptr[u];
         const int out_hi = hi_ptr[u];
-        std::fill(a_out.begin() + (out_lo - 1), a_out.begin() + out_hi, 0.0);
-        if (order >= 1) {
-          std::fill(da_out.begin() + static_cast<size_t>(out_lo - 1) * q,
-                    da_out.begin() + static_cast<size_t>(out_hi) * q, 0.0);
-        }
-        if (order >= 2) {
-          std::fill(d2a_out.begin() + (out_lo - 1) * qq,
-                    d2a_out.begin() + out_hi * qq, 0.0);
-        }
-        if (t == 0) {
-          // Step 1 starts from the known previous state: weight 1, no
-          // derivatives.
-          add_transitions(first_row_ptr[s] - 1, 1.0, zero_q.data(),
-                          zero_qq.data(), out_lo, out_hi);
+        double* a_t = fwd.data() + static_cast<size_t>(t) * states;
+        std::fill(a_t + (out_lo - 1), a_t + out_hi, 0.0);
+        if (t == 1) {
+          const double* prob = gap_prob.data() + static_cast<size_t>(first_gap_row) * states;
+          for (int y = out_lo; y <= out_hi; ++y) {
+            if (prob[y - 1] < 0.0) negative_cell = true;
+            a_t[y - 1] = prob[y - 1];
+          }
         } else {
-          for (int j = in_lo; j <= in_hi; ++j) {
-            const double a_j = a_in[j - 1];
-            const double* da_j = order >= 1 ? da_in.data() + static_cast<size_t>(j - 1) * q : nullptr;
-            const double* d2a_j = order >= 2 ? d2a_in.data() + (j - 1) * qq : nullptr;
+          const double* a_prev = fwd.data() + static_cast<size_t>(t - 1) * states;
+          for (int j = lo_ptr[u - 1]; j <= hi_ptr[u - 1]; ++j) {
+            const double a_j = a_prev[j - 1];
             if (is_absorbing[j - 1]) {
-              // Identity transition: the state stays j with probability 1.
-              if (j < out_lo || j > out_hi) continue;
-              a_out[j - 1] += a_j;
-              if (order >= 1) {
-                double* da_y = da_out.data() + static_cast<size_t>(j - 1) * q;
-                for (int b = 0; b < q; ++b) da_y[b] += da_j[b];
-              }
-              if (order >= 2) {
-                double* d2a_y = d2a_out.data() + (j - 1) * qq;
-                for (size_t pos = 0; pos < qq; ++pos) d2a_y[pos] += d2a_j[pos];
-              }
+              if (j >= out_lo && j <= out_hi) a_t[j - 1] += a_j;
               continue;
             }
             const int row = step_ptr[u + static_cast<R_xlen_t>(n_steps) * (j - 1)] - 1;
-            add_transitions(row, a_j, da_j, d2a_j, out_lo, out_hi);
+            const double* prob = gap_prob.data() + static_cast<size_t>(row) * states;
+            for (int y = out_lo; y <= out_hi; ++y) {
+              if (prob[y - 1] < 0.0) negative_cell = true;
+              a_t[y - 1] += a_j * prob[y - 1];
+            }
           }
         }
-        std::swap(a_in, a_out);
-        std::swap(da_in, da_out);
-        std::swap(d2a_in, d2a_out);
-        in_lo = out_lo;
-        in_hi = out_hi;
+        double total = 0.0;
+        for (int y = out_lo; y <= out_hi; ++y) total += a_t[y - 1];
+        if (!(total > 0.0) || negative_cell) {
+          possible = false;
+          break;
+        }
+        scale[t] = total;
+        log_f += std::log(total);
+        for (int y = out_lo; y <= out_hi; ++y) a_t[y - 1] /= total;
       }
-
-      // f = sum of the final forward vector over the last step's range.
-      double f = 0.0;
-      for (int j = in_lo; j <= in_hi; ++j) f += a_in[j - 1];
-      const double weight = sw_ptr[s];
-      const bool possible = !negative_cell && f > 0.0;
-      const double log_f = possible ? std::log(f) : neg_inf;
-      stretch_loglik[s] = log_f;
+      stretch_loglik[s] = possible ? log_f : neg_inf;
       if (weight != 0.0) {
         if (possible) {
           loglik += weight * log_f;
@@ -499,27 +493,177 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
         }
       }
       if (order < 1) continue;
-      std::fill(df.begin(), df.end(), 0.0);
-      for (int j = in_lo; j <= in_hi; ++j) {
-        for (int b = 0; b < q; ++b) df[b] += da_in[static_cast<size_t>(j - 1) * q + b];
+      double* score = stretch_scores.data() + s;  // stride m
+      const R_xlen_t score_stride = m;
+      if (!possible) {
+        // The derivatives of log f do not exist; a weighted impossible
+        // stretch also makes the Hessian undefined.
+        for (int b = 0; b < q; ++b) score[score_stride * b] = R_NaN;
+        if (order >= 2 && weight != 0.0) {
+          std::fill(hessian.begin(), hessian.end(), R_NaN);
+        }
+        continue;
       }
-      // d log f = Df / f; d2 log f = D2f / f - (Df / f)(Df / f)'.
-      for (int b = 0; b < q; ++b) {
-        df[b] /= f;
-        stretch_scores[s + static_cast<size_t>(m) * b] = df[b];
+
+      // Pass 2: backward values.
+      {
+        const int u_last = first + steps - 1;
+        double* b_last = bwd.data() + static_cast<size_t>(steps) * states;
+        std::fill(b_last, b_last + states, 0.0);
+        for (int y = lo_ptr[u_last]; y <= hi_ptr[u_last]; ++y) b_last[y - 1] = 1.0;
+        for (int t = steps; t >= 2; --t) {
+          const int u = first + t - 1;
+          const double* b_t = bwd.data() + static_cast<size_t>(t) * states;
+          double* b_prev = bwd.data() + static_cast<size_t>(t - 1) * states;
+          std::fill(b_prev, b_prev + states, 0.0);
+          const int out_lo = lo_ptr[u];
+          const int out_hi = hi_ptr[u];
+          for (int j = lo_ptr[u - 1]; j <= hi_ptr[u - 1]; ++j) {
+            double value = 0.0;
+            if (is_absorbing[j - 1]) {
+              if (j >= out_lo && j <= out_hi) value = b_t[j - 1];
+            } else {
+              const int row = step_ptr[u + static_cast<R_xlen_t>(n_steps) * (j - 1)] - 1;
+              const double* prob = gap_prob.data() + static_cast<size_t>(row) * states;
+              for (int y = out_lo; y <= out_hi; ++y) value += prob[y - 1] * b_t[y - 1];
+            }
+            b_prev[j - 1] = value / scale[t];
+          }
+        }
       }
-      if (order < 2 || weight == 0.0) continue;
-      std::fill(d2f.begin(), d2f.end(), 0.0);
-      for (int j = in_lo; j <= in_hi; ++j) {
-        const double* d2a_j = d2a_in.data() + (j - 1) * qq;
-        for (size_t pos = 0; pos < qq; ++pos) d2f[pos] += d2a_j[pos];
+
+      // Pass 3: score by the adjoint form and, for order 2, the Hessian.
+      for (int b = 0; b < q; ++b) score[score_stride * b] = 0.0;
+      const bool hess = order >= 2 && weight != 0.0;
+      if (hess) std::fill(cross.begin(), cross.end(), 0.0);
+      for (int t = 1; t <= steps; ++t) {
+        const int u = first + t - 1;
+        const int out_lo = lo_ptr[u];
+        const int out_hi = hi_ptr[u];
+        const double* b_t = bwd.data() + static_cast<size_t>(t) * states;
+        const double inv_scale = 1.0 / scale[t];
+        // diff[k - 1] = b(k + 1) - b(k), with b = 0 outside the range.
+        for (int k = 1; k <= thresholds; ++k) {
+          const double b_k = (k >= out_lo && k <= out_hi) ? b_t[k - 1] : 0.0;
+          const double b_k1 = (k + 1 >= out_lo && k + 1 <= out_hi) ? b_t[k] : 0.0;
+          diff[k - 1] = b_k1 - b_k;
+        }
+        // Da_t is needed only as input to a later step.
+        const bool propagate = hess && t < steps;
+        if (propagate) {
+          std::fill(da_out.begin() + static_cast<size_t>(out_lo - 1) * q,
+                    da_out.begin() + static_cast<size_t>(out_hi) * q, 0.0);
+        }
+        const int in_lo = t == 1 ? 1 : lo_ptr[u - 1];
+        const int in_hi = t == 1 ? 1 : hi_ptr[u - 1];
+        const double* a_prev = fwd.data() + static_cast<size_t>(t - 1) * states;
+        for (int j = in_lo; j <= in_hi; ++j) {
+          // Step 1 has a single previous state with forward weight 1.
+          const double a_j = t == 1 ? 1.0 : a_prev[j - 1];
+          const double* da_j = (hess && t > 1) ? da_in.data() + static_cast<size_t>(j - 1) * q : nullptr;
+          if (t > 1 && is_absorbing[j - 1]) {
+            // Identity transition: no parameters, so only Da is carried on.
+            if (propagate && j >= out_lo && j <= out_hi) {
+              double* da_y = da_out.data() + static_cast<size_t>(j - 1) * q;
+              for (int b = 0; b < q; ++b) da_y[b] += da_j[b] * inv_scale;
+            }
+            continue;
+          }
+          const int row = t == 1
+              ? first_gap_row
+              : step_ptr[u + static_cast<R_xlen_t>(n_steps) * (j - 1)] - 1;
+          const double* x = gap_rows.data() + static_cast<size_t>(row) * p;
+          const double* s_row = gap_s.data() + static_cast<size_t>(row) * thresholds;
+          const double coef = a_j * inv_scale;
+          // v = sum_y dP(y | j) b(y) = (m_1..m_{K-1}, (sum_k m_k) x_j) with
+          // m_k = s_jk (b(k+1) - b(k)).
+          double m_sum = 0.0;
+          for (int k = 0; k < thresholds; ++k) {
+            v[k] = s_row[k] * diff[k];
+            m_sum += v[k];
+          }
+          for (int l = 0; l < p; ++l) v[thresholds + l] = m_sum * x[l];
+          for (int b = 0; b < q; ++b) score[score_stride * b] += coef * v[b];
+          if (!hess) continue;
+          // Curvature: a_j u_jk (b(k+1) - b(k)) / c_t on g_jk g_jk'.
+          const double* u_row = gap_u.data() + static_cast<size_t>(row) * thresholds;
+          double* curv = gap_curv.data() + static_cast<size_t>(row) * thresholds;
+          const double curv_coef = weight * coef;
+          for (int k = 0; k < thresholds; ++k) curv[k] += curv_coef * u_row[k] * diff[k];
+          // Cross term: Da_{t-1}(j) v' / c_t (symmetrised per stretch).
+          if (t > 1) {
+            for (int b2 = 0; b2 < q; ++b2) {
+              const double scaled = v[b2] * inv_scale;
+              if (scaled == 0.0) continue;
+              double* col = cross.data() + static_cast<size_t>(q) * b2;
+              for (int b1 = 0; b1 < q; ++b1) col[b1] += da_j[b1] * scaled;
+            }
+          }
+          if (!propagate) continue;
+          // Da_t(y) += (Da_{t-1}(j) P(y | j) + a_j dP(y | j)) / c_t, with
+          // dP(y | j) = s_{y-1} g_{y-1} - s_y g_y.
+          const double* prob = gap_prob.data() + static_cast<size_t>(row) * states;
+          for (int y = out_lo; y <= out_hi; ++y) {
+            double* da_y = da_out.data() + static_cast<size_t>(y - 1) * q;
+            if (da_j != nullptr) {
+              const double weight_prob = prob[y - 1] * inv_scale;
+              for (int b = 0; b < q; ++b) da_y[b] += da_j[b] * weight_prob;
+            }
+            const double s_lo = y - 1 >= 1 ? s_row[y - 2] : 0.0;
+            const double s_hi = y <= thresholds ? s_row[y - 1] : 0.0;
+            if (y - 1 >= 1) da_y[y - 2] += coef * s_lo;
+            if (y <= thresholds) da_y[y - 1] -= coef * s_hi;
+            const double slope = coef * (s_lo - s_hi);
+            for (int l = 0; l < p; ++l) da_y[thresholds + l] += slope * x[l];
+          }
+        }
+        if (propagate) std::swap(da_in, da_out);
       }
+      if (!hess) continue;
+      // Hessian of log f: cross + cross' - score score' (curvature terms are
+      // added at the end); upper triangle, mirrored below.
       for (int b2 = 0; b2 < q; ++b2) {
+        const double score_b2 = score[score_stride * b2];
         for (int b1 = 0; b1 <= b2; ++b1) {
-          const size_t pos = b1 + static_cast<size_t>(q) * b2;
-          const double value = weight * (d2f[pos] / f - df[b1] * df[b2]);
-          hessian[pos] += value;
+          const double value = weight * (cross[b1 + static_cast<size_t>(q) * b2] +
+                                         cross[b2 + static_cast<size_t>(q) * b1] -
+                                         score[score_stride * b1] * score_b2);
+          hessian[b1 + static_cast<size_t>(q) * b2] += value;
           if (b1 != b2) hessian[b2 + static_cast<size_t>(q) * b1] += value;
+        }
+      }
+    }
+
+    if (order >= 2) {
+      // Expand the curvature weights W_rk on g_rk g_rk' = (e_k, x_r)(e_k, x_r)':
+      // W_rk on the intercept diagonal, W_rk x_r in the cross block and
+      // (sum_k W_rk) x_r x_r' in the slope block.
+      std::vector<double> xx(static_cast<size_t>(p) * p, 0.0);
+      for (int r = 0; r < n_gap; ++r) {
+        const double* curv = gap_curv.data() + static_cast<size_t>(r) * thresholds;
+        const double* x = gap_rows.data() + static_cast<size_t>(r) * p;
+        double total = 0.0;
+        for (int k = 0; k < thresholds; ++k) {
+          const double w_rk = curv[k];
+          if (w_rk == 0.0) continue;
+          total += w_rk;
+          hessian[k + static_cast<size_t>(q) * k] += w_rk;
+          for (int l = 0; l < p; ++l) {
+            hessian[k + static_cast<size_t>(q) * (thresholds + l)] += w_rk * x[l];
+            hessian[(thresholds + l) + static_cast<size_t>(q) * k] += w_rk * x[l];
+          }
+        }
+        if (total == 0.0) continue;
+        for (int l2 = 0; l2 < p; ++l2) {
+          const double scaled = total * x[l2];
+          for (int l1 = 0; l1 <= l2; ++l1) xx[l1 + static_cast<size_t>(p) * l2] += scaled * x[l1];
+        }
+      }
+      for (int l2 = 0; l2 < p; ++l2) {
+        for (int l1 = 0; l1 <= l2; ++l1) {
+          const double value = xx[l1 + static_cast<size_t>(p) * l2];
+          hessian[(thresholds + l1) + static_cast<size_t>(q) * (thresholds + l2)] += value;
+          if (l1 != l2) hessian[(thresholds + l2) + static_cast<size_t>(q) * (thresholds + l1)] += value;
         }
       }
     }

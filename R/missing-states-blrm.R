@@ -12,6 +12,12 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   backend <- match.arg(backend, c("rstan", "cmdstan"))
   labels <- ranges$labels
   observed_setup <- markov_observed_transition_setup(setup, ranges)
+  # No stretch: rmsb's own fit to the observed transitions is the fit (see
+  # `mostm_fit_orm_paths()`), and nothing needs to be compiled.
+  if (!mostm_path_plan(setup, ranges, path)$n_steps_total) {
+    return(mostm_fit_blrm(observed_setup, ...))
+  }
+  mostm_check_observed_states(setup, ranges, path)
 
   # The model structure comes from `rmsb::blrm()` itself, fitted to the fully
   # observed transitions: design matrix, state labels and every field the
@@ -57,20 +63,10 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   )
   fit_data <- markov_align_model_data(setup$data, fit_frame)
 
-  rows <- mostm_subset_row_index(setup$subset_rows, nrow(setup$data))
-  data <- setup$data[rows, , drop = FALSE]
-  plan <- markov_path_plan(
-    data = data,
-    ranges = list(
-      labels = labels,
-      lo = ranges$lo[rows],
-      hi = ranges$hi[rows]
-    ),
-    absorb = match(as_state_labels(path$absorb), labels),
-    id_var = path$id_var,
-    time_var = path$time_var,
-    p_var = path$p_var,
-    weights = NULL,
+  plan <- mostm_path_plan(
+    setup,
+    ranges,
+    path,
     design = function(rows) blrm_design_matrix(fit, rows)
   )
 
@@ -88,12 +84,30 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   n_states <- length(labels)
   contrast <- fit$Contrast
   n_contrasts <- if (is.null(contrast)) 0L else nrow(contrast)
+  # Observed transitions with the same predictors and state are counted.
+  observed_row <- markov_distinct_rows(x)
+  n_observed_rows <- max(observed_row)
+  observed_state <- match(
+    as.character(markov_blrm_observed_states(fit)),
+    labels
+  )
+  cell_count <- table(
+    factor(observed_row, levels = seq_len(n_observed_rows)),
+    factor(observed_state, levels = seq_len(n_states))
+  )
+  cells <- which(cell_count > 0)
   stan_data <- list(
-    N = nrow(x),
     p = n_predictors,
     k = n_states,
-    X = unname(unclass(transform$X))[, , drop = FALSE],
-    y = match(as.character(markov_blrm_observed_states(fit)), labels),
+    Go = n_observed_rows,
+    Xo = unname(unclass(transform$X))[
+      !duplicated(observed_row),
+      ,
+      drop = FALSE
+    ],
+    n_cells = length(cells),
+    cell = as.array(cells),
+    cell_count = as.array(as.numeric(cell_count[cells])),
     G = nrow(x_gap),
     Xg = x_gap,
     S = length(plan$stretch_n_steps),
@@ -116,7 +130,6 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     cmus = as.array(rep_len(args$pcontrast$mu %||% 0, n_contrasts)),
     csds = as.array(rep_len(args$pcontrast$sd %||% 100, n_contrasts))
   )
-  attr(stan_data$X, "scaled:center") <- NULL
 
   iter <- args$iter %||% 2000
   warmup <- args$warmup %||% (iter / 2)

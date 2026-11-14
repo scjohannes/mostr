@@ -84,7 +84,8 @@ make_test_model <- function(data) {
     data = data,
     id_var = "id",
     absorb = 6,
-    engine = "vglm"
+    engine = "vglm",
+    missing_states = "drop"
   ))
 }
 

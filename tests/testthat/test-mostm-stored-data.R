@@ -311,7 +311,8 @@ test_that("missing values leave complete starting profiles of the fitted patient
   vglm_args <- list(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    engine = "vglm"
+    engine = "vglm",
+    missing_states = "drop"
   )
   # Each case changes the data, fits it, and checks the starting profiles.
   cases <- list(

@@ -204,14 +204,14 @@ path_stretches <- function(K, top) {
     s(K - 1, 1, 1, c(1, 1, 1, 2), c(top, top, top, 2), weight = 3),
     s(1, 3, 0, 1, top),
     s(2, 2, -1, c(1, 1), c(top, top), weight = 1.5),
-    s(3, 1, 0.8, c(1, 1, 1), c(top, top, top)),
+    s(K - 1, 1, 0.8, c(1, 1, 1), c(top, top, top)),
     s(2, 2, 0.1, c(2, K - 1), c(3, K - 1)),
     s(1, 1, -0.2, c(2, 1), c(3, top), weight = 2),
     s(2, 3, 0.4, 2, 3, weight = 0.8),
     s(1, 2, 0.6, c(3, K), c(K, K)),
     s(2, 1, -0.7, c(3, K - 1), c(K, K)),
     s(1, 1, 0.9, c(1, 1), c(top, K)),
-    s(3, 2, -0.3, c(2, 3, 1), c(2, 3, 1), weight = 1.2)
+    s(K - 1, 2, -0.3, c(2, 1, 2), c(2, 1, 2), weight = 1.2)
   )
 }
 
