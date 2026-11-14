@@ -68,14 +68,16 @@ test_that("orm robust covariance is preserved when time units change", {
   days <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = case$data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   )
   data <- case$data
   data$minutes <- data$time * 1440
   minutes <- mostm(
     ordered(y) ~ minutes + tx + yprev,
     data = data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   )
   units <- ifelse(names(stats::coef(minutes)) == "minutes", 1440, 1)
 
@@ -92,6 +94,7 @@ test_that("orm robust covariance is preserved when time units change", {
 })
 
 test_that("orm bread validation rejects nonpositive and singular matrices", {
+  skip_on_cran()
   fit <- local_robcov_orm_case()$fit
   coefficient_names <- names(stats::coef(fit))
   fit$orig.var <- diag(length(coefficient_names))
@@ -108,57 +111,102 @@ test_that("orm bread validation rejects nonpositive and singular matrices", {
   expect_snapshot(error = TRUE, orm_model_bread(fit))
 })
 
-test_that("orm HC1 and cluster corrections are exact scalar adjustments", {
+test_that("orm small-sample and cluster corrections count only represented rows and clusters", {
+  skip_on_cran()
   case <- local_robcov_orm_case()
-  fit <- case$fit
-  cluster <- case$data$id
-  n <- nrow(fit$x)
-  p <- length(stats::coef(fit))
-  n_clusters <- length(unique(cluster))
 
-  hc0 <- robcov_orm(fit, cluster, type = "HC0", cadjust = FALSE)
-  hc1 <- robcov_orm(fit, cluster, type = "HC1", cadjust = FALSE)
-  cluster_adjusted <- robcov_orm(
-    fit,
-    cluster,
-    type = "HC0",
-    cadjust = TRUE
-  )
-  combined <- robcov_orm(fit, cluster, type = "HC1", cadjust = TRUE)
+  # Weighted case: two whole clusters and one further row get weight zero.
+  weights <- rep(1, nrow(case$data))
+  zero_cluster_ids <- unique(case$data$id)[1:2]
+  weights[case$data$id %in% zero_cluster_ids] <- 0
+  weights[which(!case$data$id %in% zero_cluster_ids)[1L]] <- 0
+  weighted_data <- case$data
+  weighted_data$case_weight <- weights
+  weighted <- suppressWarnings(rms::orm(
+    ordered(y) ~ time + tx + yprev,
+    data = weighted_data,
+    weights = case_weight,
+    x = TRUE,
+    y = TRUE
+  ))
 
-  hc1_factor <- (n - 1) / (n - p)
-  cluster_factor <- n_clusters / (n_clusters - 1)
-  expect_equal(hc1$var, hc0$var * hc1_factor, tolerance = 1e-12)
-  expect_equal(
-    cluster_adjusted$var,
-    hc0$var * cluster_factor,
-    tolerance = 1e-12
+  cases <- list(
+    list(label = "unweighted", fit = case$fit, excluded_clusters = integer()),
+    list(
+      label = "zero-weight rows and clusters",
+      fit = weighted,
+      excluded_clusters = zero_cluster_ids
+    )
   )
-  expect_equal(
-    combined$var,
-    hc0$var * hc1_factor * cluster_factor,
-    tolerance = 1e-12
-  )
+
+  for (correction_case in cases) {
+    label <- correction_case$label
+    fit <- correction_case$fit
+    cluster <- case$data$id
+    represented <- orm_case_weights(fit, nrow(fit$x)) > 0
+    represented_clusters <- unique(cluster[represented])
+    n_represented <- sum(represented)
+    n_clusters <- length(represented_clusters)
+    p <- length(stats::coef(fit))
+
+    hc0 <- robcov_orm(fit, cluster, type = "HC0", cadjust = FALSE)
+    hc1 <- robcov_orm(fit, cluster, type = "HC1", cadjust = FALSE)
+    cluster_adjusted <- robcov_orm(fit, cluster, type = "HC0", cadjust = TRUE)
+    combined <- robcov_orm(fit, cluster, type = "HC1", cadjust = TRUE)
+    hc0_metadata <- attr(hc0, "markov_robust_covariance")
+    combined_metadata <- attr(combined, "markov_robust_covariance")
+
+    hc1_factor <- (n_represented - 1) / (n_represented - p)
+    cluster_factor <- n_clusters / (n_clusters - 1)
+    expect_equal(hc1$var, hc0$var * hc1_factor, tolerance = 1e-12, info = label)
+    expect_equal(
+      cluster_adjusted$var,
+      hc0$var * cluster_factor,
+      tolerance = 1e-12,
+      info = label
+    )
+    expect_equal(
+      combined$var,
+      hc0$var * hc1_factor * cluster_factor,
+      tolerance = 1e-12,
+      info = label
+    )
+    expect_equal(
+      combined_metadata$adjustment_factor,
+      hc1_factor * cluster_factor,
+      info = label
+    )
+    expect_equal(hc0_metadata$n_rows, nrow(fit$x), info = label)
+    expect_equal(hc0_metadata$n_represented_rows, n_represented, info = label)
+    expect_equal(hc0_metadata$n_clusters, n_clusters, info = label)
+    expect_identical(hc0_metadata$cluster, cluster, info = label)
+    expect_false(
+      any(correction_case$excluded_clusters %in% represented_clusters),
+      info = label
+    )
+  }
 })
 
-test_that("orm robust covariance aggregates repeated rows by represented cluster", {
+test_that("orm robust covariance ignores empty cluster factor levels", {
   case <- local_robcov_orm_case()
   fit <- case$fit
-  cluster <- factor(case$data$id, levels = c(unique(case$data$id), 9999))
-  robust <- robcov_orm(fit, cluster, type = "HC0", cadjust = FALSE)
-  metadata <- attr(robust, "markov_robust_covariance")
-
-  scores <- compute_scores_orm(fit)
-  cluster_ids <- unique(as.character(cluster))
-  clustered_scores <- rowsum(
-    scores,
-    factor(as.character(cluster), levels = cluster_ids),
-    reorder = FALSE
+  with_empty_level <- factor(
+    case$data$id,
+    levels = c(unique(case$data$id), 9999)
+  )
+  robust <- robcov_orm(fit, with_empty_level, type = "HC1", cadjust = TRUE)
+  without_empty_level <- robcov_orm(
+    fit,
+    case$data$id,
+    type = "HC1",
+    cadjust = TRUE
   )
 
-  expect_lt(nrow(clustered_scores), nrow(scores))
-  expect_equal(metadata$n_clusters, length(unique(case$data$id)))
-  expect_false("9999" %in% rownames(clustered_scores))
+  expect_equal(robust$var, without_empty_level$var, tolerance = 1e-12)
+  expect_equal(
+    attr(robust, "markov_robust_covariance")$n_clusters,
+    length(unique(case$data$id))
+  )
 })
 
 test_that("the orm engine stores package robust covariance metadata by default", {
@@ -166,7 +214,8 @@ test_that("the orm engine stores package robust covariance metadata by default",
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = case$data,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   )
   metadata <- attr(fit, "markov_robust_covariance")
   n_clusters <- length(unique(case$data$id))
@@ -194,25 +243,17 @@ test_that("weighted orm scores equal numerical weighted row likelihood derivativ
   scores <- compute_scores_orm(weighted)
   coefficient <- stats::coef(weighted)
   rows <- unique(c(1L, nrow(weighted$x) %/% 2L, nrow(weighted$x)))
-  numerical <- matrix(
-    NA_real_,
-    nrow = length(rows),
-    ncol = length(coefficient),
-    dimnames = list(NULL, names(coefficient))
+  numerical <- central_difference_jacobian(
+    function(coefficient) {
+      vapply(
+        rows,
+        function(row) orm_test_row_loglik(weighted, row, coefficient),
+        numeric(1)
+      )
+    },
+    coefficient
   )
   rownames(numerical) <- rownames(scores)[rows]
-
-  for (i in seq_along(rows)) {
-    for (j in seq_along(coefficient)) {
-      step <- .Machine$double.eps^(1 / 3) * max(1, abs(coefficient[j]))
-      upper <- lower <- coefficient
-      upper[j] <- upper[j] + step
-      lower[j] <- lower[j] - step
-      numerical[i, j] <- (orm_test_row_loglik(weighted, rows[i], upper) -
-        orm_test_row_loglik(weighted, rows[i], lower)) /
-        (2 * step)
-    }
-  }
 
   expect_equal(scores[rows, ], numerical, tolerance = 1e-7)
 
@@ -232,15 +273,13 @@ test_that("weighted orm scores equal numerical weighted row likelihood derivativ
     ordered(y) ~ time + tx + yprev,
     data = weighted_data,
     weights = case_weight,
-    id_var = "id"
+    id_var = "id",
+    absorb = 6
   ))
   average <- avg_sops(
     wrapped,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = wrapped$yunique,
-    absorb = 6,
-    p_var = "yprev"
+    times = 1:2
   )
   inferred <- inferences(average, method = "delta", vcov = "conditional")
   expect_true(all(is.finite(inferred$std.error)))
@@ -449,53 +488,4 @@ test_that("get_vcov_robust inherits and explicitly overrides stored orm correcti
     expected_cadjust_override,
     tolerance = 1e-12
   )
-})
-
-test_that("zero-weight rows and clusters do not enter orm corrections", {
-  case <- local_robcov_orm_case()
-  weights <- rep(1, nrow(case$data))
-  zero_cluster_ids <- unique(case$data$id)[1:2]
-  weights[case$data$id %in% zero_cluster_ids] <- 0
-  weights[which(!case$data$id %in% zero_cluster_ids)[1L]] <- 0
-  weighted_data <- case$data
-  weighted_data$case_weight <- weights
-  weighted <- suppressWarnings(rms::orm(
-    ordered(y) ~ time + tx + yprev,
-    data = weighted_data,
-    weights = case_weight,
-    x = TRUE,
-    y = TRUE
-  ))
-
-  fitted_weights <- orm_case_weights(weighted, nrow(weighted$x))
-  represented <- fitted_weights > 0
-  represented_clusters <- unique(case$data$id[represented])
-  n_represented <- sum(represented)
-  n_clusters <- length(represented_clusters)
-  p <- length(stats::coef(weighted))
-
-  hc0 <- robcov_orm(
-    weighted,
-    cluster = case$data$id,
-    type = "HC0",
-    cadjust = FALSE
-  )
-  corrected <- robcov_orm(
-    weighted,
-    cluster = case$data$id,
-    type = "HC1",
-    cadjust = TRUE
-  )
-  hc0_metadata <- attr(hc0, "markov_robust_covariance")
-  corrected_metadata <- attr(corrected, "markov_robust_covariance")
-  expected_factor <-
-    (n_represented - 1) / (n_represented - p) * n_clusters / (n_clusters - 1)
-
-  expect_equal(hc0_metadata$n_rows, nrow(weighted$x))
-  expect_equal(hc0_metadata$n_represented_rows, n_represented)
-  expect_equal(hc0_metadata$n_clusters, n_clusters)
-  expect_identical(hc0_metadata$cluster, case$data$id)
-  expect_equal(corrected_metadata$adjustment_factor, expected_factor)
-  expect_equal(corrected$var, hc0$var * expected_factor, tolerance = 1e-12)
-  expect_false(any(zero_cluster_ids %in% represented_clusters))
 })

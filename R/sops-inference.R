@@ -18,14 +18,13 @@
 #'   \itemize{
 #'     \item `"mvn"`: Multivariate-normal coefficient draws.
 #'     \item `"delta"`: Deterministic analytical delta-method inference.
-#'     \item `"score_bootstrap"`: One-step score perturbation using fixed
-#'       exponential cluster weights.
 #'     \item `"bootstrap"`: Ordinary patient-level refit bootstrap.
 #'     \item `"fwb"`: Fractional weighted refits using fixed exponential
 #'       patient weights.
 #'   }
 #' @param n_draws Number of simulation draws (for simulation) or bootstrap
-#'   iterations (for bootstrap). Default is 1000. For `blrm` SOP objects this
+#'   iterations (for bootstrap). Default is 1000. Must be a single whole number
+#'   of at least 2; `method = "delta"` does not use it. For `blrm` SOP objects this
 #'   argument is ignored; rerun `sops()`/`avg_sops()` with `n_draws` and `seed`
 #'   to change posterior draws.
 #' @param vcov For `method = "delta"`, `"conditional"` treats prediction or
@@ -47,8 +46,7 @@
 #'   stored fitting-data column. Otherwise the model's stored `id_var` is used;
 #'   fitting rows are never treated as implicit clusters. For unconditional
 #'   inference, the cluster labels must match the stored starting-profile patient
-#'   IDs exactly. For score bootstrap with `orm`, this is the row-aligned cluster
-#'   vector.
+#'   IDs exactly.
 #' @param workers Number of parallel workers. If NULL (default) or 1, uses
 #'   sequential processing. If > 1, uses parallel processing with that many
 #'   workers.
@@ -89,11 +87,12 @@
 #' @param return_draws Logical. If `TRUE`, stores individual simulation or
 #'   bootstrap draws as an attribute. Extract with [get_draws()]. Delta
 #'   inference never stores draws. Default is `TRUE`.
-#' @param update_datadist Logical. Whether to update datadist for rms models
-#'   during bootstrap. Default is TRUE.
-#' @param use_coefstart Logical. If `TRUE`, `vglm` refits start from the
-#'   original fit's coefficients, which can speed up convergence. Default is
-#'   `FALSE`. See "Starting values in refits" in Details.
+#' @param use_coefstart Logical. If `TRUE`, each refit of
+#'   `method = "bootstrap"` or `"fwb"` starts from the original fit's
+#'   coefficients, which can speed up convergence. Only models fitted with
+#'   `engine = "vglm"` accept starting coefficients, so `TRUE` is an error for
+#'   other models and for `method = "mvn"` or `"delta"`, which do not refit.
+#'   Default is `FALSE`. See "Starting values in refits" in Details.
 #'
 #' @return The input object with added columns:
 #'   \item{conf.low}{Lower confidence bound}
@@ -106,13 +105,20 @@
 #'   the object also has `statistic`, `p.value`, and `s.value` columns; see
 #'   `null`.
 #'
+#'   A comparison of a variable that the model doesn't use (see `variables`
+#'   in [avg_comparisons()]) is 0 for a difference, or 1 for a ratio, whatever
+#'   the coefficients are, so it has no uncertainty. For such results every
+#'   method returns `NA` in all of these columns except `estimate`, as the
+#'   marginaleffects package does. Predictions under such a variable, from
+#'   [sops()], [avg_sops()], [state_time()], or [avg_state_time()], are
+#'   ordinary predictions and keep their standard errors.
+#'
 #'   For simulation and bootstrap methods, `return_draws = TRUE` also stores a
 #'   `"draws"` attribute containing all individual draws. Delta results instead
 #'   store a low-rank `"analytical"` attribute and never store draws. For
 #'   per-profile results from `sops()`, [state_time()], and [comparisons()]
-#'   evaluated on the stored prediction cohort, score-bootstrap and FWB draws
-#'   include the
-#'   draw-specific `score_weight` or `fwb_weight` column.
+#'   evaluated on the stored prediction cohort, FWB draws include the
+#'   draw-specific `fwb_weight` column.
 #'
 #' @details
 #' ## Analytical Delta Method
@@ -151,14 +157,18 @@
 #' transition and have exactly one complete model-stored starting profile. The
 #' starting profile may have a missing first transition response; its ID,
 #' predictors, scheduled starting time, and previous state must be observed.
-#' Weighted and penalized ORM fits do not support unconditional variance because
-#' their score/sensitivity contracts have not been established. They remain
-#' eligible for conditional delta inference when their fitted covariance is valid.
+#' Unconditional variance is not available for models fitted with case weights
+#' (`weights` in [mostm()]) with any engine, because its calculation has not
+#' been checked with weights; this includes the default `vcov = NULL` for
+#' averages. Nor is it available for penalized `orm` fits, because their
+#' patients' contributions to coefficient estimation have not been shown to
+#' account for the penalty. Both kinds of fit still give conditional variance
+#' with `vcov = "conditional"`.
 #'
-#' Analytical covariance is patient-cluster robust only when valid patient IDs
-#' are supplied explicitly or retained as the fitted model's `id_var`.
-#' Observation rows are not an automatic clustering fallback, and multiway or
-#' otherwise non-patient cluster structures are not currently supported.
+#' Analytical covariance is patient-cluster robust: it groups the fitting rows
+#' by the `id_var` column named in [mostm()], or by the patient IDs given in
+#' `cluster`. Multiway or otherwise non-patient cluster structures are not
+#' currently supported.
 #' Patient-cluster robustness protects variance estimation against
 #' within-patient score correlation; it does not remove bias from a misspecified
 #' transition model, informative observation process, or Markov assumption.
@@ -169,24 +179,13 @@
 #' The simulation method works as follows:
 #' 1. Extract the fitted coefficient vector \eqn{\hat\beta} and its estimated
 #'    covariance matrix \eqn{V_\beta}.
-#' 2. Generate `n_draws` coefficient vectors using the selected method:
-#'    \itemize{
-#'      \item `method = "mvn"`: Multivariate-normal draws from
-#'        \eqn{\mathcal{N}(\hat\beta, V_\beta)}.
-#'      \item `method = "score_bootstrap"`: one-step score perturbation with
-#'        cluster-level exponential multipliers.
-#'    }
+#' 2. Generate `n_draws` coefficient vectors from the multivariate normal
+#'    distribution \eqn{\mathcal{N}(\hat\beta, V_\beta)} (`method = "mvn"`).
 #' 3. For each draw, replace model coefficients and compute SOPs
 #' 4. Compute confidence intervals from the empirical distribution
 #'
-#' - Works for both individual-level (`sops()`) and averaged (`avg_sops()`) SOPs
-#'   for `method = "mvn"`
-#' - `method = "score_bootstrap"` supports `avg_sops()` and `sops()` with
-#'   `robcov_vglm` models and with `orm` models when `cluster` is supplied.
-#'   When the prediction rows are the stored patients, the same
-#'   cluster-level weights used for the score perturbation are used for every
-#'   empirical averaging step. With `by`, weights are normalized within each
-#'   subgroup; without `by`, they are normalized over the full set of stored patients.
+#' This works for both individual-level (`sops()`) and averaged (`avg_sops()`)
+#' SOPs.
 #'
 #' ## Bootstrap Method
 #'
@@ -194,8 +193,9 @@
 #' 1. Sample patient IDs with replacement (`method = "bootstrap"`) or draw
 #'    exponential patient weights normalized to mean 1 (`method = "fwb"`)
 #' 2. Refit the model on the bootstrap sample by calling [mostm()] again with
-#'    the original engine and arguments (handles missing states through
-#'    releveling)
+#'    the original engine and arguments. A state that no sampled patient was
+#'    ever in is left out of that refit, and the other states keep their
+#'    labels (see below)
 #' 3. Compute SOPs using G-computation
 #' 4. Compute percentile-based confidence intervals
 #' Bootstrap refits always resample the full longitudinal data (all time
@@ -212,40 +212,85 @@
 #' also leave out every patient of a small group, and that resample would then
 #' have no estimate for the group. `inferences()` checks the resamples before
 #' refitting and stops if any resample lacks a group; the fractional weighted
-#' bootstrap keeps every patient in every refit and has no such gaps. Fractional weighted bootstrap keeps every row in
+#' bootstrap keeps every patient in every refit and has no such gaps.
+#'
+#' In the same way, an ordinary resample can leave out every patient who was
+#' ever in a rare state. The refit of that resample doesn't know the state, so
+#' in that draw the state's occupancy probability is 0, as it is in a resample
+#' where no patient visits it. The refit also has no estimate for moving out
+#' of the state, so it cannot predict for a profile that starts there. With
+#' `newdata`, each draw predicts the same supplied profiles, so
+#' before refitting `inferences()` checks that every resample holds every
+#' state that a profile starts in (`yprev`, and for second-order models also
+#' the state two visits back). If one does not, it stops, naming the state
+#' and the number of resamples that lack it. Use `method = "fwb"` then, or
+#' remove those profiles from `newdata`. Without `newdata`, each draw
+#' predicts its own resampled patients, so their starting states are always
+#' present.
+#'
+#' A draw whose refit or prediction fails, for example because the model
+#' cannot be fitted to that resample, is left out with a warning that says
+#' why. A final warning then says how many of the draws failed, because the
+#' confidence intervals rest on the remaining draws only.
+#'
+#' Fractional weighted bootstrap keeps every row in
 #' the refit data with positive patient-level weights, so it is available for
 #' individual `sops()` objects. The same holds for [comparisons()] results,
-#' which also support `method = "mvn"` and `method = "score_bootstrap"`. For
+#' which also support `method = "mvn"`. For
 #' FWB, the same patient weights used for
 #' refitting are used for marginal or subgroup averaging. Stored-data
 #' `sops()` draws and stored-data [comparisons()] draws expose the patient
-#' weight as `fwb_weight` (or `score_weight` for the score bootstrap);
+#' weight as `fwb_weight`;
 #' averaging each draw's comparisons with these weights reproduces the
 #' [avg_comparisons()] draws. `avg_sops()` uses the weights internally and
 #' returns already averaged draws.
 #' Prediction data for such per-profile draw output must not already contain a
-#' column named `fwb_weight` or `score_weight`, because those names are reserved
-#' for bootstrap draw weights.
+#' column named `fwb_weight`, because that name is reserved for bootstrap draw
+#' weights.
 #'
 #' For marginal `avg_sops()` objects built from user-supplied `newdata`, the
 #' supplied patients' starting states and covariates are treated as given.
-#' This also applies to `sops(newdata = ...)`. Score bootstrap and FWB use the
-#' data stored on the fitted model for coefficient or refit uncertainty, but do
+#' This also applies to `sops(newdata = ...)`. FWB uses the
+#' data stored on the fitted model for refit uncertainty, but does
 #' not attach or apply draw weights to the supplied prediction profiles because
-#' those rows cannot be assumed to align with the bootstrap clusters.
+#' those rows cannot be assumed to align with the bootstrap patients.
+#'
+#' This holds even when `newdata` holds the very patients the model was
+#' fitted to. Both calls below refit the model to resamples of the stored
+#' data, so both reflect the uncertainty of the coefficients; they differ in
+#' whom each draw predicts for:
+#'
+#' * `avg_sops(fit)` predicts, in each draw, the patients of that resample,
+#'   so the draws also vary in which starting states and covariates are
+#'   averaged over. Its intervals match unconditional variance.
+#' * `avg_sops(fit, newdata = profiles)` predicts the same profiles in every
+#'   draw, so their starting states and covariates are held fixed. Its
+#'   intervals match conditional variance and are narrower.
+#'
+#' In one simulated trial (200 patients, 400 draws) with `newdata` set to the
+#' fitted patients' own starting rows, the standard errors with `newdata` were
+#' a median of 0.82 times those without it, and 0.23 times for an early visit
+#' whose probability depends mostly on the starting state. Leave out `newdata`
+#' to include the variation between patients; supply it to describe fixed
+#' profiles. A profile that starts in a state that some resample lacks has
+#' no prediction in that draw, so `inferences()` then stops and suggests
+#' `method = "fwb"`.
 #'
 #' ## Starting values in refits
 #'
 #' Starting values are the coefficient values from which the fitting algorithm
 #' begins its search. They can come from `use_coefstart = TRUE` (the original
 #' fit's coefficients) or from a `coefstart` argument you passed to
-#' [mostm()] with `engine = "vglm"`. A refit uses them only when its bootstrap
+#' [mostm()]; both need `engine = "vglm"`. A refit uses them only when its bootstrap
 #' sample contains
 #' every outcome state. When a state is missing, the refit has fewer intercepts
 #' than the original model, so the starting values no longer fit and the model
 #' is refitted without any. If a refit with starting values fails, for example
 #' because a covariate level is absent from the sample, it is retried once
 #' without them.
+#'
+#' Refits do not use an rms `datadist`. A `datadist` you have set with
+#' `options(datadist = ...)` is ignored during the refits and left as it is.
 #'
 #' Choosing conditional or unconditional analytical variance changes the
 #' standard errors and confidence intervals, not the point estimates.
@@ -255,17 +300,19 @@
 #' When `variables` in [avg_sops()], [avg_state_time()], or [avg_comparisons()] sets
 #' the previous-state variable, for example
 #' `variables = list(yprev = c("1", "2"))`, every patient starts in the set
-#' state in each scenario. Real-time summaries then start from that state
+#' state in each scenario. The same holds for a second-order model when
+#' `variables` sets the state two visits back (the `p2_var` column, for
+#' example `variables = list(ypprev = c("1", "2"))`). Real-time summaries then start from that state
 #' rather than from the patients' observed starting states. Such results
 #' support only conditional variance: use `method = "delta"` with
 #' `vcov = "conditional"` (or a coefficient covariance matrix), or
-#' `method = "mvn"`. Unconditional delta inference and the score-bootstrap,
-#' bootstrap, and FWB methods error, because they also account for which
+#' `method = "mvn"`. Unconditional delta inference and the bootstrap and FWB
+#' methods error, because they also account for which
 #' patients were sampled, and that calculation is not supported once the
 #' starting state is set. [state_time()] and [comparisons()] results are not
 #' averaged over
 #' patients, so with a set starting state they keep the conditional delta,
-#' MVN, score-bootstrap, and FWB methods.
+#' MVN, and FWB methods.
 #'
 #' @seealso [avg_sops()], [sops()], [get_draws()],
 #'   [robcov_vglm()], [set_coef()]
@@ -277,6 +324,7 @@
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = data,
 #'   id_var = "id",
+#'   absorb = "6",
 #'   engine = "vglm"
 #' )
 #'
@@ -284,72 +332,48 @@
 #' result_sim <- avg_sops(
 #'   model = fit_robust,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   y_levels = factor(1:6),
-#'   absorb = "6"
+#'   times = 1:60
 #' ) |>
 #'   inferences(method = "mvn", n_draws = 1000)
 #'
-#' # Step 2a-bis: Score bootstrap simulation (requires robcov_vglm)
-#' result_score <- avg_sops(
-#'   model = fit_robust,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   y_levels = factor(1:6),
-#'   absorb = "6"
-#' ) |>
-#'   inferences(method = "score_bootstrap", n_draws = 1000)
-#'
 #' # The orm engine stores the package-owned full robust covariance matrix.
-#' dd <- rms::datadist(data)
-#' options(datadist = "dd")
-#' fit_orm <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
+#' fit_orm <- mostm(
+#'   y ~ time + tx + yprev,
+#'   data = data,
+#'   id_var = "id",
+#'   absorb = "6"
+#' )
 #'
 #' avg_orm <- avg_sops(
 #'   model = fit_orm,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   y_levels = factor(1:6),
-#'   absorb = "6"
+#'   times = 1:60
 #' )
 #' result_orm <- avg_orm |>
 #'   inferences(method = "mvn", n_draws = 1000)
-#'
-#' result_orm_score <- avg_orm |>
-#'   inferences(
-#'     method = "score_bootstrap",
-#'     cluster = data$id,
-#'     n_draws = 1000
-#'   )
 #'
 #' # Step 2b: Bootstrap inference reuses stored full data
 #' result_boot <- avg_sops(
 #'   model = fit_robust,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   y_levels = factor(1:6),
-#'   absorb = "6"
+#'   times = 1:60
 #' ) |>
 #'   inferences(method = "bootstrap", n_draws = 500)
 #'
 #' # Individual-level SOPs with simulation inference
 #' ind_result <- sops(
 #'   model = fit_robust,
-#'   times = 1:60,
-#'   y_levels = factor(1:6),
-#'   absorb = "6") |>
+#'   times = 1:60) |>
 #'   inferences(n_draws = 500)
 #'
 #' # Individual-level refit bootstrap uses FWB.
 #' ind_boot <- sops(
 #'   model = fit_robust,
-#'   times = 1:60,
-#'   y_levels = factor(1:6),
-#'   absorb = "6") |>
+#'   times = 1:60) |>
 #'   inferences(method = "fwb", n_draws = 500)
 #'
 #' # Extract draws for custom analyses
-#' get_draws(ind_result)
+#' draws <- get_draws(result_sim)
 #'
 #' # Compute treatment effect on time in state
 #' library(dplyr)
@@ -378,7 +402,51 @@ inferences <- function(
   conf_type = "auto",
   null = "auto",
   return_draws = TRUE,
-  update_datadist = TRUE,
+  use_coefstart = FALSE
+) {
+  if (identical(method, "score_bootstrap")) {
+    mostr_abort(
+      "The score bootstrap (`method = \"score_bootstrap\"`) was removed from ",
+      "mostr. Use `method = \"mvn\"`, `\"delta\"`, `\"bootstrap\"`, or `\"fwb\"`."
+    )
+  }
+  method <- match.arg(method, choices = inferences_public_methods())
+  check_use_coefstart(use_coefstart, attr(x, "model"), method)
+  inferences_internal(
+    x = x,
+    method = method,
+    n_draws = n_draws,
+    vcov = vcov,
+    cluster = cluster,
+    workers = workers,
+    seed = seed,
+    conf_level = conf_level,
+    conf_type = conf_type,
+    null = null,
+    return_draws = return_draws,
+    use_coefstart = use_coefstart
+  )
+}
+
+inferences_public_methods <- function() {
+  c("mvn", "delta", "bootstrap", "fwb")
+}
+
+# Internal entry point to every inference method. Package code that runs
+# inference on an intermediate result (for example, the SOPs behind an
+# average time) calls this so that the method of the outer call is kept.
+inferences_internal <- function(
+  x,
+  method = "mvn",
+  n_draws = 1000,
+  vcov = NULL,
+  cluster = NULL,
+  workers = NULL,
+  seed = NULL,
+  conf_level = 0.95,
+  conf_type = "auto",
+  null = "auto",
+  return_draws = TRUE,
   use_coefstart = FALSE
 ) {
   with_sop_fallback_notification_scope({
@@ -394,7 +462,6 @@ inferences <- function(
         conf_type = conf_type,
         null = null,
         return_draws = return_draws,
-        update_datadist = update_datadist,
         use_coefstart = use_coefstart
       )
     })
@@ -412,7 +479,6 @@ inferences_impl <- function(
   conf_type,
   null,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   # --- Input Validation ---
@@ -429,7 +495,7 @@ inferences_impl <- function(
       )
     )
   ) {
-    stop(
+    mostr_abort(
       "inferences() requires a 'markov_avg_sops', 'markov_sops', ",
       "'markov_avg_state_time', 'markov_state_time', 'markov_avg_comparisons', ",
       "or 'markov_comparisons' object. ",
@@ -443,7 +509,7 @@ inferences_impl <- function(
   null <- resolve_inference_null(null, x)
   method <- match.arg(
     method,
-    choices = c("mvn", "delta", "score_bootstrap", "bootstrap", "fwb")
+    choices = c("mvn", "delta", "bootstrap", "fwb")
   )
 
   conf_type <- match.arg(
@@ -471,25 +537,29 @@ inferences_impl <- function(
   }
 
   if (!identical(method, "delta") && is.character(vcov)) {
-    stop(
+    mostr_abort(
       "Character `vcov` choices are only available with `method = \"delta\"`."
     )
   }
   if (!identical(method, "delta") && identical(conf_type, "logit")) {
-    stop("`conf_type = \"logit\"` is only available with `method = \"delta\"`.")
+    mostr_abort(
+      "`conf_type = \"logit\"` is only available with `method = \"delta\"`."
+    )
   }
 
+  # A result passed in again keeps nothing of its earlier inference run, so
+  # every method below starts from the estimates. `blrm` results are left as
+  # they are: their intervals and draws come from the posterior.
   if (!inherits(attr(x, "model"), "blrm")) {
-    attr(x, "baseline_anchor_draws") <- NULL
+    x <- clear_inference_results(x)
   }
 
   if (identical(method, "delta")) {
     if (inherits(attr(x, "model"), "blrm")) {
-      stop(
+      mostr_abort(
         "Analytical delta inference is not available for `blrm` models; ",
         "use the posterior intervals returned by `sops()`, `avg_sops()`, ",
-        "`avg_comparisons()`, or `avg_state_time()`.",
-        call. = FALSE
+        "`avg_comparisons()`, or `avg_state_time()`."
       )
     }
     covariance <- delta_resolve_vcov(x, vcov)
@@ -532,7 +602,9 @@ inferences_impl <- function(
         conf_type = conf_type
       )
     }
-    return(add_null_test(result, null, warn = null_requested))
+    return(drop_unused_comparison_uncertainty(
+      add_null_test(result, null, warn = null_requested)
+    ))
   }
 
   if (inherits(attr(x, "model"), "blrm")) {
@@ -545,25 +617,25 @@ inferences_impl <- function(
     return(x)
   }
 
+  # Every draw-based method (mvn, bootstrap, fwb) passes here; the delta
+  # method and `blrm` results returned above and never use `n_draws`. One draw
+  # gives no spread, so the smallest number accepted is 2.
   if (
-    method %in% c("score_bootstrap", "bootstrap", "fwb") &&
-      sets_starting_state(x)
+    !is.numeric(n_draws) ||
+      length(n_draws) != 1L ||
+      !is.finite(n_draws) ||
+      n_draws != round(n_draws) ||
+      n_draws < 2
   ) {
-    stop_starting_state_conditional_only()
+    mostr_abort("`n_draws` must be a single whole number of at least 2.")
   }
 
-  internal_method <- if (method %in% c("mvn", "score_bootstrap")) {
-    "simulation"
-  } else {
-    "bootstrap"
+  if (
+    method %in% c("bootstrap", "fwb") &&
+      sets_starting_state(x)
+  ) {
+    stop_starting_state_conditional_only(x)
   }
-  engine <- switch(
-    method,
-    mvn = "mvn",
-    score_bootstrap = "score_bootstrap",
-    bootstrap = "standard",
-    fwb = "fwb"
-  )
 
   if (inherits(x, "markov_avg_state_time")) {
     result <- inferences_avg_time(
@@ -576,11 +648,22 @@ inferences_impl <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     )
   } else if (inherits(x, c("markov_comparisons", "markov_state_time"))) {
     result <- inferences_profile_results(
+      object = x,
+      method = method,
+      n_draws = n_draws,
+      vcov = vcov,
+      workers = workers,
+      conf_level = conf_level,
+      conf_type = conf_type,
+      return_draws = return_draws,
+      use_coefstart = use_coefstart
+    )
+  } else if (inherits(x, "markov_avg_comparisons")) {
+    result <- inferences_avg_comparisons(
       object = x,
       method = method,
       n_draws = n_draws,
@@ -590,33 +673,13 @@ inferences_impl <- function(
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     )
-  } else if (inherits(x, "markov_avg_comparisons")) {
-    result <- inferences_avg_comparisons(
-      object = x,
-      method = internal_method,
-      engine = engine,
-      score_weight_dist = "exponential",
-      n_draws = n_draws,
-      vcov = vcov,
-      cluster = cluster,
-      workers = workers,
-      conf_level = conf_level,
-      conf_type = conf_type,
-      return_draws = return_draws,
-      update_datadist = update_datadist,
-      use_coefstart = use_coefstart
-    )
-  } else if (internal_method == "simulation") {
+  } else if (method == "mvn") {
     result <- inferences_simulation(
       object = x,
-      engine = engine,
-      score_weight_dist = "exponential",
       n_draws = n_draws,
       vcov = vcov,
-      cluster = cluster,
       conf_level = conf_level,
       conf_type = conf_type,
       workers = workers,
@@ -625,13 +688,12 @@ inferences_impl <- function(
   } else {
     result <- inferences_bootstrap(
       object = x,
-      engine = engine,
+      method = method,
       n_boot = n_draws,
       workers = workers,
       conf_level = conf_level,
       conf_type = conf_type,
       return_draws = return_draws,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart
     )
   }
@@ -644,14 +706,18 @@ inferences_impl <- function(
     conf_type = conf_type,
     return_draws = return_draws
   )
-  add_null_test(result, null, warn = null_requested)
+  drop_unused_comparison_uncertainty(
+    add_null_test(result, null, warn = null_requested)
+  )
 }
 
 # `"auto"` tests comparisons against "no effect": 0 for differences, 1 for
 # ratios. Other objects have no natural null, so `"auto"` skips the test.
 resolve_inference_null <- function(null, x) {
   if (is.character(null) && !identical(null, "auto")) {
-    stop("`null` must be \"auto\", NULL, or a single finite numeric value.")
+    mostr_abort(
+      "`null` must be \"auto\", NULL, or a single finite numeric value."
+    )
   }
   comparison <- if (
     inherits(x, c("markov_avg_comparisons", "markov_comparisons"))
@@ -668,7 +734,7 @@ resolve_inference_null <- function(null, x) {
     ))
   }
   if (identical(comparison, "ratio") && is.numeric(null) && isTRUE(null == 0)) {
-    stop("Ratio comparisons cannot be tested against `null = 0`.")
+    mostr_abort("Ratio comparisons cannot be tested against `null = 0`.")
   }
   null
 }
@@ -682,15 +748,13 @@ normalize_inference_result <- function(
   return_draws
 ) {
   primary_class <- class(x)[1]
-  draws <- attr(x, "draws")
-  attr(x, "draws") <- NULL
-  attr(x, "engine") <- NULL
-  attr(x, "score_weight_dist") <- NULL
   attr(x, "method") <- method
   attr(x, "n_draws") <- n_draws
   attr(x, "conf_level") <- conf_level
   attr(x, "conf_type") <- conf_type
-  attr(x, "draws") <- if (isTRUE(return_draws)) draws else NULL
+  if (!isTRUE(return_draws)) {
+    attr(x, "draws") <- NULL
+  }
   x <- order_estimate_columns(x)
   class(x) <- c(primary_class, "data.frame")
   x
@@ -707,11 +771,8 @@ normalize_inference_result <- function(
 #' at the point estimates with the (robust) variance-covariance matrix.
 #'
 #' @param object A `markov_avg_sops` or `markov_sops` object.
-#' @param engine Simulation engine (`"mvn"` or `"score_bootstrap"`).
-#' @param score_weight_dist Cluster weight distribution for score bootstrap.
 #' @param n_draws Number of simulation draws.
 #' @param vcov Custom variance-covariance matrix (optional, overrides model vcov).
-#' @param cluster Row-level cluster vector for orm score bootstrap.
 #' @param conf_level Confidence level.
 #' @param conf_type Type of confidence interval ("perc" or "wald").
 #' @param workers Number of parallel workers. If NULL or 1, uses sequential
@@ -723,11 +784,8 @@ normalize_inference_result <- function(
 #' @keywords internal
 inferences_simulation <- function(
   object,
-  engine,
-  score_weight_dist,
   n_draws,
   vcov,
-  cluster,
   conf_level,
   conf_type,
   workers,
@@ -735,19 +793,12 @@ inferences_simulation <- function(
 ) {
   # --- 1. Extract Stored Attributes ---
   model <- attr(object, "model")
-  newdata_orig <- attr(object, "newdata_orig")
-  newdata_pred_stored <- attr(object, "newdata_pred")
-  newdata_supplied <- isTRUE(attr(object, "newdata_supplied"))
+  newdata_pred <- attr(object, "newdata_pred")
   call_args <- attr(object, "call_args")
   avg_args <- attr(object, "avg_args")
 
-  time_var <- attr(object, "time_var")
-  p_var <- attr(object, "p_var")
-  p2_var <- attr(object, "p2_var")
-  y_levels <- attr(object, "y_levels")
-  absorb <- attr(object, "absorb")
-  gap_var <- attr(object, "gap_var")
-  time_covariates <- attr(object, "time_covariates")
+  settings <- markov_result_settings(object)
+  y_levels <- settings$y_levels
 
   # For avg_sops objects
   is_avg <- inherits(object, "markov_avg_sops")
@@ -756,90 +807,38 @@ inferences_simulation <- function(
     variables <- avg_args$variables
     by <- avg_args$by
     times <- avg_args$times
-    id_var <- avg_args$id_var
   } else {
     # For individual sops objects: one row per profile, never averaged
     times <- call_args$times
     variables <- NULL
     by <- NULL
-    id_var <- attr(object, "id_var") %||% markov_model_id_var(model)
-  }
-
-  if (is.null(model)) {
-    stop("Model not stored in object. Cannot perform simulation inference.")
   }
 
   # --- 2. Prepare Prediction Data (COMPUTED ONCE) ---
   if (is_avg) {
-    # For avg_sops: create counterfactual datasets
+    # For avg_sops: the stored prediction data hold the profiles once per
+    # counterfactual scenario
     grid <- create_counterfactual_grid(variables)
     n_cf <- nrow(grid)
-    if (!is.null(newdata_pred_stored)) {
-      newdata_pred <- newdata_pred_stored
-      if (nrow(newdata_pred) %% n_cf != 0L) {
-        stop("Stored prediction data is not aligned with counterfactual grid.")
-      }
-      n_each <- nrow(newdata_pred) / n_cf
-      baseline_data <- newdata_pred[seq_len(n_each), , drop = FALSE]
-    } else {
-      baseline_data <- resolve_markov_prediction_data(
-        newdata_orig,
-        id_var = id_var,
-        time_var = time_var
+    if (nrow(newdata_pred) %% n_cf != 0L) {
+      mostr_abort(
+        "Stored prediction data is not aligned with counterfactual grid."
       )
-      newdata_pred <- create_counterfactual_data(baseline_data, grid, variables)
-      n_each <- nrow(baseline_data)
     }
+    n_each <- nrow(newdata_pred) / n_cf
   } else {
     # For individual sops: use data directly
-    newdata_pred <- newdata_pred_stored %||% newdata_orig
     grid <- NULL
     n_cf <- 1
     n_each <- nrow(newdata_pred)
-    # Patient weights are drawn once per patient, even when `variables`
-    # repeats each patient's profile.
-    baseline_data <- if (newdata_supplied) {
-      NULL
-    } else {
-      prediction_weight_profiles(newdata_pred)
-    }
   }
 
   # --- 3. Generate Coefficient Draws ---
-  simulation_draws <- generate_sop_coefficient_draws(
+  beta_draws <- generate_sop_coefficient_draws(
     model = model,
-    engine = engine,
-    score_weight_dist = score_weight_dist,
     n_draws = n_draws,
-    vcov = vcov,
-    cluster = cluster,
-    baseline_data = baseline_data,
-    id_var = id_var,
-    newdata_supplied = newdata_supplied,
-    is_avg = is_avg,
-    return_draws = return_draws,
-    prediction_data = newdata_pred
+    vcov = vcov
   )
-  beta_draws <- simulation_draws$beta_draws
-  baseline_weights_draws <- simulation_draws$baseline_weights_draws
-  if (
-    !is_avg &&
-      !is.null(baseline_weights_draws) &&
-      "rowidcf" %in% names(newdata_pred)
-  ) {
-    # Every copy of a patient's profile carries that patient's weight.
-    baseline_weights_draws <- baseline_weights_draws[,
-      match(newdata_pred$rowidcf, baseline_data$rowidcf),
-      drop = FALSE
-    ]
-  }
-  draw_weight_col <- simulation_draws$draw_weight_col
-  draw_weights_attached <- simulation_draws$draw_weights_attached
-  draw_weight_omission_reason <-
-    simulation_draws$draw_weight_omission_reason
-
-  n_times <- length(times)
-  n_states <- length(y_levels)
 
   if (is_avg) {
     group_cols <- c("time", "state", names(variables))
@@ -851,230 +850,85 @@ inferences_simulation <- function(
   }
   object_keys <- sop_draw_cell_key(object, group_cols)
 
-  # --- 4. Detect Fast Path Eligibility ---
-  # The fast path uses pre-computed design matrix decompositions for supported
-  # ordinal model backends.
+  # --- 4. From one draw of the coefficients to its SOPs ---
+  # orm and vglm fits build their designs once and run them with each draw's
+  # coefficients. Other fits, and designs that cannot be built, predict with
+  # the model's coefficients replaced.
   model_chk <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
-  use_fast_path <- inherits(model_chk, c("vglm", "orm")) &&
-    !inherits(model_chk, "blrm")
-
-  if (use_fast_path) {
-    # --- FAST PATH: Pre-build components once, then run efficient Markov loop ---
+  execution_plan <- NULL
+  if (inherits(model_chk, c("vglm", "orm")) && !inherits(model_chk, "blrm")) {
     execution_plan <- tryCatch(
       compile_sop_execution_plan(
         model = model_chk,
         newdata = newdata_pred,
-        time_covariates = time_covariates,
         times = times,
-        y_levels = y_levels,
-        absorb = absorb,
-        time_var = time_var,
-        p_var = p_var,
-        p2_var = p2_var,
-        gap_var = gap_var,
-        builder = "streamed",
-        output = if (is_avg) "average" else "individual"
+        settings = settings
       ),
       error = function(e) {
-        notify_sop_reference_fallback(conditionMessage(e))
+        notify_sop_r_engine_fallback(conditionMessage(e))
         NULL
       }
     )
-
-    if (!is.null(execution_plan)) {
-      # Define fast analysis function
-      analysis_fn <- function(i) {
-        baseline_weights <- NULL
-        if (!is.null(baseline_weights_draws)) {
-          baseline_weights <- baseline_weights_draws[i, ]
-        }
-
-        # Compute effective coefficients from beta draw
-        Gamma_i <- get_effective_coefs(model_chk, beta = beta_draws[i, ])
-
-        # Run fast Markov simulation
-        sops_array <- tryCatch(
-          run_sop_execution_plan(execution_plan, Gamma_i),
-          error = function(e) {
-            warning("markov_msm_run failed in draw ", i, ": ", e$message)
-            return(NULL)
-          }
-        )
-
-        if (is.null(sops_array)) {
-          return(NULL)
-        }
-
-        # Marginalize if needed (for avg_sops)
-        if (is_avg) {
-          result <- marginalize_sops_array(
-            sops_array = sops_array,
-            grid = grid,
-            times = times,
-            y_levels = y_levels,
-            variables = variables,
-            n_cf = n_cf,
-            n_each = n_each,
-            weights = baseline_weights,
-            by = by,
-            newdata = newdata_pred
-          )
-        } else {
-          # Individual-level: convert array to data frame
-          result <- array_to_df_individual(
-            sops_array,
-            times,
-            y_levels,
-            newdata_pred,
-            weights = baseline_weights,
-            weight_col = draw_weight_col
-          )
-        }
-
-        baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
-          empirical_baseline_anchor_from_data(
-            x = object,
-            baseline = baseline_data,
-            baseline_time = 0,
-            weights = baseline_weights
-          )
-        } else {
-          NULL
-        }
-
-        pack_sop_draw_result(
-          result,
-          group_cols,
-          object_keys,
-          draw_weight_col,
-          baseline_anchor = baseline_anchor
-        )
-      }
-    } else {
-      # Fast path build failed, fall back to slow path
-      use_fast_path <- FALSE
+  }
+  if (!is.null(execution_plan)) {
+    draw_coefs <- function(i) {
+      get_effective_coefs(model_chk, beta = beta_draws[i, ])
     }
+    draw_sops <- function(Gamma_i) {
+      run_sop_execution_plan(execution_plan, Gamma_i)
+    }
+    failed <- "markov_msm_run"
+  } else {
+    draw_coefs <- function(i) set_coef(model, beta_draws[i, ])
+    draw_sops <- function(model_i) {
+      predict_markov_sops(
+        model = model_i,
+        newdata = newdata_pred,
+        times = times,
+        settings = settings
+      )
+    }
+    failed <- "soprob_markov"
   }
 
-  if (!use_fast_path) {
-    # --- SLOW PATH: Use soprob_markov with coefficient replacement ---
-    analysis_fn <- function(i) {
-      baseline_weights <- NULL
-      if (!is.null(baseline_weights_draws)) {
-        baseline_weights <- baseline_weights_draws[i, ]
-      }
-
-      # Replace coefficients
-      model_i <- set_coef(model, beta_draws[i, ])
-
-      # Compute SOPs
-      sops_array <- tryCatch(
-        soprob_markov(
-          model = model_i,
-          newdata = newdata_pred,
-          times = times,
-          y_levels = y_levels,
-          absorb = absorb,
-          time_var = time_var,
-          p_var = p_var,
-          p2_var = p2_var,
-          gap_var = gap_var,
-          time_covariates = time_covariates
-        ),
-        error = function(e) {
-          warning("soprob_markov failed in draw ", i, ": ", e$message)
-          return(NULL)
-        }
-      )
-
-      if (is.null(sops_array)) {
+  analysis_fn <- function(i) {
+    coefs_i <- draw_coefs(i)
+    sops_array <- tryCatch(
+      draw_sops(coefs_i),
+      error = function(e) {
+        rethrow_crossed_thresholds(e)
+        warning(failed, " failed in draw ", i, ": ", e$message)
         return(NULL)
       }
-
-      # Marginalize if needed (for avg_sops)
-      if (is_avg) {
-        result <- marginalize_sops_array(
-          sops_array = sops_array,
-          grid = grid,
-          times = times,
-          y_levels = y_levels,
-          variables = variables,
-          n_cf = n_cf,
-          n_each = n_each,
-          weights = baseline_weights,
-          by = by,
-          newdata = newdata_pred
-        )
-      } else {
-        # Individual-level: convert array to data frame
-        result <- array_to_df_individual(
-          sops_array,
-          times,
-          y_levels,
-          newdata_pred,
-          weights = baseline_weights,
-          weight_col = draw_weight_col
-        )
-      }
-
-      baseline_anchor <- if (!is.null(baseline_weights) && is_avg) {
-        empirical_baseline_anchor_from_data(
-          x = object,
-          baseline = baseline_data,
-          baseline_time = 0,
-          weights = baseline_weights
-        )
-      } else {
-        NULL
-      }
-
-      pack_sop_draw_result(
-        result,
-        group_cols,
-        object_keys,
-        draw_weight_col,
-        baseline_anchor = baseline_anchor
-      )
+    )
+    if (is.null(sops_array)) {
+      return(NULL)
     }
+
+    result <- if (is_avg) {
+      marginalize_sops_array(
+        sops_array = sops_array,
+        grid = grid,
+        times = times,
+        y_levels = y_levels,
+        variables = variables,
+        n_cf = n_cf,
+        n_each = n_each,
+        by = by,
+        newdata = newdata_pred
+      )
+    } else {
+      # One row per profile: the array as a data frame.
+      array_to_df_individual(sops_array, times, y_levels, newdata_pred)
+    }
+    pack_sop_draw_result(result, group_cols, object_keys)
   }
 
-  # --- 6. Apply Across All Draws ---
-  globals_list <- c(
-    "model",
-    "object",
-    "model_chk",
-    "beta_draws",
-    "baseline_data",
-    "newdata_pred",
-    "times",
-    "y_levels",
-    "absorb",
-    "time_var",
-    "p_var",
-    "p2_var",
-    "gap_var",
-    "time_covariates",
-    "is_avg",
-    "grid",
-    "variables",
-    "n_cf",
-    "n_each",
-    "baseline_weights_draws",
-    "draw_weight_col",
-    "group_cols",
-    "object_keys",
-    "use_fast_path",
-    "by"
-  )
-  if (use_fast_path) {
-    globals_list <- c(globals_list, "execution_plan")
-  }
-
+  # --- 5. Apply Across All Draws ---
   sim_results <- apply_sop_simulation_draws(
     n_draws = nrow(beta_draws),
     analysis_fn = analysis_fn,
-    workers = workers,
-    globals = globals_list
+    workers = workers
   )
 
   # --- 6. Combine fixed-order draw cells ---
@@ -1082,22 +936,10 @@ inferences_simulation <- function(
   sim_results <- sim_results[successful_ids]
 
   if (length(sim_results) == 0) {
-    stop("All simulation draws failed.")
+    mostr_abort("All simulation draws failed.")
   }
 
-  draw_values <- do.call(rbind, lapply(sim_results, `[[`, "estimate"))
-  weight_values <- NULL
-  has_weights <- vapply(sim_results, function(x) !is.null(x$weight), logical(1))
-  if (any(has_weights) && !all(has_weights)) {
-    stop("Simulation draw weights are not aligned across successful draws.")
-  }
-  if (all(has_weights)) {
-    weight_values <- do.call(rbind, lapply(sim_results, `[[`, "weight"))
-  }
-  baseline_anchor_draws <- combine_baseline_anchor_draws(
-    lapply(sim_results, `[[`, "baseline_anchor"),
-    successful_ids
-  )
+  draw_values <- do.call(rbind, sim_results)
 
   # --- 7. Compute Confidence Intervals ---
   summary_stats <- summarize_sop_draw_matrix(
@@ -1114,33 +956,14 @@ inferences_simulation <- function(
   final_result$std.error <- summary_stats$std.error
 
   final_result <- restore_sops_attrs(final_result, object)
-  # Add metadata
-  attr(final_result, "n_draws") <- n_draws
   attr(final_result, "n_successful") <- length(sim_results)
-  attr(final_result, "conf_level") <- conf_level
-  attr(final_result, "conf_type") <- conf_type
-  attr(final_result, "method") <- engine
-  if (engine == "score_bootstrap") {
-    attr(final_result, "score_weight_dist") <- score_weight_dist
-    attr(final_result, "draw_weights_attached") <- draw_weights_attached
-    attr(final_result, "draw_weight_col") <- draw_weight_col
-    if (!is.null(draw_weight_omission_reason)) {
-      attr(final_result, "draw_weight_omission_reason") <-
-        draw_weight_omission_reason
-    }
-  }
 
   if (return_draws) {
     attr(final_result, "draws") <- sop_draw_matrix_to_df(
       draw_values,
       object,
-      successful_ids,
-      draw_weight_col,
-      weight_values
+      successful_ids
     )
-    if (!is.null(baseline_anchor_draws)) {
-      attr(final_result, "baseline_anchor_draws") <- baseline_anchor_draws
-    }
   }
 
   final_result
@@ -1149,73 +972,49 @@ inferences_simulation <- function(
 sop_draw_cell_key <- function(data, group_cols) {
   missing <- setdiff(group_cols, names(data))
   if (length(missing)) {
-    stop("SOP draw cells are missing: ", paste(missing, collapse = ", "), ".")
+    mostr_abort(
+      "SOP draw cells are missing: ",
+      paste(missing, collapse = ", "),
+      "."
+    )
   }
   key <- do.call(
     paste,
     c(lapply(data[, group_cols, drop = FALSE], as.character), sep = "\r")
   )
   if (anyDuplicated(key)) {
-    stop("SOP draw cell identifiers are not unique.")
+    mostr_abort("SOP draw cell identifiers are not unique.")
   }
   key
 }
 
-pack_sop_draw_result <- function(
-  result,
-  group_cols,
-  object_keys,
-  weight_col,
-  baseline_anchor = NULL
-) {
+pack_sop_draw_result <- function(result, group_cols, object_keys) {
   result_keys <- sop_draw_cell_key(result, group_cols)
   index <- match(object_keys, result_keys)
   if (anyNA(index)) {
-    stop("A simulation draw did not return every requested SOP cell.")
+    mostr_abort("A simulation draw did not return every requested SOP cell.")
   }
-  list(
-    estimate = result$estimate[index],
-    weight = if (!is.null(weight_col) && weight_col %in% names(result)) {
-      result[[weight_col]][index]
-    } else {
-      NULL
-    },
-    baseline_anchor = baseline_anchor
-  )
+  result$estimate[index]
 }
 
+# Interval and standard error of each column of `draw_values` [draw, cell],
+# from the same summary of one cell's draws as `compute_ci_from_draws()`.
 summarize_sop_draw_matrix <- function(
   draw_values,
   conf_level,
   conf_type,
   point_estimates
 ) {
-  alpha <- 1 - validate_conf_level(conf_level)
-  standard_error <- apply(draw_values, 2L, stats::sd, na.rm = TRUE)
-  if (identical(conf_type, "perc")) {
-    lower <- apply(
-      draw_values,
-      2L,
-      stats::quantile,
-      probs = alpha / 2,
-      na.rm = TRUE,
-      names = FALSE,
-      type = 7L
-    )
-    upper <- apply(
-      draw_values,
-      2L,
-      stats::quantile,
-      probs = 1 - alpha / 2,
-      na.rm = TRUE,
-      names = FALSE,
-      type = 7L
-    )
-  } else {
-    critical <- abs(stats::qnorm(alpha / 2))
-    lower <- point_estimates - critical * standard_error
-    upper <- point_estimates + critical * standard_error
-  }
+  stats <- apply(
+    draw_values,
+    2L,
+    draw_summary_function(validate_conf_level(conf_level), conf_type)
+  )
+  # A Wald interval is centred at the point estimate.
+  center <- if (identical(conf_type, "perc")) 0 else point_estimates
+  lower <- center + stats["conf.low", ]
+  upper <- center + stats["conf.high", ]
+  standard_error <- stats["std.error", ]
   data.frame(
     conf.low = as.numeric(lower),
     conf.high = as.numeric(upper),
@@ -1223,13 +1022,7 @@ summarize_sop_draw_matrix <- function(
   )
 }
 
-sop_draw_matrix_to_df <- function(
-  draw_values,
-  object,
-  draw_ids,
-  weight_col = NULL,
-  weight_values = NULL
-) {
+sop_draw_matrix_to_df <- function(draw_values, object, draw_ids) {
   metadata_cols <- setdiff(names(object), inference_columns())
   metadata <- as.data.frame(object)[, metadata_cols, drop = FALSE]
   n_cells <- nrow(metadata)
@@ -1239,9 +1032,6 @@ sop_draw_matrix_to_df <- function(
     drop = FALSE
   ]
   out$estimate <- as.vector(t(draw_values))
-  if (!is.null(weight_col) && !is.null(weight_values)) {
-    out[[weight_col]] <- as.vector(t(weight_values))
-  }
   out$draw_id <- rep(draw_ids, each = n_cells)
   rownames(out) <- NULL
   out

@@ -3,9 +3,9 @@
 # =============================================================================
 # FAST PATH HELPER FUNCTIONS
 # =============================================================================
-# These internal functions provide the fast path for simulation-based inference
-# on VGLM models by pre-computing design matrices and bypassing VGAM's
-# predict() function.
+# These internal functions provide the fast path for orm and vglm models: the
+# design matrices of all visits are built once, and the recursion then runs
+# for any coefficients without calling the models' predict() functions.
 
 #' Build Fast Markov Simulation Components (Internal)
 #'
@@ -13,337 +13,162 @@
 #' "heavy lifting" step that should be done ONCE before running thousands of
 #' simulation draws.
 #'
-#' @param model Fitted vglm model
-#' @param data Baseline data frame (one row per patient)
-#' @param time_covariates Time-dependent covariate lookup (optional)
+#' The first visit is predicted from each patient's own previous state(s).
+#' Every later visit needs the transition probabilities from each previous
+#' state a patient may be in: each non-absorbing state for a first-order model,
+#' and each pair of non-absorbing states (two visits back, one visit back) for
+#' a second-order model (`settings$p2_var`). The design of a later visit stacks
+#' one block of patient rows per such combination, in the order of
+#' `previous_states`.
+#'
+#' @param model Fitted vglm or orm model
+#' @param newdata Baseline data frame (one row per patient)
 #' @param times Time points to predict
-#' @param y_levels State labels
-#' @param absorb Absorbing state(s). These transition matrices are not needed
-#'   because absorbing states keep their prior probability mass.
-#' @param time_var Name of time variable
-#' @param p_var Name of previous state variable
-#' @param gap_var Optional gap_var variable. With factor visit time, numeric gap_var values
-#'   must be supplied in `time_covariates`.
-#' @param ... Ignored
+#' @param settings The resolved settings of the call
+#'   (`resolve_markov_settings()`): the state labels `y_levels`, the absorbing
+#'   states `absorb` (their transition matrices are not needed, because
+#'   absorbing states keep their prior probability mass), and the columns
+#'   `time_var`, `p_var`, `p2_var` and `gap_var`.
 #'
 #' @return A list containing pre-calculated matrices and metadata.
 #'
 #' @keywords internal
-markov_msm_build <- function(
-  model,
-  newdata = NULL,
-  data = NULL,
-  time_covariates = NULL,
-  times = NULL,
-  y_levels = 1:6,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL,
-  ...
-) {
-  data <- newdata %||% data
-  if (is.null(data)) {
-    stop("`newdata` must be supplied.")
+markov_msm_build <- function(model, newdata, times = NULL, settings) {
+  if (inherits(model, "robcov_vglm")) {
+    model <- model$vglm_fit
   }
-  n_pat <- nrow(data)
-  ylevel_names <- as_state_labels(y_levels)
-  absorb_names <- as_state_labels(absorb)
-  n_states <- length(ylevel_names)
-  M <- n_states - 1
-  absorb_idx <- if (length(absorb_names)) {
-    which(ylevel_names %in% absorb_names)
-  } else {
-    integer(0)
-  }
-
-  time_res <- resolve_sop_times(
-    model,
-    data,
-    times,
-    time_var,
-    time_covariates = time_covariates,
-    default = "fast"
-  )
-  times <- time_res$times
-  time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
-
-  is_vglm <- inherits(model, "vglm")
   is_orm <- inherits(model, "orm")
-  if (!is_vglm && !is_orm) {
-    stop("markov_msm_build() supports only vglm and orm models.")
+  if (!is_orm && !inherits(model, "vglm")) {
+    mostr_abort("markov_msm_build() supports only vglm and orm models.")
   }
-
-  # Need Gamma structure to know which columns to keep
-  Gamma_template <- get_effective_coefs(model)
-  validate_sop_threshold_count(Gamma_template, y_levels)
-  common_cols <- colnames(Gamma_template)
-  non_absorb_idx <- setdiff(seq_len(n_states), absorb_idx)
-  budget <- preflight_execution_plan_designs(
-    n_pat = n_pat,
-    n_times = length(times),
-    rows_per_transition = n_pat * length(non_absorb_idx),
-    n_cols = ncol(Gamma_template)
-  )
-
-  # Prepare data
-  if (!p_var %in% names(data)) {
-    data[[p_var]] <- factor(ylevel_names[1], levels = ylevel_names)
-  }
-  if (!time_var %in% names(data)) {
-    data <- assign_sop_time(data, time_var, times[1], time_info)
-  }
-
-  # Terms object
-  if (is_vglm) {
-    tt <- stats::terms(model)
-    tt <- stats::delete.response(tt)
-    contrasts_arg <- if (length(model@contrasts)) {
-      model@contrasts
-    } else {
-      NULL
-    }
-    xlev_arg <- model@xlevels
-  } else if (is_orm) {
-    tt <- NULL
-    contrasts_arg <- NULL
-    xlev_arg <- NULL
-  }
-
-  # Helper to get design matrix columns used by the effective coefficient
-  # matrix. For inline transforms such as rms::rcs(), model.matrix() uses the
-  # fitted terms object's predvars, including stored knot locations.
-  get_X <- function(d) {
-    if (is_orm) {
-      X <- orm_model_matrix(model, d, include_intercept = TRUE)
-    } else {
-      X <- stats::model.matrix(
-        tt,
-        data = d,
-        contrasts.arg = contrasts_arg,
-        xlev = xlev_arg
-      )
-    }
-    common <- intersect(colnames(X), common_cols)
-    if (length(common) == 0) {
-      return(NULL)
-    }
-    X[, common, drop = FALSE]
-  }
-
-  set_time <- function(d, time_idx) {
-    assign_sop_visit(
-      d,
-      time_var = time_var,
-      times = times,
-      index = time_idx,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
-      time_info = time_info
-    )
-  }
-
-  # A. Baseline matrix for T=1 uses each patient's observed previous state.
-  d_init <- set_time(data, 1)
-  d_init[[p_var]] <- normalize_previous_state_column(
-    d_init[[p_var]],
-    data[[p_var]],
-    p_var
-  )
-  X_init <- get_X(d_init)
-  if (is.null(X_init)) {
-    stop("Could not construct a design matrix for the fitted model.")
-  }
-  col_names <- colnames(X_init)
-
-  align_X <- function(X) {
-    missing_cols <- setdiff(col_names, colnames(X))
-    if (length(missing_cols) > 0) {
-      stop(
-        "Design matrix columns missing during fast path build: ",
-        paste(missing_cols, collapse = ", ")
-      )
-    }
-    X[, col_names, drop = FALSE]
-  }
-
-  # B. Retained transition designs. Each visit stores one stacked matrix
-  # with patient rows nested inside non-absorbing origin-state blocks.
-  X_transition <- vector("list", length(times))
-  if (length(times) >= 2L) {
-    for (time_idx in 2:length(times)) {
-      origin_blocks <- vector("list", length(non_absorb_idx))
-      d_time <- set_time(data, time_idx)
-
-      for (origin_pos in seq_along(non_absorb_idx)) {
-        k <- non_absorb_idx[origin_pos]
-        d_k <- d_time
-        d_k[[p_var]] <- make_previous_state_column(
-          states = ylevel_names[k],
-          prototype = data[[p_var]],
-          n = nrow(d_k),
-          p_var = p_var
-        )
-        origin_blocks[[origin_pos]] <- align_X(get_X(d_k))
-      }
-      X_transition[[time_idx]] <- do.call(rbind, origin_blocks)
-    }
-  }
-
-  design_bytes <- measure_execution_plan_designs(X_init, X_transition)
-  validate_execution_plan_designs(design_bytes, budget$workspace_bytes)
-
-  list(
-    X_init = align_X(X_init),
-    X_transition = X_transition,
-    n_pat = n_pat,
-    n_states = n_states,
-    M = M,
-    y_levels = ylevel_names,
-    col_names = col_names,
-    transition_layout = "stacked",
-    transition_origins = non_absorb_idx,
-    workspace_bytes = budget$workspace_bytes,
-    design_bytes = design_bytes
-  )
-}
-
-markov_msm_build_batched <- function(
-  model,
-  newdata,
-  time_covariates = NULL,
-  times,
-  y_levels,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL
-) {
-  n_pat <- nrow(newdata)
-  ylevel_names <- as_state_labels(y_levels)
-  absorb_idx <- which(ylevel_names %in% as_state_labels(absorb))
-  non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)
+  Gamma <- get_effective_coefs(model)
+  validate_sop_threshold_count(Gamma, settings$y_levels)
   time_res <- resolve_sop_times(
     model,
     newdata,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
     default = "fast"
   )
   times <- time_res$times
-  time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
 
-  Gamma <- get_effective_coefs(model)
-  validate_sop_threshold_count(Gamma, y_levels)
+  n_pat <- nrow(newdata)
+  ylevel_names <- as_state_labels(settings$y_levels)
+  absorb_idx <- which(ylevel_names %in% as_state_labels(settings$absorb))
+  non_absorb_idx <- setdiff(seq_along(ylevel_names), absorb_idx)
+  # One row per combination of previous states, as state indices; with two
+  # columns the state two visits back changes fastest.
+  state_vars <- c(settings$p2_var, settings$p_var)
+  previous_states <- expand.grid(
+    rep(list(non_absorb_idx), length(state_vars)),
+    KEEP.OUT.ATTRS = FALSE
+  )
+  names(previous_states) <- state_vars
   budget <- preflight_execution_plan_designs(
     n_pat = n_pat,
     n_times = length(times),
-    rows_per_transition = n_pat * length(non_absorb_idx),
+    rows_per_transition = n_pat * nrow(previous_states),
     n_cols = ncol(Gamma)
   )
-
-  if (!p_var %in% names(newdata)) {
-    stop("Previous-state variable `", p_var, "` not found in `newdata`.")
-  }
-
-  rows_per_visit <- n_pat * length(non_absorb_idx)
-  if (rows_per_visit > getOption("mostr.max_batched_design_rows", 2e6)) {
-    return(markov_msm_build(
-      model = model,
-      newdata = newdata,
-      time_covariates = time_covariates,
-      times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      gap_var = gap_var
-    ))
-  }
-
-  set_time <- function(d, time_idx) {
-    assign_sop_visit(
-      d,
-      time_var = time_var,
-      times = times,
-      index = time_idx,
-      time_covariates = time_covariates,
-      gap_var = gap_var,
-      time_info = time_info
+  missing_vars <- setdiff(state_vars, names(newdata))
+  if (length(missing_vars) > 0L) {
+    mostr_abort(
+      "Previous-state variable ",
+      paste0("`", missing_vars, "`", collapse = ", "),
+      " not found in `newdata`."
     )
   }
 
-  d_init <- set_time(newdata, 1L)
-  d_init[[p_var]] <- normalize_previous_state_column(
-    d_init[[p_var]],
-    newdata[[p_var]],
-    p_var
-  )
-
-  tt <- if (inherits(model, "vglm")) {
-    stats::delete.response(stats::terms(model))
-  } else {
-    NULL
-  }
-  get_X <- function(d) {
-    X <- if (inherits(model, "orm")) {
-      orm_model_matrix(model, d, include_intercept = TRUE)
+  # The design matrix columns used by the effective coefficient matrix. For
+  # inline transforms such as rms::rcs(), model.matrix() uses the fitted terms
+  # object's predvars, including stored knot locations.
+  terms <- if (!is_orm) stats::delete.response(stats::terms(model))
+  design <- function(data) {
+    X <- if (is_orm) {
+      orm_model_matrix(model, data, include_intercept = TRUE)
     } else {
-      stats::model.matrix(
-        tt,
-        data = d,
-        contrasts.arg = if (length(model@contrasts)) model@contrasts else NULL,
-        xlev = model@xlevels
-      )
+      vglm_prediction_design(model, data, terms)
     }
     missing_cols <- setdiff(colnames(Gamma), colnames(X))
     if (length(missing_cols) > 0L) {
-      stop(
-        "Design matrix columns missing during batched build: ",
+      mostr_abort(
+        "Design matrix columns missing from the prediction design: ",
         paste(missing_cols, collapse = ", ")
       )
     }
     X[, colnames(Gamma), drop = FALSE]
   }
-
-  X_init <- get_X(d_init)
-  X_transition <- vector("list", length(times))
-  if (length(times) >= 2L) {
-    for (time_idx in 2:length(times)) {
-      d_time <- set_time(newdata, time_idx)
-      d_visit <- d_time[
-        rep(seq_len(n_pat), times = length(non_absorb_idx)),
+  visit_rows <- function(index) {
+    assign_sop_visit(
+      newdata,
+      settings = settings,
+      times = times,
+      index = index,
+      time_info = time_res$time_info
+    )
+  }
+  # The patient rows once per combination in `combinations` (rows of
+  # `previous_states`), with the previous-state columns set to it.
+  with_previous_states <- function(data, combinations) {
+    if (length(combinations) > 1L) {
+      data <- data[
+        rep(seq_len(n_pat), times = length(combinations)),
         ,
         drop = FALSE
       ]
-      d_visit[[p_var]] <- make_previous_state_column(
-        states = ylevel_names[non_absorb_idx],
-        prototype = newdata[[p_var]],
-        n = n_pat,
-        p_var = p_var
-      )
-      X_transition[[time_idx]] <- get_X(d_visit)
     }
+    for (column in state_vars) {
+      data[[column]] <- make_previous_state_column(
+        states = ylevel_names[previous_states[[column]][combinations]],
+        prototype = newdata[[column]],
+        n = n_pat,
+        p_var = column
+      )
+    }
+    data
   }
 
-  design_bytes <- measure_execution_plan_designs(X_init, X_transition)
-  validate_execution_plan_designs(design_bytes, budget$workspace_bytes)
+  # A visit's design is built in one piece up to this many rows, and one
+  # combination of previous states at a time above it, with identical results.
+  # Measured Nov 2026 (orm, 11 design columns, Ryzen AI 9 HX 370): building in
+  # one piece is faster only below about 25k rows; from 50k it is 1.3 to 1.9
+  # times slower with up to 1.8 times the peak memory (at 2e6, 8.6 s and
+  # 0.93 GB against 5.2 s and 0.51 GB). The default was 2e6 until then. See
+  # dev/decisions.md.
+  in_one_piece <- n_pat * nrow(previous_states) <=
+    getOption("mostr.max_batched_design_rows", 5e4)
+  pieces <- if (in_one_piece) {
+    list(seq_len(nrow(previous_states)))
+  } else {
+    as.list(seq_len(nrow(previous_states)))
+  }
+
+  X_init <- design(visit_rows(1L))
+  X_transition <- vector("list", length(times))
+  for (index in seq_along(times)[-1L]) {
+    data_visit <- visit_rows(index)
+    X_transition[[index]] <- do.call(
+      rbind,
+      lapply(pieces, function(combinations) {
+        design(with_previous_states(data_visit, combinations))
+      })
+    )
+  }
 
   list(
     X_init = X_init,
     X_transition = X_transition,
+    times = times,
+    previous_states = previous_states,
     n_pat = n_pat,
     n_states = length(ylevel_names),
-    M = length(ylevel_names) - 1L,
+    M = length(ylevel_names) - 1,
     y_levels = ylevel_names,
     col_names = colnames(X_init),
     transition_layout = "stacked",
     transition_origins = non_absorb_idx,
     workspace_bytes = budget$workspace_bytes,
-    design_bytes = design_bytes
+    design_bytes = budget$design_bytes
   )
 }
 
@@ -372,7 +197,6 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
   y_levels <- components$y_levels
   col_names <- components$col_names
   n_times <- length(times)
-  validate_sop_threshold_count(Gamma, y_levels)
 
   # Align Gamma to components
   Gamma <- Gamma[, col_names, drop = FALSE]
@@ -398,6 +222,7 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
     lp_to_probs(outer(scalar, po$cutpoints, "+"), M)
   }
   check_transition_probabilities(initial, "the first SOP time point")
+  check_crossed_thresholds(initial, n_pat, times[1L])
   P_out <- array(0, dim = c(n_pat, n_times, n_states))
   P_out[, 1L, ] <- initial
   previous <- initial
@@ -405,25 +230,6 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
   if (n_times >= 2L) {
     for (t_idx in 2:n_times) {
       X_visit <- X_transition[[t_idx]]
-      if (!identical(components$transition_layout, "stacked")) {
-        X_visit <- do.call(rbind, X_visit[non_absorb_idx])
-      } else {
-        built_origins <- components$transition_origins %||% non_absorb_idx
-        origin_positions <- match(non_absorb_idx, built_origins)
-        if (anyNA(origin_positions)) {
-          stop("Transition design is missing a required origin state.")
-        }
-        if (!identical(origin_positions, seq_along(built_origins))) {
-          block_rows <- unlist(lapply(origin_positions, function(position) {
-            start <- (position - 1L) * n_pat + 1L
-            start:(start + n_pat - 1L)
-          }))
-          X_visit <- X_visit[block_rows, , drop = FALSE]
-        }
-      }
-      if (!is.matrix(X_visit)) {
-        stop("Missing transition design for SOP visit ", t_idx, ".")
-      }
       if (is.null(po)) {
         logits <- calc_lp(X_visit)
         check_transition_probabilities(logits, paste0("SOP time point ", t_idx))
@@ -431,7 +237,8 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
           previous,
           logits,
           as.integer(non_absorb_idx),
-          as.integer(absorb_idx)
+          as.integer(absorb_idx),
+          time = times[t_idx]
         )
       } else {
         scalar <- drop(X_visit %*% po$beta)
@@ -441,7 +248,8 @@ markov_msm_run <- function(components, Gamma, times, absorb = NULL) {
           scalar,
           po$cutpoints,
           as.integer(non_absorb_idx),
-          as.integer(absorb_idx)
+          as.integer(absorb_idx),
+          time = times[t_idx]
         )
       }
       P_out[, t_idx, ] <- previous
@@ -480,6 +288,10 @@ markov_po_structure <- function(Gamma, col_names, X_init) {
 #' Convert Cumulative Log-Odds to Probabilities (Internal)
 #'
 #' Converts a matrix of cumulative log-odds to category probabilities.
+#' Negative values from rounding (down to `-crossed_threshold_tolerance()`)
+#' are set to zero and the row is rescaled. Lower values mean that the
+#' cut-points of a partial proportional-odds model cross; they are kept so that
+#' the caller reports them with `check_crossed_thresholds()`.
 #'
 #' @param eta Matrix with one row per prediction and one column per ordinal
 #'   threshold.
@@ -499,7 +311,10 @@ lp_to_probs <- function(eta, M) {
   }
 
   probs[, M + 1] <- cum_probs[, M]
-  probs[probs < 0] <- 0
+  rounding <- !is.na(probs) &
+    probs < 0 &
+    probs >= -crossed_threshold_tolerance()
+  probs[rounding] <- 0
 
   normalize_probability_rows(probs)
 }
@@ -511,33 +326,3 @@ normalize_probability_rows <- function(probs) {
   probs
 }
 
-
-#' Compute Effective Coefficients from Beta Vector (Internal)
-#'
-#' Transforms a vector of VGLM coefficients into an effective coefficient matrix
-#' by applying the constraint matrices.
-#'
-#' @param beta Coefficient vector from a VGLM fit
-#' @param C_list Constraint matrices list from VGAM::constraints()
-#' @return Effective coefficient matrix with one row per linear predictor and
-#'   one column per small-design column, including the intercept.
-#'
-#' @keywords internal
-compute_Gamma <- function(beta, C_list) {
-  M <- nrow(C_list[[1]])
-  P <- length(C_list)
-  term_names <- names(C_list)
-
-  G <- matrix(0, nrow = M, ncol = P)
-  colnames(G) <- term_names
-  rownames(G) <- paste0("eta", 1:M)
-
-  curr <- 1
-  for (j in seq_along(C_list)) {
-    k <- ncol(C_list[[j]])
-    chunk <- beta[curr:(curr + k - 1)]
-    G[, j] <- C_list[[j]] %*% chunk
-    curr <- curr + k
-  }
-  G
-}

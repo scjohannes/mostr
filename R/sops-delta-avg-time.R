@@ -11,15 +11,15 @@ inferences_delta_avg_time <- function(
   args <- attr(object, "time_args")
   avg_args <- attr(object, "avg_args")
   if (is.null(args) || is.null(avg_args)) {
-    stop("Stored average-time arguments are required for delta inference.")
-  }
-  if (!identical(conf_type, "wald")) {
-    stop(
-      'Analytical average time requires `conf_type = "wald"`.',
-      call. = FALSE
+    mostr_abort(
+      "Stored average-time arguments are required for delta inference."
     )
   }
-  target <- delta_validate_target(object, target)
+  if (!identical(conf_type, "wald")) {
+    mostr_abort(
+      'Analytical average time requires `conf_type = "wald"`.'
+    )
+  }
   avg <- replay_avg_time_sops(object, conf_level, return_draws = FALSE)
   avg <- inferences_delta_sops(
     object = avg,
@@ -33,7 +33,9 @@ inferences_delta_avg_time <- function(
   state_sets <- args$state_sets
   state_index <- match(as.character(object$state_set), names(state_sets))
   if (anyNA(state_index) || anyDuplicated(names(state_sets))) {
-    stop("Average-time state sets do not align with the replayed average SOPs.")
+    mostr_abort(
+      "Average-time state sets do not align with the replayed average SOPs."
+    )
   }
   source <- as.data.frame(avg)
   variables <- names(avg_args$variables)
@@ -41,7 +43,9 @@ inferences_delta_avg_time <- function(
     !all(c("time", "state", "estimate", variables) %in% names(source)) ||
       !all(variables %in% names(object))
   ) {
-    stop("The replayed average SOP cells are missing average-time identifiers.")
+    mostr_abort(
+      "The replayed average SOP cells are missing average-time identifiers."
+    )
   }
   source_time <- as.character(source$time)
   integration <- if (is.null(args$time_map)) {
@@ -60,19 +64,25 @@ inferences_delta_avg_time <- function(
     names(integration$visit)
   )])
   if (anyNA(time_weight)) {
-    stop("Average-time visits do not align with the replayed average SOPs.")
+    mostr_abort(
+      "Average-time visits do not align with the replayed average SOPs."
+    )
   }
-  p_var <- attr(avg, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(avg)$p_var
   # Scenarios that set the starting state anchor at that state (a constant).
   set_start <- p_var %in% variables
   baseline <- if (integration$baseline != 0 && !set_start) {
-    baseline_rows_for_anchor(avg, avg_args$id_var)
+    baseline_rows_for_anchor(avg)
   } else {
     NULL
   }
   starting_state <- if (!is.null(baseline)) {
     if (!p_var %in% names(baseline)) {
-      stop("Previous-state variable `", p_var, "` not found in baseline data.")
+      mostr_abort(
+        "Previous-state variable `",
+        p_var,
+        "` not found in baseline data."
+      )
     }
     as.character(baseline[[p_var]])
   } else {
@@ -87,7 +97,7 @@ inferences_delta_avg_time <- function(
   )
   operator <- vector("list", n_result)
   baseline_mean <- numeric(n_result)
-  # ponytail: scan source cells per result; index groups if setup time dominates.
+  # Scan source cells per result; index groups if setup time dominates.
   for (i in seq_len(n_result)) {
     states <- as.character(state_sets[[state_index[i]]])
     selected <- as.character(source$state) %in% states
@@ -116,16 +126,16 @@ inferences_delta_avg_time <- function(
     source$estimate
   )) +
     integration$baseline * baseline_mean
+  # These time weights are also applied to the SOP derivatives, so first check
+  # that they rebuild the stored totals; otherwise the standard errors would
+  # belong to other numbers. Rounding differences are below 2e-15 on the test
+  # grid; the tolerance of estimates_differ() only catches real changes.
   if (
     any(!is.finite(calculated)) ||
-      any(
-        abs(calculated - object$estimate) >
-          1e-12 + 1e-10 * pmax(abs(calculated), abs(object$estimate))
-      )
+      estimates_differ(calculated, object$estimate)
   ) {
-    stop(
-      "The analytical average-time operator did not reproduce the stored point estimates.",
-      call. = FALSE
+    mostr_abort(
+      "The analytical average-time operator did not reproduce the stored point estimates."
     )
   }
 
@@ -134,11 +144,11 @@ inferences_delta_avg_time <- function(
     identical(propagated$analytical$representation, "influence") &&
       !is.null(baseline)
   ) {
-    ids <- delta_profile_ids(baseline, avg_args$id_var %||% attr(avg, "id_var"))
+    ids <- delta_profile_ids(baseline, markov_result_settings(avg)$id_var)
     profile_ids <- propagated$analytical$profile_ids
     index <- match(as.character(profile_ids), as.character(ids))
     if (anyNA(index) || length(ids) != length(profile_ids)) {
-      stop(
+      mostr_abort(
         "Baseline-anchor patients do not align with the analytical patient influences."
       )
     }

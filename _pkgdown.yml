@@ -8,17 +8,26 @@ navbar:
   structure:
     left: [intro, reference, articles, news]
     right: [search, github]
-  components:
-    intro:
-      text: Get started
-      href: articles/full-po-sops.html
 
 reference:
+  - title: Overview
+    desc: >
+      Which function to use for each step of an analysis.
+    contents:
+      - mostr-package
   - title: Prepare data and fit models
+    desc: >
+      Turn trajectories with one row per patient and visit into model data,
+      and fit a transition model with the rms, VGAM, or rmsb package. The
+      other functions need a fit made by `mostm()`.
     contents:
       - prepare_markov_data
       - mostm
   - title: Estimate probabilities, time in states, and treatment contrasts
+    desc: >
+      Calculate state occupancy probabilities, expected time in states, and
+      comparisons between treatments, for each patient or averaged over
+      patients, then add confidence intervals with `inferences()`.
     contents:
       - sops
       - avg_sops
@@ -30,9 +39,13 @@ reference:
       - time_in_state
       - interpolate_sops
       - vcov.markov_sops
-      - mostr.delta_max_bytes
+      - mostr_options
       - soprob_markov
   - title: Plot results and diagnose models
+    desc: >
+      Plot estimates and their confidence intervals, and draw the same
+      summaries from the observed data and from the fitted model to check
+      whether the model describes the data.
     contents:
       - plot_sops
       - plot_comparisons
@@ -43,6 +56,9 @@ reference:
       - plot_lp_difference
       - compare_se_orm_vglm
   - title: Simulate trajectories
+    desc: >
+      Simulate daily ordinal health states from models of published trials,
+      or from a transition model you describe.
     contents:
       - sim_markov
       - actt1_preset
@@ -50,6 +66,11 @@ reference:
       - violet_preset
       - violet_baseline
   - title: Bootstrap and coefficient utilities
+    desc: >
+      Lower-level tools used by `inferences()`: bootstrap the model
+      coefficients, extract simulation or bootstrap draws, compute standard
+      errors that allow for repeated transitions of one patient, and replace
+      a model's coefficients.
     contents:
       - bootstrap_model_coefs
       - get_draws
@@ -66,16 +87,41 @@ articles:
   - title: Get started
     navbar: ~
     contents:
-      - full-po-sops
-  - title: Model specifications
+      - mostr
+  - title: Estimate and check a transition model
+    navbar: Estimate and check a model
+    desc: >
+      Fit a transition model, estimate state occupancy probabilities and time
+      in states, and compare the model with the observed data. Start with the
+      proportional-odds article; the others show what changes when effects
+      differ between states, when the state two visits back matters, or when
+      the outcome has many levels.
     contents:
-      - partial-po-vglm-sops
-      - second-order-orm-sops
-      - factor-time-orm-sops
-      - many-levels-previous-state-spline
-  - title: Uncertainty
+      - articles/full-po-sops
+      - articles/partial-po-vglm-sops
+      - articles/second-order-orm-sops
+      - articles/many-levels-previous-state-spline
+  - title: Visits that are not daily
+    navbar: Visits that are not daily
+    desc: >
+      Model scheduled visits, such as days 3, 7, and 14, and convert the
+      results to a scale of elapsed days.
     contents:
-      - analytical-confidence-intervals
-      - mvn-vs-bootstrap-orm-sops
-      - fractional-weighted-bootstrap-sops
-      - bayesian-rmsb-sops
+      - articles/factor-time-orm-sops
+  - title: Confidence intervals and treatment comparisons
+    navbar: Confidence intervals
+    desc: >
+      Choose between analytical intervals (with conditional or unconditional
+      variance), simulation, the bootstrap, and Bayesian posterior intervals,
+      and compare treatments for all patients or for each patient.
+    contents:
+      - articles/analytical-confidence-intervals
+      - articles/mvn-vs-bootstrap-orm-sops
+      - articles/fractional-weighted-bootstrap-sops
+      - articles/bayesian-rmsb-sops
+  - title: Help
+    navbar: Help
+    desc: >
+      Answers to common questions and error messages.
+    contents:
+      - articles/faq

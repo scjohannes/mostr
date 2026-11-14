@@ -15,7 +15,7 @@ run_sop_delta_r_oracle <- function(plan, model) {
   )
   non_absorb <- setdiff(seq_len(n_states), absorb)
 
-  initial <- sop_delta_raw_probabilities(
+  initial <- oracle_raw_probabilities(
     components$X_init,
     Gamma,
     map,
@@ -30,7 +30,7 @@ run_sop_delta_r_oracle <- function(plan, model) {
 
   if (n_times >= 2L) {
     for (visit in 2L:n_times) {
-      X_visit <- sop_delta_visit_design(components, visit, non_absorb)
+      X_visit <- oracle_visit_design(components, visit, non_absorb)
       next_probability <- matrix(0, nrow = n, ncol = n_states)
       next_jacobian <- array(0, dim = c(n, n_states, n_coef))
 
@@ -41,7 +41,7 @@ run_sop_delta_r_oracle <- function(plan, model) {
       for (origin_position in seq_along(non_absorb)) {
         origin <- non_absorb[origin_position]
         rows <- (origin_position - 1L) * n + seq_len(n)
-        transition <- sop_delta_raw_probabilities(
+        transition <- oracle_raw_probabilities(
           X_visit[rows, , drop = FALSE],
           Gamma,
           map,
@@ -242,5 +242,164 @@ reference_delta_model_inputs <- function(model, col_names) {
     theta = theta,
     map = map,
     gamma = matrix(drop(map %*% theta), nrow = M, ncol = length(columns))
+  )
+}
+
+# Category probabilities and their derivatives with respect to the model
+# coefficients for one design matrix, and the transition rows of one visit.
+# Only run_sop_delta_r_oracle() uses them; the package computes both in the
+# compiled analytical recursion.
+oracle_raw_probabilities <- function(X, Gamma, map, context) {
+  n <- nrow(X)
+  M <- nrow(Gamma)
+  K <- M + 1L
+  q <- ncol(map)
+  P <- ncol(Gamma)
+
+  eta <- X %*% t(Gamma)
+  cumulative <- stats::plogis(eta)
+  probabilities <- matrix(0, nrow = n, ncol = K)
+  probabilities[, 1L] <- 1 - cumulative[, 1L]
+  if (M > 1L) {
+    probabilities[, 2L:M] <-
+      cumulative[, seq_len(M - 1L), drop = FALSE] -
+      cumulative[, 2L:M, drop = FALSE]
+  }
+  probabilities[, K] <- cumulative[, M]
+
+  if (any(!is.finite(probabilities))) {
+    sop_delta_condition(
+      paste0(
+        "Non-finite raw category probabilities occurred at ",
+        context,
+        "."
+      ),
+      "mostr_delta_invalid_probabilities",
+      context = context
+    )
+  }
+  minimum <- min(probabilities)
+  if (minimum < -1e-10) {
+    sop_delta_condition(
+      paste0(
+        "Raw ordinal category probabilities are crossed at ",
+        context,
+        " (minimum ",
+        format(minimum, digits = 6),
+        ")."
+      ),
+      "mostr_delta_crossed_probabilities",
+      context = context,
+      minimum_probability = minimum
+    )
+  }
+  if (max(abs(rowSums(probabilities) - 1)) > 1e-12) {
+    sop_delta_condition(
+      paste0("Raw category probabilities do not sum to one at ", context, "."),
+      "mostr_delta_invalid_probabilities",
+      context = context
+    )
+  }
+
+  derivative <- array(0, dim = c(n, K, q))
+  logistic_derivative <- cumulative * (1 - cumulative)
+  for (coefficient in seq_len(q)) {
+    gamma_derivative <- matrix(
+      map[, coefficient],
+      nrow = M,
+      ncol = P
+    )
+    eta_derivative <- X %*% t(gamma_derivative)
+    cumulative_derivative <- logistic_derivative * eta_derivative
+    derivative[, 1L, coefficient] <- -cumulative_derivative[, 1L]
+    if (M > 1L) {
+      derivative[, 2L:M, coefficient] <-
+        cumulative_derivative[, seq_len(M - 1L), drop = FALSE] -
+        cumulative_derivative[, 2L:M, drop = FALSE]
+    }
+    derivative[, K, coefficient] <- cumulative_derivative[, M]
+  }
+  derivative_mass <- apply(derivative, c(1L, 3L), sum)
+  derivative_scale <- apply(abs(derivative), c(1L, 3L), sum)
+  if (any(abs(derivative_mass) > 1e-12 + 1e-12 * derivative_scale)) {
+    stop(
+      "Internal analytical category derivatives do not sum to zero.",
+      call. = FALSE
+    )
+  }
+
+  list(probabilities = probabilities, derivative = derivative)
+}
+
+oracle_visit_design <- function(components, visit, non_absorb) {
+  X <- components$X_transition[[visit]]
+  if (!is.matrix(X)) {
+    stop("Missing transition design for SOP visit ", visit, ".", call. = FALSE)
+  }
+  origins <- components$transition_origins
+  origin_positions <- match(non_absorb, origins)
+  if (anyNA(origin_positions)) {
+    stop("Transition design is missing a required origin state.", call. = FALSE)
+  }
+  rows <- unlist(lapply(origin_positions, function(position) {
+    start <- (position - 1L) * components$n_pat + 1L
+    start:(start + components$n_pat - 1L)
+  }))
+  if (nrow(X) < max(rows) || ncol(X) != length(components$col_names)) {
+    stop(
+      "The transition design has dimensions inconsistent with the SOP plan.",
+      call. = FALSE
+    )
+  }
+  X[rows, , drop = FALSE]
+}
+
+# R reference for the compiled averaging in analytical inference: averages
+# per-profile SOPs and their Jacobians over the profiles of each scenario.
+# `probabilities` and `jacobian` hold one row per scenario-profile pair, in
+# grid blocks of `n_each` profiles.
+delta_average_profile_arrays <- function(
+  probabilities,
+  jacobian,
+  grid,
+  times,
+  y_levels,
+  variables,
+  n_each
+) {
+  n_cf <- nrow(grid)
+  q <- dim(jacobian)[4L]
+  cells <- marginalize_sops_array(
+    sops_array = probabilities,
+    grid = grid,
+    times = times,
+    y_levels = y_levels,
+    variables = variables,
+    n_cf = n_cf,
+    n_each = n_each
+  )
+  average_jacobian <- matrix(NA_real_, nrow = nrow(cells), ncol = q)
+  individual_values <- matrix(NA_real_, nrow = n_each, ncol = nrow(cells))
+  n_cells <- length(times) * length(y_levels)
+  cursor <- 1L
+  for (scenario in seq_len(n_cf)) {
+    rows <- ((scenario - 1L) * n_each + 1L):(scenario * n_each)
+    output_rows <- cursor:(cursor + n_cells - 1L)
+    average_jacobian[output_rows, ] <- matrix(
+      apply(jacobian[rows, , , , drop = FALSE], c(2L, 3L, 4L), mean),
+      nrow = n_cells,
+      ncol = q
+    )
+    individual_values[, output_rows] <- matrix(
+      probabilities[rows, , , drop = FALSE],
+      nrow = n_each,
+      ncol = n_cells
+    )
+    cursor <- cursor + n_cells
+  }
+  list(
+    cells = cells,
+    jacobian = average_jacobian,
+    individual_values = individual_values
   )
 }

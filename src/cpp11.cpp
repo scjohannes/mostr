@@ -6,13 +6,6 @@
 #include <R_ext/Visibility.h>
 
 // sops.cpp
-doubles cpp_markov_propagate(doubles_matrix<> initial, list transitions, integers non_absorb, integers absorb);
-extern "C" SEXP _mostr_cpp_markov_propagate(SEXP initial, SEXP transitions, SEXP non_absorb, SEXP absorb) {
-  BEGIN_CPP11
-    return cpp11::as_sexp(cpp_markov_propagate(cpp11::as_cpp<cpp11::decay_t<doubles_matrix<>>>(initial), cpp11::as_cpp<cpp11::decay_t<list>>(transitions), cpp11::as_cpp<cpp11::decay_t<integers>>(non_absorb), cpp11::as_cpp<cpp11::decay_t<integers>>(absorb)));
-  END_CPP11
-}
-// sops.cpp
 doubles cpp_markov_update_logits(doubles_matrix<> previous, doubles_matrix<> logits, integers non_absorb, integers absorb);
 extern "C" SEXP _mostr_cpp_markov_update_logits(SEXP previous, SEXP logits, SEXP non_absorb, SEXP absorb) {
   BEGIN_CPP11
@@ -38,13 +31,6 @@ integers cpp_sample_categorical_rows(doubles_matrix<> probabilities);
 extern "C" SEXP _mostr_cpp_sample_categorical_rows(SEXP probabilities) {
   BEGIN_CPP11
     return cpp11::as_sexp(cpp_sample_categorical_rows(cpp11::as_cpp<cpp11::decay_t<doubles_matrix<>>>(probabilities)));
-  END_CPP11
-}
-// sops.cpp
-doubles cpp_normalize_probability_array(doubles values, int draws, int observations, int states);
-extern "C" SEXP _mostr_cpp_normalize_probability_array(SEXP values, SEXP draws, SEXP observations, SEXP states) {
-  BEGIN_CPP11
-    return cpp11::as_sexp(cpp_normalize_probability_array(cpp11::as_cpp<cpp11::decay_t<doubles>>(values), cpp11::as_cpp<cpp11::decay_t<int>>(draws), cpp11::as_cpp<cpp11::decay_t<int>>(observations), cpp11::as_cpp<cpp11::decay_t<int>>(states)));
   END_CPP11
 }
 // sops.cpp
@@ -86,13 +72,11 @@ extern "C" SEXP _mostr_cpp_markov_update_second_order_po(SEXP previous, SEXP sca
 extern "C" {
 static const R_CallMethodDef CallEntries[] = {
     {"_mostr_cpp_blrm_probabilities",            (DL_FUNC) &_mostr_cpp_blrm_probabilities,             7},
-    {"_mostr_cpp_markov_propagate",              (DL_FUNC) &_mostr_cpp_markov_propagate,               4},
     {"_mostr_cpp_markov_update_draws",           (DL_FUNC) &_mostr_cpp_markov_update_draws,            7},
     {"_mostr_cpp_markov_update_logits",          (DL_FUNC) &_mostr_cpp_markov_update_logits,           4},
     {"_mostr_cpp_markov_update_po",              (DL_FUNC) &_mostr_cpp_markov_update_po,               5},
     {"_mostr_cpp_markov_update_second_order",    (DL_FUNC) &_mostr_cpp_markov_update_second_order,     7},
     {"_mostr_cpp_markov_update_second_order_po", (DL_FUNC) &_mostr_cpp_markov_update_second_order_po,  8},
-    {"_mostr_cpp_normalize_probability_array",   (DL_FUNC) &_mostr_cpp_normalize_probability_array,    4},
     {"_mostr_cpp_reduce_sops_draws",             (DL_FUNC) &_mostr_cpp_reduce_sops_draws,              7},
     {"_mostr_cpp_run_sop_delta",                 (DL_FUNC) &_mostr_cpp_run_sop_delta,                 10},
     {"_mostr_cpp_sample_categorical_rows",       (DL_FUNC) &_mostr_cpp_sample_categorical_rows,        1},

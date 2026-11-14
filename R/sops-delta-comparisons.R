@@ -1,102 +1,48 @@
 # Analytical propagation for average SOP comparisons.
 
-delta_validate_comparison_scope <- function(
-  object,
-  target,
-  vcov,
-  conf_type
-) {
+delta_validate_comparison_scope <- function(object, conf_type) {
   args <- attr(object, "comparison_args")
   avg_args <- attr(object, "avg_args")
   if (is.null(args) || is.null(avg_args)) {
-    stop(
+    mostr_abort(
       "Stored average-comparison arguments are required for delta inference."
     )
   }
   if (!identical(conf_type, "wald")) {
-    stop(
-      "Analytical average comparisons require `conf_type = \"wald\"`.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical average comparisons require `conf_type = \"wald\"`."
     )
   }
   if (!identical(args$comparison, "difference")) {
-    stop(
+    mostr_abort(
       "Analytical average comparisons currently support differences only; ",
-      "ratios are not yet supported.",
-      call. = FALSE
+      "ratios are not yet supported."
     )
   }
   if (!args$estimand %in% c("sop", "time_in_state")) {
-    stop(
+    mostr_abort(
       "Analytical average comparisons currently support `estimand = \"sop\"` ",
-      "or `\"time_in_state\"`; time benefit is not yet supported.",
-      call. = FALSE
+      "or `\"time_in_state\"`; time benefit is not yet supported."
     )
   }
   if (length(avg_args$by %||% character()) > 0L) {
-    stop(
-      "Analytical delta inference with `by` is not yet supported.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical delta inference with `by` is not yet supported."
     )
   }
-
-  target <- delta_validate_target(object, target)
-  if (identical(target, "unconditional") && !is.null(vcov)) {
-    stop(
-      "A coefficient covariance matrix cannot be supplied for unconditional inference; ",
-      "unconditional inference uses fitted-model score components and the ",
-      "stacked patient influence function.",
-      call. = FALSE
-    )
-  }
-  list(args = args, avg_args = avg_args, target = target)
+  list(args = args, avg_args = avg_args)
 }
 
-delta_replay_average_comparison <- function(
-  object,
-  args,
-  avg_args,
-  conf_level
-) {
-  newdata <- if (isTRUE(attr(object, "newdata_supplied"))) {
-    attr(object, "newdata_orig")
-  } else {
-    NULL
-  }
-  avg_comparison_replay_avg_sops(
-    model = attr(object, "model"),
-    newdata = newdata,
-    variables = avg_args$variables,
-    by = avg_args$by,
-    times = avg_args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    id_var = avg_args$id_var,
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates"),
-    include_re = args$include_re,
-    n_draws = args$n_draws,
-    seed = args$seed,
-    posterior_summary = args$posterior_summary,
-    conf_level = conf_level,
-    return_draws = FALSE,
-    extra_args = args$extra_args,
-    warn_skipped_visits = FALSE
-  )
-}
-
+# The trapezoid rule as one weight per time, so that the integral is a
+# weighted sum of the values and the same weights apply to their derivatives.
+# `trapezoid_row_totals()` sums over the intervals instead; the two agree to
+# rounding only, so point estimates keep that function.
 delta_trapezoid_weights <- function(times) {
   n <- length(times)
   if (n < 2L) {
     return(numeric(n))
   }
   steps <- diff(times)
-  if (n == 2L) {
-    return(rep(steps / 2, 2L))
-  }
   c(
     steps[1L] / 2,
     (utils::head(steps, -1L) + utils::tail(steps, -1L)) / 2,
@@ -118,10 +64,14 @@ delta_real_time_weights <- function(avg, args) {
         is.na(baseline_time) ||
         !is.finite(baseline_time)
     ) {
-      stop("`baseline_time` must be a single finite numeric value or `NULL`.")
+      mostr_abort(
+        "`baseline_time` must be a single finite numeric value or `NULL`."
+      )
     }
     if (baseline_time >= min(source_real)) {
-      stop("`baseline_time` must be earlier than the earliest mapped SOP time.")
+      mostr_abort(
+        "`baseline_time` must be earlier than the earliest mapped SOP time."
+      )
     }
   }
   mapped_range <- range(source_real)
@@ -179,19 +129,23 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
   varname <- names(variables)[1L]
   required_source <- c("time", "state", varname, "estimate")
   if (!all(required_source %in% names(source))) {
-    stop("The replayed average SOP cells are missing comparison identifiers.")
+    mostr_abort(
+      "The replayed average SOP cells are missing comparison identifiers."
+    )
   }
 
   state_sets <- normalize_comparison_state_sets(
     args$state_sets,
-    attr(avg, "y_levels")
+    markov_result_settings(avg)$y_levels
   )
   if (anyDuplicated(names(state_sets))) {
-    stop("Analytical comparison state-set names must be unique.")
+    mostr_abort("Analytical comparison state-set names must be unique.")
   }
   state_index <- match(as.character(object$state_set), names(state_sets))
   if (anyNA(state_index)) {
-    stop("Comparison state sets do not align with the replayed average SOPs.")
+    mostr_abort(
+      "Comparison state sets do not align with the replayed average SOPs."
+    )
   }
 
   real_time <- identical(args$estimand, "time_in_state") &&
@@ -224,7 +178,7 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
   source_state <- as.character(source$state)
   source_time <- as.character(source$time)
 
-  # ponytail: scan source cells per result; index groups if setup time dominates.
+  # Scan source cells per result; index groups if setup time dominates.
   for (i in seq_len(n_result)) {
     states <- as.character(state_sets[[state_index[i]]])
     level_sign <-
@@ -237,7 +191,9 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
       unname(visit_weights[match(source_time, names(visit_weights))])
     }
     if (anyNA(time_weight)) {
-      stop("Comparison times do not align with the replayed average SOPs.")
+      mostr_abort(
+        "Comparison times do not align with the replayed average SOPs."
+      )
     }
     weight <- level_sign * state_weight * time_weight
     index <- which(weight != 0)
@@ -253,7 +209,7 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
   # the starting state instead anchor at that state, a constant that differs
   # between the compared scenarios.
   anchor <- numeric(n_result)
-  p_var <- attr(avg, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(avg)$p_var
   baseline_weight <- real_time_weights$baseline %||% 0
   if (identical(varname, p_var) && baseline_weight != 0) {
     for (i in seq_len(n_result)) {
@@ -268,17 +224,17 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
     source$estimate
   )) +
     anchor
+  # This operator is later applied to the derivatives and influence values, so
+  # check that it rebuilds the stored contrasts; a mismatch means edited
+  # estimates or a wrong weight. Rounding differences are below 5e-15 on the
+  # test grid.
   if (
     any(!is.finite(propagated)) ||
-      any(
-        abs(propagated - object$estimate) >
-          1e-12 + 1e-10 * pmax(abs(propagated), abs(object$estimate))
-      )
+      estimates_differ(propagated, object$estimate)
   ) {
-    stop(
+    mostr_abort(
       "The analytical comparison operator did not reproduce the stored point ",
-      "estimates.",
-      call. = FALSE
+      "estimates."
     )
   }
   operator
@@ -334,7 +290,7 @@ delta_propagate_comparison_state <- function(avg, operator) {
   }
 
   if (!identical(source$representation, "influence")) {
-    stop("Unknown analytical representation on replayed average SOPs.")
+    mostr_abort("Unknown analytical representation on replayed average SOPs.")
   }
   influence <- delta_apply_comparison_operator(
     operator,
@@ -342,9 +298,12 @@ delta_propagate_comparison_state <- function(avg, operator) {
     transpose = TRUE
   )
   n <- nrow(influence)
+  # A sample covariance over patients needs at least two of them.
   if (n < 2L) {
-    stop("Unconditional delta inference requires at least two patients.")
+    mostr_abort("Unconditional delta inference requires at least two patients.")
   }
+  # The same estimator as delta_stacked_influence(): sample variance of the
+  # patients' influence values (divisor n - 1), divided by n.
   centered <- sweep(influence, 2L, colMeans(influence), "-")
   variance <- colSums(centered^2) / ((n - 1) * n)
   average_jacobian <- delta_apply_comparison_operator(
@@ -376,23 +335,16 @@ inferences_delta_comparisons <- function(
 ) {
   scope <- delta_validate_comparison_scope(
     object = object,
-    target = target,
-    vcov = vcov,
     conf_type = conf_type
   )
-  avg <- delta_replay_average_comparison(
-    object = object,
-    args = scope$args,
-    avg_args = scope$avg_args,
-    conf_level = conf_level
-  )
+  avg <- replay_result_avg_sops(object, scope$args, conf_level)
   avg <- inferences_delta_sops(
     object = avg,
     vcov = vcov,
     cluster = cluster,
     conf_level = conf_level,
     conf_type = "wald",
-    target = scope$target
+    target = target
   )
   operator <- delta_comparison_operator(
     object = object,
@@ -406,7 +358,7 @@ inferences_delta_comparisons <- function(
     standard_error = propagated$std.error,
     conf_level = conf_level,
     conf_type = "wald",
-    target = scope$target,
+    target = target,
     analytical = propagated$analytical
   )
 }

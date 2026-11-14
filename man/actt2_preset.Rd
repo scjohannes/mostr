@@ -6,7 +6,7 @@
 \description{
 \code{sim_markov("actt2")} generates synthetic daily health states from a
 first-order Markov proportional-odds model based on data from the
-\href{https://doi.org/10.1056/NEJMoa2031994}{Adaptive COVID-19 Treatment Trial 2 (ACTT-2)},
+Adaptive COVID-19 Treatment Trial 2 (ACTT-2; \doi{10.1056/NEJMoa2031994}),
 which compared Baricitinib plus Remdesivir with placebo plus Remdesivir in
 adults hospitalized with COVID-19 (Kalil et al., 2021). States follow the
 trial's

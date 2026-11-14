@@ -19,19 +19,17 @@ make_delta_average_fixture <- function() {
     times = 1:3,
     id_var = "id"
   )
-  attr(out, "y_levels") <- c("1", "2")
+  attr(out, "settings") <- markov_settings(id_var = "id", y_levels = c("1", "2"))
   attr(out, "newdata_orig") <- data.frame(
     id = 1:4,
     tx = c(0, 0, 1, 1),
     yprev = c("1", "1", "2", "2")
   )
   attr(out, "newdata_supplied") <- TRUE
-  attr(out, "id_var") <- "id"
-  attr(out, "p_var") <- "yprev"
   out
 }
 
-test_that("Jacobian inspection remains internal", {
+test_that("get_jacobian() stays unexported", {
   expect_equal("get_jacobian" %in% getNamespaceExports("mostr"), FALSE)
   expect_type(getFromNamespace("get_jacobian", "mostr"), "closure")
 })
@@ -51,7 +49,6 @@ test_that("vcov selection preserves established positional arguments", {
       "conf_type",
       "null",
       "return_draws",
-      "update_datadist",
       "use_coefstart"
     )
   )
@@ -97,7 +94,9 @@ delta_public_orm_case <- local({
       )
       model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data
+        data = data,
+        id_var = "id",
+        absorb = 6
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:8,
@@ -132,6 +131,7 @@ delta_public_unconditional_case <- local({
         family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
         data = data,
         id_var = "id",
+        absorb = 6,
         engine = "vglm"
       )
       value <<- list(
@@ -149,63 +149,23 @@ replay_public_sops <- function(object, model) {
   sops(
     model = model,
     newdata = attr(object, "newdata_pred"),
-    times = args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates")
+    times = args$times
   )
 }
 
 central_public_sops_jacobian <- function(object, model) {
-  coefficient <- get_coef(model)
   object_key <- sop_draw_cell_key(object, c("rowid", "time", "state"))
-  jacobian <- matrix(
-    NA_real_,
-    nrow = nrow(object),
-    ncol = length(coefficient),
-    dimnames = list(NULL, names(coefficient))
-  )
-
-  for (column in seq_along(coefficient)) {
-    step <- .Machine$double.eps^(1 / 3) * max(1, abs(coefficient[column]))
-    upper <- coefficient
-    lower <- coefficient
-    upper[column] <- upper[column] + step
-    lower[column] <- lower[column] - step
-    upper_result <- replay_public_sops(object, set_coef(model, upper))
-    lower_result <- replay_public_sops(object, set_coef(model, lower))
-    upper_index <- match(
+  numeric_jacobian(model, function(model) {
+    result <- replay_public_sops(object, model)
+    index <- match(
       object_key,
-      sop_draw_cell_key(upper_result, c("rowid", "time", "state"))
+      sop_draw_cell_key(result, c("rowid", "time", "state"))
     )
-    lower_index <- match(
-      object_key,
-      sop_draw_cell_key(lower_result, c("rowid", "time", "state"))
-    )
-    if (anyNA(upper_index) || anyNA(lower_index)) {
+    if (anyNA(index)) {
       stop("Finite-difference SOP replay did not return every public cell.")
     }
-    jacobian[, column] <-
-      (upper_result$estimate[upper_index] -
-        lower_result$estimate[lower_index]) /
-      (2 * step)
-  }
-  jacobian
-}
-
-`[.delta_subset_trap` <- function(x, ...) {
-  stop(
-    "Analytical state was subset before its allocation guard.",
-    call. = FALSE
-  )
-}
-
-as.data.frame.delta_finalize_trap <- function(x, ...) {
-  stop("The result was copied before its retained-state guard.", call. = FALSE)
+    result$estimate[index]
+  })
 }
 
 test_that("analytical comparison operators reproduce existing reductions", {
@@ -319,99 +279,14 @@ test_that("low-rank analytical accessors select rows without dense storage", {
   expect_identical(attr(result, "conf_type"), "logit")
 })
 
-test_that("analytical allocation guards retain a typed condition", {
-  object <- data.frame(time = 1, state = "1", estimate = 0.5)
-  class(object) <- c("markov_avg_sops", "data.frame")
-  jacobian <- matrix(1, nrow = 1, dimnames = list(NULL, "beta"))
-  covariance <- matrix(1, dimnames = list("beta", "beta"))
-  result <- delta_finalize_result(
-    object,
-    standard_error = 1,
-    conf_level = 0.95,
-    conf_type = "logit",
-    target = "empirical",
-    analytical = list(
-      representation = "coefficient",
-      jacobian = jacobian,
-      coefficient_vcov = covariance,
-      coefficient_names = "beta",
-      covariance_metadata = list(source = "test")
-    )
-  )
-
-  old_options <- options(mostr.delta_max_bytes = 1)
-  on.exit(options(old_options), add = TRUE)
-
-  analytical <- attr(result, "analytical")
-  class(analytical$jacobian) <- c(
-    "delta_subset_trap",
-    class(analytical$jacobian)
-  )
-  attr(result, "analytical") <- analytical
-  condition <- tryCatch(get_jacobian(result), error = identity)
-  expect_s3_class(condition, "mostr_delta_too_large")
-  expect_equal(condition$required_bytes, 8)
-
-  covariance_condition <- tryCatch(
-    stats::vcov(result, rows = 1L),
-    error = identity
-  )
-  expect_s3_class(covariance_condition, "mostr_delta_too_large")
-  expect_equal(covariance_condition$required_bytes, 16)
-
-  influence_result <- result
-  influence_state <- attr(influence_result, "analytical")
-  influence_state$representation <- "influence"
-  influence_state$jacobian <- NULL
-  influence_state$coefficient_vcov <- NULL
-  influence_state$influence <- matrix(1, nrow = 2, ncol = 1)
-  class(influence_state$influence) <- c(
-    "delta_subset_trap",
-    class(influence_state$influence)
-  )
-  attr(influence_result, "analytical") <- influence_state
-  influence_condition <- tryCatch(
-    stats::vcov(influence_result, rows = 1L),
-    error = identity
-  )
-  expect_s3_class(influence_condition, "mostr_delta_too_large")
-  expect_equal(influence_condition$required_bytes, 24)
-
-  guarded_object <- object
-  class(guarded_object) <- c(
-    "delta_finalize_trap",
-    class(guarded_object)
-  )
-  retained_condition <- tryCatch(
-    delta_finalize_result(
-      guarded_object,
-      standard_error = 1,
-      conf_level = 0.95,
-      conf_type = "logit",
-      target = "empirical",
-      analytical = list(
-        representation = "coefficient",
-        jacobian = jacobian,
-        coefficient_vcov = covariance,
-        coefficient_names = "beta",
-        covariance_metadata = list(source = "test")
-      )
-    ),
-    error = identity
-  )
-  expect_s3_class(retained_condition, "mostr_delta_too_large")
-  expect_equal(retained_condition$required_bytes, 16)
-})
-
 test_that("delta replay rejects stale estimates even when cell keys align", {
+  skip_on_cran()
   case <- delta_public_vglm_case()
   point <- avg_sops(
     case$model,
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
-    times = 1,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1
   )
   point$estimate[1] <- point$estimate[1] + 1e-8
 
@@ -428,14 +303,13 @@ test_that("delta replay rejects stale estimates even when cell keys align", {
 })
 
 test_that("public delta workflow returns bounded SOP and Wald comparison intervals", {
+  skip_on_cran()
   case <- delta_public_vglm_case()
   avg <- avg_sops(
     case$model,
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(
     avg,
@@ -486,9 +360,7 @@ test_that("public delta workflow returns bounded SOP and Wald comparison interva
     variables = list(tx = c(0, 1)),
     estimand = "sop",
     state_sets = list(low = c(1, 2)),
-    times = 1:3,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   comparison <- inferences(
     comparison,
@@ -508,45 +380,12 @@ test_that("public delta workflow returns bounded SOP and Wald comparison interva
   )
 })
 
-test_that("unconditional targets reject explicit coefficient covariance", {
-  object <- data.frame(
-    estimand = "sop",
-    time = 1,
-    state_set = "1",
-    comparison = "difference",
-    estimate = 0
-  )
-  class(object) <- c("markov_avg_comparisons", "data.frame")
-  attr(object, "comparison_args") <- list(
-    estimand = "sop",
-    comparison = "difference"
-  )
-  attr(object, "avg_args") <- list(
-    variables = list(tx = c(0, 1)),
-    by = NULL
-  )
-
-  condition <- tryCatch(
-    delta_validate_comparison_scope(
-      object,
-      target = "unconditional",
-      vcov = diag(1),
-      conf_type = "wald"
-    ),
-    error = identity
-  )
-  expect_s3_class(condition, "error")
-  expect_match(conditionMessage(condition), "cannot be supplied", fixed = TRUE)
-})
-
 test_that("public fixed VGLM Jacobians match coefficient replay", {
   case <- delta_public_vglm_case()
   point <- sops(
     case$model,
     newdata = case$baseline[1:4, , drop = FALSE],
-    times = 1:3,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
 
   set.seed(8111)
@@ -582,13 +421,12 @@ test_that("public fixed VGLM Jacobians match coefficient replay", {
 })
 
 test_that("public fixed ORM Jacobians match coefficient replay", {
+  skip_on_cran()
   case <- delta_public_orm_case()
   point <- sops(
     case$model,
     newdata = case$baseline[1:3, , drop = FALSE],
-    times = 1:3,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(
     point,
@@ -609,9 +447,7 @@ test_that("public empirical ORM averages use complete named covariance", {
     case$model,
     newdata = case$baseline,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(
     avg,
@@ -632,13 +468,12 @@ test_that("public empirical ORM averages use complete named covariance", {
 })
 
 test_that("fitted-cohort unconditional averages expose stacked influence", {
+  skip_on_cran()
   case <- delta_public_unconditional_case()
   avg <- avg_sops(
     case$model,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:3
   )
   inferred <- inferences(avg, method = "delta", vcov = "unconditional")
 
@@ -649,8 +484,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
     object = avg,
     model_plan = model_plan,
     newdata = newdata,
-    times = avg_args$times,
-    output = "average"
+    times = avg_args$times
   )
   engine <- delta_validate_plan_result(
     run_sop_delta_plan(plan, model_plan),
@@ -660,7 +494,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
   )
   grid <- do.call(expand.grid, avg_args$variables)
   n_each <- nrow(newdata) / nrow(grid)
-  reduced <- delta_average_arrays(
+  reduced <- delta_average_profile_arrays(
     probabilities = engine$probabilities,
     jacobian = engine$jacobian,
     grid = grid,
@@ -681,7 +515,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
   colnames(individual_values) <- cell_names
   rownames(average_jacobian) <- cell_names
   baseline <- newdata[seq_len(n_each), , drop = FALSE]
-  profile_ids <- delta_profile_ids(baseline, avg_args$id_var)
+  profile_ids <- delta_profile_ids(baseline, markov_result_settings(avg)$id_var)
   direct <- delta_stacked_influence(
     individual_values = individual_values,
     average_jacobian = average_jacobian,
@@ -710,7 +544,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
   )
   expect_equal(
     stats::vcov(inferred, rows = 1:5),
-    direct$covariance[1:5, 1:5],
+    stats::cov(direct$influence[, 1:5, drop = FALSE]) / length(profile_ids),
     tolerance = 1e-12,
     ignore_attr = TRUE
   )
@@ -728,6 +562,7 @@ test_that("fitted-cohort unconditional averages expose stacked influence", {
 })
 
 test_that("backend HC settings affect empirical but not unconditional inference", {
+  skip_on_cran()
   case <- delta_public_unconditional_case()
   raw <- case$model$vglm_fit
   data <- case$data
@@ -747,16 +582,12 @@ test_that("backend HC settings affect empirical but not unconditional inference"
   point_hc0 <- avg_sops(
     hc0,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
   point_hc1 <- avg_sops(
     hc1,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
   empirical_hc0 <- inferences(point_hc0, method = "delta", vcov = "conditional")
   empirical_hc1 <- inferences(point_hc1, method = "delta", vcov = "conditional")
@@ -793,14 +624,13 @@ test_that("backend HC settings affect empirical but not unconditional inference"
 })
 
 test_that("public delta scope enforces fixed targets and patient clustering", {
+  skip_on_cran()
   local_reproducible_output(width = 80)
   case <- delta_public_vglm_case()
   fixed <- sops(
     case$model,
     newdata = case$baseline[1:3, , drop = FALSE],
-    times = 1:2,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
 
   expect_snapshot(
@@ -811,18 +641,25 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
     ),
     error = TRUE
   )
-  expect_snapshot(
-    inferences(fixed, method = "delta", vcov = "conditional"),
-    error = TRUE
+  # Conditional variance uses the patient-clustered covariance that
+  # `mostm()` stores on the fit.
+  conditional <- inferences(fixed, method = "delta", vcov = "conditional")
+  explicit <- inferences(
+    fixed,
+    method = "delta",
+    vcov = robcov_vglm(
+      case$model$vglm_fit,
+      cluster = attr(case$model, "markov_data")$id
+    )$var
   )
+  expect_true(all(is.finite(conditional$std.error)))
+  expect_equal(conditional$std.error, explicit$std.error, tolerance = 1e-10)
 
   unconditional_case <- delta_public_unconditional_case()
   avg <- avg_sops(
     unconditional_case$model,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = unconditional_case$y_levels,
-    absorb = max(unconditional_case$y_levels)
+    times = 1:2
   )
   expect_snapshot(
     inferences(
@@ -832,52 +669,15 @@ test_that("public delta scope enforces fixed targets and patient clustering", {
     ),
     error = TRUE
   )
-  expect_snapshot(
-    inferences(avg, method = "delta", vcov = "population"),
-    error = TRUE
-  )
-
-  supplied <- avg_sops(
-    unconditional_case$model,
-    newdata = markov_validate_starting_profiles(unconditional_case$model)[
-      seq_len(5L),
-      ,
-      drop = FALSE
-    ],
-    variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = unconditional_case$y_levels,
-    absorb = max(unconditional_case$y_levels)
-  )
-  expect_snapshot(
-    inferences(supplied, method = "delta", vcov = "unconditional"),
-    error = TRUE
-  )
 })
-
-test_that("logit delta intervals distinguish structural boundaries", {
-  local_reproducible_output(width = 80)
-  expect_snapshot(
-    nonstructural <- delta_interval_bounds(
-      estimate = c(0, 1),
-      standard_error = c(0.1, 0.1),
-      conf_level = 0.95,
-      conf_type = "logit"
-    )
-  )
-  expect_true(all(is.na(nonstructural$conf.low)))
-  expect_true(all(is.na(nonstructural$conf.high)))
-})
-
 
 test_that("delta vcov choices preserve calculations and select class defaults", {
+  skip_on_cran()
   case <- delta_public_unconditional_case()
   args <- list(
     model = case$model,
     variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = case$y_levels,
-    absorb = max(case$y_levels)
+    times = 1:2
   )
   objects <- list(
     do.call(sops, args),
@@ -918,6 +718,7 @@ test_that("delta vcov choices preserve calculations and select class defaults", 
 })
 
 test_that("delta vcov validates strings and does not silently change targets", {
+  skip_on_cran()
   object <- make_delta_average_fixture()
   local_reproducible_output(width = 80)
   expect_snapshot(inferences(object, method = "delta"), error = TRUE)
@@ -937,31 +738,99 @@ test_that("delta vcov validates strings and does not silently change targets", {
     inferences(object, method = "delta", target = "empirical"),
     error = TRUE
   )
-  for (method in c("mvn", "score_bootstrap", "bootstrap", "fwb")) {
-    expect_snapshot(
-      inferences(object, method = method, vcov = "conditional"),
-      error = TRUE
-    )
-  }
 })
 
-
-test_that("negative variance checks respect covariance units", {
+test_that("variance and covariance-matrix checks respect covariance units", {
+  # The same checks must hold whatever the units of the coefficients, so
+  # every tolerance has to scale with the covariance.
   for (scale in c(1e-20, 1, 1e20)) {
-    expect_equal(delta_jacobian_variance(matrix(1), matrix(scale)) / scale, 1)
+    label <- paste("covariance scale", scale)
+
+    # Variances from a Jacobian and a covariance matrix.
+    expect_equal(
+      delta_jacobian_variance(matrix(1), matrix(scale)) / scale,
+      1,
+      info = label
+    )
     expect_match(
       tryCatch(
         delta_jacobian_variance(matrix(1), matrix(-scale)),
         error = conditionMessage
       ),
-      "negative variance"
+      "negative variance",
+      info = label
     )
     cancellation <- diag(c(1, -1 - .Machine$double.eps)) * scale
     expect_equal(
       delta_jacobian_variance(matrix(c(1, 1), nrow = 1), cancellation),
-      0
+      0,
+      info = label
+    )
+
+    # Validation of a named covariance matrix.
+    covariance <- diag(c(1, 2)) * scale
+    dimnames(covariance) <- list(c("a", "b"), c("a", "b"))
+    expect_equal(
+      delta_validate_named_matrix(
+        covariance,
+        c("a", "b"),
+        "vcov",
+        positive_definite = TRUE
+      ) /
+        scale,
+      covariance / scale,
+      info = label
+    )
+    invalid <- covariance
+    invalid[1, 1] <- -scale
+    expect_match(
+      tryCatch(
+        delta_validate_named_matrix(
+          invalid,
+          c("a", "b"),
+          "vcov",
+          positive_semidefinite = TRUE
+        ),
+        error = conditionMessage
+      ),
+      "not numerically positive semidefinite",
+      info = label
+    )
+    invalid <- covariance
+    invalid[1, 2] <- scale / 10
+    expect_match(
+      tryCatch(
+        delta_validate_named_matrix(invalid, c("a", "b"), "vcov"),
+        error = conditionMessage
+      ),
+      "not numerically symmetric",
+      info = label
     )
   }
+
+  # A zero matrix is positive semidefinite but not positive definite.
+  zero <- covariance * 0
+  expect_equal(
+    delta_validate_named_matrix(
+      zero,
+      c("a", "b"),
+      "vcov",
+      positive_semidefinite = TRUE
+    ),
+    zero
+  )
+  expect_match(
+    tryCatch(
+      delta_validate_named_matrix(
+        zero,
+        c("a", "b"),
+        "bread",
+        positive_definite = TRUE
+      ),
+      error = conditionMessage
+    ),
+    "not numerically positive definite"
+  )
 })
 
 test_that("SOP replay allows roundoff while detecting changed estimates", {

@@ -17,37 +17,8 @@ native_reference_previous <- function(n, K) {
   previous / rowSums(previous)
 }
 
-test_that("native first-order propagation matches the reference over visits", {
-  set.seed(4101)
-  n <- 4L
-  K <- 5L
-  initial <- native_reference_previous(n, K)
-
-  for (absorb in native_absorbing_sets) {
-    non_absorb <- setdiff(seq_len(K), absorb)
-    transitions <- lapply(1:3, function(visit) {
-      reference_random_stochastic(n * length(non_absorb), K)
-    })
-    actual <- cpp_markov_propagate(
-      initial,
-      transitions,
-      as.integer(non_absorb),
-      as.integer(absorb)
-    )
-
-    expected <- array(0, dim = c(n, 4L, K))
-    expected[, 1L, ] <- initial
-    current <- initial
-    for (visit in seq_along(transitions)) {
-      blocks <- reference_origin_blocks(transitions[[visit]], non_absorb, n)
-      current <- reference_markov_step(current, blocks, absorb)
-      expected[, visit + 1L, ] <- current
-    }
-    expect_equal(actual, expected, tolerance = 1e-14)
-  }
-})
-
-test_that("native logit updates match the clipped reference probabilities", {
+test_that("native logit updates match the reference and report crossed cut-points", {
+  skip_on_cran()
   set.seed(4102)
   n <- 4L
   K <- 5L
@@ -62,8 +33,10 @@ test_that("native logit updates match the clipped reference probabilities", {
         1L,
         function(values) sort(values, decreasing = TRUE)
       ))
-      # A row with increasing logits has crossed cumulative probabilities.
-      logits[rows, ] <- seq(-1, 1, length.out = K - 1L)
+      # Nearly equal cut-points: rounding makes one probability about -2e-13,
+      # which is within the tolerance and set to zero.
+      logits[1L, ] <- c(0.3, 0.3 + 1e-12, -0.2, -1.4)
+      expect_lt(min(reference_category_probabilities(logits)), 0)
       actual <- markov_update_logits_native(
         previous,
         logits,
@@ -71,17 +44,46 @@ test_that("native logit updates match the clipped reference probabilities", {
         as.integer(absorb)
       )
       blocks <- reference_origin_blocks(
-        reference_clipped_probabilities(logits),
+        reference_checked_probabilities(logits),
         origin_order,
         n
       )
       expected <- reference_markov_step(previous, blocks, absorb)
       expect_equal(actual, expected, tolerance = 1e-12)
+
+      # Increasing logits mean crossed cut-points: for patient 1 at the first
+      # origin, which may hold no probability, and patient n at the last.
+      logits[1L, ] <- seq(-1, 1, length.out = K - 1L)
+      logits[rows, ] <- seq(-0.5, 0.5, length.out = K - 1L)
+      expect_error(reference_checked_probabilities(logits), "cross")
+      marked <- cpp_markov_update_logits(
+        previous,
+        logits,
+        as.integer(origin_order),
+        as.integer(absorb)
+      )
+      expect_identical(attr(marked, "crossed_profiles"), c(1L, n))
+      expect_equal(
+        attr(marked, "minimum_probability"),
+        min(reference_category_probabilities(logits)),
+        tolerance = 1e-12
+      )
+      expect_error(
+        markov_update_logits_native(
+          previous,
+          logits,
+          as.integer(origin_order),
+          as.integer(absorb),
+          time = 3
+        ),
+        "cross for 2 of the 4 profiles at time 3",
+        class = "mostr_crossed_thresholds"
+      )
     }
   }
 })
 
-test_that("native PO updates match the clipped reference probabilities", {
+test_that("native PO updates match the reference and report crossed cut-points", {
   set.seed(4103)
   n <- 4L
   K <- 5L
@@ -90,22 +92,48 @@ test_that("native PO updates match the clipped reference probabilities", {
   for (absorb in native_absorbing_sets) {
     non_absorb <- setdiff(seq_len(K), absorb)
     scalar <- stats::rnorm(n * length(non_absorb), sd = 1.5)
-    for (cutpoints in list(c(2, 0.5, -0.4, -2.2), c(1, -1, 0.5, -2))) {
-      actual <- markov_update_po_native(
+    cutpoints <- c(2, 0.5, -0.4, -2.2)
+    actual <- markov_update_po_native(
+      previous,
+      scalar,
+      cutpoints,
+      as.integer(non_absorb),
+      as.integer(absorb)
+    )
+    blocks <- reference_origin_blocks(
+      reference_checked_probabilities(outer(scalar, cutpoints, "+")),
+      non_absorb,
+      n
+    )
+    expected <- reference_markov_step(previous, blocks, absorb)
+    expect_equal(actual, expected, tolerance = 1e-12)
+
+    # Cut-points out of order cross for every patient.
+    crossed <- c(1, -1, 0.5, -2)
+    expect_error(
+      reference_checked_probabilities(outer(scalar, crossed, "+")),
+      "cross"
+    )
+    marked <- cpp_markov_update_po(
+      previous,
+      scalar,
+      crossed,
+      as.integer(non_absorb),
+      as.integer(absorb)
+    )
+    expect_identical(attr(marked, "crossed_profiles"), seq_len(n))
+    expect_error(
+      markov_update_po_native(
         previous,
         scalar,
-        cutpoints,
+        crossed,
         as.integer(non_absorb),
-        as.integer(absorb)
-      )
-      blocks <- reference_origin_blocks(
-        reference_clipped_probabilities(outer(scalar, cutpoints, "+")),
-        non_absorb,
-        n
-      )
-      expected <- reference_markov_step(previous, blocks, absorb)
-      expect_equal(actual, expected, tolerance = 1e-12)
-    }
+        as.integer(absorb),
+        time = 2
+      ),
+      "cross for 4 of the 4 profiles at time 2",
+      class = "mostr_crossed_thresholds"
+    )
   }
 })
 
@@ -191,7 +219,7 @@ test_that("native second-order updates match the joint-history reference", {
     )
     expect_equal(actual, expected, tolerance = 1e-14)
 
-    # The reference engine accumulates pair chunks and absorbing mass
+    # The R engine accumulates pair chunks and absorbing mass
     # separately.
     chunks <- split(seq_len(nrow(pairs)), rep(1:2, length.out = nrow(pairs)))
     chunked <- Reduce(`+`, lapply(chunks, function(chunk) {
@@ -226,27 +254,57 @@ test_that("native second-order PO updates match the joint-history reference", {
     joint <- native_reference_joint(n, K, absorb)
     pairs <- native_reference_pairs(K, absorb)
     scalar <- matrix(stats::rnorm(n * nrow(pairs), sd = 1.5), nrow = n)
-    for (cutpoints in list(c(2, 0.5, -0.4, -2.2), c(1, -1, 0.5, -2))) {
-      transition_for <- function(h, j) {
-        pair <- which(pairs$older == h & pairs$current == j)
-        reference_clipped_probabilities(outer(scalar[, pair], cutpoints, "+"))
-      }
-      expected <- reference_second_order_step(joint, transition_for, absorb)
+    cutpoints <- c(2, 0.5, -0.4, -2.2)
+    transition_for <- function(h, j) {
+      pair <- which(pairs$older == h & pairs$current == j)
+      reference_checked_probabilities(outer(scalar[, pair], cutpoints, "+"))
+    }
+    expected <- reference_second_order_step(joint, transition_for, absorb)
 
-      actual <- markov_update_second_order_po_native(
+    actual <- markov_update_second_order_po_native(
+      joint,
+      scalar,
+      cutpoints,
+      pairs$older,
+      pairs$current,
+      absorb
+    )
+    expect_equal(actual, expected, tolerance = 1e-12)
+
+    # Cut-points out of order cross for every patient.
+    crossed <- c(1, -1, 0.5, -2)
+    expect_error(
+      reference_checked_probabilities(outer(scalar[, 1L], crossed, "+")),
+      "cross"
+    )
+    marked <- cpp_markov_update_second_order_po(
+      joint,
+      scalar,
+      crossed,
+      n,
+      K,
+      as.integer(pairs$older),
+      as.integer(pairs$current),
+      as.integer(absorb)
+    )
+    expect_identical(attr(marked, "crossed_profiles"), seq_len(n))
+    expect_error(
+      markov_update_second_order_po_native(
         joint,
         scalar,
-        cutpoints,
+        crossed,
         pairs$older,
         pairs$current,
-        absorb
-      )
-      expect_equal(actual, expected, tolerance = 1e-12)
-    }
+        absorb,
+        time = 4
+      ),
+      "cross for 3 of the 3 profiles at time 4",
+      class = "mostr_crossed_thresholds"
+    )
   }
 })
 
-test_that("native BLRM probabilities match the clipped reference", {
+test_that("native BLRM probabilities match the reference and keep crossed rows raw", {
   set.seed(4107)
   draws <- 3L
   n <- 4L
@@ -263,7 +321,7 @@ test_that("native BLRM probabilities match the clipped reference", {
       if (partial) {
         eta <- eta + outer(threshold_eta[draw, ], threshold_scale)
       }
-      out[draw, , ] <- reference_clipped_probabilities(eta)
+      out[draw, , ] <- reference_posterior_probabilities(eta)
     }
     out
   }
@@ -280,36 +338,15 @@ test_that("native BLRM probabilities match the clipped reference", {
     threshold_scale
   )
   expected <- reference(TRUE)
-  unclipped <- array(0, dim = dim(expected))
-  for (draw in seq_len(draws)) {
-    unclipped[draw, , ] <- reference_category_probabilities(
-      outer(base_eta[draw, ], intercepts[draw, ], "+") +
-        outer(threshold_eta[draw, ], threshold_scale)
-    )
-  }
-  expect_lt(min(unclipped), 0)
+  # Some cut-points cross here, and those rows keep their negative values for
+  # the caller to report.
+  expect_lt(min(expected), -1e-10)
   expect_equal(partial, expected, tolerance = 1e-12)
-})
-
-test_that("native probability-array normalization matches the reference", {
-  values <- array(
-    c(
-      0.2, 0.0, NA, 1, -1, 3,
-      0.3, 0.0, 0.5, Inf, 0.5, NaN,
-      0.5, 0.0, 0.5, 1, 0.2, 1
-    ),
-    dim = c(2L, 3L, 3L)
+  expect_error(
+    check_crossed_thresholds(partial, n_profiles = n, time = 1),
+    "posterior draws",
+    class = "mostr_crossed_thresholds"
   )
-  set.seed(4108)
-  random_values <- array(stats::runif(4L * 5L * 6L), dim = c(4L, 5L, 6L))
-
-  for (input in list(values, random_values)) {
-    expect_equal(
-      normalize_probability_array_native(input),
-      reference_normalize_probability_array(input),
-      tolerance = 1e-15
-    )
-  }
 })
 
 test_that("native posterior reduction matches unequal unordered groups", {
@@ -363,15 +400,19 @@ native_plan_fits <- local({
         models = list(
           orm = suppressWarnings(mostm(
             y ~ time + tx + yprev,
-            data = data
+            data = data,
+            id_var = "id",
+            absorb = 6
           )),
-          vglm_po = make_test_model(data),
+          vglm_po = make_test_model(data)$vglm_fit,
           vglm_partial_po = suppressWarnings(mostm(
-            ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
+            ordered(y) ~ rms::rcs(time, 3) + tx + yprev,
             family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
             data = data,
+            id_var = "id",
+            absorb = 6,
             engine = "vglm"
-          ))
+          ))$vglm_fit
         )
       )
     }
@@ -380,6 +421,7 @@ native_plan_fits <- local({
 })
 
 test_that("compiled first-order SOPs match the reference recursion", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   fits <- native_plan_fits()
@@ -390,8 +432,10 @@ test_that("compiled first-order SOPs match the reference recursion", {
         model = model,
         newdata = fits$baseline,
         times = 1:5,
-        y_levels = 1:6,
-        absorb = absorb
+        settings = markov_settings(
+          y_levels = 1:6,
+          absorb = absorb
+        )
       )
       actual <- run_sop_execution_plan(plan, get_effective_coefs(model))
       expected <- reference_first_order_plan_sops(
@@ -425,6 +469,7 @@ native_second_order_data <- function(n_patients = 40L, seed = 4111) {
 }
 
 test_that("compiled second-order SOPs match the reference recursion", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   data <- native_second_order_data()
@@ -432,28 +477,37 @@ test_that("compiled second-order SOPs match the reference recursion", {
   models <- list(
     orm = suppressWarnings(mostm(
       y ~ tx + time + yprev + ypprev,
-      data = fit_data
+      data = fit_data,
+      id_var = "id",
+      first_followup_time = 3
     )),
     vglm_partial_po = suppressWarnings(mostm(
       ordered(y) ~ tx + time + yprev + ypprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ tx),
       data = fit_data,
+      id_var = "id",
+      first_followup_time = 3,
       engine = "vglm"
-    ))
+    ))$vglm_fit
   )
-  baseline <- data[data$time == 1L, , drop = FALSE][1:6, , drop = FALSE]
-  baseline$yprev <- factor(c(1, 2, 3, 1, 2, 3), levels = 1:3)
-  baseline$ypprev <- factor(c(2, 3, 1, 1, 3, 2), levels = 1:3)
+  # Every pair of starting states. With `absorb`, only the pairs outside the
+  # absorbing states are valid starts; SOP calls refuse the others.
+  baseline <- data[data$time == 1L, , drop = FALSE][1:9, , drop = FALSE]
+  baseline$yprev <- factor(rep(1:3, times = 3L), levels = 1:3)
+  baseline$ypprev <- factor(rep(1:3, each = 3L), levels = 1:3)
 
   for (model in models) {
     for (absorb in list(NULL, 3, 1)) {
+      valid <- !baseline$yprev %in% absorb & !baseline$ypprev %in% absorb
       plan <- compile_sop_execution_plan(
         model,
-        baseline,
+        baseline[valid, , drop = FALSE],
         times = 1:5,
-        y_levels = 1:3,
-        absorb = absorb,
-        p2_var = "ypprev"
+        settings = markov_settings(
+          y_levels = 1:3,
+          absorb = absorb,
+          p2_var = "ypprev"
+        )
       )
       actual <- run_sop_execution_plan(plan, get_effective_coefs(model))
       expected <- reference_second_order_plan_sops(

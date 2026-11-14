@@ -1,33 +1,5 @@
 # Analytical SOP result accessors.
 
-#' Analytical Delta-Method Memory Limit
-#'
-#' `mostr.delta_max_bytes` limits the size of guarded allocations used by
-#' analytical delta-method SOP inference. The default is `256 * 1024^2` bytes
-#' (256 MiB, or 268,435,456 bytes).
-#'
-#' The limit is checked for the SOP Jacobian and recursion workspace, retained
-#' low-rank analytical state, standard-error workspaces, and covariance or
-#' Jacobian blocks requested through [stats::vcov()] or internal accessors. Sizes
-#' are measured in bytes. The checks estimate the principal numeric allocations
-#' and are not a guarantee of total process memory use. Existing models and
-#' prediction data, design matrices, temporary R copies, and allocation overhead
-#' can require additional memory. A calculation can therefore use more memory
-#' than this option even when every check passes.
-#'
-#' Increase the option only after confirming that the reported allocation and
-#' additional R overhead fit comfortably in available memory. Restore the prior
-#' option after a temporary override.
-#'
-#' @name mostr.delta_max_bytes
-#' @seealso [inferences()], [stats::vcov()]
-#' @examples
-#' old_options <- options(
-#'   mostr.delta_max_bytes = 512 * 1024^2 # 512 MiB
-#' )
-#' options(old_options)
-NULL
-
 delta_row_key_frame <- function(x) {
   key_cols <- setdiff(names(x), inference_columns())
   out <- as.data.frame(x)[, key_cols, drop = FALSE]
@@ -105,17 +77,15 @@ delta_analytical <- function(x) {
       )
     )
   ) {
-    stop(
-      "Analytical accessors require a SOP, average-time, or comparison object.",
-      call. = FALSE
+    mostr_abort(
+      "Analytical accessors require a SOP, average-time, or comparison object."
     )
   }
   analytical <- attr(x, "analytical", exact = TRUE)
   if (is.null(analytical)) {
-    stop(
+    mostr_abort(
       "No analytical inference state found. Run `inferences(method = ",
-      "\"delta\")` first.",
-      call. = FALSE
+      "\"delta\")` first."
     )
   }
   analytical
@@ -128,14 +98,16 @@ delta_resolve_rows <- function(analytical, rows = NULL) {
   }
   if (is.logical(rows)) {
     if (length(rows) != n || anyNA(rows)) {
-      stop("Logical `rows` must be non-missing and match the result length.")
+      mostr_abort(
+        "Logical `rows` must be non-missing and match the result length."
+      )
     }
     return(which(rows))
   }
   if (is.character(rows)) {
     index <- match(rows, analytical$row_key)
     if (anyNA(index)) {
-      stop("Some requested analytical row keys were not found.")
+      mostr_abort("Some requested analytical row keys were not found.")
     }
     return(index)
   }
@@ -147,11 +119,11 @@ delta_resolve_rows <- function(analytical, rows = NULL) {
         any(rows < 1L) ||
         any(rows > n)
     ) {
-      stop("Numeric `rows` must contain valid positive row indices.")
+      mostr_abort("Numeric `rows` must contain valid positive row indices.")
     }
     return(as.integer(rows))
   }
-  stop("`rows` must be NULL, numeric, logical, or analytical row keys.")
+  mostr_abort("`rows` must be NULL, numeric, logical, or analytical row keys.")
 }
 
 # Internal inspection helper: the unconditional Jacobian contains only the
@@ -161,7 +133,7 @@ get_jacobian <- function(x, rows = NULL) {
   index <- delta_resolve_rows(analytical, rows)
   jacobian <- analytical$jacobian %||% analytical$average_jacobian
   if (is.null(jacobian)) {
-    stop("The analytical result does not contain an average Jacobian.")
+    mostr_abort("The analytical result does not contain an average Jacobian.")
   }
   required <- as.double(length(index)) * as.double(ncol(jacobian)) * 8
   delta_assert_bytes(required, "The requested Jacobian block")
@@ -177,14 +149,18 @@ delta_vcov <- function(object, rows = NULL) {
 
   if (identical(analytical$representation, "influence")) {
     n <- nrow(analytical$influence)
+    # A sample covariance over patients needs at least two of them.
     if (n < 2L) {
-      stop(
+      mostr_abort(
         "Unconditional analytical covariance requires at least two patients."
       )
     }
     required <- (as.double(n) * m + as.double(m) * m) * 8
     delta_assert_bytes(required, "The requested analytical covariance block")
     influence <- analytical$influence[, index, drop = FALSE]
+    # The estimator of delta_stacked_influence(): the sample covariance of the
+    # patients' influence values divided by n, so the diagonal reproduces the
+    # stored standard errors.
     out <- stats::cov(influence) / n
   } else {
     q <- ncol(analytical$jacobian)

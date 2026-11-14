@@ -1,11 +1,12 @@
 test_that("ordinary bootstrap stops when a resample lacks a `by` group", {
+  skip_on_cran()
   case <- make_comparisons_case()
   # With 60 patients, a resample misses both patients of the `rare` group
   # with probability (58/60)^60, about 0.13, so 40 resamples almost surely
   # include such a resample. The check runs before any refit.
   expect_error(
     inferences(
-      avg_sops(case$model, by = "rare", times = 1:3, absorb = 3),
+      avg_sops(case$model, by = "rare", times = 1:3),
       method = "bootstrap",
       n_draws = 40,
       seed = 11
@@ -14,7 +15,7 @@ test_that("ordinary bootstrap stops when a resample lacks a `by` group", {
   )
   expect_error(
     inferences(
-      avg_state_time(case$model, by = "rare", times = 1:3, absorb = 3),
+      avg_state_time(case$model, by = "rare", times = 1:3),
       method = "bootstrap",
       n_draws = 40,
       seed = 11
@@ -29,8 +30,7 @@ test_that("ordinary bootstrap stops when a resample lacks a `by` group", {
           variables = list(tx = c(0, 1)),
           estimand = estimand,
           by = "rare",
-          times = 1:3,
-          absorb = 3
+          times = 1:3
         ),
         method = "bootstrap",
         n_draws = 40,
@@ -42,9 +42,10 @@ test_that("ordinary bootstrap stops when a resample lacks a `by` group", {
 })
 
 test_that("ordinary bootstrap keeps groups that every resample contains", {
+  skip_on_cran()
   case <- make_comparisons_case()
   boot <- inferences(
-    avg_sops(case$model, by = "marker", times = 1:2, absorb = 3),
+    avg_sops(case$model, by = "marker", times = 1:2),
     method = "bootstrap",
     n_draws = 3,
     seed = 12
@@ -53,7 +54,7 @@ test_that("ordinary bootstrap keeps groups that every resample contains", {
 
   # Fractional weighted bootstrap keeps every patient, so small groups stay.
   fwb <- inferences(
-    avg_sops(case$model, by = "rare", times = 1:2, absorb = 3),
+    avg_sops(case$model, by = "rare", times = 1:2),
     method = "fwb",
     n_draws = 2,
     seed = 13

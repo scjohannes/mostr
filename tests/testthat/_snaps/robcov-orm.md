@@ -3,7 +3,7 @@
     Code
       orm_model_bread(fit)
     Condition
-      Error in `orm_model_bread()`:
+      Error:
       ! `orm model bread` must be positive definite.
 
 ---
@@ -11,7 +11,7 @@
     Code
       orm_model_bread(fit)
     Condition
-      Error in `orm_model_bread()`:
+      Error:
       ! `orm model bread` must be positive definite.
 
 ---
@@ -19,7 +19,7 @@
     Code
       orm_model_bread(fit)
     Condition
-      Error in `orm_model_bread()`:
+      Error:
       ! `orm model bread` must be positive definite.
 
 ---
@@ -27,6 +27,6 @@
     Code
       orm_model_bread(fit)
     Condition
-      Error in `orm_model_bread()`:
+      Error:
       ! `orm model bread` must be positive definite.
 

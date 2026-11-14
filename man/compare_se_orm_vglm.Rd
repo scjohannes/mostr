@@ -11,7 +11,9 @@ compare_se_orm_vglm(orm_fit, vglm_fit, cluster = NULL)
 
 \item{vglm_fit}{A fitted vglm object from the VGAM package. Should be fit
 with \code{cumulative(parallel = TRUE, reverse = TRUE)} to match orm's
-parameterization for ordinal outcomes, or \code{binomialff} for binary outcomes.}
+parameterization for ordinal outcomes, or \code{binomialff} for binary outcomes.
+For a fit from \code{mostm(engine = "vglm")}, which returns a \code{robcov_vglm}
+object, pass its \verb{$vglm_fit} element, as in the example.}
 
 \item{cluster}{Optional cluster variable for robust standard errors. Must
 have the same length as the number of observations in both models.}
@@ -57,8 +59,6 @@ library(rms)
 library(VGAM)
 
 # Fit models
-dd <- datadist(mydata)
-options(datadist = "dd")
 m_orm <- orm(y ~ x1 + x2, data = mydata, x = TRUE, y = TRUE)
 m_vglm <- vglm(y ~ x1 + x2,
                family = cumulative(parallel = TRUE, reverse = TRUE),
@@ -70,6 +70,16 @@ print(comparison)
 
 # With clustering
 comparison_cl <- compare_se_orm_vglm(m_orm, m_vglm, cluster = mydata$id)
+
+# With fits from mostm(), pass the vglm fit stored in the robcov_vglm object
+fit_orm <- mostm(y ~ yprev + time + tx, data = model_data, id_var = "id")
+fit_vglm <- mostm(
+  ordered(y) ~ yprev + time + tx,
+  data = model_data,
+  id_var = "id",
+  engine = "vglm"
+)
+compare_se_orm_vglm(fit_orm, fit_vglm$vglm_fit, cluster = model_data$id)
 }
 
 }

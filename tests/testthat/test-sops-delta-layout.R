@@ -1,8 +1,9 @@
 test_that("analytical averaging checks scenario and starting-profile order", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   data <- make_test_data(n_patients = 48, follow_up_time = 6, seed = 2711)
-  model <- make_test_model(data)
+  model <- make_test_model(data)$vglm_fit
   baseline <- data[!duplicated(data$id), , drop = FALSE][1:8, , drop = FALSE]
   baseline$metadata <- I(cbind(first = 1:8, second = 8:1))
   variables <- list(tx = c(0, 1))
@@ -10,9 +11,7 @@ test_that("analytical averaging checks scenario and starting-profile order", {
     model,
     newdata = baseline,
     variables = variables,
-    times = 1:3,
-    y_levels = 1:6,
-    absorb = 6
+    times = 1:3
   )
   inferred <- inferences(average, method = "delta", vcov = stats::vcov(model))
   newdata <- attr(average, "newdata_pred")
@@ -20,11 +19,10 @@ test_that("analytical averaging checks scenario and starting-profile order", {
     average,
     model,
     newdata,
-    times = 1:3,
-    output = "average"
+    times = 1:3
   )
   full <- run_sop_delta_plan(plan, model)
-  reference <- delta_average_arrays(
+  reference <- delta_average_profile_arrays(
     full$probabilities,
     full$jacobian,
     grid = do.call(expand.grid, variables),

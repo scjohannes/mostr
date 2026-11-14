@@ -8,16 +8,8 @@ sops(
   model,
   newdata = NULL,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   variables = NULL,
   by = FALSE,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -36,19 +28,17 @@ For \code{orm} models, the family must be logistic.}
 every row supplies a separate starting state and set of covariates. The
 internal \code{rowid} column is regenerated. If \code{NULL}, uses the data stored by
 \code{\link[=mostm]{mostm()}} and requires exactly one complete designated starting profile
-per fitted patient.}
+per fitted patient. Every column the model uses needs a value in every
+row, except the time and \code{gap_var} columns, which are set at each visit,
+and columns that \code{variables} sets; other columns may have missing values.
+The previous-state column holds states of the fitted model, as a factor
+(with any levels), numbers, or text.}
 
 \item{times}{Required. The consecutive visits at which to calculate SOPs,
 in increasing order, for example \code{times = 1:30} for daily visits up to day
 30. Each value is one transition, so leaving out visits does not skip
 time; see the section "Choosing visits". Numeric time variables use
 numeric values; factor-valued visit indices use fitted visit levels.}
-
-\item{y_levels}{A vector of state levels in fitted outcome order. Its length
-must agree with the fitted model's threshold count. If \code{NULL}, attempts to
-infer the levels from \code{model}.}
-
-\item{absorb}{The absorbing state.}
 
 \item{variables}{Optional covariates to set before predicting: a named list
 of values, such as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}.
@@ -61,36 +51,15 @@ its own covariates.}
 package. \code{FALSE} (the default) or \code{NULL} returns one row per profile,
 time, and state. \code{TRUE} averages over all profiles, and a character
 vector of column names averages within the groups those columns define;
-both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same arguments.}
-
-\item{id_var}{Character ID column used when \code{include_re = TRUE}. For \code{blrm},
-\code{NULL} is inferred from the \code{id_var} given to \code{\link[=mostm]{mostm()}}, then
-\code{model$clusterInfo$name}
-when available, otherwise \code{"id"}. For frequentist models, \code{id_var} is used
-for stored starting-profile validation and refit bootstrap metadata, not
-for ordinary user-supplied prediction rows.}
-
-\item{time_var}{Name of the time variable in the model.}
-
-\item{p_var}{Name of the previous state variable in the model.}
-
-\item{p2_var}{Optional second previous-state variable. \code{NULL} uses a
-first-order Markov recursion; a non-\code{NULL} column name uses a second-order
-recursion.}
-
-\item{gap_var}{Optional name of the variable holding the time elapsed since
-the previous visit, if the model includes one. Each transition then uses
-the difference between consecutive values of \code{times} (the first value for
-the first transition), unless \code{time_covariates} contains this column, so
-\code{times} may skip visits. See the section "Choosing visits".}
-
-\item{time_covariates}{Optional time-varying covariate lookup table for
-explicit basis columns. Registered inline terms such as
-\code{rms::rcs(time, 4)} and \code{rms::lsp(time, c(3, 7))} can be used without
-supplying \code{time_covariates}.}
+both return the result of \code{\link[=avg_sops]{avg_sops()}} with the same arguments. A \code{by}
+column must have no missing values among the averaged profiles; drop or
+impute those patients first.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.
+\code{newdata} must then contain the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}),
+so that each row gets its patient's estimated random effect.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -106,7 +75,9 @@ fitted random-effect draws in posterior predictions for known IDs.}
 extraction with \code{get_draws()}. Large draw objects are guarded to protect
 memory.}
 
-\item{...}{Additional arguments (currently unused).}
+\item{...}{Additional arguments (currently unused). The column names and
+states recorded by \code{\link[=mostm]{mostm()}} can't be given here; see the section
+"Settings taken from the fit".}
 }
 \value{
 A data frame of class \code{markov_sops}, or, with \code{by = TRUE} or
@@ -176,13 +147,22 @@ standardized (G-computation) probability under each value.
 
 SOPs are calculated one visit at a time. The first value of \code{times} is the
 first transition from the starting state, and each later value is one more
-transition. The values set the time variable, and any time-varying
-covariates, for each transition; they do not say how much time passes
-between transitions. Leaving out visits therefore does not skip time. With
-daily visits, \code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
+transition. The values set the time variable, and so every time term of the
+model formula, such as \code{rms::rcs(time, 4)} or \code{log(time)}, for each
+transition; they do not say how much time passes between transitions.
+Leaving out visits therefore does not skip time. With daily visits,
+\code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
 transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
 and 14. To get SOPs at selected visits, request every visit, such as
 \code{times = 1:14}, and keep the rows you need.
+
+A model fitted with \code{gap_var} (see \code{\link[=mostm]{mostm()}}) includes the time since the
+previous visit. Each transition then gets the difference between its
+requested time and the one before it, and the first transition gets the
+first requested time itself, the time since time 0. With
+\code{times = c(1, 2, 4, 7)} the gaps are 1, 1, 2 and 3, so the visits may be
+spaced unevenly. When \code{newdata} starts at a later visit, the first gap is
+still the first requested time, not the time since that visit.
 
 When \code{newdata} is omitted, each patient starts from their state before the
 first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}), so
@@ -193,23 +173,41 @@ visit.
 A warning is given when \code{times} leaves out visits that occur in the data the
 model was fitted to, is not in increasing order, or, when \code{newdata} is
 omitted, does not begin at the first follow-up visit. Times after the last
-fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
-because each transition then uses its own elapsed time, so the visits may be
-spaced unevenly.
+fitted visit are allowed. There is no warning for a model fitted with
+\code{gap_var}, because each transition then uses its own elapsed time, so the
+visits may be spaced unevenly.
+}
+
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, the column with the time since the
+previous visit, the states and the absorbing states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var}, \code{p2_var}, \code{gap_var} and
+\code{absorb} given to \code{\link[=mostm]{mostm()}}, and the states of the response in fitted
+order. A model fitted with \code{p2_var} is therefore always predicted with the
+second-order recursion. The \code{state} column of the result holds the fitted
+state labels. To predict with other columns or other absorbing states,
+refit the model with \code{\link[=mostm]{mostm()}}.
+
+A patient who is in an absorbing state stays there, so every profile must
+start outside the absorbing states: a profile whose previous state (the
+\code{p_var} column) is absorbing, or, for a second-order model, whose state two
+visits back (the \code{p2_var} column) is, gives an error. Remove those patients
+from \code{newdata} first.
 }
 
 \examples{
 \dontrun{
 # SOPs for each profile
-sops_ind <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6)
+sops_ind <- sops(fit, newdata = baseline_data, times = 1:30)
 
 # Each profile's SOPs under control and under treatment
 sops_cf <- sops(fit, newdata = baseline_data, variables = list(tx = c(0, 1)),
-                times = 1:30, y_levels = 1:6)
+                times = 1:30)
 
 # Averaged within ECOG levels; the same as avg_sops(by = "ecog")
-sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
-                  by = "ecog")
+sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, by = "ecog")
 
 # Compatible with inferences()
 sops_cf |> inferences(method = "mvn", n_draws = 1000)

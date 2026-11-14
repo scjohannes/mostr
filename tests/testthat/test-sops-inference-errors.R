@@ -12,6 +12,12 @@ make_avg_sops_object <- function(model, newdata, by = NULL) {
   class(out) <- c("markov_avg_sops", class(out))
   attr(out, "model") <- model
   attr(out, "newdata_orig") <- newdata
+  # As `avg_sops()` stores them: the starting profiles once per scenario.
+  profiles <- newdata[!duplicated(newdata$id), , drop = FALSE]
+  attr(out, "newdata_pred") <- do.call(
+    rbind,
+    lapply(c(0, 1), function(tx) transform(profiles, tx = tx))
+  )
   attr(out, "refit_data") <- newdata
   attr(out, "call_args") <- list(times = 1:2)
   attr(out, "avg_args") <- list(
@@ -20,11 +26,12 @@ make_avg_sops_object <- function(model, newdata, by = NULL) {
     times = 1:2,
     id_var = "id"
   )
-  attr(out, "time_var") <- "time"
-  attr(out, "p_var") <- "yprev"
-  attr(out, "y_levels") <- 1:2
-  attr(out, "absorb") <- NULL
-  attr(out, "time_covariates") <- NULL
+  attr(out, "settings") <- markov_settings(
+    id_var = "id",
+    time_var = "time",
+    p_var = "yprev",
+    y_levels = 1:2
+  )
   out
 }
 
@@ -40,53 +47,35 @@ make_individual_sops_object <- function(model, newdata) {
   attr(out, "model") <- model
   attr(out, "newdata_orig") <- newdata
   attr(out, "call_args") <- list(times = 1:2)
-  attr(out, "time_var") <- "time"
-  attr(out, "p_var") <- "yprev"
-  attr(out, "y_levels") <- 1:2
-  attr(out, "absorb") <- NULL
-  attr(out, "time_covariates") <- NULL
+  attr(out, "settings") <- markov_settings(
+    id_var = "id",
+    time_var = "time",
+    p_var = "yprev",
+    y_levels = 1:2
+  )
   out
 }
 
-test_that("inferences_simulation() validates stored models and simulation engines", {
+test_that("inferences_simulation() refuses a custom vcov that is not a matrix", {
   model <- structure(list(coefficients = c(a = 0, b = 0)), class = "mock_model")
-  newdata <- data.frame(id = 1, tx = 0, yprev = 1, time = 1)
+  newdata <- data.frame(id = 1:2, tx = c(0, 1), yprev = c(1, 2), time = 1)
   object <- make_avg_sops_object(model, newdata)
 
-  attr(object, "model") <- NULL
-  expect_error(
-    mostr:::inferences_simulation(
-      object,
-      engine = "mvn",
-      score_weight_dist = "exponential",
-      n_draws = 1,
-      vcov = NULL,
-      cluster = NULL,
-      conf_level = 0.95,
-      conf_type = "perc",
-      workers = NULL,
-      return_draws = FALSE
-    ),
-    "Model not stored",
-    fixed = TRUE
-  )
-
-  attr(object, "model") <- model
-  expect_error(
-    mostr:::inferences_simulation(
-      object,
-      engine = "other",
-      score_weight_dist = "exponential",
-      n_draws = 1,
-      vcov = NULL,
-      cluster = NULL,
-      conf_level = 0.95,
-      conf_type = "perc",
-      workers = NULL,
-      return_draws = FALSE
-    ),
-    "Unknown simulation engine",
-    fixed = TRUE
+  with_mocked_bindings(
+    get_coef = function(model) c(a = 0, b = 0),
+    expect_error(
+      mostr:::inferences_simulation(
+        object,
+        n_draws = 2,
+        vcov = data.frame(a = c(1, 0), b = c(0, 1)),
+        conf_level = 0.95,
+        conf_type = "perc",
+        workers = NULL,
+        return_draws = FALSE
+      ),
+      "`vcov` must be a matrix.",
+      fixed = TRUE
+    )
   )
 })
 
@@ -102,40 +91,31 @@ test_that("inferences() validates the homogenized method interface", {
 
   expect_error(inferences(object, method = "other", n_draws = 1), "arg")
   expect_false("engine" %in% names(formals(inferences)))
-  expect_false("score_weight_dist" %in% names(formals(inferences)))
   expect_false("..." %in% names(formals(inferences)))
+  # Obsolete and misspelled arguments are not silently absorbed.
+  expect_error(
+    inferences(object, n_boot = 2),
+    "unused argument (n_boot = 2)",
+    fixed = TRUE
+  )
 
-  seen_engine <- NULL
+  seen_method <- NULL
   with_mocked_bindings(
-    inferences_bootstrap = function(object, engine, ...) {
-      seen_engine <<- engine
-      attr(object, "engine") <- engine
+    inferences_bootstrap = function(object, method, ...) {
+      seen_method <<- method
       object
     },
     {
       out <- inferences(
         object,
         method = "fwb",
-        n_draws = 1
+        n_draws = 2
       )
     }
   )
 
-  expect_equal(seen_engine, "fwb")
+  expect_equal(seen_method, "fwb")
   expect_equal(attr(out, "method"), "fwb")
-})
-
-test_that("inferences() rejects obsolete and misspelled arguments", {
-  object <- structure(
-    data.frame(estimate = 0.5),
-    class = c("markov_sops", "data.frame")
-  )
-
-  expect_error(
-    inferences(object, n_boot = 2),
-    "unused argument (n_boot = 2)",
-    fixed = TRUE
-  )
 })
 
 test_that("inferences() reports repeated R fallbacks only once", {
@@ -147,7 +127,7 @@ test_that("inferences() reports repeated R fallbacks only once", {
   with_mocked_bindings(
     inferences_impl = function(...) {
       for (i in seq_len(1000L)) {
-        notify_sop_reference_fallback(paste("draw", i))
+        notify_sop_r_engine_fallback(paste("draw", i))
       }
       object
     },
@@ -171,7 +151,7 @@ test_that("inferences_simulation() falls back when fast-path setup fails", {
     validate_coef_vcov = function(beta, Sigma, arg = "vcov") Sigma,
     compile_sop_execution_plan = function(...) stop("build failed"),
     set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) {
+    predict_markov_sops = function(...) {
       array(
         c(
           0.8,
@@ -199,11 +179,8 @@ test_that("inferences_simulation() falls back when fast-path setup fails", {
       expect_message(
         out <- mostr:::inferences_simulation(
           object,
-          engine = "mvn",
-          score_weight_dist = "exponential",
           n_draws = 2,
           vcov = NULL,
-          cluster = NULL,
           conf_level = 0.8,
           conf_type = "wald",
           workers = NULL,
@@ -216,391 +193,308 @@ test_that("inferences_simulation() falls back when fast-path setup fails", {
 
   expect_s3_class(out, "markov_avg_sops")
   expect_equal(attr(out, "n_successful"), 2L)
-  expect_equal(attr(out, "conf_type"), "wald")
   expect_s3_class(attr(out, "draws"), "data.frame")
 })
 
-test_that("inferences_simulation() errors when all fast-path draws fail", {
-  model <- structure(list(coefficients = c(a = 0, b = 0)), class = "vglm")
+test_that("inferences_simulation() errors when all compiled-path or R-engine draws fail", {
   newdata <- data.frame(id = 1:2, tx = c(0, 1), yprev = c(1, 2), time = 1)
-  object <- make_avg_sops_object(model, newdata)
-
-  with_mocked_bindings(
+  shared_mocks <- list(
     get_coef = function(model) c(a = 0, b = 0),
     get_vcov_robust = function(model) diag(2),
-    validate_coef_vcov = function(beta, Sigma, arg = "vcov") Sigma,
-    compile_sop_execution_plan = function(...) {
-      structure(list(ok = TRUE), class = "markov_sop_exec_plan")
-    },
-    get_effective_coefs = function(model, beta = NULL) {
-      matrix(c(0, 0), nrow = 1)
-    },
-    run_sop_execution_plan = function(...) stop("run failed"),
-    {
-      withr::local_seed(2)
-      expect_warning(
-        expect_error(
-          mostr:::inferences_simulation(
-            object,
-            engine = "mvn",
-            score_weight_dist = "exponential",
-            n_draws = 1,
-            vcov = NULL,
-            cluster = NULL,
-            conf_level = 0.95,
-            conf_type = "perc",
-            workers = NULL,
-            return_draws = FALSE
-          ),
-          "All simulation draws failed",
-          fixed = TRUE
-        ),
-        "markov_msm_run failed"
-      )
-    }
+    validate_coef_vcov = function(beta, Sigma, arg = "vcov") Sigma
   )
-})
 
-test_that("inferences_simulation() rejects invalid custom vcov objects", {
-  model <- structure(list(coefficients = c(a = 0, b = 0)), class = "mock_model")
-  newdata <- data.frame(
-    id = 1:2,
-    tx = c(0, 1),
-    yprev = c(1, 2),
-    time = 1
+  cases <- list(
+    # A vglm fit takes the compiled path, where every plan run fails.
+    list(
+      label = "compiled path",
+      class = "vglm",
+      mocks = list(
+        compile_sop_execution_plan = function(...) {
+          structure(list(ok = TRUE), class = "markov_sop_exec_plan")
+        },
+        get_effective_coefs = function(model, beta = NULL) {
+          matrix(c(0, 0), nrow = 1)
+        },
+        run_sop_execution_plan = function(...) stop("run failed")
+      ),
+      seed = 2,
+      vcov = NULL,
+      warning = "markov_msm_run failed"
+    ),
+    # Another model class takes the R path, where every SOP call fails.
+    list(
+      label = "R engine",
+      class = "mock_model",
+      mocks = list(
+        set_coef = function(model, new_coefs) model,
+        predict_markov_sops = function(...) stop("sop failed")
+      ),
+      seed = 4,
+      vcov = diag(2),
+      warning = "soprob_markov failed"
+    )
   )
-  object <- make_avg_sops_object(model, newdata)
 
-  with_mocked_bindings(
-    get_coef = function(model) c(a = 0, b = 0),
-    {
+  run_case <- function(case) {
+    model <- structure(list(coefficients = c(a = 0, b = 0)), class = case$class)
+    object <- make_avg_sops_object(model, newdata)
+    local_mocked_bindings(!!!c(shared_mocks, case$mocks))
+    withr::local_seed(case$seed)
+    expect_warning(
       expect_error(
         mostr:::inferences_simulation(
           object,
-          engine = "mvn",
-          score_weight_dist = "exponential",
-          n_draws = 2,
-          vcov = data.frame(a = c(1, 0), b = c(0, 1)),
-          cluster = NULL,
+          n_draws = 1,
+          vcov = case$vcov,
           conf_level = 0.95,
           conf_type = "perc",
           workers = NULL,
           return_draws = FALSE
         ),
-        "`vcov` must be a matrix.",
-        fixed = TRUE
-      )
-    }
-  )
+        "All simulation draws failed",
+        fixed = TRUE,
+        info = case$label
+      ),
+      case$warning,
+      info = case$label
+    )
+  }
+  for (case in cases) {
+    run_case(case)
+  }
 })
 
-test_that("inferences_simulation() applies score-bootstrap slow-path weights", {
-  model <- structure(
-    list(
-      coefficients = c(a = 0, b = 0),
-      bread = diag(2),
-      scores = matrix(0, nrow = 2, ncol = 2),
-      cluster = c(1, 2)
-    ),
-    class = "robcov_vglm"
-  )
-  newdata <- data.frame(id = 1:2, tx = c(0, 1), yprev = c(1, 2), time = 1)
-  object <- make_avg_sops_object(model, newdata)
-
-  with_mocked_bindings(
-    generate_score_bootstrap_draws = function(...) {
-      list(
-        beta_draws = matrix(c(0, 0, 0, 0), nrow = 2, byrow = TRUE),
-        baseline_weights = matrix(c(0.7, 0.3, 0.4, 0.6), nrow = 2, byrow = TRUE)
-      )
-    },
-    compile_sop_execution_plan = function(...) stop("build failed"),
-    set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) {
-      array(
-        c(
-          0.8,
-          0.7,
-          0.2,
-          0.3,
-          0.6,
-          0.5,
-          0.4,
-          0.5,
-          0.7,
-          0.6,
-          0.3,
-          0.4,
-          0.5,
-          0.4,
-          0.5,
-          0.6
-        ),
-        dim = c(4, 2, 2)
-      )
-    },
-    {
-      out <- mostr:::inferences_simulation(
-        object,
-        engine = "score_bootstrap",
-        score_weight_dist = "exponential",
-        n_draws = 2,
-        vcov = NULL,
-        cluster = NULL,
-        conf_level = 0.8,
-        conf_type = "perc",
-        workers = NULL,
-        return_draws = FALSE
-      )
-    }
-  )
-
-  expect_s3_class(out, "markov_avg_sops")
-  expect_equal(attr(out, "n_successful"), 2L)
-})
-
-test_that("inferences_simulation() applies score-bootstrap by weights", {
+test_that("FWB draw weights are normalized within by groups", {
   model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
-  newdata <- data.frame(
-    id = 1:4,
-    time = 1,
-    yprev = 1,
+  make_by_group_object <- function(newdata, refit_data = NULL) {
+    object <- expand.grid(
+      time = 1,
+      state = 1,
+      tx = 0,
+      grp = c("a", "b"),
+      KEEP.OUT.ATTRS = FALSE
+    )
+    object$estimate <- 0.5
+    class(object) <- c("markov_avg_sops", class(object))
+    attr(object, "model") <- model
+    attr(object, "newdata_orig") <- newdata
+    attr(object, "refit_data") <- refit_data
+    attr(object, "call_args") <- list(times = 1)
+    attr(object, "avg_args") <- list(
+      variables = list(tx = 0),
+      by = "grp",
+      times = 1,
+      id_var = "id"
+    )
+    attr(object, "settings") <- markov_settings(
+      id_var = "id",
+      time_var = "time",
+      p_var = "yprev",
+      y_levels = 1
+    )
+    object
+  }
+  refit_data <- data.frame(
+    id = rep(1:4, each = 2),
+    time = rep(1:2, times = 4),
+    y = factor(rep(c(1, 2), times = 4), levels = 1:2),
+    yprev = factor(1, levels = 1:2),
     tx = 0,
-    grp = c("a", "a", "b", "b")
+    grp = rep(c("a", "a", "b", "b"), each = 2)
   )
-  object <- expand.grid(
-    time = 1,
-    state = 1,
-    tx = 0,
-    grp = c("a", "b"),
-    KEEP.OUT.ATTRS = FALSE
-  )
-  object$estimate <- 0.5
-  class(object) <- c("markov_avg_sops", class(object))
-  attr(object, "model") <- model
-  attr(object, "newdata_orig") <- newdata
-  attr(object, "call_args") <- list(times = 1)
-  attr(object, "avg_args") <- list(
-    variables = list(tx = 0),
-    by = "grp",
-    times = 1,
-    id_var = "id"
-  )
-  attr(object, "time_var") <- "time"
-  attr(object, "p_var") <- "yprev"
-  attr(object, "y_levels") <- 1
-  attr(object, "absorb") <- NULL
-  attr(object, "time_covariates") <- NULL
+  # Patient weights 1, 3 (group a) and 2, 6 (group b) give the group means
+  # (0.2 + 3 * 0.8) / 4 = 0.65 and (2 * 0.1 + 6 * 0.5) / 8 = 0.4.
+  sops <- function(...) array(c(0.2, 0.8, 0.1, 0.5), dim = c(4, 1, 1))
 
-  with_mocked_bindings(
-    generate_score_bootstrap_draws = function(...) {
-      list(
-        beta_draws = matrix(0, nrow = 1, ncol = 1),
-        baseline_weights = matrix(c(1, 3, 2, 6), nrow = 1)
-      )
-    },
-    set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) {
-      array(c(0.2, 0.8, 0.1, 0.5), dim = c(4, 1, 1))
-    },
-    {
-      out <- mostr:::inferences_simulation(
-        object,
-        engine = "score_bootstrap",
-        score_weight_dist = "exponential",
-        n_draws = 1,
-        vcov = NULL,
-        cluster = NULL,
-        conf_level = 0.8,
-        conf_type = "perc",
-        workers = NULL,
-        return_draws = TRUE
-      )
-    }
-  )
-
-  draws <- attr(out, "draws")
-  draws <- draws[order(draws$grp), , drop = FALSE]
-
-  expect_equal(draws$estimate, c(0.65, 0.4))
-  expect_false("score_weight" %in% names(draws))
-  expect_equal(attr(out, "draw_weight_omission_reason"), "averaged_sops")
-})
-
-test_that("inferences_simulation() supports score-bootstrap individual sops", {
-  model <- structure(
-    list(coefficients = c(a = 0, b = 0)),
-    class = "robcov_vglm"
-  )
-  newdata <- data.frame(id = 1:2, yprev = c(1, 2), time = 1)
-  object <- make_individual_sops_object(model, newdata)
-  attr(object, "id_var") <- "id"
-  attr(object, "newdata_supplied") <- FALSE
-
-  with_mocked_bindings(
-    generate_score_bootstrap_draws = function(...) {
-      list(
-        beta_draws = matrix(c(0, 0, 0, 0), nrow = 2, byrow = TRUE),
-        baseline_weights = matrix(c(0.7, 0.3, 0.4, 0.6), nrow = 2, byrow = TRUE)
-      )
-    },
-    set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) {
-      array(
-        c(
-          0.8,
-          0.7,
-          0.2,
-          0.3,
-          0.6,
-          0.5,
-          0.4,
-          0.5
-        ),
-        dim = c(2, 2, 2)
-      )
-    },
-    {
-      out <- mostr:::inferences_simulation(
-        object,
-        engine = "score_bootstrap",
-        score_weight_dist = "exponential",
-        n_draws = 2,
-        vcov = NULL,
-        cluster = NULL,
-        conf_level = 0.8,
-        conf_type = "perc",
-        workers = NULL,
-        return_draws = TRUE
-      )
-    }
-  )
-
-  draws <- attr(out, "draws")
-  public_draws <- mostr::get_draws(out)
-
-  expect_s3_class(out, "markov_sops")
-  expect_equal(attr(out, "method"), "score_bootstrap")
-  expect_equal(attr(out, "draw_weights_attached"), TRUE)
-  expect_equal(attr(out, "draw_weight_col"), "score_weight")
-  expect_equal(sort(unique(draws$score_weight)), c(0.3, 0.4, 0.6, 0.7))
-  expect_equal(
-    sort(unique(public_draws$score_weight)),
-    c(0.3, 0.4, 0.6, 0.7)
-  )
-  expect_equal(public_draws$estimate, rep(0.5, nrow(public_draws)))
-})
-
-test_that("inferences_simulation() rejects reserved score weight columns", {
-  model <- structure(
-    list(coefficients = c(a = 0, b = 0)),
-    class = "robcov_vglm"
-  )
-  newdata <- data.frame(
-    id = 1:2,
-    yprev = c(1, 2),
-    time = 1,
-    score_weight = c(10, 20)
-  )
-  object <- make_individual_sops_object(model, newdata)
-  attr(object, "id_var") <- "id"
-  attr(object, "newdata_supplied") <- FALSE
-
-  with_mocked_bindings(
-    generate_score_bootstrap_draws = function(...) {
-      list(
-        beta_draws = matrix(c(0, 0), nrow = 1),
-        baseline_weights = matrix(c(0.7, 0.3), nrow = 1)
-      )
-    },
-    {
-      expect_error(
-        mostr:::inferences_simulation(
+  cases <- list(
+    list(
+      label = "FWB",
+      object = make_by_group_object(refit_data, refit_data),
+      mocks = list(
+        generate_fwb_bootstrap_weights = function(data, id_var, n_boot) {
+          list(data.frame(
+            original_id = 1:4,
+            fwb_weight = c(1, 3, 2, 6),
+            boot_id = 1
+          ))
+        },
+        apply_to_fwb_bootstrap = function(
+          fwb_samples,
+          analysis_fn,
+          data,
+          id_var,
+          workers,
+          packages
+        ) {
+          list(analysis_fn(data, fwb_samples[[1]]))
+        },
+        bootstrap_analysis_wrapper = function(
+          boot_data,
+          model,
+          factor_cols,
+          original_data,
+          y_levels,
+          absorb,
+          use_coefstart,
+          fit_weights
+        ) {
+          list(
+            model = model,
+            data = boot_data,
+            ylevels = 1,
+            absorb = NULL,
+            missing_states = character(0)
+          )
+        },
+        predict_markov_sops = sops
+      ),
+      run = function(object) {
+        mostr:::inferences_bootstrap(
           object,
-          engine = "score_bootstrap",
-          score_weight_dist = "exponential",
-          n_draws = 1,
-          vcov = NULL,
-          cluster = NULL,
-          conf_level = 0.8,
-          conf_type = "perc",
+          method = "fwb",
+          n_boot = 1,
           workers = NULL,
-          return_draws = TRUE
-        ),
-        "reserved for bootstrap draw weights",
-        fixed = TRUE
-      )
-    }
+          conf_level = 0.95,
+          conf_type = "perc",
+          return_draws = TRUE,
+          use_coefstart = FALSE
+        )
+      },
+      weight_col = "fwb_weight"
+    )
   )
+
+  run_case <- function(case) {
+    local_mocked_bindings(!!!case$mocks)
+    case$run(case$object)
+  }
+  for (case in cases) {
+    out <- run_case(case)
+    draws <- attr(out, "draws")
+    draws <- draws[order(draws$grp), , drop = FALSE]
+
+    expect_equal(draws$estimate, c(0.65, 0.4), info = case$label)
+    expect_false(case$weight_col %in% names(draws), info = case$label)
+  }
 })
 
-test_that("inferences_simulation() reports slow-path SOP failures", {
-  model <- structure(list(coefficients = c(a = 0, b = 0)), class = "mock_model")
-  newdata <- data.frame(id = 1:2, tx = c(0, 1), yprev = c(1, 2), time = 1)
-  object <- make_avg_sops_object(model, newdata)
+test_that("FWB individual sops attach each patient's draw weight", {
+  individual_sops <- function(...) {
+    array(c(0.8, 0.7, 0.2, 0.3, 0.6, 0.5, 0.4, 0.5), dim = c(2, 2, 2))
+  }
 
-  with_mocked_bindings(
-    get_coef = function(model) c(a = 0, b = 0),
-    get_vcov_robust = function(model) diag(2),
-    validate_coef_vcov = function(beta, Sigma, arg = "vcov") Sigma,
-    set_coef = function(model, new_coefs) model,
-    soprob_markov = function(...) stop("sop failed"),
-    {
-      withr::local_seed(4)
-      expect_warning(
-        expect_error(
-          mostr:::inferences_simulation(
-            object,
-            engine = "mvn",
-            score_weight_dist = "exponential",
-            n_draws = 1,
-            vcov = diag(2),
-            cluster = NULL,
-            conf_level = 0.95,
-            conf_type = "perc",
-            workers = NULL,
-            return_draws = FALSE
-          ),
-          "All simulation draws failed",
-          fixed = TRUE
-        ),
-        "soprob_markov failed"
-      )
-    }
+  prediction_data <- data.frame(id = 1:2, time = 1, yprev = 1)
+  fwb_object <- make_individual_sops_object(
+    structure(list(coefficients = c(a = 0)), class = "mock_model"),
+    prediction_data
   )
+  attr(fwb_object, "newdata_pred") <- prediction_data
+  attr(fwb_object, "refit_data") <- data.frame(
+    id = rep(1:2, each = 2),
+    time = rep(1:2, times = 2),
+    y = factor(c(1, 2, 1, 2), levels = 1:2),
+    yprev = factor(c(1, 1, 1, 1), levels = 1:2)
+  )
+  attr(fwb_object, "newdata_supplied") <- FALSE
+
+  cases <- list(
+    # The FWB refit on the stored data, with one draw of cluster weights.
+    list(
+      label = "FWB",
+      object = fwb_object,
+      mocks = list(
+        generate_fwb_bootstrap_weights = function(data, id_var, n_boot) {
+          list(data.frame(
+            original_id = c(1, 2),
+            fwb_weight = c(0.5, 1.5),
+            boot_id = 1
+          ))
+        },
+        bootstrap_analysis_wrapper = function(
+          boot_data,
+          model,
+          factor_cols,
+          original_data,
+          y_levels,
+          absorb,
+          use_coefstart,
+          fit_weights
+        ) {
+          list(
+            model = model,
+            data = boot_data,
+            ylevels = 1:2,
+            absorb = NULL,
+            missing_states = character(0)
+          )
+        },
+        predict_markov_sops = individual_sops
+      ),
+      run = function(object) {
+        mostr:::inferences_bootstrap_sops_fwb(
+          object,
+          n_boot = 1,
+          workers = NULL,
+          conf_level = 0.95,
+          conf_type = "perc",
+          return_draws = TRUE,
+          use_coefstart = FALSE
+        )
+      },
+      weight_col = "fwb_weight",
+      first_weights = c(0.5, 1.5),
+      weights = c(0.5, 1.5)
+    )
+  )
+
+  run_case <- function(case) {
+    local_mocked_bindings(!!!case$mocks)
+    case$run(case$object)
+  }
+  for (case in cases) {
+    out <- run_case(case)
+    draws <- attr(out, "draws")
+    public_draws <- mostr::get_draws(out)
+
+    expect_s3_class(out, "markov_sops")
+    expect_equal(attr(out, "draw_weights_attached"), TRUE, info = case$label)
+    expect_equal(attr(out, "draw_weight_col"), case$weight_col, info = case$label)
+    expect_equal(
+      draws[[case$weight_col]][1:2],
+      case$first_weights,
+      info = case$label
+    )
+    expect_equal(
+      sort(unique(draws[[case$weight_col]])),
+      case$weights,
+      info = case$label
+    )
+    expect_equal(
+      sort(unique(public_draws[[case$weight_col]])),
+      case$weights,
+      info = case$label
+    )
+    expect_equal(
+      public_draws$estimate,
+      rep(0.5, nrow(public_draws)),
+      info = case$label
+    )
+  }
 })
 
 test_that("soprob_markov() validates model classes and propagates Bayesian draws", {
-  expect_error(
-    soprob_markov(
-      model = structure(list(), class = "other"),
-      newdata = data.frame(yprev = 1),
-      times = 1,
-      y_levels = 1
-    ),
-    "Object class not supported",
-    fixed = TRUE
-  )
-
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
     {
       expect_error(
         soprob_markov(
-          model = structure(list(vglm_fit = NULL), class = "robcov_vglm"),
-          newdata = data.frame(yprev = 1),
-          times = 1,
-          y_levels = 1:2
-        ),
-        "does not contain the original vglm fit",
-        fixed = TRUE
-      )
-      expect_error(
-        soprob_markov(
-          model = structure(list(), class = "vglm"),
+          model = with_fit_settings(
+            structure(list(), class = "vglm"),
+            y_levels = 1:2
+          ),
           newdata = data.frame(x = 1),
-          times = 1,
-          y_levels = 1:2
+          times = 1
         ),
         "Previous-state variable",
         fixed = TRUE
@@ -610,37 +504,25 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
 
   draws <- matrix(stats::qlogis(0.4), nrow = 2, ncol = 1)
   colnames(draws) <- "y>=2"
-  blrm <- structure(
-    list(
-      draws = draws,
-      non.slopes = 1L,
-      pppo = 0L,
-      tauInfo = data.frame(name = character()),
-      ylevels = 1:2,
-      yname = "y"
-    ),
-    class = "blrm",
-    markov_engine = "blrm"
+  blrm <- fake_blrm(draws, cluster = FALSE, class = "blrm", absorb = 2)
+  # The fit also records a gap column, as `mostm(gap_var = )` would, so the
+  # posterior recursion sets it at each visit.
+  blrm <- markov_set_settings(
+    blrm,
+    markov_settings_update(markov_model_settings(blrm), gap_var = "gap_var")
   )
 
   with_mocked_bindings(
-    blrm_design_matrix = function(model, newdata, second = FALSE) {
-      matrix(numeric(0), nrow = nrow(newdata), ncol = 0)
-    },
+    blrm_design_matrix = fake_blrm_design(character()),
     {
       out <- soprob_markov(
         model = blrm,
         newdata = data.frame(
           id = 1:2,
           yprev = factor(c(1, 1)),
-          gap_var = 0,
-          z = 0
+          gap_var = 0
         ),
-        times = 1:2,
-        y_levels = 1:2,
-        absorb = 2,
-        gap_var = "gap_var",
-        time_covariates = data.frame(z = c(1, 2))
+        times = 1:2
       )
     }
   )
@@ -659,8 +541,6 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
     tx = c(0, 0, 1, 1),
     grp = "a"
   )
-  object <- make_avg_sops_object(model, newdata, by = "grp")
-  attr(object, "avg_args")$variables <- list(tx = c(0, 1), grp = "a")
   object <- expand.grid(
     time = 1:2,
     state = 1:3,
@@ -680,25 +560,12 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
     id_var = "id"
   )
   attr(object, "call_args") <- list(times = 1:2)
-  attr(object, "time_var") <- "time"
-  attr(object, "p_var") <- "yprev"
-  attr(object, "y_levels") <- 1:3
-  attr(object, "absorb") <- 3
-  attr(object, "time_covariates") <- NULL
-
-  expect_error(
-    mostr:::inferences_bootstrap(
-      structure(data.frame(), class = "markov_sops"),
-      engine = "standard",
-      n_boot = 1,
-      workers = NULL,
-      conf_level = 0.95,
-      return_draws = FALSE,
-      update_datadist = TRUE,
-      use_coefstart = FALSE
-    ),
-    "Standard refit bootstrap is not supported",
-    fixed = TRUE
+  attr(object, "settings") <- markov_settings(
+    id_var = "id",
+    time_var = "time",
+    p_var = "yprev",
+    y_levels = 1:3,
+    absorb = 3
   )
 
   no_data <- object
@@ -706,12 +573,12 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
   expect_error(
     mostr:::inferences_bootstrap(
       no_data,
-      engine = "standard",
+      method = "bootstrap",
       n_boot = 1,
       workers = NULL,
       conf_level = 0.95,
+      conf_type = "perc",
       return_draws = FALSE,
-      update_datadist = TRUE,
       use_coefstart = FALSE
     ),
     "this model has no stored data",
@@ -723,32 +590,15 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
   expect_error(
     mostr:::inferences_bootstrap(
       missing_id,
-      engine = "standard",
+      method = "bootstrap",
       n_boot = 1,
       workers = NULL,
       conf_level = 0.95,
+      conf_type = "perc",
       return_draws = FALSE,
-      update_datadist = TRUE,
       use_coefstart = FALSE
     ),
     "ID variable 'id' not found",
-    fixed = TRUE
-  )
-
-  baseline_only <- object
-  attr(baseline_only, "refit_data") <- newdata[newdata$time == 1, ]
-  expect_error(
-    mostr:::inferences_bootstrap(
-      baseline_only,
-      engine = "standard",
-      n_boot = 1,
-      workers = NULL,
-      conf_level = 0.95,
-      return_draws = FALSE,
-      update_datadist = TRUE,
-      use_coefstart = FALSE
-    ),
-    "requires full longitudinal data",
     fixed = TRUE
   )
 
@@ -768,8 +618,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       data,
       id_var,
       workers,
-      packages,
-      globals
+      packages
     ) {
       lapply(boot_samples, function(sample) analysis_fn(data))
     },
@@ -779,7 +628,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
         return(list(
           model = NULL,
           data = transform(newdata, new_id = id),
-          y_levels = 1:3,
+          ylevels = 1:3,
           absorb = 3,
           missing_states = character(0)
         ))
@@ -787,12 +636,12 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       list(
         model = model,
         data = transform(newdata, new_id = id),
-        y_levels = 1:2,
+        ylevels = 1:2,
         absorb = 2,
         missing_states = 3
       )
     },
-    soprob_markov = function(...) {
+    predict_markov_sops = function(...) {
       sop_call <<- sop_call + 1
       if (sop_call == 2) {
         stop("sop failed")
@@ -821,17 +670,20 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
     },
     {
       expect_warning(
-        out <- mostr:::inferences_bootstrap(
-          object,
-          engine = "standard",
-          n_boot = 3,
-          workers = NULL,
-          conf_level = 0.8,
-          return_draws = TRUE,
-          update_datadist = FALSE,
-          use_coefstart = TRUE
+        expect_warning(
+          out <- mostr:::inferences_bootstrap(
+            object,
+            method = "bootstrap",
+            n_boot = 3,
+            workers = NULL,
+            conf_level = 0.8,
+            conf_type = "perc",
+            return_draws = TRUE,
+            use_coefstart = TRUE
+          ),
+          "soprob_markov failed"
         ),
-        "soprob_markov failed"
+        "2 of the 3 bootstrap draws failed"
       )
     }
   )
@@ -851,8 +703,7 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       data,
       id_var,
       workers,
-      packages,
-      globals
+      packages
     ) {
       list(NULL)
     },
@@ -860,12 +711,12 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
       expect_error(
         mostr:::inferences_bootstrap(
           object,
-          engine = "standard",
+          method = "bootstrap",
           n_boot = 1,
           workers = NULL,
           conf_level = 0.95,
+          conf_type = "perc",
           return_draws = FALSE,
-          update_datadist = FALSE,
           use_coefstart = FALSE
         ),
         "All bootstrap iterations failed",
@@ -902,7 +753,6 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
       original_data,
       y_levels,
       absorb,
-      update_datadist,
       use_coefstart,
       fit_weights
     ) {
@@ -910,12 +760,12 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
       list(
         model = model,
         data = boot_data,
-        y_levels = 1:2,
+        ylevels = 1:2,
         absorb = NULL,
         missing_states = character(0)
       )
     },
-    soprob_markov = function(...) {
+    predict_markov_sops = function(...) {
       array(
         c(
           0.8,
@@ -941,232 +791,42 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
     {
       out <- mostr:::inferences_bootstrap(
         object,
-        engine = "fwb",
+        method = "fwb",
         n_boot = 1,
         workers = NULL,
         conf_level = 0.95,
+        conf_type = "perc",
         return_draws = TRUE,
-        update_datadist = FALSE,
         use_coefstart = FALSE
       )
     }
   )
 
   expect_equal(fit_weights_seen, c(0.5, 0.5, 1.5, 1.5))
-  expect_equal(attr(out, "method"), "fwb")
   expect_equal(attr(out, "fwb_weight_type"), "exponential")
   expect_equal(attr(out, "fwb_weight_scale"), "cluster_mean_1")
   expect_s3_class(attr(out, "draws"), "data.frame")
 })
 
-test_that("inferences_bootstrap() applies FWB by weights", {
-  model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
-  refit_data <- data.frame(
-    id = rep(1:4, each = 2),
-    time = rep(1:2, times = 4),
-    y = factor(rep(c(1, 2), times = 4), levels = 1:2),
-    yprev = factor(1, levels = 1:2),
-    tx = 0,
-    grp = rep(c("a", "a", "b", "b"), each = 2)
+test_that("inferences() refuses an n_draws that is not a whole number of at least 2", {
+  skip_if_not_installed("rms")
+  data <- make_test_data(n_patients = 40, follow_up_time = 5, seed = 31)
+  fit <- mostm(
+    ordered(y) ~ time + tx + yprev,
+    data = data,
+    id_var = "id",
+    absorb = 6
   )
-  object <- expand.grid(
-    time = 1,
-    state = 1,
-    tx = 0,
-    grp = c("a", "b"),
-    KEEP.OUT.ATTRS = FALSE
-  )
-  object$estimate <- 0.5
-  class(object) <- c("markov_avg_sops", class(object))
-  attr(object, "model") <- model
-  attr(object, "newdata_orig") <- refit_data
-  attr(object, "refit_data") <- refit_data
-  attr(object, "avg_args") <- list(
-    variables = list(tx = 0),
-    by = "grp",
-    times = 1,
-    id_var = "id"
-  )
-  attr(object, "call_args") <- list(times = 1)
-  attr(object, "time_var") <- "time"
-  attr(object, "p_var") <- "yprev"
-  attr(object, "y_levels") <- 1
-  attr(object, "absorb") <- NULL
-  attr(object, "time_covariates") <- NULL
+  avg <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:2)
 
-  with_mocked_bindings(
-    generate_fwb_bootstrap_weights = function(data, id_var, n_boot) {
-      list(data.frame(
-        original_id = 1:4,
-        fwb_weight = c(1, 3, 2, 6),
-        boot_id = 1
-      ))
-    },
-    apply_to_fwb_bootstrap = function(
-      fwb_samples,
-      analysis_fn,
-      data,
-      id_var,
-      workers,
-      packages,
-      globals
-    ) {
-      list(analysis_fn(data, fwb_samples[[1]]))
-    },
-    bootstrap_analysis_wrapper = function(
-      boot_data,
-      model,
-      factor_cols,
-      original_data,
-      y_levels,
-      absorb,
-      update_datadist,
-      use_coefstart,
-      fit_weights
-    ) {
-      list(
-        model = model,
-        data = boot_data,
-        y_levels = 1,
-        absorb = NULL,
-        missing_states = character(0)
-      )
-    },
-    soprob_markov = function(...) {
-      array(c(0.2, 0.8, 0.1, 0.5), dim = c(4, 1, 1))
-    },
-    {
-      out <- mostr:::inferences_bootstrap(
-        object,
-        engine = "fwb",
-        n_boot = 1,
-        workers = NULL,
-        conf_level = 0.95,
-        return_draws = TRUE,
-        update_datadist = FALSE,
-        use_coefstart = FALSE
+  for (bad in list(0, -1, 1, 2.7, "a", NA, c(10, 20))) {
+    for (method in c("mvn", "bootstrap", "fwb")) {
+      expect_error(
+        inferences(avg, method = method, n_draws = bad),
+        "`n_draws`",
+        class = "mostr_error"
       )
     }
-  )
-
-  draws <- attr(out, "draws")
-  draws <- draws[order(draws$grp), , drop = FALSE]
-
-  expect_equal(draws$estimate, c(0.65, 0.4))
-  expect_false("fwb_weight" %in% names(draws))
-})
-
-test_that("inferences_bootstrap_sops_fwb() attaches stored-data draw weights", {
-  model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
-  prediction_data <- data.frame(id = 1:2, time = 1, yprev = 1)
-  refit_data <- data.frame(
-    id = rep(1:2, each = 2),
-    time = rep(1:2, times = 2),
-    y = factor(c(1, 2, 1, 2), levels = 1:2),
-    yprev = factor(c(1, 1, 1, 1), levels = 1:2)
-  )
-  object <- make_individual_sops_object(model, prediction_data)
-  attr(object, "newdata_pred") <- prediction_data
-  attr(object, "refit_data") <- refit_data
-  attr(object, "id_var") <- "id"
-  attr(object, "newdata_supplied") <- FALSE
-
-  with_mocked_bindings(
-    generate_fwb_bootstrap_weights = function(data, id_var, n_boot) {
-      list(data.frame(
-        original_id = c(1, 2),
-        fwb_weight = c(0.5, 1.5),
-        boot_id = 1
-      ))
-    },
-    bootstrap_analysis_wrapper = function(
-      boot_data,
-      model,
-      factor_cols,
-      original_data,
-      y_levels,
-      absorb,
-      update_datadist,
-      use_coefstart,
-      fit_weights
-    ) {
-      list(
-        model = model,
-        data = boot_data,
-        y_levels = 1:2,
-        absorb = NULL,
-        missing_states = character(0)
-      )
-    },
-    soprob_markov = function(...) {
-      array(
-        c(
-          0.8,
-          0.7,
-          0.2,
-          0.3,
-          0.6,
-          0.5,
-          0.4,
-          0.5
-        ),
-        dim = c(2, 2, 2)
-      )
-    },
-    {
-      out <- mostr:::inferences_bootstrap_sops_fwb(
-        object,
-        n_boot = 1,
-        workers = NULL,
-        conf_level = 0.95,
-        return_draws = TRUE,
-        update_datadist = FALSE,
-        use_coefstart = FALSE
-      )
-    }
-  )
-
-  draws <- attr(out, "draws")
-  public_draws <- mostr::get_draws(out)
-
-  expect_equal(attr(out, "draw_weights_attached"), TRUE)
-  expect_equal(attr(out, "draw_weight_col"), "fwb_weight")
-  expect_equal(draws$fwb_weight[1:2], c(0.5, 1.5))
-  expect_equal(sort(unique(public_draws$fwb_weight)), c(0.5, 1.5))
-  expect_equal(public_draws$estimate, rep(0.5, nrow(public_draws)))
-})
-
-test_that("inferences_bootstrap_sops_fwb() rejects reserved draw weight columns", {
-  model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
-  prediction_data <- data.frame(
-    id = 1:2,
-    time = 1,
-    yprev = 1,
-    fwb_weight = c(10, 20)
-  )
-  refit_data <- data.frame(
-    id = rep(1:2, each = 2),
-    time = rep(1:2, times = 2),
-    y = factor(c(1, 2, 1, 2), levels = 1:2),
-    yprev = factor(c(1, 1, 1, 1), levels = 1:2)
-  )
-  object <- make_individual_sops_object(model, prediction_data)
-  attr(object, "newdata_pred") <- prediction_data
-  attr(object, "refit_data") <- refit_data
-  attr(object, "id_var") <- "id"
-  attr(object, "newdata_supplied") <- FALSE
-
-  expect_error(
-    mostr:::inferences_bootstrap_sops_fwb(
-      object,
-      n_boot = 1,
-      workers = NULL,
-      conf_level = 0.95,
-      return_draws = TRUE,
-      update_datadist = FALSE,
-      use_coefstart = FALSE
-    ),
-    "reserved for bootstrap draw weights",
-    fixed = TRUE
-  )
+  }
+  expect_no_error(inferences(avg, method = "mvn", n_draws = 2, seed = 1))
 })

@@ -7,7 +7,6 @@
 robcov_vglm(
   fit,
   cluster = NULL,
-  adjust = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
   cadjust = NULL
@@ -20,10 +19,6 @@ robcov_vglm(
 cluster-robust standard errors. Must have the same length as the fitted
 observations, or the same length as the original pre-NA data when the fitted
 model records omitted rows in \code{fit@na.action}.}
-
-\item{adjust}{Deprecated compatibility alias for \code{cadjust}. A non-missing
-logical value is accepted so existing calls continue to work. Do not
-supply both \code{adjust} and \code{cadjust}.}
 
 \item{bread}{Character string selecting the sandwich bread. \code{"observed"}
 (the default) numerically differentiates the summed analytic scores.
@@ -97,7 +92,6 @@ scores when \code{cluster} is supplied}
 \item{type}{The HC correction type}
 \item{cadjust}{Whether the cluster correction was applied}
 \item{adjustment_factor}{The combined HC and cluster scalar correction}
-\item{adjust}{Compatibility alias for \code{cadjust}}
 }
 \description{
 Computes the Huber-White sandwich covariance matrix estimator for vglm

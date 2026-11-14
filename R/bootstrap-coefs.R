@@ -12,16 +12,13 @@
 #' @param n_boot Number of bootstrap samples.
 #' @param workers Number of workers for parallel processing. If NULL (default)
 #'   or 1, sequential processing is used. If > 1, uses parallel processing.
-#' @param parallel (Deprecated) Logical indicating whether to use parallel
-#'   processing. Use the \code{workers} parameter instead.
-#' @param id_var Name of the patient ID column in the stored data. The default,
-#'   `NULL`, uses the `id_var` given when the model was fitted. Supply it only
-#'   when the model was fitted without `id_var`.
-#' @param use_coefstart Logical. If `TRUE`, `vglm` refits start from the
-#'   original model coefficients, which can speed up convergence. Starting
-#'   values, including a `coefstart` passed to [mostm()], are used only
-#'   when a resample contains every outcome state; a refit with starting values
-#'   that fails is retried once without them. Default is `FALSE`.
+#' @param use_coefstart Logical. If `TRUE`, each refit starts from the
+#'   original model coefficients, which can speed up convergence. Only models
+#'   fitted with `engine = "vglm"` accept starting coefficients, so `TRUE` with
+#'   an `orm` model is an error. Starting values, including a `coefstart`
+#'   passed to [mostm()], are used only when a resample contains every outcome
+#'   state; a refit with starting values that fails is retried once without
+#'   them. Default is `FALSE`.
 #'
 #' @return A data frame with one row per bootstrap sample:
 #'   \itemize{
@@ -40,25 +37,33 @@
 #' For each bootstrap iteration:
 #' \enumerate{
 #'   \item Draws patients with replacement from the stored data
-#'   \item Renumbers outcome and previous-state levels to consecutive integers
-#'     when a state is absent from the resample
-#'   \item Updates the `rms` datadist for `orm` models (safe with
-#'     future.callr workers)
+#'   \item When a state is absent from the resample, removes it from the
+#'     factor levels of the response column (the variable on the left of the
+#'     model formula) and of \code{yprev}. The other states keep their labels;
+#'     they are not renumbered. States are matched by their labels, so numbers
+#'     and text labels such as \code{"home"} work alike. Other factor columns
+#'     are covariates and are left as they are.
 #'   \item Refits the model by calling [mostm()] again with the original
 #'     engine and arguments, and extracts its coefficients
 #' }
 #'
 #' When a state is missing from a resample, the refit has fewer intercepts than
-#' the original model, so the intercept columns of that row refer to renumbered
-#' states.
+#' the original model. Coefficients named after a state, such as the
+#' intercept \code{y>=2} of an \code{"orm"} fit or the previous-state
+#' coefficient \code{yprev=2}, are then \code{NA} in that row. The intercepts of
+#' a \code{"vglm"} fit are numbered (\code{(Intercept):1}, \code{(Intercept):2},
+#' ...) in order of the states present, so in that row they belong to other
+#' cut-points than in the rows with every state.
 #'
-#' Parallelization is handled via future.callr::callr strategy, which provides
-#' isolated R processes for each worker, making it safe to modify the global
-#' environment (for datadist) without conflicts.
+#' The refits do not use an rms `datadist`: a `datadist` you have set with
+#' `options(datadist = ...)` is ignored during the refits and left as it is.
+#'
+#' With `workers > 1`, the refits run in separate R processes started by
+#' the `future.callr` package.
 #'
 #' \strong{Previous-state type:} \code{yprev} may be a factor for categorical
-#' previous-state effects or numeric for linear/spline effects. Bootstrap
-#' releveling preserves the column type used to fit the original model.
+#' previous-state effects or numeric for linear/spline effects. Refits keep
+#' the column type and the state numbers used to fit the original model.
 #'
 #' @keywords bootstrap coefficients confidence intervals
 #'
@@ -91,54 +96,41 @@ bootstrap_model_coefs <- function(
   model,
   n_boot,
   workers = NULL,
-  parallel = NULL,
-  id_var = NULL,
   use_coefstart = FALSE
 ) {
-  # Handle deprecated parallel parameter
-  if (!is.null(parallel)) {
-    warning(
-      "The 'parallel' argument is deprecated. ",
-      "Please use 'workers' instead.\n",
-      "  - For sequential processing: workers = NULL or workers = 1\n",
-      "  - For parallel processing: workers = N (e.g., workers = 8)"
-    )
-    if (parallel && is.null(workers)) {
-      workers <- parallel::detectCores() - 1
-    }
-  }
 
   # Check model class
   if (!inherits(model, c("orm", "vglm", "robcov_vglm"))) {
-    stop(
+    mostr_abort(
       "model must be an orm object (rms package) or vglm object (VGAM package)."
     )
   }
+  check_use_coefstart(use_coefstart, model)
 
   data <- markov_model_refit_data(model)
   if (is.null(data)) {
-    stop(
-      "The model has no stored data to resample. Fit it with `mostm()`.",
-      call. = FALSE
+    mostr_abort(
+      "The model has no stored data to resample. Fit it with `mostm()`."
     )
   }
 
-  id_var <- markov_model_id_var(model, id_var)
-  if (is.null(id_var)) {
-    stop(
-      "No patient ID column is known for this model. Fit it with `id_var`, ",
-      "or supply `id_var`.",
-      call. = FALSE
-    )
-  }
+  id_var <- markov_require_id_var(model)
   if (!id_var %in% names(data)) {
-    stop("id_var '", id_var, "' not found in the stored model data")
+    mostr_abort("id_var '", id_var, "' not found in the stored model data")
   }
 
-  # Identify state columns that may need releveling in bootstrap samples.
-  # Numeric yprev is preserved for linear/spline previous-state models.
-  factor_cols <- unique(c(names(data)[sapply(data, is.factor)], "yprev"))
-  factor_cols <- intersect(factor_cols, names(data))
+  # The state columns whose factor levels lose a state that a resample lacks:
+  # the response and the previous-state columns the fit records (`p_var`, and
+  # `p2_var` for a second-order fit). Other factor columns are covariates,
+  # whose levels are not states. A numeric previous state keeps its values for
+  # linear/spline previous-state models.
+  settings <- markov_model_settings(model)
+  factor_cols <- bootstrap_state_columns(
+    model,
+    data,
+    settings$p_var,
+    settings$p2_var
+  )
 
   # Generate bootstrap ID samples using fast helper (memory-efficient JIT approach)
   boot_ids <- fast_group_bootstrap(
@@ -160,9 +152,6 @@ bootstrap_model_coefs <- function(
       model = model,
       factor_cols = factor_cols,
       original_data = data,
-      y_levels = NULL,
-      absorb = NULL,
-      update_datadist = inherits(model, "orm"),
       use_coefstart = use_coefstart
     )
 

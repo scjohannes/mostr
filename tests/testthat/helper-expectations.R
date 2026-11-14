@@ -245,3 +245,14 @@ expect_inference_intervals <- function(
 
   invisible(object)
 }
+
+# The name of the function shown in an error's "Error in `f()`:" line, or NA
+# when the error shows no call. `mostr::f()` gives "f".
+error_call_name <- function(condition) {
+  call <- conditionCall(condition)
+  if (is.null(call)) {
+    return(NA_character_)
+  }
+  fn <- call[[1L]]
+  if (is.call(fn)) as.character(fn[[3L]]) else as.character(fn)
+}

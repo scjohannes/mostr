@@ -8,7 +8,6 @@ get_vcov_robust(
   model,
   cluster = NULL,
   data = NULL,
-  adjust = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
   cadjust = NULL
@@ -33,9 +32,6 @@ match the number of observations used to fit the model)
 variable cannot be found in the model's original data, it will be extracted
 from this data frame. \strong{Note:} For cluster-robust SEs, the cluster vector
 must have the same length as the model's fitting data, not prediction data.}
-
-\item{adjust}{Deprecated compatibility alias for \code{cadjust} for \code{vglm}
-models.}
 
 \item{bread}{Bread used for a raw \code{vglm} model: \code{"observed"} or \code{"vglm"}.}
 

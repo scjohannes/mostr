@@ -7,7 +7,7 @@ delta_vglm_case <- local({
         follow_up_time = 8,
         seed = 7301
       )
-      model <- make_test_model(data)
+      model <- make_test_model(data)$vglm_fit
       y_levels <- seq_len(nrow(get_effective_coefs(model)) + 1L)
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:4,
@@ -18,8 +18,7 @@ delta_vglm_case <- local({
         model = model,
         newdata = baseline,
         times = 1:5,
-        y_levels = y_levels,
-        absorb = max(y_levels)
+        settings = markov_settings(y_levels = y_levels, absorb = max(y_levels))
       )
       value <<- list(
         data = data,
@@ -44,7 +43,9 @@ delta_orm_case <- local({
       )
       model <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data
+        data = data,
+        id_var = "id",
+        absorb = 6
       ))
       baseline <- data[!duplicated(data$id), , drop = FALSE][
         1:3,
@@ -55,8 +56,7 @@ delta_orm_case <- local({
         model = model,
         newdata = baseline,
         times = 1:4,
-        y_levels = model$yunique,
-        absorb = max(model$yunique)
+        settings = markov_settings(y_levels = model$yunique, absorb = max(model$yunique))
       )
       value <<- list(
         data = data,
@@ -71,67 +71,18 @@ delta_orm_case <- local({
 })
 
 central_sop_jacobian <- function(plan, model) {
-  coef <- get_coef(model)
   point <- run_sop_execution_plan(plan, get_effective_coefs(model))
-  out <- array(0, dim = c(dim(point), length(coef)))
-  for (coefficient in seq_along(coef)) {
-    step <- .Machine$double.eps^(1 / 3) * max(1, abs(coef[coefficient]))
-    upper <- coef
-    lower <- coef
-    upper[coefficient] <- upper[coefficient] + step
-    lower[coefficient] <- lower[coefficient] - step
-    upper_model <- set_coef(model, upper)
-    lower_model <- set_coef(model, lower)
-    upper_probability <- run_sop_execution_plan(
-      plan,
-      get_effective_coefs(upper_model)
-    )
-    lower_probability <- run_sop_execution_plan(
-      plan,
-      get_effective_coefs(lower_model)
-    )
-    out[,,, coefficient] <-
-      (upper_probability - lower_probability) / (2 * step)
-  }
-  dimnames(out) <- list(NULL, NULL, dimnames(point)[[3L]], names(coef))
+  out <- numeric_jacobian(
+    model,
+    function(model) run_sop_execution_plan(plan, get_effective_coefs(model))
+  )
+  states <- dimnames(point)[[3L]]
+  dimnames(out) <- list(NULL, NULL, states, names(get_coef(model)))
   out
 }
 
-make_delta_factor_visit_case <- function(
-  n_patients = 80,
-  n_visits = 4,
-  seed = 7321
-) {
-  set.seed(seed)
-  visits <- as.character(seq_len(n_visits))
-  data <- expand.grid(
-    id = seq_len(n_patients),
-    time = visits,
-    KEEP.OUT.ATTRS = FALSE
-  )
-  data <- data[order(data$id, data$time), , drop = FALSE]
-  data$time <- factor(data$time, levels = visits)
-  treatment <- stats::rbinom(n_patients, 1, 0.5)
-  data$tx <- treatment[data$id]
-  data$yprev <- factor(
-    sample(seq_len(4), nrow(data), replace = TRUE),
-    levels = as.character(seq_len(4))
-  )
-  eta <-
-    -0.35 *
-    data$tx +
-    0.25 * as.integer(data$time) +
-    0.2 * as.integer(as.character(data$yprev))
-  probability <- stats::plogis(eta - mean(eta))
-  y <- pmin(
-    4L,
-    pmax(1L, 1L + stats::rbinom(nrow(data), 3L, probability))
-  )
-  data$y <- ordered(y, levels = as.character(seq_len(4)))
-  data
-}
-
 test_that("VGLM analytical SOP Jacobians match raw-coefficient differences", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   case <- delta_vglm_case()
@@ -195,27 +146,92 @@ test_that("ORM analytical SOP Jacobians match raw-coefficient differences", {
 })
 
 test_that("effective coefficient maps exactly preserve named raw coefficients", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  for (case in list(delta_vglm_case(), delta_orm_case())) {
+  withr::local_seed(7307)
+  data <- data.frame(
+    x = stats::rnorm(240),
+    group = factor(rep(letters[1:3], 80))
+  )
+  data$y <- ordered(cut(
+    0.3 * data$x + stats::rlogis(240),
+    c(-Inf, -1, 0, 1, Inf)
+  ))
+  spline_model <- VGAM::vglm(
+    y ~ rms::rcs(x, 3) * group,
+    VGAM::cumulative(reverse = TRUE, parallel = TRUE),
+    data = data
+  )
+  equidistant_model <- VGAM::vglm(
+    y ~ group + I(x^2) + x,
+    VGAM::cumulative(reverse = TRUE, parallel = TRUE, Thresh = "equid"),
+    data = data
+  )
+  # A non-unit common-slope basis is still proportional odds. Reparameterize
+  # the fitted model without changing its effective coefficients.
+  scaled_model <- equidistant_model
+  scaled_model@constraints[["x"]] <- -2 * scaled_model@constraints[["x"]]
+  scaled_model@coefficients["x"] <- scaled_model@coefficients["x"] / -2
+
+  cases <- list(
+    list(label = "vglm Markov fit", model = delta_vglm_case()$model),
+    list(label = "orm Markov fit", model = delta_orm_case()$model),
+    list(label = "vglm spline-by-group interaction", model = spline_model),
+    list(label = "vglm equidistant thresholds", model = equidistant_model),
+    list(label = "vglm scaled common-slope constraint", model = scaled_model)
+  )
+  for (case in cases) {
     map <- get_effective_coef_map(case$model)
     coef <- get_coef(case$model)
     gamma <- get_effective_coefs(case$model)
 
-    expect_identical(colnames(map), names(coef))
-    expect_identical(anyDuplicated(colnames(map)), 0L)
-    expect_identical(attr(map, "gamma_dim"), dim(gamma))
-    expect_identical(attr(map, "gamma_dimnames"), dimnames(gamma))
+    expect_identical(colnames(map), names(coef), info = case$label)
+    expect_identical(anyDuplicated(colnames(map)), 0L, info = case$label)
+    expect_identical(attr(map, "gamma_dim"), dim(gamma), info = case$label)
+    expect_identical(
+      attr(map, "gamma_dimnames"),
+      dimnames(gamma),
+      info = case$label
+    )
     expect_equal(
       unname(drop(map %*% coef)),
       unname(as.vector(gamma)),
-      tolerance = 1e-12
+      tolerance = 1e-12,
+      info = case$label
     )
+    if (!inherits(case$model, "vglm")) {
+      next
+    }
+    # Each column of the map is the native expansion of one unit coefficient.
+    beta <- stats::coef(case$model)
+    expect_identical(colnames(map), names(beta), info = case$label)
+    expect_identical(
+      attr(map, "gamma_dimnames")[[2L]],
+      rownames(stats::coef(case$model, matrix = TRUE)),
+      info = case$label
+    )
+    for (j in seq_along(beta)) {
+      basis <- case$model
+      basis@coefficients[] <- 0
+      basis@coefficients[j] <- 1
+      expect_equal(
+        unname(map[, j]),
+        as.vector(t(stats::coef(basis, matrix = TRUE))),
+        tolerance = 1e-12,
+        info = paste(case$label, "coefficient", j)
+      )
+    }
   }
+
+  zero_columns <- scaled_model
+  zero_columns@constraints[["x"]] <- matrix(0, nrow = 3, ncol = 0)
+  expect_error(get_effective_coef_map(zero_columns), "no coefficient columns")
 })
 
 test_that("absorbing states propagate probability and derivative mass", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   case <- delta_vglm_case()
@@ -245,79 +261,8 @@ test_that("absorbing states propagate probability and derivative mass", {
   )
 })
 
-test_that("factor visit designs use the same analytical recursion", {
-  skip_if_not_installed("VGAM")
-  data <- make_delta_factor_visit_case()
-  model <- suppressWarnings(mostm(
-    y ~ time + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    engine = "vglm"
-  ))
-  baseline <- data[!duplicated(data$id), , drop = FALSE][1:5, , drop = FALSE]
-  plan <- compile_sop_execution_plan(
-    model = model,
-    newdata = baseline,
-    times = levels(data$time),
-    y_levels = seq_len(4),
-    absorb = NULL
-  )
-
-  analytical <- run_sop_delta_plan(plan, model)
-  oracle <- run_sop_delta_r_oracle(plan, model)
-  point <- run_sop_execution_plan(plan, get_effective_coefs(model))
-
-  expect_equal(
-    unname(analytical$probabilities),
-    unname(oracle$probabilities),
-    tolerance = 1e-12
-  )
-  expect_equal(
-    unname(analytical$jacobian),
-    unname(oracle$jacobian),
-    tolerance = 1e-12
-  )
-  expect_lt(
-    max(abs(unname(analytical$probabilities) - unname(point))),
-    1e-12
-  )
-  expect_lt(
-    max(abs(apply(analytical$jacobian, c(1L, 2L, 4L), sum))),
-    1e-10
-  )
-})
-
-test_that("native recursion reproduces the R analytic oracle", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("rms")
-
-  for (case in list(delta_vglm_case(), delta_orm_case())) {
-    for (visits in c(1L, length(case$plan$times))) {
-      for (absorbing in list(
-        case$plan$absorb,
-        case$y_levels[c(1L, length(case$y_levels))]
-      )) {
-        plan <- case$plan
-        plan$times <- plan$times[seq_len(visits)]
-        plan$components$X_transition <- plan$components$X_transition[seq_len(
-          visits
-        )]
-        plan$absorb <- absorbing
-        native <- run_sop_delta_plan(plan, case$model)
-        oracle <- run_sop_delta_r_oracle(plan, case$model)
-
-        expect_equal(
-          native$probabilities,
-          oracle$probabilities,
-          tolerance = 1e-12
-        )
-        expect_equal(native$jacobian, oracle$jacobian, tolerance = 1e-12)
-      }
-    }
-  }
-})
-
 test_that("changing covariate units preserves analytical probabilities", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   for (case in list(delta_vglm_case(), delta_orm_case())) {
@@ -351,6 +296,7 @@ test_that("changing covariate units preserves analytical probabilities", {
 })
 
 test_that("grouped recursion retains only the required analytical state", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   case <- delta_vglm_case()
@@ -447,6 +393,7 @@ test_that("grouped recursion retains only the required analytical state", {
 })
 
 test_that("analytical SOP validation rejects unsupported model structures", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   local_reproducible_output(width = 80)
@@ -472,18 +419,23 @@ test_that("analytical SOP validation rejects unsupported model structures", {
     error = TRUE
   )
 
-  partial_model <- suppressWarnings(mostm(
+  # This small non-parallel fit has a singular model covariance, so it has no
+  # patient-clustered covariance; the check needs only its coefficients.
+  partial_model <- markov_with_coefficients_only_refit(suppressWarnings(mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = FALSE),
     data = case$data,
+    id_var = "id",
     engine = "vglm"
-  ))
+  )))
   partial_plan <- compile_sop_execution_plan(
     model = partial_model,
     newdata = case$baseline,
     times = 1:3,
-    y_levels = seq_len(nrow(get_effective_coefs(partial_model)) + 1L),
-    absorb = max(case$y_levels)
+    settings = markov_settings(
+      y_levels = seq_len(nrow(get_effective_coefs(partial_model)) + 1L),
+      absorb = max(case$y_levels)
+    )
   )
   expect_snapshot(
     run_sop_delta_plan(partial_plan, partial_model),
@@ -492,6 +444,7 @@ test_that("analytical SOP validation rejects unsupported model structures", {
 })
 
 test_that("crossed raw ordinal probabilities are rejected without clipping", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   local_reproducible_output(width = 80)
@@ -519,16 +472,111 @@ test_that("crossed raw ordinal probabilities are rejected without clipping", {
   )
 })
 
-test_that("analytical allocation guard is typed and configurable", {
-  local_reproducible_output(width = 80)
-  withr::local_options(mostr.delta_max_bytes = 1)
-
-  condition <- rlang::catch_cnd(
-    delta_assert_bytes(16, "Test allocation")
+# Methods for test-only classes that fail when the analytical state is subset
+# or the result is copied, so the allocation guards must run before either.
+`[.delta_subset_trap` <- function(x, ...) {
+  stop(
+    "Analytical state was subset before its allocation guard.",
+    call. = FALSE
   )
-  expect_s3_class(condition, "mostr_delta_too_large")
-  expect_identical(condition$required_bytes, 16)
-  expect_identical(condition$max_bytes, 1)
+}
+
+as.data.frame.delta_finalize_trap <- function(x, ...) {
+  stop("The result was copied before its retained-state guard.", call. = FALSE)
+}
+
+test_that("analytical allocation guard is typed and configurable", {
+  skip_on_cran()
+  local_reproducible_output(width = 80)
+  object <- data.frame(time = 1, state = "1", estimate = 0.5)
+  class(object) <- c("markov_avg_sops", "data.frame")
+  jacobian <- matrix(1, nrow = 1, dimnames = list(NULL, "beta"))
+  covariance <- matrix(1, dimnames = list("beta", "beta"))
+  finalize <- function(object) {
+    delta_finalize_result(
+      object,
+      standard_error = 1,
+      conf_level = 0.95,
+      conf_type = "logit",
+      target = "empirical",
+      analytical = list(
+        representation = "coefficient",
+        jacobian = jacobian,
+        coefficient_vcov = covariance,
+        coefficient_names = "beta",
+        covariance_metadata = list(source = "test")
+      )
+    )
+  }
+  result <- finalize(object)
+
+  coefficient_result <- result
+  analytical <- attr(coefficient_result, "analytical")
+  class(analytical$jacobian) <- c(
+    "delta_subset_trap",
+    class(analytical$jacobian)
+  )
+  attr(coefficient_result, "analytical") <- analytical
+
+  influence_result <- result
+  influence_state <- attr(influence_result, "analytical")
+  influence_state$representation <- "influence"
+  influence_state$jacobian <- NULL
+  influence_state$coefficient_vcov <- NULL
+  influence_state$influence <- matrix(1, nrow = 2, ncol = 1)
+  class(influence_state$influence) <- c(
+    "delta_subset_trap",
+    class(influence_state$influence)
+  )
+  attr(influence_result, "analytical") <- influence_state
+
+  guarded_object <- object
+  class(guarded_object) <- c(
+    "delta_finalize_trap",
+    class(guarded_object)
+  )
+
+  withr::local_options(mostr.delta_max_bytes = 1)
+  cases <- list(
+    list(
+      label = "direct byte check",
+      call = function() delta_assert_bytes(16, "Test allocation"),
+      required_bytes = 16
+    ),
+    list(
+      label = "Jacobian accessor",
+      call = function() get_jacobian(coefficient_result),
+      required_bytes = 8
+    ),
+    list(
+      label = "covariance rows from coefficients",
+      call = function() stats::vcov(coefficient_result, rows = 1L),
+      required_bytes = 16
+    ),
+    list(
+      label = "covariance rows from patient influence",
+      call = function() stats::vcov(influence_result, rows = 1L),
+      required_bytes = 24
+    ),
+    list(
+      label = "retained result state",
+      call = function() finalize(guarded_object),
+      required_bytes = 16
+    )
+  )
+  for (case in cases) {
+    condition <- tryCatch(case$call(), error = identity)
+    expect_true(
+      inherits(condition, "mostr_delta_too_large"),
+      info = case$label
+    )
+    expect_identical(
+      condition$required_bytes,
+      case$required_bytes,
+      info = case$label
+    )
+    expect_identical(condition$max_bytes, 1, info = case$label)
+  }
   expect_snapshot(
     delta_assert_bytes(16, "Test allocation"),
     error = TRUE

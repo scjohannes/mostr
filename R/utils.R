@@ -12,7 +12,7 @@ validate_conf_level <- function(conf_level, arg = "conf_level") {
       conf_level <= 0 ||
       conf_level >= 1
   ) {
-    stop("`", arg, "` must be a single finite number between 0 and 1.")
+    mostr_abort("`", arg, "` must be a single finite number between 0 and 1.")
   }
 
   conf_level
@@ -91,25 +91,6 @@ left_join_preserve_order <- function(x, y, by) {
   as.data.frame(out)
 }
 
-matrix_to_long <- function(
-  mat,
-  id_name = "id",
-  time_name = "time",
-  value_name = "value"
-) {
-  ids <- rownames(mat) %||% seq_len(nrow(mat))
-  times <- colnames(mat) %||% seq_len(ncol(mat))
-
-  out <- data.frame(
-    rep(ids, each = ncol(mat)),
-    rep(times, times = nrow(mat)),
-    as.vector(t(mat)),
-    check.names = FALSE
-  )
-  names(out) <- c(id_name, time_name, value_name)
-  out
-}
-
 named_list_to_wide <- function(x, id = seq_along(x), id_name = "boot_id") {
   value_names <- unique(unlist(lapply(x, names), use.names = FALSE))
   out <- data.frame(id, check.names = FALSE)
@@ -131,31 +112,6 @@ named_list_to_wide <- function(x, id = seq_along(x), id_name = "boot_id") {
   out
 }
 
-pivot_state_columns_long <- function(
-  data,
-  values_to = "probability",
-  names_to = "state",
-  names_prefix = "state_"
-) {
-  state_cols <- grep(paste0("^", names_prefix), names(data), value = TRUE)
-  id_cols <- setdiff(names(data), state_cols)
-
-  if (length(state_cols) == 0) {
-    stop("No state columns found.")
-  }
-
-  row_index <- rep(seq_len(nrow(data)), each = length(state_cols))
-  out <- data[row_index, id_cols, drop = FALSE]
-  rownames(out) <- NULL
-  out[[names_to]] <- sub(
-    paste0("^", names_prefix),
-    "",
-    rep(state_cols, times = nrow(data))
-  )
-  out[[values_to]] <- as.vector(t(as.matrix(data[, state_cols, drop = FALSE])))
-  out
-}
-
 reorder_columns <- function(data, first) {
   first <- intersect(first, names(data))
   data[, c(first, setdiff(names(data), first)), drop = FALSE]
@@ -166,67 +122,10 @@ terms_has_offset <- function(terms) {
   !is.null(offset_terms) && length(offset_terms) > 0
 }
 
-model_uses_offset <- function(model) {
-  model_chk <- if (inherits(model, "robcov_vglm")) {
-    model$vglm_fit
-  } else {
-    model
-  }
-
-  terms_obj <- tryCatch(stats::terms(model_chk), error = function(e) NULL)
-  if (!is.null(terms_obj) && terms_has_offset(terms_obj)) {
-    return(TRUE)
-  }
-
-  offset_obj <- tryCatch(
-    {
-      if (inherits(model_chk, "vglm")) {
-        methods::slot(model_chk, "offset")
-      } else {
-        model_chk$offset
-      }
-    },
-    error = function(e) NULL
-  )
-  offset_is_zero <- FALSE
-  if (!is.null(offset_obj) && length(offset_obj) > 0) {
-    offset_num <- suppressWarnings(as.numeric(offset_obj))
-    if (any(!is.na(offset_num) & offset_num != 0)) {
-      return(TRUE)
-    }
-    offset_is_zero <- all(!is.na(offset_num) & offset_num == 0)
-  }
-
-  call_obj <- tryCatch(
-    {
-      if (inherits(model_chk, "vglm")) {
-        methods::slot(model_chk, "call")
-      } else {
-        model_chk$call
-      }
-    },
-    error = function(e) NULL
-  )
-  if (!is.null(call_obj)) {
-    call_args <- as.list(call_obj)
-    if (
-      "offset" %in%
-        names(call_args) &&
-        !is.null(call_args[["offset"]]) &&
-        !offset_is_zero
-    ) {
-      return(TRUE)
-    }
-  }
-
-  FALSE
-}
-
 stop_unsupported_offset <- function() {
-  stop(
+  mostr_abort(
     "Model offsets are not supported by mostr Markov SOP workflows. ",
-    "Please remove offset() terms or the offset argument before fitting the model.",
-    call. = FALSE
+    "Please remove offset() terms or the offset argument before fitting the model."
   )
 }
 
@@ -236,14 +135,13 @@ orm_has_random_effects <- function(model) {
 }
 
 stop_unsupported_orm_random_effects <- function() {
-  stop(
+  mostr_abort(
     "Orm fits with random effects are not supported. State occupancy ",
     "probabilities would describe only a patient whose random effect is 0, ",
     "which is not the average over patients, and the patient-clustered ",
     "standard errors would not account for the random effects. Refit without ",
     "`cluster()` and `mix_re()` terms, or use `mostm(engine = \"blrm\")` with ",
-    "`cluster(id)` for a random intercept for each patient.",
-    call. = FALSE
+    "`cluster(id)` for a random intercept for each patient."
   )
 }
 
@@ -259,7 +157,7 @@ with_sop_fallback_notification_scope <- function(code) {
   force(code)
 }
 
-notify_sop_reference_fallback <- function(reason = NULL) {
+notify_sop_r_engine_fallback <- function(reason = NULL) {
   state <- getOption("mostr.sop_fallback_notification")
   if (is.environment(state) && isTRUE(state$shown)) {
     return(invisible(FALSE))

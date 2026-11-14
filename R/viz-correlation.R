@@ -10,8 +10,9 @@
 #' Minimum inputs depend on the object type. For trajectory data, `object` must
 #' contain the ID, time, and state columns named by `id_var`, `time_var`, and
 #' `y_var`. For model-based plots, pass a fitted Markov model and `times`; use
-#' `newdata` for explicit prediction profiles and pass `y_levels` or `absorb`
-#' when needed. Model-based correlations are computed from exact first- or
+#' `newdata` for explicit prediction profiles. The column names and states
+#' default to those of the fit, and the absorbing states are those given to
+#' [mostm()]. Model-based correlations are computed from exact first- or
 #' second-order Markov recursions. For `blrm` fits, posterior draws are kept
 #' separate through the moment calculation and summarized only after
 #' correlations are computed for each draw.
@@ -37,22 +38,31 @@
 #'   extract
 #'   one prediction row per ID.
 #' @param times Optional time values to include. Required for model-based plots.
-#' @param y_levels Optional state levels. If supplied for raw trajectory data,
-#'   state scores follow this order.
-#' @param absorb Optional absorbing-state label for model-based recursions.
-#' @param id_var Character ID column for raw data and stored model-data
-#'   extraction.
-#' @param time_var Character name of the time column.
+#' @param y_levels The states in order. For a fitted model, `NULL` (the
+#'   default) uses the states of the model; a supplied vector must hold the
+#'   same states in the same order, otherwise it is an error. For trajectory
+#'   data, supplied states set the order of the state scores; with `NULL`, the
+#'   scores are factor codes or the integer state values.
+#' @param id_var Name of the patient ID column. For a fitted model, `NULL`
+#'   (the default) uses the `id_var` given to [mostm()], which selects one
+#'   starting row per patient from the stored data; a different name is an
+#'   error. For trajectory data, `NULL` means `"id"`.
+#' @param time_var Name of the time column. For a fitted model, `NULL` (the
+#'   default) uses the `time_var` given to [mostm()]; a different name is an
+#'   error. For trajectory data, `NULL` means `"time"`.
 #' @param y_var Character name of the state column in raw trajectory data.
-#' @param p_var Character name of the previous-state column for model
-#'   recursions.
-#' @param p2_var Optional second previous-state column for second-order
-#'   model recursions.
+#' @param p_var Name of the previous-state column for model recursions.
+#'   `NULL` (the default) uses the `p_var` given to [mostm()], `"yprev"`
+#'   unless set there; a different name is an error. Not used for trajectory
+#'   data.
+#' @param p2_var Name of the column with the state two visits back, for
+#'   model-based plots. `NULL` (the default) uses the `p2_var` given to
+#'   [mostm()]: a model fitted with `p2_var` uses a second-order recursion,
+#'   and one fitted without it a first-order recursion. A different name is
+#'   an error, so to plot a second-order model, give `p2_var` to [mostm()].
+#'   Supplying it for trajectory data is an error.
 #' @param facet_var Optional grouping variable. Correlations are computed
 #'   separately within each observed stratum.
-#' @param gap_var Optional time-gap_var variable used by the fitted model.
-#' @param time_covariates Optional time-varying covariate lookup table used by the fitted
-#'   model.
 #' @param seed Optional random seed for `blrm` posterior draw selection.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
@@ -70,7 +80,7 @@
 #' @examples
 #' \dontrun{
 #' plot_correlation(data, id_var = "id", time_var = "day")
-#' plot_correlation(fit, times = 1:14, y_levels = 1:8, absorb = 8)
+#' plot_correlation(fit, times = 1:14)
 #' }
 #' @export
 plot_correlation <- function(
@@ -78,15 +88,12 @@ plot_correlation <- function(
   newdata = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
-  id_var = "id",
-  time_var = "time",
+  id_var = NULL,
+  time_var = NULL,
   y_var = "y",
-  p_var = "yprev",
+  p_var = NULL,
   p2_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   triangle = c("upper", "full"),
@@ -101,24 +108,26 @@ plot_correlation <- function(
   if (
     !is.logical(show_values) || length(show_values) != 1L || is.na(show_values)
   ) {
-    stop("`show_values` must be TRUE or FALSE.")
+    mostr_abort("`show_values` must be TRUE or FALSE.")
   }
   plot_validate_scalar(digits, "digits", lower = 0)
+  settings <- plot_markov_settings(
+    object,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    data_id_var = "id"
+  )
 
   corr <- plot_correlation_input_data(
     object = object,
     newdata = newdata,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    id_var = id_var,
-    time_var = time_var,
+    settings = settings,
     y_var = y_var,
-    p_var = p_var,
-    p2_var = p2_var,
     facet_var = facet_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
     triangle = triangle,
@@ -154,15 +163,12 @@ plot_variogram <- function(
   newdata = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
-  id_var = "id",
-  time_var = "time",
+  id_var = NULL,
+  time_var = NULL,
   y_var = "y",
-  p_var = "yprev",
+  p_var = NULL,
   p2_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   smooth = TRUE,
@@ -171,23 +177,25 @@ plot_variogram <- function(
   method <- match.arg(method)
   object <- x
   if (!is.logical(smooth) || length(smooth) != 1L || is.na(smooth)) {
-    stop("`smooth` must be TRUE or FALSE.")
+    mostr_abort("`smooth` must be TRUE or FALSE.")
   }
+  settings <- plot_markov_settings(
+    object,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    data_id_var = "id"
+  )
 
   corr <- plot_correlation_input_data(
     object = object,
     newdata = newdata,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    id_var = id_var,
-    time_var = time_var,
+    settings = settings,
     y_var = y_var,
-    p_var = p_var,
-    p2_var = p2_var,
     facet_var = facet_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
     triangle = "upper",
@@ -202,7 +210,10 @@ plot_variogram <- function(
       x = "Absolute Time Difference",
       y = "Correlation"
     ) +
-    ggplot2::coord_cartesian(ylim = c(0, 1)) +
+    # The panel starts at 0 unless a correlation is negative.
+    ggplot2::coord_cartesian(
+      ylim = c(min(0, variogram$correlation, na.rm = TRUE), 1)
+    ) +
     ggplot2::theme_bw()
 
   if (smooth) {

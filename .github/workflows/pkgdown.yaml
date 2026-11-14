@@ -39,12 +39,18 @@ jobs:
             any::rstantools
             local::.
           needs: website
+      # pkgdown publishes every top-level .md file and has no option to skip
+      # one. These are developer notes, so remove them from the CI checkout
+      # before building; they stay at the top level of the repository.
+      - name: Keep developer notes off the website
+        run: rm AGENTS.md ARCHITECTURE.md
       - name: Build website
         shell: Rscript {0}
         run: |
           source(".github/check-vignette-output.R")
           pkgdown::check_pkgdown()
           pkgdown::build_site_github_pages(new_process = FALSE, install = FALSE)
+          stopifnot(!file.exists(c("docs/AGENTS.html", "docs/ARCHITECTURE.html")))
           for (rd in list.files("man", pattern = "[.]Rd$", full.names = TRUE)) {
             if (!any(grepl("\\\\(eqn|deqn)\\{", readLines(rd)))) next
             page <- file.path("docs/reference", sub("[.]Rd$", ".html", basename(rd)))

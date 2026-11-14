@@ -103,7 +103,7 @@ mostm_fit_vglm <- function(
 
   if (!is.null(form2)) {
     if (!is.null(subset_rows)) {
-      stop(
+      mostr_abort(
         "argument 'subset' cannot be used when argument 'form2' is used"
       )
     }
@@ -125,10 +125,10 @@ mostm_fit_vglm <- function(
     Ym2 <- retlist$Ym2
     Xm2 <- retlist$Xm2
     if (length(Ym2) && NROW(Ym2) != NROW(y)) {
-      stop("number of rows of 'y' and 'Ym2' are unequal")
+      mostr_abort("number of rows of 'y' and 'Ym2' are unequal")
     }
     if (length(Xm2) && NROW(Xm2) != NROW(x)) {
-      stop("number of rows of 'x' and 'Xm2' are unequal")
+      mostr_abort("number of rows of 'x' and 'Xm2' are unequal")
     }
   } else {
     Xm2 <- Ym2 <- NULL
@@ -140,7 +140,7 @@ mostm_fit_vglm <- function(
   if (!length(w)) {
     w <- rep_len(1, nrow(mf))
   } else if (NCOL(w) == 1 && any(w < 0)) {
-    stop("negative weights not allowed")
+    mostr_abort("negative weights not allowed")
   }
 
   if (is.character(family)) {
@@ -150,7 +150,7 @@ mostm_fit_vglm <- function(
     family <- family()
   }
   if (!inherits(family, "vglmff")) {
-    stop("'family = ", family, "' is not a VGAM family function")
+    mostr_abort("'family = ", family, "' is not a VGAM family function")
   }
 
   control <- eval_vcontrol(control, family, function.name, ...)
@@ -276,7 +276,6 @@ mostm_fit_vglm <- function(
 
   attr(answer, "markov_vglm") <- TRUE
   attr(answer, "markov_split_assign") <- split_assign$has_basis
-  attr(answer, "markov_basis_terms") <- split_assign$basis_terms
 
   list(fit = answer, fit_data = fit_data)
 }
@@ -325,16 +324,9 @@ split_rms_basis_assign <- function(x, terms) {
     function(term) length(rms_basis_handlers_for_term(term)) > 0L,
     logical(1)
   )]
-  basis_metadata <- vector("list", length(basis_terms))
-  names(basis_metadata) <- basis_terms
 
   for (term in basis_terms) {
     cols <- assign[[term]]
-    basis_metadata[[term]] <- list(
-      handlers = rms_basis_handlers_for_term(term),
-      columns = colnames(x)[cols],
-      column_indices = as.integer(cols)
-    )
     pos <- match(term, names(assign))
     assign[term] <- NULL
     split_cols <- stats::setNames(as.list(cols), colnames(x)[cols])
@@ -344,8 +336,7 @@ split_rms_basis_assign <- function(x, terms) {
   list(
     assign = assign,
     orig_assign = orig_assign,
-    has_basis = length(basis_terms) > 0L,
-    basis_terms = basis_metadata
+    has_basis = length(basis_terms) > 0L
   )
 }
 

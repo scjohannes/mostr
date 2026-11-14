@@ -4,12 +4,187 @@
 \name{mostr-package}
 \alias{mostr}
 \alias{mostr-package}
-\title{mostr native routines}
+\title{mostr: Markov Ordinal State Transition Models}
 \description{
-\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
-
-Estimate state occupancy probabilities and treatment contrasts for longitudinal ordinal outcomes using discrete-time Markov transition models. Supports (partial) proportional-odds models fitted with 'VGAM', 'rms', or 'rmsb'.
+mostr analyses outcomes recorded repeatedly on an ordered scale, such as a
+patient's daily health state from "at home" to "dead". It fits a
+\emph{transition model}, an ordinal regression of each day's state on the
+previous day's state, time, treatment and other covariates, and turns the
+fitted model into quantities that are easy to report:
+\itemize{
+\item \strong{state occupancy probabilities (SOPs)}: the probability of being in each
+state on each day;
+\item \strong{expected time in a state}: for example, the expected number of days at
+home during follow-up;
+\item \strong{treatment comparisons} of either, as differences or ratios, with
+confidence intervals.
 }
+
+The sections below list every function by what you want to do. For a worked
+example, start with \code{vignette("mostr")}.
+}
+\section{Prepare data and fit a model}{
+
+The data have one row per patient and visit, with the patient ID (\code{id}),
+the visit time (\code{time}), the current state (\code{y}), the state at the previous
+visit (\code{yprev}) and covariates such as treatment (\code{tx}).
+\itemize{
+\item \code{\link[=prepare_markov_data]{prepare_markov_data()}} removes the rows after a patient has entered an
+absorbing state such as death, and converts \code{y} and \code{yprev} to factors.
+\item \code{\link[=mostm]{mostm()}} fits the transition model. \code{engine = "orm"} (the default) uses
+\code{\link[rms:orm]{rms::orm()}}, \code{engine = "vglm"} uses \code{\link[VGAM:vglm]{VGAM::vglm()}}, which also fits
+partial proportional-odds models, and \code{engine = "blrm"} fits a Bayesian
+model with \code{rmsb::blrm()}. The functions for probabilities, times,
+comparisons, confidence intervals and model checks need a fit made by
+\code{\link[=mostm]{mostm()}}, because it stores the patient data they use.
+}
+}
+
+\section{Estimate state occupancy probabilities}{
+
+All of these take \code{times}, the consecutive visits to predict (for example
+\code{times = 1:28}). The absorbing states, such as death, are given to
+\code{\link[=mostm]{mostm()}} with \code{absorb}.
+\itemize{
+\item \code{\link[=avg_sops]{avg_sops()}} averages the SOPs over the patients. With
+\code{variables = list(tx = c(0, 1))} it gives the SOPs if every patient had
+received control, and if every patient had received treatment.
+\item \code{\link[=sops]{sops()}} gives the SOPs of each patient, or of each row of \code{newdata}.
+\item \code{\link[=interpolate_sops]{interpolate_sops()}} moves SOPs estimated at scheduled visits, such as
+days 3, 7 and 14, onto a scale of elapsed days.
+\item \code{\link[=soprob_markov]{soprob_markov()}} is the low-level calculation behind \code{\link[=sops]{sops()}}: it
+returns the SOPs as an array with one dimension each for patient, time
+and state.
+}
+}
+
+\section{Estimate time spent in states}{
+
+\itemize{
+\item \code{\link[=avg_state_time]{avg_state_time()}} gives the expected total time in each state, or in a
+set of states given by \code{state_sets}, averaged over patients.
+\item \code{\link[=state_time]{state_time()}} gives the same for each patient.
+\item \code{\link[=time_in_state]{time_in_state()}} adds up the time in chosen states from results you have
+already calculated with \code{\link[=sops]{sops()}}, \code{\link[=avg_sops]{avg_sops()}} or \code{\link[=soprob_markov]{soprob_markov()}}.
+}
+}
+
+\section{Compare treatments}{
+
+\itemize{
+\item \code{\link[=avg_comparisons]{avg_comparisons()}} compares two or more values of one variable, usually
+treatment, averaged over patients. \code{estimand = "sop"} compares SOPs on each
+day, \code{estimand = "time_in_state"} compares the expected time in states,
+and \code{estimand = "time_benefit"} estimates how much longer patients spend in
+better states under one value than under the other. \code{comparison} chooses a
+difference or a ratio.
+\item \code{\link[=comparisons]{comparisons()}} gives the same comparisons for each patient.
+}
+}
+
+\section{Add confidence intervals}{
+
+\code{\link[=inferences]{inferences()}} adds standard errors, confidence intervals and, for
+comparisons, tests to any result above. Its \code{method} argument chooses how:
+\itemize{
+\item \code{method = "delta"} calculates the intervals from formulas, without random
+draws, so it is fast and gives the same result every time. It works for
+first-order, full proportional-odds models fitted with the \code{"orm"} or
+\code{"vglm"} engine. Its \code{vcov} argument chooses the variance. \strong{Conditional
+variance} (\code{vcov = "conditional"}) accounts for the uncertainty in the
+estimated model coefficients and treats the patients' starting states and
+covariates as given. \strong{Unconditional variance} (\code{vcov = "unconditional"},
+the default for averages) also accounts for which patients happened to
+be sampled and for their role in estimating the coefficients. See
+\href{https://scjohannes.github.io/mostr/articles/analytical-confidence-intervals.html}{the analytical confidence intervals article}.
+\item \code{method = "mvn"} (the default) draws coefficient vectors from a
+multivariate normal distribution and recalculates the result for each
+draw. It works for every frequentist model, including partial
+proportional-odds and second-order models.
+\item \code{method = "bootstrap"} refits the model to patients resampled with
+replacement, and \code{method = "fwb"} (fractional weighted bootstrap) refits
+it with a random positive weight for every patient. See
+\href{https://scjohannes.github.io/mostr/articles/mvn-vs-bootstrap-orm-sops.html}{the article comparing MVN simulation and the bootstrap} and
+\href{https://scjohannes.github.io/mostr/articles/fractional-weighted-bootstrap-sops.html}{the fractional weighted bootstrap article}.
+}
+
+Results from \code{engine = "blrm"} already contain posterior intervals and need
+no \code{\link[=inferences]{inferences()}} step; see \href{https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html}{the Bayesian article}.
+
+After \code{\link[=inferences]{inferences()}}:
+\itemize{
+\item \code{\link[=get_draws]{get_draws()}} returns the individual simulation or bootstrap draws, for
+summaries of your own.
+\item \link[=vcov.markov_sops]{vcov()} returns the covariance matrix of the estimates
+after \code{method = "delta"}. Its \code{rows} argument selects the estimates, which
+saves memory; the option \code{mostr.delta_max_bytes} caps the memory that
+these calculations may use. \link{mostr_options} describes it and the other
+options that limit memory use.
+}
+}
+
+\section{Plot results}{
+
+\itemize{
+\item \code{\link[=plot_sops]{plot_sops()}} plots SOPs over time, as lines or stacked bars, from
+observed trajectories or from \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}} results.
+\item \code{\link[=plot_comparisons]{plot_comparisons()}} plots \code{\link[=avg_comparisons]{avg_comparisons()}} results, or the
+\code{\link[=comparisons]{comparisons()}} of one patient.
+\item \code{\link[=plot_time]{plot_time()}} plots \code{\link[=avg_state_time]{avg_state_time()}} results as stacked bars of the
+time spent in each state, or as points with confidence intervals.
+\item \code{\link[=plot_lp_difference]{plot_lp_difference()}} shows, for one patient profile, how the variable
+in \code{variables} (usually treatment) shifts the model's linear predictor
+(the log odds of a worse state) at each time, separately for each
+previous state.
+}
+}
+
+\section{Check the model against the data}{
+
+Each of these functions accepts either the observed trajectories or a fit
+from \code{\link[=mostm]{mostm()}}, so you can draw the same summary from both and compare them.
+\itemize{
+\item \code{\link[=plot_transitions]{plot_transitions()}} shows the proportion of patients moving from each
+state to each other state on selected days.
+\item \code{\link[=plot_correlation]{plot_correlation()}} shows the rank correlation between patients' states
+on every pair of days.
+\item \code{\link[=plot_variogram]{plot_variogram()}} plots these correlations against the number of days
+between the two days.
+}
+}
+
+\section{Simulate data}{
+
+\itemize{
+\item \code{\link[=sim_markov]{sim_markov()}} simulates daily ordinal trajectories from a transition
+model, either from a model of a published trial (the presets
+\link{actt1_preset}, \link{actt2_preset} and \link{violet_preset}) or from a model you
+describe.
+\item \link{violet_baseline} holds the starting states, ages and SOFA scores of the
+VIOLET trial patients, from which \code{sim_markov("violet")} samples.
+}
+}
+
+\section{Work with model coefficients and standard errors}{
+
+These functions are used inside \code{\link[=inferences]{inferences()}} and are exported for users
+who want to check or extend its calculations.
+\itemize{
+\item \code{\link[=bootstrap_model_coefs]{bootstrap_model_coefs()}} refits the model to resampled patients and
+returns the coefficients of each refit.
+\item \code{\link[=get_vcov_robust]{get_vcov_robust()}} returns a covariance matrix of the coefficients whose
+standard errors allow for correlation between the transitions of one
+patient.
+\item \code{\link[=robcov_vglm]{robcov_vglm()}} computes such a covariance matrix for a \code{\link[VGAM:vglm]{VGAM::vglm()}}
+fit; \code{engine = "vglm"} returns its result.
+\item \code{\link[=compare_se_orm_vglm]{compare_se_orm_vglm()}} lists the standard errors of an \code{\link[rms:orm]{rms::orm()}} fit
+and a \code{\link[VGAM:vglm]{VGAM::vglm()}} fit of the same model side by side.
+\item \code{\link[=set_coef]{set_coef()}} replaces the coefficients of a fitted model.
+\item \code{\link[=get_effective_coefs]{get_effective_coefs()}} returns the coefficients as a matrix with one row
+per threshold between states.
+}
+}
+
 \seealso{
 Useful links:
 \itemize{
@@ -29,4 +204,3 @@ Authors:
 }
 
 }
-\keyword{internal}

@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`mostr` is an R package. Core source code lives in `R/` (for example, `R/sops-api.R`, `R/simulate-markov.R`, `R/bootstrap_helpers.R`, `R/sops-inference.R`). Tests are in `tests/testthat/` with a package entrypoint at `tests/testthat.R`. Generated documentation is in `man/`, long-form analyses are in `vignettes/`, and reusable datasets are in `data/` with creation scripts in `data-raw/`. Keep architecture notes in `ARCHITECTURE.md` aligned with code changes.
+`mostr` is an R package. Core source code lives in `R/` (for example, `R/sops-api.R`, `R/simulate-markov.R`, `R/bootstrap_helpers.R`, `R/sops-inference.R`). Tests are in `tests/testthat/` with a package entrypoint at `tests/testthat.R`. Generated documentation is in `man/`. `vignettes/mostr.Rmd` is the only vignette shipped with the package and must stay fast, because CRAN rebuilds it; long-form analyses are website-only articles in `vignettes/articles/`, which CRAN never sees. Link to an article with its website URL (https://scjohannes.github.io/mostr/articles/<name>.html) from help pages, the README, the vignette and messages, and with a relative link (`<name>.html`) from another article, because `vignette("<name>")` cannot open an article that is not installed. Reusable datasets are in `data/` with creation scripts in `data-raw/`. Keep architecture notes in `ARCHITECTURE.md` aligned with code changes. Decisions and their reasons are recorded in `dev/decisions.md`, which is tracked by git and left out of the built package.
 
 ## Architecture Documentation
 When making code changes, update `ARCHITECTURE.md` in the same work so it stays aligned with the package design. Use the `describe-design` skill for architecture updates, especially when changes affect module boundaries, public APIs, data contracts, model backends, inference workflows, simulation behavior, endpoint summaries, or diagnostic workflows.
@@ -37,6 +37,10 @@ By default, skip vignette building when running package checks because it takes 
 ## Coding Style & Naming Conventions
 Follow tidyverse-oriented R style: 2-space indentation, `|>` pipes, and explicit namespaces for non-base calls (for example `dplyr::mutate`, `stats::predict`). Use `snake_case` for functions and variables. Preserve project naming for state-model fields (`id`, `time`, `y`, `yprev`, `tx`). Exported functions require roxygen2 docs with `@export`; add `@importFrom` tags as needed. If you use NSE column names in dplyr/ggplot2, register them in `R/globals.R`.
 
+When a line exists because of a bug, a measurement, or a statistical subtlety, give it a comment that says so: what goes wrong without it, the measured value it rests on, or the statistical reason. A reader should not have to guess why a tolerance, a fallback, a refusal, or an unusual order of operations is there. Keep the reason and drop the history; point to an issue, a commit, or a `dev/decisions.md` entry when more detail helps.
+
+Raise errors with `mostr_abort()` (`R/mostr-abort.R`), never `stop()`. It takes message parts like `stop()`, adds class `mostr_error`, and shows the exported function the user called instead of an internal name; pass `class` for errors that callers catch and `data` for fields they read. Messages are used literally, so braces and `%` need no escaping. To re-raise a caught error, use `mostr_abort(e)`.
+
 ## Writing for Package Users
 - Write help pages and vignettes for readers who know neither the implementation nor prior discussions. Explain what they can calculate, which arguments to use, what the output means, and any restrictions that affect their choices.
 - Make explanations standalone. Do not rely on an inaccessible manuscript, internal design notes, or development history to define a method or justify its behavior.
@@ -53,11 +57,100 @@ When changing the analytical recursion, update its test-only R reference and
 native-versus-R checks in the same change. Cover the affected behavior with a
 shared deterministic example; the R reference must never become a production
 fallback. Keep analytical recursion tests in the existing native-safety CI jobs.
+This rule is about the test-only references under `tests/`. They differ from
+`soprob_markov_r_engine()` in `R/sops-engine.R`, the production engine written
+in R that runs `blrm` fits and designs too large for the compiled path. It
+shares code with the compiled path, so it does not count as an independent
+check.
+
+`tests/testthat/helper-slow-loop.R` is the readable reference for SOPs. Keep it as
+plain loops that call no package code, so that a maintainer can check it by eye
+against the formulas in its comments. When adding a model feature, add a set-up to
+`tests/testthat/helper-grid.R` and compare public results with the loop. Tests that
+need `MOSTR_RUN_SLOW=true` belong in files named `test-slow-*.R`. If a test
+consolidation removes or merges tests, run the planted-bug checks in
+`benchmarks/local/mutation/` first and after: no planted bug may go from caught to
+missed. Use its `run_fast.R`, which stops each bug's run at the first failing test
+file and takes about 8 minutes for all bugs; the full `run_matrix.R`, which also
+counts every catching test, takes one to two hours and is needed only for that
+count. Its README explains both.
+
+### Tests on CRAN
+
+CRAN allows about 10 minutes per check on Windows for installation, examples,
+tests and vignettes together, so only part of the suite runs there.
+`skip_on_cran()` as the first line of a test skips it on CRAN; the test still
+runs with `devtools::test()` and in CI, which set `NOT_CRAN=true`.
+
+- A test runs on CRAN only if it passes for any seed. Skip it on CRAN when its
+  pass depends on the particular random draw: values of MVN, bootstrap or
+  posterior draws (snapshots with `cran = TRUE` included), simulated data
+  compared with a tolerance, or a property of a seeded fixture that another
+  seed could lose, such as cut-points that cross only for the simulated data.
+  Write these as `skip_on_cran() # The pass depends on the seed.` A test that
+  compares two routes to one number with the same draws, or checks a limit
+  that holds for any data, passes for any seed and may stay.
+- Also skip on CRAN slow tests (over about 0.3 s here) that repeat checks a
+  faster CRAN test already makes. Keep on CRAN at least one comparison with the
+  readable loop (now the `blrm` loops in `test-sops-native-blrm-slow-loop.R`,
+  which use no random numbers), the limits checked on the CRAN grid cells in
+  `test-grid-consistency.R`, and the comparison with
+  `Hmisc::soprobMarkovOrdm()` in `test-sops.R`.
+- In a test that uses `expect_snapshot()`, put `skip_on_cran()` above the
+  set-up: testthat skips a snapshot on CRAN only when it reaches it, after the
+  set-up has run.
+- Budget: the tests take at most 60 seconds in CRAN mode on the development
+  machine (AMD Ryzen AI 9 HX 370, 12 cores, 24 threads; about 50 seconds in
+  November 2026, against 5.7 minutes before this rule). Measure after adding
+  tests:
+
+  ```powershell
+  $env:NOT_CRAN = 'false'
+  & 'C:\Program Files\R\R-4.6.1\bin\x64\Rscript.exe' -e "pkgload::load_all(quiet = TRUE); t <- system.time(r <- testthat::test_local(reporter = 'summary', stop_on_failure = FALSE)); print(t[['elapsed']]); r <- as.data.frame(r); print(utils::head(r[order(-r[['real']]), c('file', 'test', 'real', 'skipped')], 20))"
+  ```
+
+  `NOT_CRAN = 'false'` makes `skip_on_cran()` apply; without it,
+  `test_local()` sets `NOT_CRAN` to `"true"`. The first `load_all()` compiles
+  the package, so the printed time covers the tests only. The table lists the
+  slowest tests. The run may rewrite the line endings of `R/cpp11.R`,
+  `src/cpp11.cpp` and `tests/testthat/_snaps/`; `git restore` them. Shared
+  fixtures (`grid_fixture()`, `grid_fit()`) and package loading are paid by
+  the first test that uses them, so skipping one test can move its cost to the
+  next. Other R processes inflate the time: measure on a quiet
+  machine, or say how busy it was. The tests step of
+  `R CMD check --as-cran` on a built tarball also runs in CRAN mode.
 
 Optional performance benchmark scripts and results belong in ignored
 `benchmarks/local/`. Do not add performance benchmarks to package tests or
 require a broad benchmark grid for analytical inference. State the measured
 workflow and machine when reporting speedups.
+
+Time an installed build (`R CMD INSTALL` or `remotes::install_local()`), not code
+loaded with `devtools::load_all()`: `load_all()` compiles without the package's
+usual optimisation and can be several times slower, so its timings mislead. A
+change made only for speed must leave results unchanged. Show this by saving the
+outputs of a fixed set of calls before and after the change and comparing them
+with `identical()`, or by reporting their hashes (for example
+`rlang::hash()`); explain any difference within numerical tolerance.
+
+## Experiments and Decisions
+Before a simulation, validation study, or benchmark runs, write down the claim it
+tests, what it measures, and what each possible outcome would mean: for example,
+the acceptance bands and what you will conclude if a result falls outside them.
+Put this at the top of the script or in its README before the first full run; a
+pilot run may only estimate the run time. If the plan changes after a result,
+add the change with its date instead of rewriting the original.
+
+Record decisions in `dev/decisions.md`: a short dated entry, newest first, saying
+what was decided, why, and which options were rejected and why. If nobody wrote
+the reason down, say "reason not recorded" rather than guessing one. Results that
+a decision rests on, such as acceptance bands passed or a measured speedup, go in
+the entry with their numbers.
+
+Reasoning kept only in the gitignored folders `design/`, `benchmarks/local/`, and
+`scripts/` stays on one machine, out of reach of co-authors and cloud agents.
+Scripts and raw results may stay there, but their conclusions belong in
+`dev/decisions.md`.
 
 ## Commit & Pull Request Guidelines
 Recent history favors short, imperative commit messages (often prefixed with `//`). Keep commits focused and include regenerated docs when interfaces change. Pull requests should include: a brief problem/solution summary, linked issue (if available), affected files/modules, and evidence of validation (`devtools::test()` and, for larger changes, `devtools::check(vignettes = FALSE)`).

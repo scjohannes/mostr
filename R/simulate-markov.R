@@ -45,7 +45,9 @@
 #'   patients that a preset would sample. It must contain `id`, `yprev` (the
 #'   state on the day before the first simulated day), and every covariate
 #'   that the model uses: `tx` for `"actt1"` and `"actt2"`, and `age`, `sofa`,
-#'   and `tx` for `"violet"`. Required when `preset = NULL`.
+#'   and `tx` for `"violet"`. It must not contain a `time` or a `y` column,
+#'   because `sim_markov()` creates these itself. Required when
+#'   `preset = NULL`.
 #' @param intercepts Numeric vector of thresholds, one fewer than the number of
 #'   states, in increasing order. With `K` states numbered from 1 (best) to `K`
 #'   (worst), `intercepts[j]` plus the linear predictor is the log odds of
@@ -180,41 +182,37 @@ sim_markov <- function(
   seed = NULL
 ) {
   if (missing(preset)) {
-    stop(
+    mostr_abort(
       "`preset` is required: use one of ",
       paste0('"', markov_preset_names, '"', collapse = ", "),
-      ", or NULL to supply your own model.",
-      call. = FALSE
+      ", or NULL to supply your own model."
     )
   }
   model <- markov_preset(preset)
 
   sampling_supplied <- !missing(n_patients) || !missing(treatment_prob)
   if (!is.null(baseline_data) && sampling_supplied) {
-    stop(
+    mostr_abort(
       "Supply either `baseline_data` or `n_patients` and `treatment_prob`, ",
       "not both: `baseline_data` already fixes the patients and their ",
-      "treatment.",
-      call. = FALSE
+      "treatment."
     )
   }
   if (is.null(model)) {
     if (sampling_supplied) {
-      stop(
+      mostr_abort(
         "`n_patients` and `treatment_prob` sample patients from a preset. ",
-        "With `preset = NULL`, supply the patients in `baseline_data`.",
-        call. = FALSE
+        "With `preset = NULL`, supply the patients in `baseline_data`."
       )
     }
     missing_model <- c("baseline_data", "intercepts", "lp_function")[
       c(is.null(baseline_data), is.null(intercepts), is.null(lp_function))
     ]
     if (length(missing_model) > 0) {
-      stop(
+      mostr_abort(
         "With `preset = NULL`, supply ",
         paste0("`", missing_model, "`", collapse = ", "),
-        ".",
-        call. = FALSE
+        "."
       )
     }
   } else if (is.null(baseline_data)) {
@@ -263,7 +261,7 @@ sim_markov <- function(
 #' @description
 #' `sim_markov("actt2")` generates synthetic daily health states from a
 #' first-order Markov proportional-odds model based on data from the
-#' [Adaptive COVID-19 Treatment Trial 2 (ACTT-2)](https://doi.org/10.1056/NEJMoa2031994),
+#' Adaptive COVID-19 Treatment Trial 2 (ACTT-2; \doi{10.1056/NEJMoa2031994}),
 #' which compared Baricitinib plus Remdesivir with placebo plus Remdesivir in
 #' adults hospitalized with COVID-19 (Kalil et al., 2021). States follow the
 #' trial's
@@ -364,7 +362,7 @@ NULL
 #' @description
 #' `sim_markov("actt1")` generates synthetic daily health states for a
 #' population like that of the
-#' [Adaptive COVID-19 Treatment Trial 1 (ACTT-1)](https://doi.org/10.1056/NEJMoa2007764),
+#' Adaptive COVID-19 Treatment Trial 1 (ACTT-1; \doi{10.1056/NEJMoa2007764}),
 #' which compared Remdesivir with placebo in adults hospitalized with COVID-19
 #' (Beigel et al., 2020). It uses the ACTT-2 transition model described in
 #' [actt2_preset], with the same eight states, and changes two things:
@@ -435,7 +433,7 @@ NULL
 #'
 #' @description
 #' `sim_markov("violet")` simulates daily 4-state trajectories resembling the
-#' [VIOLET trial](https://doi.org/10.1056/NEJMoa1911124) of early high-dose
+#' VIOLET trial (\doi{10.1056/NEJMoa1911124}) of early high-dose
 #' vitamin D3 versus placebo in critically ill adults with vitamin D deficiency.
 #' The transition model is the partial proportional-odds Markov model that
 #' Frank Harrell fitted to the VIOLET data to simulate his large `simlongord`
@@ -562,24 +560,33 @@ simulate_markov_trajectories <- function(
 ) {
   # Input validation
   if (!is.data.frame(baseline_data)) {
-    stop("baseline_data must be a data frame")
+    mostr_abort("baseline_data must be a data frame")
   }
 
   required_cols <- c("id", "yprev")
   missing_cols <- setdiff(required_cols, names(baseline_data))
   if (length(missing_cols) > 0) {
-    stop(
+    mostr_abort(
       "baseline_data must contain columns: ",
       paste(missing_cols, collapse = ", ")
     )
   }
 
+  created_cols <- intersect(c("time", "y"), names(baseline_data))
+  if (length(created_cols) > 0) {
+    mostr_abort(
+      "baseline_data must not contain columns: ",
+      paste0("`", created_cols, "`", collapse = ", "),
+      ". sim_markov() creates these columns itself."
+    )
+  }
+
   if (!is.numeric(intercepts) || length(intercepts) < 1) {
-    stop("intercepts must be a numeric vector with at least one element")
+    mostr_abort("intercepts must be a numeric vector with at least one element")
   }
 
   if (!is.function(lp_function)) {
-    stop("lp_function must be a function")
+    mostr_abort("lp_function must be a function")
   }
 
   # Setup
@@ -612,10 +619,8 @@ simulate_markov_trajectories <- function(
 
     # If all patients are in absorbing states, fill remaining time and exit
     if (length(active_idx) == 0) {
-      if (t <= max(times)) {
-        for (i in (t + 1):ncol(state_matrix)) {
-          state_matrix[, i] <- state_matrix[, t]
-        }
+      for (i in (t + 1):ncol(state_matrix)) {
+        state_matrix[, i] <- state_matrix[, t]
       }
       break
     }
@@ -702,7 +707,7 @@ simulate_markov_trajectories <- function(
             -1e-12
         )
     ) {
-      stop(
+      mostr_abort(
         "lp_function produced threshold-specific linear predictors that ",
         "create decreasing cumulative probabilities. This implies negative ",
         "state probabilities; use threshold-specific effects that preserve ",
@@ -761,11 +766,10 @@ markov_preset <- function(preset) {
       length(preset) != 1L ||
       !preset %in% markov_preset_names
   ) {
-    stop(
+    mostr_abort(
       "`preset` must be one of ",
       paste0('"', markov_preset_names, '"', collapse = ", "),
-      ", or NULL to supply your own model.",
-      call. = FALSE
+      ", or NULL to supply your own model."
     )
   }
 
@@ -985,10 +989,7 @@ validate_markov_wrapper_inputs <- function(n_patients, treatment_prob) {
       n_patients > .Machine$integer.max ||
       n_patients != as.integer(n_patients)
   ) {
-    stop(simpleError(
-      "n_patients must be a positive integer",
-      call = sys.call(-1)
-    ))
+    mostr_abort("n_patients must be a positive integer")
   }
 
   if (
@@ -998,10 +999,7 @@ validate_markov_wrapper_inputs <- function(n_patients, treatment_prob) {
       treatment_prob < 0 ||
       treatment_prob > 1
   ) {
-    stop(simpleError(
-      "treatment_prob must be a numeric scalar between 0 and 1",
-      call = sys.call(-1)
-    ))
+    mostr_abort("treatment_prob must be a numeric scalar between 0 and 1")
   }
 }
 
@@ -1015,10 +1013,7 @@ validate_markov_treatment_effect <- function(
       !is.numeric(treatment_effect) ||
       !is.finite(treatment_effect)
   ) {
-    stop(simpleError(
-      "treatment_effect must be a finite numeric scalar",
-      call = sys.call(-1)
-    ))
+    mostr_abort("treatment_effect must be a finite numeric scalar")
   }
 
   if (
@@ -1027,10 +1022,9 @@ validate_markov_treatment_effect <- function(
       !is.finite(treatment_effect_decay) ||
       treatment_effect_decay < 0
   ) {
-    stop(simpleError(
-      "treatment_effect_decay must be a nonnegative finite numeric scalar",
-      call = sys.call(-1)
-    ))
+    mostr_abort(
+      "treatment_effect_decay must be a nonnegative finite numeric scalar"
+    )
   }
 }
 
@@ -1043,22 +1037,19 @@ validate_markov_follow_up_time <- function(follow_up_time) {
       follow_up_time < 1 ||
       follow_up_time != as.integer(follow_up_time)
   ) {
-    stop(simpleError(
-      "follow_up_time must be a positive integer",
-      call = sys.call(-1)
-    ))
+    mostr_abort("follow_up_time must be a positive integer")
   }
 }
 
 
 normalize_markov_lp <- function(lp, n_thresholds, active_index, time) {
   if (!is.numeric(lp) || is.matrix(lp) || is.array(lp)) {
-    stop("lp_function must return a numeric scalar or numeric vector")
+    mostr_abort("lp_function must return a numeric scalar or numeric vector")
   }
 
   lp <- as.numeric(lp)
   if (!(length(lp) %in% c(1, n_thresholds))) {
-    stop(
+    mostr_abort(
       "lp_function must return either length 1 or length(intercepts) (",
       n_thresholds,
       ") for each patient; got length ",
@@ -1071,7 +1062,7 @@ normalize_markov_lp <- function(lp, n_thresholds, active_index, time) {
   }
 
   if (any(!is.finite(lp))) {
-    stop("lp_function must return finite numeric values")
+    mostr_abort("lp_function must return finite numeric values")
   }
 
   if (length(lp) == 1) {
@@ -1093,14 +1084,20 @@ normalize_vectorized_markov_lp <- function(lp, n_active, n_thresholds) {
     !is.numeric(lp) ||
       !identical(as.integer(dim(lp)), as.integer(c(n_active, n_thresholds)))
   ) {
-    stop(
+    mostr_abort(
       "A vectorized lp_function must return one value per patient or a ",
       "matrix with one row per patient and one column per threshold"
     )
   }
   if (any(!is.finite(lp))) {
-    stop("lp_function must return finite numeric values")
+    mostr_abort("lp_function must return finite numeric values")
   }
 
   lp
+}
+
+sample_categorical_rows <- function(probabilities) {
+  probabilities <- as.matrix(probabilities)
+  storage.mode(probabilities) <- "double"
+  cpp_sample_categorical_rows(probabilities)
 }

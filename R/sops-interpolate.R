@@ -2,7 +2,7 @@
 
 standardize_time_map <- function(time_map) {
   if (is.null(time_map)) {
-    stop("`time_map` must be supplied.")
+    mostr_abort("`time_map` must be supplied.")
   }
 
   if (is.data.frame(time_map)) {
@@ -16,13 +16,13 @@ standardize_time_map <- function(time_map) {
       visit <- time_map[[1]]
       real_time <- time_map[[2]]
     } else {
-      stop("`time_map` data frames must have at least two columns.")
+      mostr_abort("`time_map` data frames must have at least two columns.")
     }
   } else if (is.atomic(time_map) && !is.null(names(time_map))) {
     visit <- names(time_map)
     real_time <- time_map
   } else {
-    stop(
+    mostr_abort(
       "`time_map` must be a named numeric vector or a data frame with ",
       "visit and real-time columns."
     )
@@ -35,11 +35,11 @@ standardize_time_map <- function(time_map) {
     is.na(real_time) |
     !is.finite(real_time)
   if (any(bad)) {
-    stop("`time_map` contains missing or non-finite visit/time values.")
+    mostr_abort("`time_map` contains missing or non-finite visit/time values.")
   }
   if (anyDuplicated(visit)) {
     dup <- unique(visit[duplicated(visit)])
-    stop(
+    mostr_abort(
       "`time_map` contains duplicate visit entries: ",
       paste(dup, collapse = ", ")
     )
@@ -53,7 +53,7 @@ map_sop_time_values <- function(times, time_map) {
   idx <- match(labels, time_map$visit)
   if (anyNA(idx)) {
     missing <- unique(labels[is.na(idx)])
-    stop(
+    mostr_abort(
       "`time_map` is missing entries for visit value(s): ",
       paste(missing, collapse = ", ")
     )
@@ -67,10 +67,10 @@ validate_sop_xout <- function(target_times, lower, upper) {
       anyNA(target_times) ||
       any(!is.finite(target_times))
   ) {
-    stop("`target_times` must be a finite numeric vector.")
+    mostr_abort("`target_times` must be a finite numeric vector.")
   }
   if (any(target_times < lower | target_times > upper)) {
-    stop(
+    mostr_abort(
       "`target_times` must stay within the supported time range [",
       lower,
       ", ",
@@ -88,11 +88,29 @@ sop_measure_cols <- function(x) {
   )
 }
 
-split_key <- function(data, cols) {
+# The test columns that `inferences(null = )` adds. They describe a row's
+# estimate, so summaries must neither group by them nor carry them unchanged.
+sop_test_cols <- function(x) {
+  intersect(c("statistic", "p.value", "s.value"), names(x))
+}
+
+# A factor with one level per combination of `cols`. By default, a row with a
+# missing value in any of `cols` gets a missing key, so `split()` drops it.
+# With `keep_na = TRUE`, a missing value is an ordinary value: rows sharing it
+# form their own group, after the groups with observed values. The summaries
+# of SOP tables use this, because their grouping columns include every
+# profile column, such as a note that the model does not use.
+split_key <- function(data, cols, keep_na = FALSE) {
   if (length(cols) == 0) {
     return(rep("all", nrow(data)))
   }
-  do.call(interaction, c(data[, cols, drop = FALSE], drop = TRUE, sep = "\r"))
+  columns <- data[, cols, drop = FALSE]
+  if (isTRUE(keep_na)) {
+    columns <- lapply(columns, function(column) {
+      addNA(as.factor(column), ifany = TRUE)
+    })
+  }
+  do.call(interaction, c(columns, drop = TRUE, sep = "\r"))
 }
 
 coerce_state_like <- function(labels, prototype) {
@@ -120,11 +138,12 @@ rows_match_values <- function(data, values) {
   keep
 }
 
-baseline_rows_for_anchor <- function(x, id_var) {
-  id_var <- id_var %||% attr(x, "id_var")
+baseline_rows_for_anchor <- function(x) {
+  settings <- markov_result_settings(x)
+  id_var <- settings$id_var
   newdata_orig <- attr(x, "newdata_orig")
   if (is.null(newdata_orig)) {
-    stop(
+    mostr_abort(
       "`baseline_time` requires SOP output with stored `newdata_orig` ",
       "attributes."
     )
@@ -138,7 +157,7 @@ baseline_rows_for_anchor <- function(x, id_var) {
     return(resolve_markov_prediction_data(
       newdata_orig,
       id_var = id_var,
-      time_var = attr(x, "time_var") %||% "time"
+      time_var = settings$time_var
     ))
   }
 
@@ -182,7 +201,9 @@ state_distribution_anchor <- function(
       ]
     }
     if (nrow(baseline_i) == 0) {
-      stop("No baseline rows are available for an empirical baseline anchor.")
+      mostr_abort(
+        "No baseline rows are available for an empirical baseline anchor."
+      )
     }
 
     probs <- if (p_var %in% names(combo)) {
@@ -197,7 +218,7 @@ state_distribution_anchor <- function(
       }
       weight_total <- sum(weights_i)
       if (!is.finite(weight_total) || weight_total <= 0) {
-        stop("Baseline-anchor weights must have a positive finite sum.")
+        mostr_abort("Baseline-anchor weights must have a positive finite sum.")
       }
       vapply(
         seq_along(states),
@@ -240,15 +261,24 @@ empirical_baseline_anchor_from_data <- function(
   baseline_time,
   weights = NULL
 ) {
-  p_var <- attr(x, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(x)$p_var
   if (!p_var %in% names(baseline)) {
-    stop("Previous-state variable `", p_var, "` not found in baseline data.")
+    mostr_abort(
+      "Previous-state variable `",
+      p_var,
+      "` not found in baseline data."
+    )
   }
 
-  states <- as_state_labels(attr(x, "y_levels") %||% unique(x$state))
+  states <- as_state_labels(
+    markov_result_settings(x)$y_levels %||% unique(x$state)
+  )
   avg_args <- attr(x, "avg_args")
   variables <- names(avg_args$variables %||% list())
   by <- avg_args$by %||% character()
+  # Groups of an observed value use the observed copy, which profiles read
+  # from the data still need.
+  baseline <- add_observed_by_columns(baseline, avg_args$variables, by)
   group_cols <- unique(c(variables, by))
   combos <- if (length(group_cols) > 0) {
     unique(x[, group_cols, drop = FALSE])
@@ -270,23 +300,23 @@ empirical_baseline_anchor_from_data <- function(
 }
 
 empirical_baseline_anchor <- function(x, baseline_time) {
-  p_var <- attr(x, "p_var") %||% "yprev"
+  p_var <- markov_result_settings(x)$p_var
   if (!"state" %in% names(x)) {
-    stop("SOP output must contain a `state` column.")
+    mostr_abort("SOP output must contain a `state` column.")
   }
   if (!"estimate" %in% names(x)) {
-    stop("SOP output must contain an `estimate` column.")
+    mostr_abort("SOP output must contain an `estimate` column.")
   }
 
   if (inherits(x, "markov_avg_sops")) {
     if (!p_var %in% names(attr(x, "newdata_orig"))) {
-      stop(
+      mostr_abort(
         "Previous-state variable `",
         p_var,
         "` not found in `newdata_orig`."
       )
     }
-    baseline <- baseline_rows_for_anchor(x, attr(x, "avg_args")$id_var)
+    baseline <- baseline_rows_for_anchor(x)
     return(empirical_baseline_anchor_from_data(
       x = x,
       baseline = baseline,
@@ -297,9 +327,13 @@ empirical_baseline_anchor <- function(x, baseline_time) {
   # Per-profile SOPs keep each profile's starting state, which anchors that
   # profile's own SOPs.
   if (!p_var %in% names(x)) {
-    stop("Previous-state variable `", p_var, "` not found in SOP output.")
+    mostr_abort(
+      "Previous-state variable `",
+      p_var,
+      "` not found in SOP output."
+    )
   }
-  value_cols <- sop_measure_cols(x)
+  value_cols <- c(sop_measure_cols(x), sop_test_cols(x))
   meta_cols <- setdiff(names(x), c("time", value_cols, ".sop_real_time"))
   anchor_meta <- unique(x[, meta_cols, drop = FALSE])
   anchor <- x[rep(NA_integer_, nrow(anchor_meta)), , drop = FALSE]
@@ -421,7 +455,7 @@ interpolate_sop_table_matrix <- function(
     return(NULL)
   }
 
-  key <- split_key(work, group_cols)
+  key <- split_key(work, group_cols, keep_na = TRUE)
   if (anyNA(key)) {
     return(NULL)
   }
@@ -486,19 +520,15 @@ normalize_interpolated_sops <- function(x) {
     return(x)
   }
 
-  key_cols <- setdiff(names(x), c("state", sop_measure_cols(x)))
-  key <- split_key(x, key_cols)
+  key_cols <- setdiff(
+    names(x),
+    c("state", sop_measure_cols(x), sop_test_cols(x))
+  )
+  key <- split_key(x, key_cols, keep_na = TRUE)
   sums <- ave(x[[value_col]], key, FUN = function(z) sum(z, na.rm = TRUE))
   scale <- !is.na(sums) & sums > 0
   x[[value_col]][scale] <- x[[value_col]][scale] / sums[scale]
   x
-}
-
-sop_draw_attr_name <- function(x) {
-  if (!is.null(attr(x, "draws"))) {
-    return("draws")
-  }
-  NULL
 }
 
 warn_missing_interpolation_draws <- function(x) {
@@ -570,7 +600,7 @@ repeat_anchor_for_draws <- function(
     anchor_i
   }))
 
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(draws))
+  weight_cols <- intersect("fwb_weight", names(draws))
   if (length(weight_cols) == 0L) {
     return(draw_anchor)
   }
@@ -590,7 +620,7 @@ combine_baseline_anchor_draws <- function(anchors, draw_ids) {
     return(NULL)
   }
   if (!all(has_anchor)) {
-    stop("Baseline anchors are not aligned across successful draws.")
+    mostr_abort("Baseline anchors are not aligned across successful draws.")
   }
   bind_rows_fill(lapply(seq_along(anchors), function(i) {
     anchor <- anchors[[i]]
@@ -628,7 +658,7 @@ interpolate_sop_draws <- function(
   )
   work <- bind_rows_fill(list(draw_anchor, work))
 
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(work))
+  weight_cols <- intersect("fwb_weight", names(work))
   group_cols <- setdiff(
     names(work),
     c("time", value_col, ".sop_real_time", weight_cols)
@@ -642,7 +672,7 @@ interpolate_sop_draws <- function(
   if (is.null(result)) {
     groups <- split(
       seq_len(nrow(work)),
-      split_key(work, group_cols),
+      split_key(work, group_cols, keep_na = TRUE),
       drop = TRUE
     )
     pieces <- lapply(groups, function(idx) {
@@ -680,7 +710,7 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
   if (value_col != "estimate") {
     draws_for_ci$estimate <- draws_for_ci[[value_col]]
   }
-  weight_cols <- intersect(c("score_weight", "fwb_weight"), names(draws))
+  weight_cols <- intersect("fwb_weight", names(draws))
   group_cols <- setdiff(names(draws), c(value_col, "draw_id", weight_cols))
   join_cols <- intersect(group_cols, names(result))
   point_estimates <- result[, c(join_cols, "estimate"), drop = FALSE]
@@ -696,7 +726,8 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
     group_cols = group_cols,
     conf_level = conf_level,
     conf_type = conf_type,
-    point_estimates = point_estimates
+    point_estimates = point_estimates,
+    keep_na_groups = TRUE
   )
 
   ci <- ci[, c(join_cols, "conf.low", "conf.high", "std.error"), drop = FALSE]
@@ -732,7 +763,9 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #'   state probabilities sum to one within each time and group.
 #'
 #' @return An interpolated data frame with the same core columns as `x`, where
-#'   `time` is on the real-time scale.
+#'   `time` is on the real-time scale. If `x` has tests from
+#'   `inferences(null = )`, `statistic`, `p.value`, and `s.value` test the
+#'   interpolated estimates against the same null value.
 #'
 #' @details
 #' The recommended workflow for irregular assessment schedules is:
@@ -752,7 +785,7 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #' If `x` contains stored simulation, bootstrap, or posterior draws, the draws
 #' are interpolated too. Interval columns are then recomputed from the
 #' interpolated draws. Coefficient-only draws treat the empirical baseline anchor
-#' as fixed; empirical score-bootstrap, FWB, and refit-bootstrap draws use the
+#' as fixed; empirical FWB and refit-bootstrap draws use the
 #' corresponding draw-specific patient weights or resampled cohort.
 #' If interval columns are present but stored draws are unavailable,
 #' `interpolate_sops()` warns and falls back to interpolating interval endpoints.
@@ -767,7 +800,7 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #'   fit,
 #'   newdata = baseline,
 #'   variables = list(tx = c(0, 1)),
-#'   times = NULL
+#'   times = 1:4
 #' )
 #' interpolate_sops(
 #'   avg,
@@ -786,10 +819,10 @@ interpolate_sops <- function(
   normalize = TRUE
 ) {
   if (!inherits(x, c("markov_sops", "markov_avg_sops"))) {
-    stop("`x` must be a `markov_sops` or `markov_avg_sops` object.")
+    mostr_abort("`x` must be a `markov_sops` or `markov_avg_sops` object.")
   }
   if (!all(c("time", "state") %in% names(x))) {
-    stop("`x` must contain `time` and `state` columns.")
+    mostr_abort("`x` must contain `time` and `state` columns.")
   }
 
   time_map <- standardize_time_map(time_map)
@@ -804,10 +837,14 @@ interpolate_sops <- function(
         is.na(baseline_time) ||
         !is.finite(baseline_time)
     ) {
-      stop("`baseline_time` must be a single finite numeric value or `NULL`.")
+      mostr_abort(
+        "`baseline_time` must be a single finite numeric value or `NULL`."
+      )
     }
     if (baseline_time >= mapped_range[1L]) {
-      stop("`baseline_time` must be earlier than the earliest mapped SOP time.")
+      mostr_abort(
+        "`baseline_time` must be earlier than the earliest mapped SOP time."
+      )
     }
   }
 
@@ -823,6 +860,13 @@ interpolate_sops <- function(
 
   work <- x
   work$.sop_real_time <- real_time
+  # The tests from `inferences(null = )` differ between rows, so they would
+  # split every series into single rows. They are recomputed below from the
+  # interpolated estimates instead of being interpolated.
+  test_cols <- sop_test_cols(x)
+  for (column in test_cols) {
+    work[[column]] <- NULL
+  }
 
   anchor <- NULL
   if (use_baseline) {
@@ -834,7 +878,9 @@ interpolate_sops <- function(
 
   value_cols <- sop_measure_cols(work)
   if (length(value_cols) == 0) {
-    stop("`x` must contain an `estimate` or `draw` column to interpolate.")
+    mostr_abort(
+      "`x` must contain an `estimate` or `draw` column to interpolate."
+    )
   }
   group_cols <- setdiff(names(work), c("time", value_cols, ".sop_real_time"))
   result <- interpolate_sop_table_matrix(
@@ -846,7 +892,7 @@ interpolate_sops <- function(
   if (is.null(result)) {
     groups <- split(
       seq_len(nrow(work)),
-      split_key(work, group_cols),
+      split_key(work, group_cols, keep_na = TRUE),
       drop = TRUE
     )
     pieces <- lapply(groups, function(idx) {
@@ -870,13 +916,13 @@ interpolate_sops <- function(
     result <- normalize_interpolated_sops(result)
   }
 
-  draw_attr <- sop_draw_attr_name(x)
-  if (is.null(draw_attr)) {
+  draws <- attr(x, "draws")
+  if (is.null(draws)) {
     warn_missing_interpolation_draws(x)
   }
-  interpolated_draws <- if (!is.null(draw_attr)) {
+  interpolated_draws <- if (!is.null(draws)) {
     interpolate_sop_draws(
-      draws = attr(x, draw_attr),
+      draws = draws,
       time_map = time_map,
       target_times = target_times,
       anchor = anchor,
@@ -901,10 +947,15 @@ interpolate_sops <- function(
     }
   }
   if (!is.null(interpolated_draws)) {
-    attr(result, draw_attr) <- interpolated_draws
+    attr(result, "draws") <- interpolated_draws
   }
   attr(result, "time_map") <- time_map
   attr(result, "baseline_time") <- if (use_baseline) baseline_time else NULL
   class(result) <- c("markov_interpolated_sops", class(x))
+  # Test the interpolated estimates against the null that `x` was tested
+  # against, using their interpolated or recomputed standard errors.
+  if (length(test_cols) > 0L && !is.null(attr(x, "null"))) {
+    result <- add_null_test(result, attr(x, "null"), warn = FALSE)
+  }
   result
 }

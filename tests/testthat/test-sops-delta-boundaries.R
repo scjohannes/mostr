@@ -1,28 +1,91 @@
-test_that("zero or tiny uncertainty does not certify a structural boundary", {
-  estimate <- rep(c(0, 1), 3)
-  standard_error <- rep(c(0, 1e-20, 1e-7), each = 2)
-  warning <- NULL
-  bounds <- withCallingHandlers(
-    delta_interval_bounds(estimate, standard_error, 0.95, "logit"),
-    warning = function(condition) {
-      warning <<- conditionMessage(condition)
-      invokeRestart("muffleWarning")
-    }
+test_that("logit delta intervals distinguish structural boundaries", {
+  skip_on_cran()
+  local_reproducible_output(width = 80)
+  # The warning for an estimate of exactly 0 or 1 that is not a structural
+  # boundary.
+  expect_snapshot(
+    nonstructural <- delta_interval_bounds(
+      estimate = c(0, 1),
+      standard_error = c(0.1, 0.1),
+      conf_level = 0.95,
+      conf_type = "logit"
+    )
   )
-  expect_match(warning, "nonstructural boundary", fixed = TRUE)
-  expect_identical(bounds$conf.low, rep(NA_real_, 6))
-  expect_identical(bounds$conf.high, rep(NA_real_, 6))
-  wald <- delta_interval_bounds(estimate, standard_error, 0.95, "wald")
-  expect_equal(wald$conf.low, estimate - stats::qnorm(0.975) * standard_error)
-  expect_equal(wald$conf.high, estimate + stats::qnorm(0.975) * standard_error)
+
+  # Zero or tiny uncertainty does not certify a structural boundary either:
+  # logit limits stay undefined, while Wald limits are computed as usual.
+  z <- stats::qnorm(0.975)
+  tiny_estimate <- rep(c(0, 1), 3)
+  tiny_se <- rep(c(0, 1e-20, 1e-7), each = 2)
+  cases <- list(
+    list(
+      label = "logit, standard error 0.1",
+      estimate = c(0, 1),
+      standard_error = c(0.1, 0.1),
+      conf_type = "logit",
+      warns = TRUE,
+      conf.low = rep(NA_real_, 2),
+      conf.high = rep(NA_real_, 2)
+    ),
+    list(
+      label = "logit, zero or tiny standard error",
+      estimate = tiny_estimate,
+      standard_error = tiny_se,
+      conf_type = "logit",
+      warns = TRUE,
+      conf.low = rep(NA_real_, 6),
+      conf.high = rep(NA_real_, 6)
+    ),
+    list(
+      label = "Wald, zero or tiny standard error",
+      estimate = tiny_estimate,
+      standard_error = tiny_se,
+      conf_type = "wald",
+      warns = FALSE,
+      conf.low = tiny_estimate - z * tiny_se,
+      conf.high = tiny_estimate + z * tiny_se
+    )
+  )
+  for (case in cases) {
+    warning <- NULL
+    bounds <- withCallingHandlers(
+      delta_interval_bounds(
+        case$estimate,
+        case$standard_error,
+        0.95,
+        case$conf_type
+      ),
+      warning = function(condition) {
+        warning <<- conditionMessage(condition)
+        invokeRestart("muffleWarning")
+      }
+    )
+    if (case$warns) {
+      expect_match(
+        warning,
+        "nonstructural boundary",
+        fixed = TRUE,
+        info = case$label
+      )
+      expect_identical(bounds$conf.low, case$conf.low, info = case$label)
+      expect_identical(bounds$conf.high, case$conf.high, info = case$label)
+    } else {
+      expect_null(warning, info = case$label)
+      expect_equal(bounds$conf.low, case$conf.low, info = case$label)
+      expect_equal(bounds$conf.high, case$conf.high, info = case$label)
+    }
+  }
 })
 
 test_that("absorption during prediction does not certify numerical saturation", {
+  skip_on_cran()
   data <- make_test_data(n_patients = 60, follow_up_time = 8, seed = 8118)
   model <- suppressWarnings(mostm(
     ordered(y) ~ tx,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
+    id_var = "id",
+    absorb = 6,
     engine = "vglm"
   ))
   states <- seq_len(nrow(get_effective_coefs(model)) + 1L)
@@ -31,9 +94,7 @@ test_that("absorption during prediction does not certify numerical saturation", 
   individual <- sops(
     model,
     newdata = baseline,
-    times = 1:3,
-    y_levels = states,
-    absorb = max(states)
+    times = 1:3
   )
   expect_gt(min(individual$estimate), 0)
   expect_lt(max(individual$estimate), 1)
@@ -57,17 +118,13 @@ test_that("absorption during prediction does not certify numerical saturation", 
     sops(
       saturated_model,
       newdata = baseline,
-      times = 1:3,
-      y_levels = states,
-      absorb = max(states)
+      times = 1:3
     ),
     avg_sops(
       saturated_model,
       newdata = baseline,
       times = 1:3,
-      variables = list(tx = c(0, 1)),
-      y_levels = states,
-      absorb = max(states)
+      variables = list(tx = c(0, 1))
     )
   )
   for (point in points) {

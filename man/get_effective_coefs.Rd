@@ -7,7 +7,8 @@
 get_effective_coefs(model, beta = NULL)
 }
 \arguments{
-\item{model}{A fitted \code{vglm} or \code{orm} object.}
+\item{model}{A fitted \code{vglm} or \code{orm} object, or the \code{robcov_vglm} object
+that \code{mostm(engine = "vglm")} returns.}
 
 \item{beta}{Optional coefficient vector to use instead of \code{coef(model)}.
 This is used internally for simulation draws.}
@@ -47,14 +48,7 @@ denotes transpose. The dimensions are \eqn{(L \times q)(q \times 1)}.
 \dontshow{if (rlang::is_installed("rms")) withAutoprint(\{ # examplesIf}
 trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-fit <- rms::orm(
-  y ~ time + tx + yprev,
-  data = markov_data,
-  x = TRUE,
-  y = TRUE,
-  opt_method = "LM",
-  scale = TRUE
-)
+fit <- rms::orm(y ~ time + tx + yprev, data = markov_data, x = TRUE, y = TRUE)
 
 effective <- get_effective_coefs(fit)
 dim(effective)

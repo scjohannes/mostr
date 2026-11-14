@@ -4,42 +4,20 @@
 \alias{markov_msm_build}
 \title{Build Fast Markov Simulation Components (Internal)}
 \usage{
-markov_msm_build(
-  model,
-  newdata = NULL,
-  data = NULL,
-  time_covariates = NULL,
-  times = NULL,
-  y_levels = 1:6,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL,
-  ...
-)
+markov_msm_build(model, newdata, times = NULL, settings)
 }
 \arguments{
-\item{model}{Fitted vglm model}
+\item{model}{Fitted vglm or orm model}
 
-\item{data}{Baseline data frame (one row per patient)}
-
-\item{time_covariates}{Time-dependent covariate lookup (optional)}
+\item{newdata}{Baseline data frame (one row per patient)}
 
 \item{times}{Time points to predict}
 
-\item{y_levels}{State labels}
-
-\item{absorb}{Absorbing state(s). These transition matrices are not needed
-because absorbing states keep their prior probability mass.}
-
-\item{time_var}{Name of time variable}
-
-\item{p_var}{Name of previous state variable}
-
-\item{gap_var}{Optional gap_var variable. With factor visit time, numeric gap_var values
-must be supplied in \code{time_covariates}.}
-
-\item{...}{Ignored}
+\item{settings}{The resolved settings of the call
+(\code{resolve_markov_settings()}): the state labels \code{y_levels}, the absorbing
+states \code{absorb} (their transition matrices are not needed, because
+absorbing states keep their prior probability mass), and the columns
+\code{time_var}, \code{p_var}, \code{p2_var} and \code{gap_var}.}
 }
 \value{
 A list containing pre-calculated matrices and metadata.
@@ -48,5 +26,14 @@ A list containing pre-calculated matrices and metadata.
 Pre-calculates design matrices for fast Markov simulation. This is the
 "heavy lifting" step that should be done ONCE before running thousands of
 simulation draws.
+}
+\details{
+The first visit is predicted from each patient's own previous state(s).
+Every later visit needs the transition probabilities from each previous
+state a patient may be in: each non-absorbing state for a first-order model,
+and each pair of non-absorbing states (two visits back, one visit back) for
+a second-order model (\code{settings$p2_var}). The design of a later visit stacks
+one block of patient rows per such combination, in the order of
+\code{previous_states}.
 }
 \keyword{internal}

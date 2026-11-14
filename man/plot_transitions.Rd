@@ -10,16 +10,13 @@ plot_transitions(
   variables = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
   comparison = c("none", "difference"),
-  time_var = "time",
+  time_var = NULL,
   y_var = "y",
-  p_var = "yprev",
+  p_var = NULL,
   p2_var = NULL,
   id_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   show_values = TRUE,
@@ -42,33 +39,40 @@ first value is the reference.}
 \item{times}{Optional current-time values to plot. Required for model-based
 plots.}
 
-\item{y_levels}{Optional state levels. If omitted for model-based plots,
-levels are inferred from the model when possible.}
-
-\item{absorb}{Optional absorbing-state label.}
+\item{y_levels}{The states in order. For a fitted model, \code{NULL} (the
+default) uses the states of the model; a supplied vector must hold the
+same states in the same order, otherwise it is an error. For trajectory
+data, \code{NULL} uses the states found in the \code{y_var} and \code{p_var} columns,
+in numeric order when they are numbers.}
 
 \item{comparison}{\code{"none"} for transition proportions or \code{"difference"} for
 counterfactual differences in transition proportions.}
 
-\item{time_var}{Character name of the time column in trajectory data.}
+\item{time_var}{Name of the time column. For a fitted model, \code{NULL} (the
+default) uses the \code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an
+error. For trajectory data, \code{NULL} means \code{"time"}.}
 
 \item{y_var}{Character name of the current-state column in trajectory data.}
 
-\item{p_var}{Character name of the previous-state column.}
+\item{p_var}{Name of the previous-state column. For a fitted model, \code{NULL}
+(the default) uses the \code{p_var} given to \code{\link[=mostm]{mostm()}}, \code{"yprev"} unless set
+there; a different name is an error. For trajectory data, \code{NULL} means
+\code{"yprev"}.}
 
-\item{p2_var}{Optional second previous-state column for second-order
-model recursion.}
+\item{p2_var}{Name of the column with the state two visits back, for
+model-based plots. \code{NULL} (the default) uses the \code{p2_var} given to
+\code{\link[=mostm]{mostm()}}: a model fitted with \code{p2_var} is plotted with a second-order
+recursion, and one fitted without it with a first-order recursion. A
+different name is an error, so to plot a second-order model, give
+\code{p2_var} to \code{\link[=mostm]{mostm()}}. Not used for trajectory data.}
 
-\item{id_var}{Optional ID column used to extract one stored prediction row per
-patient.}
+\item{id_var}{Name of the patient ID column, used to take one starting row
+per patient from the data stored on a fitted model. \code{NULL} (the default)
+uses the \code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name is an error. Not
+used for trajectory data.}
 
 \item{facet_var}{Optional observed grouping variable. The plot always facets
 by time; \code{facet_var} adds grouping to the time panels.}
-
-\item{gap_var}{Optional time-gap_var variable used by the fitted model.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table used by the fitted
-model.}
 
 \item{seed}{Optional random seed for \code{blrm} posterior draw selection.}
 
@@ -99,9 +103,9 @@ relative to the first level.
 Minimum inputs depend on the object type. For trajectory data, \code{object} must
 contain the current time, current state, and previous-state columns named by
 \code{time_var}, \code{y_var}, and \code{p_var}. For model-based plots, pass a fitted
-Markov model and \code{times}; use \code{newdata} for explicit prediction profiles and
-pass \code{y_levels} or \code{absorb} when they are not inferable or absorbing-state
-behavior matters. Difference plots also require
+Markov model and \code{times}; use \code{newdata} for explicit prediction profiles. The
+column names and states default to those of the fit, and the absorbing
+states are those given to \code{\link[=mostm]{mostm()}}. Difference plots also require
 \code{comparison = "difference"} and \code{variables = list(var = c(reference, comparison))}.
 }
 \examples{
@@ -112,9 +116,7 @@ plot_transitions(
   fit,
   times = 1:7,
   variables = list(tx = c(0, 1)),
-  comparison = "difference",
-  y_levels = 1:8,
-  absorb = 8
+  comparison = "difference"
 )
 }
 }

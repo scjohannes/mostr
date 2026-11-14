@@ -4,16 +4,9 @@ plot_correlation_input_data <- function(
   object,
   newdata,
   times,
-  y_levels,
-  absorb,
-  id_var,
-  time_var,
+  settings,
   y_var,
-  p_var,
-  p2_var,
   facet_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws,
   triangle,
@@ -24,15 +17,8 @@ plot_correlation_input_data <- function(
       model = object,
       newdata = newdata,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      id_var = id_var,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
+      settings = settings,
       facet_var = facet_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
       seed = seed,
       n_draws = n_draws,
       triangle = triangle,
@@ -41,22 +27,21 @@ plot_correlation_input_data <- function(
   }
 
   if (!is.data.frame(object)) {
-    stop("`object` must be a data frame or a supported Markov model.")
+    mostr_abort("`object` must be a data frame or a supported Markov model.")
   }
   if (!is.null(newdata)) {
-    stop("`newdata` is only used for model-based plots.")
+    mostr_abort("`newdata` is only used for model-based plots.")
   }
-  if (!is.null(p2_var) || !is.null(gap_var) || !is.null(time_covariates)) {
-    stop(
-      "`p2_var`, `gap_var`, and `time_covariates` are only used for model-based plots."
-    )
+  if (!is.null(settings$p2_var)) {
+    mostr_abort("`p2_var` is only used for model-based plots.")
   }
   if (!is.null(seed)) {
-    stop("`seed` is only used for `blrm` model-based plots.")
+    mostr_abort("`seed` is only used for `blrm` model-based plots.")
   }
 
   data <- object
-  plot_validate_columns(data, c(id_var, time_var, y_var), "`data`")
+  time_var <- settings$time_var
+  plot_validate_columns(data, c(settings$id_var, time_var, y_var), "`data`")
   if (!is.null(times)) {
     keep <- as.character(data[[time_var]]) %in% as.character(times)
     data <- data[keep, , drop = FALSE]
@@ -64,11 +49,9 @@ plot_correlation_input_data <- function(
 
   plot_correlation_data(
     data = data,
-    id_var = id_var,
-    time_var = time_var,
+    settings = settings,
     y_var = y_var,
     facet_var = facet_var,
-    y_levels = y_levels,
     triangle = triangle,
     method = method
   )
@@ -78,15 +61,8 @@ plot_correlation_model_data <- function(
   model,
   newdata,
   times,
-  y_levels,
-  absorb,
-  id_var,
-  time_var,
-  p_var,
-  p2_var,
+  settings,
   facet_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws,
   triangle,
@@ -97,24 +73,13 @@ plot_correlation_model_data <- function(
     newdata = newdata,
     variables = NULL,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    id_var = id_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates
+    settings = settings
   )
 
   plot_correlation_model_summary(
     model = model,
     setup = setup,
     facet_var = facet_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
     triangle = triangle,
@@ -126,25 +91,17 @@ plot_correlation_model_summary <- function(
   model,
   setup,
   facet_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws,
   triangle,
   method
 ) {
-  second_order <- !is.null(p2_var)
+  second_order <- !is.null(setup$settings$p2_var)
 
   plot_model_trace_summaries(
     model = model,
     setup = setup,
     facet_var = facet_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
     return_kernels = TRUE,
@@ -197,7 +154,6 @@ plot_correlation_trace_summary <- function(
       trace = trace,
       rows = rows,
       time_indices = plot_indices,
-      time_keys = time_keys,
       scores = scores,
       group = group,
       facet_var = facet_var,
@@ -216,7 +172,6 @@ plot_correlation_trace_group_summary <- function(
   trace,
   rows,
   time_indices,
-  time_keys,
   scores,
   group,
   facet_var,
@@ -476,7 +431,7 @@ plot_second_order_anchor_step_array <- function(anchor_pair, kernel) {
       prob_sum <- rowSums(probs)
       reachable <- rowSums(mass) > 0
       if (any(reachable & prob_sum == 0)) {
-        stop(
+        mostr_abort(
           "Second-order model-implied correlation recursion encountered a ",
           "reachable previous-state pair with no transition probabilities."
         )
@@ -489,7 +444,7 @@ plot_second_order_anchor_step_array <- function(anchor_pair, kernel) {
   }
 
   if (abs(sum(out) - sum(anchor_pair)) > 1e-8 * max(1, n_states)) {
-    stop(
+    mostr_abort(
       "Second-order model-implied correlation recursion lost probability mass."
     )
   }
@@ -540,15 +495,14 @@ plot_correlation_summarize_draws <- function(data, facet_var, time_keys) {
 
 plot_correlation_data <- function(
   data,
-  id_var,
-  time_var,
+  settings,
   y_var,
   facet_var,
-  y_levels,
   triangle,
   method
 ) {
-  plot_validate_columns(data, c(id_var, time_var, y_var), "`data`")
+  time_var <- settings$time_var
+  plot_validate_columns(data, c(settings$id_var, time_var, y_var), "`data`")
   plot_validate_facets(data, facet_var)
 
   groups <- plot_facet_groups(data, facet_var)
@@ -557,10 +511,8 @@ plot_correlation_data <- function(
     subset <- plot_group_subset(data, groups[i, , drop = FALSE], facet_var)
     mat <- plot_state_time_matrix(
       subset,
-      id_var = id_var,
-      time_var = time_var,
-      y_var = y_var,
-      y_levels = y_levels
+      settings = settings,
+      y_var = y_var
     )
     corr <- stats::cor(mat, method = method, use = "pairwise.complete.obs")
     out[[i]] <- plot_correlation_matrix_long(
@@ -580,13 +532,9 @@ plot_correlation_data <- function(
   )
 }
 
-plot_state_time_matrix <- function(
-  data,
-  id_var,
-  time_var,
-  y_var,
-  y_levels = NULL
-) {
+plot_state_time_matrix <- function(data, settings, y_var) {
+  id_var <- settings$id_var
+  time_var <- settings$time_var
   ids <- unique(as.character(data[[id_var]]))
   times <- plot_ordered_values(data[[time_var]])
   time_labels <- as.character(times)
@@ -595,7 +543,7 @@ plot_state_time_matrix <- function(
 
   key <- paste(id_index, time_index, sep = "\r")
   if (anyDuplicated(key)) {
-    stop(
+    mostr_abort(
       "`data` must contain at most one row per `",
       id_var,
       "` and `",
@@ -610,7 +558,10 @@ plot_state_time_matrix <- function(
     ncol = length(time_labels),
     dimnames = list(ids, time_labels)
   )
-  mat[cbind(id_index, time_index)] <- plot_state_scores(data[[y_var]], y_levels)
+  mat[cbind(id_index, time_index)] <- plot_state_scores(
+    data[[y_var]],
+    settings$y_levels
+  )
   mat
 }
 
@@ -620,7 +571,7 @@ plot_state_scores <- function(x, y_levels = NULL) {
     out <- match(as.character(x), ylevel_names)
     bad <- is.na(out) & !is.na(x)
     if (any(bad)) {
-      stop("`data` contains state values that are not in `y_levels`.")
+      mostr_abort("`data` contains state values that are not in `y_levels`.")
     }
     return(out)
   }

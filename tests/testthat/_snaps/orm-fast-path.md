@@ -1,8 +1,7 @@
-# orm fast path validates state support and initial probabilities
+# orm SOPs report a state count that differs from the fit and a missing absorbing state
 
     Code
-      mostr::soprob_markov(fit, baseline, times = 1, y_levels = fit$yunique[-length(
-        fit$yunique)])
+      mostr:::predict_markov_sops(fit, baseline, times = 1, settings = fewer_states)
     Condition
       Error:
       ! `y_levels` defines 5 states, but the fitted model defines 6 states through 5 threshold coefficients.
@@ -10,9 +9,8 @@
 ---
 
     Code
-      mostr::soprob_markov(fit, baseline[1L, , drop = FALSE], times = 1, y_levels = fit$
-        yunique)
+      mostr::soprob_markov(fit, baseline[1L, , drop = FALSE], times = 1)
     Condition
-      Error:
-      ! Model prediction requires transitions from state level(s) not represented in the fitted transition data: 6. If a level is absorbing, pass it via `absorb`.
+      Error in `mostr::soprob_markov()`:
+      ! Model prediction requires transitions from state level(s) not represented in the fitted transition data: 6. No fitted row has such a state as its previous state. If it is absorbing, such as death, name it in `mostm(absorb = )` and refit.
 

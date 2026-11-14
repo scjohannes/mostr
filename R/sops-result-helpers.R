@@ -5,11 +5,11 @@ validate_sops_by <- function(by, data, data_arg = "newdata") {
     return(invisible(NULL))
   }
   if (!is.character(by)) {
-    stop("'by' must be a character vector of variable names.")
+    mostr_abort("'by' must be a character vector of variable names.")
   }
   missing_vars <- setdiff(by, names(data))
   if (length(missing_vars) > 0) {
-    stop(
+    mostr_abort(
       "Variables specified in 'by' not found in ",
       data_arg,
       ": ",
@@ -19,58 +19,32 @@ validate_sops_by <- function(by, data, data_arg = "newdata") {
   invisible(NULL)
 }
 
-sops_call_args <- function(
-  times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
-  ...
-) {
-  c(
-    list(
-      times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates
-    ),
-    list(...)
-  )
+# The arguments of a SOP call that are not settings: the resolved visits and,
+# for blrm, the posterior options. The settings are stored separately, in the
+# result's `settings` attribute.
+sops_call_args <- function(times, ...) {
+  c(list(times = times), list(...))
 }
 
+# `settings` is the resolved settings object of the call
+# (`resolve_markov_settings()`), read back with `markov_result_settings()`.
 set_sops_attrs <- function(
   result,
   class_name,
   model,
   call_args,
-  time_var,
-  p_var,
-  p2_var,
-  y_levels,
-  absorb,
-  gap_var,
-  time_covariates,
+  settings,
   newdata_orig = NULL,
   avg_args = NULL,
   extra_attrs = list()
 ) {
+  if (!inherits(settings, "markov_settings")) {
+    mostr_abort("Internal SOP result settings are invalid.")
+  }
   result <- as.data.frame(result)
   attr(result, "model") <- model
   attr(result, "call_args") <- call_args
-  attr(result, "time_var") <- time_var
-  attr(result, "p_var") <- p_var
-  attr(result, "p2_var") <- p2_var
-  attr(result, "y_levels") <- y_levels
-  attr(result, "absorb") <- absorb
-  attr(result, "gap_var") <- gap_var
-  attr(result, "time_covariates") <- time_covariates
+  attr(result, "settings") <- settings
   attr(result, "newdata_orig") <- newdata_orig
   attr(result, "avg_args") <- avg_args
 
@@ -107,6 +81,50 @@ inference_columns <- function() {
   )
 }
 
+# The attributes that an `inferences()` run attaches to its result: stored
+# derivatives or influence values (delta), draws, and the metadata of the run.
+# Posterior results of `blrm` models carry some of the same names, but those
+# come from the model's posterior, not from an inference run, and are never
+# passed through `clear_inference_results()`.
+inference_attributes <- function() {
+  c(
+    "analytical",
+    "draws",
+    "baseline_anchor",
+    "baseline_anchor_draws",
+    "method",
+    "engine",
+    "n_draws",
+    "n_successful",
+    "conf_level",
+    "conf_type",
+    "null",
+    "target",
+    "covariance_source",
+    "covariance_metadata",
+    "fwb_weight_type",
+    "fwb_weight_scale",
+    "draw_weights_attached",
+    "draw_weight_col",
+    "draw_weight_omission_reason"
+  )
+}
+
+# `x` as before any inference run: estimates only. A result can be passed to
+# `inferences()` again, and the new run replaces the old one, so nothing of the
+# old run may survive into it. Functions that read the uncertainty of a result
+# (such as `time_in_state()`) decide how by these attributes, so a stale
+# `analytical` or `draws` would give the old run's uncertainty.
+clear_inference_results <- function(x) {
+  for (column in setdiff(inference_columns(), "estimate")) {
+    x[[column]] <- NULL
+  }
+  for (name in inference_attributes()) {
+    attr(x, name) <- NULL
+  }
+  x
+}
+
 order_estimate_columns <- function(x) {
   original_class <- class(x)
   extra_attrs <- attributes(x)
@@ -125,12 +143,48 @@ order_estimate_columns <- function(x) {
   out
 }
 
+# TRUE for a result of `comparisons()` or `avg_comparisons()` whose compared
+# variable is not among the columns the fitted model uses: those in its formula
+# and the previous-state columns. Setting such a column can't change any
+# prediction, so the comparison is exactly 0 (or 1 for a ratio) by
+# construction. FALSE whenever the model's columns can't be read.
+comparison_variable_unused <- function(x) {
+  if (!inherits(x, c("markov_comparisons", "markov_avg_comparisons"))) {
+    return(FALSE)
+  }
+  variable <- names(attr(x, "avg_args")$variables)
+  if (length(variable) != 1L) {
+    return(FALSE)
+  }
+  used <- markov_model_variables(attr(x, "model"))
+  if (is.null(used)) {
+    return(FALSE)
+  }
+  settings <- markov_result_settings(x)
+  !variable %in% c(used, settings$p_var, settings$p2_var)
+}
+
+# A comparison that is exactly 0 by construction has no sampling uncertainty
+# to report. As marginaleffects does, its standard error, test and interval
+# are NA, rather than an SE of 0 with a NaN statistic or a zero-width
+# interval. Results of other functions, such as predictions under the same
+# `variables`, are returned unchanged.
+drop_unused_comparison_uncertainty <- function(x) {
+  if (!comparison_variable_unused(x)) {
+    return(x)
+  }
+  for (column in intersect(setdiff(inference_columns(), "estimate"), names(x))) {
+    x[[column]] <- rep(NA_real_, nrow(x))
+  }
+  x
+}
+
 add_null_test <- function(x, null, warn = TRUE) {
   if (is.null(null)) {
     return(order_estimate_columns(x))
   }
   if (!is.numeric(null) || length(null) != 1L || !is.finite(null)) {
-    stop("`null` must be a single finite numeric value.")
+    mostr_abort("`null` must be a single finite numeric value.")
   }
   if (!"std.error" %in% names(x)) {
     if (warn) {
@@ -153,7 +207,7 @@ with_local_seed <- function(seed, code) {
     return(force(code))
   }
   if (!is.numeric(seed) || length(seed) != 1L || !is.finite(seed)) {
-    stop("`seed` must be a single finite number or NULL.")
+    mostr_abort("`seed` must be a single finite number or NULL.")
   }
   had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
   if (had_seed) {
@@ -188,9 +242,136 @@ resolve_by_choice <- function(by) {
   if (is.character(by) && length(by) > 0L && !anyNA(by) && all(nzchar(by))) {
     return(list(average = TRUE, by = by))
   }
-  stop(
-    "`by` must be `FALSE`, `TRUE`, or a character vector of column names.",
-    call. = FALSE
+  mostr_abort(
+    "`by` must be `FALSE`, `TRUE`, or a character vector of column names."
+  )
+}
+
+# Grouping by the compared variable of `avg_comparisons()`. `by` naming that
+# variable groups the profiles by the value they were observed with. The
+# averaged SOPs behind the comparison keep the value that was set in the
+# variable's own column, so the observed value is copied, before it is set,
+# into a column with this internal name, and the averages are grouped on the
+# copy. `restore_observed_by_names()` gives the copy the variable's name once
+# the comparison has replaced the set values with contrasts.
+observed_by_column <- function(variable) {
+  paste0(".mostr_observed_", variable)
+}
+
+# `by` with every variable set by `variables` replaced by its observed copy.
+observed_by <- function(by, variables) {
+  if (is.null(by)) {
+    return(NULL)
+  }
+  set <- by %in% names(variables)
+  by[set] <- observed_by_column(by[set])
+  by
+}
+
+# Adds the observed copies that `by` asks for to profiles that still hold
+# their observed values. A copy that is already present is kept, because
+# profiles after `create_counterfactual_data()` hold set values.
+add_observed_by_columns <- function(data, variables, by) {
+  for (variable in names(variables)) {
+    column <- observed_by_column(variable)
+    if (
+      column %in% by &&
+        variable %in% names(data) &&
+        !column %in% names(data)
+    ) {
+      data[[column]] <- data[[variable]]
+    }
+  }
+  data
+}
+
+# Names observed copies after their variable, in a table that no longer has
+# a column of set values.
+restore_observed_by_names <- function(data, variables) {
+  if (is.null(data)) {
+    return(data)
+  }
+  for (variable in names(variables)) {
+    column <- observed_by_column(variable)
+    if (column %in% names(data) && !variable %in% names(data)) {
+      names(data)[names(data) == column] <- variable
+    }
+  }
+  data
+}
+
+# The user's name for a grouping column, for messages.
+observed_by_label <- function(by) {
+  sub("^\\.mostr_observed_", "", by)
+}
+
+# Refuses a `by` column with a missing value among the profiles that are
+# averaged. Such a profile would belong to no group and be left out of every
+# average without notice, which changes who is averaged. `profiles` holds the
+# averaged profiles, one row each, with observed values: `newdata`, or the
+# starting profiles stored by `mostm()`. Only these rows count, so a missing
+# value at a later visit of the fitted data does not matter. An internal
+# observed copy named in `by` is checked on its variable's observed column,
+# and the message uses the user's column name. Columns that are absent are
+# left to the checks that report them. Every averaging function resolves its
+# profiles in `avg_sops()` or `avg_comparison_setup()`, which call this check
+# before predicting, so inference replays and bootstrap refits never reach a
+# grouping step with a missing `by` value.
+stop_missing_by_values <- function(profiles, by, variables = NULL) {
+  if (is.null(by) || is.null(profiles)) {
+    return(invisible(NULL))
+  }
+  profiles <- add_observed_by_columns(profiles, variables, by)
+  for (column in intersect(by, names(profiles))) {
+    n_missing <- sum(is.na(profiles[[column]]))
+    if (n_missing == 0L) {
+      next
+    }
+    n_profiles <- nrow(profiles)
+    mostr_abort(
+      "`by` names `",
+      observed_by_label(column),
+      "`, which is missing for ",
+      n_missing,
+      " of the ",
+      n_profiles,
+      " profiles being averaged. A profile with a missing `by` value belongs ",
+      "to no group, so it would be left out of every average. Drop or impute ",
+      "those patients first, for example by removing them from `newdata` or ",
+      "from the data given to `mostm()`."
+    )
+  }
+  invisible(NULL)
+}
+
+# `avg_sops()` and `avg_state_time()` return the set value in the column of
+# each variable in `variables`, so a `by` group of the observed value would
+# need the same column name.
+stop_by_names_set_variable <- function(by, variables, fn) {
+  clash <- intersect(by, names(variables))
+  if (length(clash) == 0L) {
+    return(invisible(NULL))
+  }
+  name <- clash[1L]
+  mostr_abort(
+    "`by` names `",
+    name,
+    "`, which `variables` also sets. In the result of `",
+    fn,
+    "`, the `",
+    name,
+    "` column holds the value that was set, so it cannot also hold groups of ",
+    "the value each patient was observed with. The averages for each set ",
+    "value are already returned without `by`. To average within groups of ",
+    "the observed value, copy the column first, in `newdata` or in the data ",
+    "given to `mostm()`, for example ",
+    "`newdata$observed_",
+    name,
+    " <- newdata$",
+    name,
+    "`, and use `by = \"observed_",
+    name,
+    "\"`."
   )
 }
 
@@ -209,11 +390,20 @@ create_counterfactual_grid <- function(variables) {
 #' @param baseline_data Data frame with one row per patient.
 #' @param grid Data frame of variable combinations.
 #' @param variables Named list of variable values.
+#' @param by Optional grouping columns. For each internal observed-value
+#'   column that `by` names, the observed value of its variable is copied
+#'   before the variable is set.
 #'
 #' @return Data frame with counterfactual data stacked.
 #'
 #' @keywords internal
-create_counterfactual_data <- function(baseline_data, grid, variables) {
+create_counterfactual_data <- function(
+  baseline_data,
+  grid,
+  variables,
+  by = NULL
+) {
+  baseline_data <- add_observed_by_columns(baseline_data, variables, by)
   cf_data_list <- vector("list", nrow(grid))
   for (i in seq_len(nrow(grid))) {
     dt_copy <- baseline_data
@@ -231,7 +421,7 @@ create_counterfactual_data <- function(baseline_data, grid, variables) {
 stack_prediction_profiles <- function(profiles, variables) {
   missing_vars <- setdiff(names(variables), names(profiles))
   if (length(missing_vars) > 0L) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+    mostr_abort("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
   grid <- create_counterfactual_grid(variables)
   stacked <- create_counterfactual_data(profiles, grid, variables)
@@ -259,7 +449,7 @@ validate_sops_weights <- function(weights, n, arg = "weights") {
       anyNA(weights) ||
       any(weights < 0)
   ) {
-    stop(
+    mostr_abort(
       "`",
       arg,
       "` must be a non-negative numeric vector of length ",
@@ -269,7 +459,7 @@ validate_sops_weights <- function(weights, n, arg = "weights") {
   }
   weight_sum <- sum(weights)
   if (!is.finite(weight_sum) || weight_sum <= 0) {
-    stop("`", arg, "` must have a positive finite sum.")
+    mostr_abort("`", arg, "` must have a positive finite sum.")
   }
   weights
 }
@@ -295,7 +485,10 @@ aggregate_sops_estimates <- function(result, group_cols, weight_col = NULL) {
   result <- as.data.frame(result)
   missing_vars <- setdiff(group_cols, names(result))
   if (length(missing_vars) > 0) {
-    stop("Grouping variables missing: ", paste(missing_vars, collapse = ", "))
+    mostr_abort(
+      "Grouping variables missing: ",
+      paste(missing_vars, collapse = ", ")
+    )
   }
 
   if (is.null(weight_col)) {
@@ -303,7 +496,7 @@ aggregate_sops_estimates <- function(result, group_cols, weight_col = NULL) {
   }
 
   if (!weight_col %in% names(result)) {
-    stop("Weight column '", weight_col, "' not found in result.")
+    mostr_abort("Weight column '", weight_col, "' not found in result.")
   }
 
   work <- data.table::as.data.table(
@@ -323,7 +516,7 @@ aggregate_sops_estimates <- function(result, group_cols, weight_col = NULL) {
 
 validate_prediction_weight_ids <- function(prediction_data, id_var) {
   if (is.null(id_var) || !id_var %in% names(prediction_data)) {
-    stop(
+    mostr_abort(
       "Prediction data must contain unique `id_var` values before bootstrap ",
       "draw weights can be attached."
     )
@@ -331,7 +524,7 @@ validate_prediction_weight_ids <- function(prediction_data, id_var) {
 
   ids <- as.character(prediction_data[[id_var]])
   if (anyNA(ids) || anyDuplicated(ids)) {
-    stop(
+    mostr_abort(
       "Prediction data must contain exactly one non-missing row per `id_var` ",
       "before bootstrap draw weights can be attached."
     )
@@ -345,12 +538,11 @@ validate_draw_weight_column_available <- function(newdata, weight_col) {
     return(invisible(NULL))
   }
   if (weight_col %in% names(newdata)) {
-    stop(
+    mostr_abort(
       "Prediction data already contains a column named `",
       weight_col,
       "`, which is reserved for bootstrap draw weights. Rename this column ",
-      "before calling inferences().",
-      call. = FALSE
+      "before calling inferences()."
     )
   }
   invisible(NULL)
@@ -393,10 +585,10 @@ marginalize_sops_array <- function(
 
   if (!is.null(by)) {
     if (is.null(newdata) || !is.data.frame(newdata)) {
-      stop("`newdata` must be supplied when `by` is used.")
+      mostr_abort("`newdata` must be supplied when `by` is used.")
     }
     if (nrow(newdata) != n_cf * n_each) {
-      stop("`newdata` is not aligned with the counterfactual SOP array.")
+      mostr_abort("`newdata` is not aligned with the counterfactual SOP array.")
     }
     validate_sops_by(by, newdata)
 

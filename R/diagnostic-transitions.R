@@ -3,13 +3,12 @@
 plot_transitions_empirical_data <- function(
   data,
   times,
-  time_var,
+  settings,
   y_var,
-  p_var,
-  facet_var,
-  y_levels
+  facet_var
 ) {
-  plot_validate_columns(data, c(time_var, y_var, p_var), "`data`")
+  time_var <- settings$time_var
+  plot_validate_columns(data, c(time_var, y_var, settings$p_var), "`data`")
   plot_validate_facets(data, facet_var)
   if (!is.null(times)) {
     keep <- as.character(data[[time_var]]) %in% as.character(times)
@@ -18,11 +17,9 @@ plot_transitions_empirical_data <- function(
 
   plot_transition_summary(
     data = data,
-    time_var = time_var,
+    settings = settings,
     y_var = y_var,
-    p_var = p_var,
-    facet_var = facet_var,
-    y_levels = y_levels
+    facet_var = facet_var
   )
 }
 
@@ -31,16 +28,9 @@ plot_transitions_model_data <- function(
   newdata,
   variables,
   times,
-  y_levels,
-  absorb,
   comparison,
-  time_var,
-  p_var,
-  p2_var,
-  id_var,
+  settings,
   facet_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws
 ) {
@@ -49,21 +39,14 @@ plot_transitions_model_data <- function(
     require_two = identical(comparison, "difference")
   )
   if (identical(comparison, "difference") && is.null(variables)) {
-    stop("`variables` is required when `comparison = \"difference\"`.")
+    mostr_abort("`variables` is required when `comparison = \"difference\"`.")
   }
   setup <- plot_transition_model_setup(
     model = model,
     newdata = newdata,
     variables = variables,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    id_var = id_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates
+    settings = settings
   )
 
   facet_summary <- facet_var
@@ -75,10 +58,6 @@ plot_transitions_model_data <- function(
     model = model,
     setup = setup,
     facet_var = facet_summary,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws
   )
@@ -99,10 +78,6 @@ plot_transition_model_summary <- function(
   model,
   setup,
   facet_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws
 ) {
@@ -110,10 +85,6 @@ plot_transition_model_summary <- function(
     model = model,
     setup = setup,
     facet_var = facet_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
     seed = seed,
     n_draws = n_draws,
     return_kernels = FALSE,
@@ -257,22 +228,21 @@ plot_transition_finalize_summary <- function(
   )
   data$.panel <- plot_transition_panel(data, facet_var)
   data$.panel <- factor(data$.panel, levels = panel_levels)
-  attr(data, "state_levels") <- state_levels
   data
 }
 
 plot_transition_summary <- function(
   data,
-  time_var,
+  settings,
   y_var,
-  p_var,
-  facet_var,
-  y_levels
+  facet_var
 ) {
+  time_var <- settings$time_var
+  p_var <- settings$p_var
   state_levels <- plot_transition_state_levels(
     data,
     vars = c(y_var, p_var),
-    y_levels = y_levels
+    y_levels = settings$y_levels
   )
   time_values <- plot_ordered_values(data[[time_var]])
   time_keys <- as.character(time_values)
@@ -333,7 +303,6 @@ plot_transition_summary <- function(
   )
   out$.panel <- plot_transition_panel(out, facet_var)
   out$.panel <- factor(out$.panel, levels = panel_levels)
-  attr(out, "state_levels") <- state_levels
   out
 }
 
@@ -341,7 +310,7 @@ plot_transition_difference <- function(summary, variable, values, facet_var) {
   reference <- as.character(values[1])
   comparisons <- as.character(values[-1])
   if (!variable %in% names(summary)) {
-    stop("`variables` column not found in transition summary.")
+    mostr_abort("`variables` column not found in transition summary.")
   }
 
   key <- setdiff(
@@ -404,7 +373,6 @@ plot_transition_difference <- function(summary, variable, values, facet_var) {
   )
   out$.panel <- plot_transition_panel(out, c(facet_var, "contrast"))
   out$.panel <- factor(out$.panel, levels = panel_levels)
-  attr(out, "state_levels") <- attr(summary, "state_levels")
   out
 }
 
@@ -432,8 +400,6 @@ plot_transition_state_levels <- function(data, vars, y_levels = NULL) {
 
 plot_transition_panel <- function(data, facet_var) {
   label <- paste0("Time ", data$.time_key)
-  facet_var <- facet_var[!is.na(facet_var)]
-  facet_var <- setdiff(facet_var, character())
   facet_var <- facet_var[facet_var %in% names(data)]
   if (length(facet_var) == 0L) {
     return(label)
@@ -450,8 +416,6 @@ plot_transition_panel <- function(data, facet_var) {
 }
 
 plot_transition_panel_levels <- function(data, time_keys, facet_var) {
-  facet_var <- facet_var[!is.na(facet_var)]
-  facet_var <- setdiff(facet_var, character())
   facet_var <- facet_var[facet_var %in% names(data)]
   if (length(facet_var) == 0L) {
     return(paste0("Time ", time_keys))

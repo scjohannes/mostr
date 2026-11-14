@@ -11,18 +11,10 @@ avg_state_time(
   state_sets = NULL,
   by = TRUE,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -41,7 +33,12 @@ For \code{orm} models, the family must be logistic.}
 supplied, every row supplies a separate starting state and set of
 covariates. The internal \code{rowid} column is regenerated. If \code{NULL}, uses
 data stored by \code{\link[=mostm]{mostm()}} and requires exactly one complete designated
-starting profile per fitted patient.}
+starting profile per fitted patient. Every column the model uses needs a
+value in every row, except the time and \code{gap_var} columns, which are set
+at each visit, and columns that \code{variables} sets; other columns may have
+missing values.
+The previous-state column holds states of the fitted model, as a factor
+(with any levels), numbers, or text.}
 
 \item{variables}{Optional covariates to set before averaging: a named list
 of values, for example \code{list(tx = c(0, 1))} for average times under each
@@ -56,9 +53,15 @@ per named state set, for example
 
 \item{by}{How to average, as in the marginaleffects package. \code{TRUE} (the
 default) averages over all profiles, and a character vector of column
-names averages within the groups those columns define. \code{FALSE} or \code{NULL}
-does not average and returns the \code{\link[=state_time]{state_time()}} result, one total per
-profile, value of \code{variables}, and state set.}
+names averages within the groups those columns define, using each
+profile's observed values. A \code{by} column must have no missing values
+among the averaged profiles; drop or impute those patients first, in
+\code{newdata} or in the data given to \code{\link[=mostm]{mostm()}}. As in \code{\link[=avg_sops]{avg_sops()}}, \code{by}
+cannot name a
+variable that \code{variables} also sets; copy the column first, for example
+\code{newdata$observed_tx <- newdata$tx}, and use \code{by = "observed_tx"}.
+\code{FALSE} or \code{NULL} does not average and returns the \code{\link[=state_time]{state_time()}} result,
+one total per profile, value of \code{variables}, and state set.}
 
 \item{times}{Required. The consecutive visits to include, in increasing
 order and each listed once, for example \code{times = 1:30}. Each value is one
@@ -67,12 +70,6 @@ transition, so leaving out visits does not skip time; see the section
 every visit and select the period with \code{time_map} and \code{target_times}.
 Numeric time variables use numeric values; factor-valued visit indices use
 fitted visit levels.}
-
-\item{y_levels}{A vector of state levels in fitted outcome order. Its length
-must agree with the fitted model's threshold count. If \code{NULL}, attempts to
-infer the levels from \code{model}.}
-
-\item{absorb}{The absorbing state.}
 
 \item{time_map}{Optional named numeric vector or data frame giving the
 elapsed time of each visit label, for example
@@ -96,37 +93,11 @@ example, \code{target_times = 7:28} to total only days 7 to 28.}
 
 \item{time_unit}{Optional label stored in output.}
 
-\item{id_var}{Name of the patient ID variable. Required for bootstrap
-inference and for \code{blrm} random-effect prediction. If \code{NULL}, defaults to
-\code{"id"}; for models fitted with \code{\link[=mostm]{mostm()}}, it is inferred from stored
-metadata.
-For user-supplied \code{newdata}, \code{id_var} is required only for \code{blrm} random
-effects. Refit bootstrap inference resamples patients by this column in
-the data stored on the fitted model. For \code{blrm} models with
-\code{include_re = TRUE},
-\code{model$clusterInfo$name} is used before the final \code{"id"} fallback when
-no \code{id_var} was given to \code{\link[=mostm]{mostm()}}.}
-
-\item{time_var}{Name of the time variable in the model.}
-
-\item{p_var}{Name of the previous state variable in the model.}
-
-\item{p2_var}{Optional second previous-state variable. \code{NULL} uses a
-first-order Markov recursion; a non-\code{NULL} column name uses a second-order
-recursion.}
-
-\item{gap_var}{Optional name of the variable holding the time elapsed since
-the previous visit, if the model includes one. Each transition then uses
-the difference between consecutive values of \code{times} (the first value for
-the first transition), unless \code{time_covariates} contains this column, so
-\code{times} may skip visits. See the section "Choosing visits".}
-
-\item{time_covariates}{Optional time-varying covariate lookup table for
-explicit precomputed time-basis columns. Registered inline terms such as
-\code{rms::rcs(time, 4)} and \code{rms::lsp(time, c(3, 7))} can be used without it.}
-
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.
+\code{newdata} must then contain the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}),
+so that each row gets its patient's estimated random effect.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}
@@ -141,7 +112,9 @@ fitted random-effect draws in posterior predictions for known IDs.}
 \item{return_draws}{Logical. For \code{blrm}, retain posterior time-total draws
 for \code{\link[=get_draws]{get_draws()}}. Frequentist draws are retained through \code{\link[=inferences]{inferences()}}.}
 
-\item{...}{Additional arguments reserved for future extensions.}
+\item{...}{Additional arguments reserved for future extensions. The column
+names and states recorded by \code{\link[=mostm]{mostm()}} can't be given here; see the
+section "Settings taken from the fit".}
 }
 \value{
 A data frame of class \code{markov_avg_state_time}, with \code{state_set}, any
@@ -172,6 +145,11 @@ the total is the area under that curve. By default the curve starts at
 the interval before the first visit is included. For example, with visits
 on days 3, 7, 14, and 28 and \code{baseline_time = 0}, totals cover days 0 to 28.
 
+The average gives every profile the same weight. Case weights given to
+\code{\link[=mostm]{mostm()}} with \code{weights} are used only to fit the model, not in this
+average, so the result is not the same as repeating each patient according
+to their weight.
+
 \code{inferences(method = "delta")} provides analytical standard errors and
 confidence intervals of the form estimate plus or minus a normal quantile
 times the standard error. These intervals are not restricted to the
@@ -180,7 +158,8 @@ possible range of time and can, for example, extend below zero. Its default
 patients were sampled, including their observed starting states. Use
 \code{vcov = "conditional"} to treat the patients' starting states and
 covariates as given and account only for coefficient estimation. Supplied
-\code{newdata} requires conditional variance. When \code{variables} sets the
+\code{newdata}, and models fitted with case weights, require conditional
+variance. When \code{variables} sets the
 previous-state variable (a counterfactual starting state), the baseline
 starts in that state and only conditional variance is available
 (\verb{method = "delta", vcov = "conditional"} or \code{method = "mvn"}). The
@@ -201,9 +180,9 @@ multivariate normal distribution and keeps the patients, and therefore
 the distribution of starting states, fixed. It is comparable to
 conditional variance, so its intervals are typically narrower than the
 default analytical intervals.
-\item \code{method = "score_bootstrap"}, \code{method = "bootstrap"}, and \code{method = "fwb"}
-(fractional weighted bootstrap) re-draw or re-weight patients, including
-their starting states. They are comparable to unconditional variance.
+\item \code{method = "bootstrap"} and \code{method = "fwb"} (fractional weighted
+bootstrap) re-draw or re-weight patients, including their starting
+states. They are comparable to unconditional variance.
 }
 
 Each of these methods, and posterior summaries for \code{blrm} models, first
@@ -216,13 +195,22 @@ retained with \code{return_draws = TRUE}.
 
 SOPs are calculated one visit at a time. The first value of \code{times} is the
 first transition from the starting state, and each later value is one more
-transition. The values set the time variable, and any time-varying
-covariates, for each transition; they do not say how much time passes
-between transitions. Leaving out visits therefore does not skip time. With
-daily visits, \code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
+transition. The values set the time variable, and so every time term of the
+model formula, such as \code{rms::rcs(time, 4)} or \code{log(time)}, for each
+transition; they do not say how much time passes between transitions.
+Leaving out visits therefore does not skip time. With daily visits,
+\code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
 transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
 and 14. To get SOPs at selected visits, request every visit, such as
 \code{times = 1:14}, and keep the rows you need.
+
+A model fitted with \code{gap_var} (see \code{\link[=mostm]{mostm()}}) includes the time since the
+previous visit. Each transition then gets the difference between its
+requested time and the one before it, and the first transition gets the
+first requested time itself, the time since time 0. With
+\code{times = c(1, 2, 4, 7)} the gaps are 1, 1, 2 and 3, so the visits may be
+spaced unevenly. When \code{newdata} starts at a later visit, the first gap is
+still the first requested time, not the time since that visit.
 
 When \code{newdata} is omitted, each patient starts from their state before the
 first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}), so
@@ -233,9 +221,28 @@ visit.
 A warning is given when \code{times} leaves out visits that occur in the data the
 model was fitted to, is not in increasing order, or, when \code{newdata} is
 omitted, does not begin at the first follow-up visit. Times after the last
-fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
-because each transition then uses its own elapsed time, so the visits may be
-spaced unevenly.
+fitted visit are allowed. There is no warning for a model fitted with
+\code{gap_var}, because each transition then uses its own elapsed time, so the
+visits may be spaced unevenly.
+}
+
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, the column with the time since the
+previous visit, the states and the absorbing states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var}, \code{p2_var}, \code{gap_var} and
+\code{absorb} given to \code{\link[=mostm]{mostm()}}, and the states of the response in fitted
+order. A model fitted with \code{p2_var} is therefore always predicted with the
+second-order recursion. The \code{state} column of the result holds the fitted
+state labels. To predict with other columns or other absorbing states,
+refit the model with \code{\link[=mostm]{mostm()}}.
+
+A patient who is in an absorbing state stays there, so every profile must
+start outside the absorbing states: a profile whose previous state (the
+\code{p_var} column) is absorbing, or, for a second-order model, whose state two
+visits back (the \code{p2_var} column) is, gives an error. Remove those patients
+from \code{newdata} first.
 }
 
 \examples{

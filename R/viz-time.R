@@ -61,8 +61,7 @@
 #' tis <- avg_state_time(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:28,
-#'   absorb = "6"
+#'   times = 1:28
 #' ) |>
 #'   inferences(method = "delta")
 #'
@@ -96,7 +95,9 @@ plot_time <- function(
   plot_validate_scalar(point_size, "point_size", lower = 0)
   plot_validate_scalar(line_width, "line_width", lower = 0)
   if (!inherits(x, "markov_avg_state_time")) {
-    stop("`x` must be a `markov_avg_state_time` object returned by `avg_state_time()`.")
+    mostr_abort(
+      "`x` must be a `markov_avg_state_time` object returned by `avg_state_time()`."
+    )
   }
 
   data <- as.data.frame(x)
@@ -108,14 +109,18 @@ plot_time <- function(
     )
   } else {
     if (!is.character(group_var)) {
-      stop("`group_var` must be NULL or a character vector.")
+      mostr_abort("`group_var` must be NULL or a character vector.")
     }
     plot_validate_columns(data, group_var, "`group_var`")
   }
 
   state_sets <- attr(x, "time_args")$state_sets
   if (identical(type, "bar") || identical(scale, "proportion")) {
-    plot_time_validate_partition(state_sets, attr(x, "y_levels"), scale)
+    plot_time_validate_partition(
+      state_sets,
+      markov_result_settings(x)$y_levels,
+      scale
+    )
   }
 
   data$state_set <- factor(
@@ -151,7 +156,7 @@ plot_time <- function(
 
 plot_validate_flag <- function(x, arg) {
   if (!is.logical(x) || length(x) != 1 || is.na(x)) {
-    stop("`", arg, "` must be TRUE or FALSE.")
+    mostr_abort("`", arg, "` must be TRUE or FALSE.")
   }
   invisible(NULL)
 }
@@ -161,30 +166,27 @@ plot_validate_flag <- function(x, arg) {
 # the follow-up length.
 plot_time_validate_partition <- function(state_sets, y_levels, scale) {
   if (is.null(state_sets)) {
-    stop(
-      "`x` has no stored state sets; recreate it with `avg_state_time()`.",
-      call. = FALSE
+    mostr_abort(
+      "`x` has no stored state sets; recreate it with `avg_state_time()`."
     )
   }
   states <- unlist(state_sets, use.names = FALSE)
   if (anyDuplicated(states)) {
-    stop(
+    mostr_abort(
       "Stacked bars need state sets that do not overlap; state(s) ",
       paste(unique(states[duplicated(states)]), collapse = ", "),
       " appear in more than one set. Use `type = \"pointrange\"` or ",
-      "non-overlapping `state_sets` in `avg_state_time()`.",
-      call. = FALSE
+      "non-overlapping `state_sets` in `avg_state_time()`."
     )
   }
   if (identical(scale, "proportion")) {
     missing_states <- setdiff(as_state_labels(y_levels), states)
     if (length(missing_states)) {
-      stop(
+      mostr_abort(
         "`scale = \"proportion\"` needs every state in a state set; ",
         "missing state(s): ",
         paste(missing_states, collapse = ", "),
-        ".",
-        call. = FALSE
+        "."
       )
     }
   }

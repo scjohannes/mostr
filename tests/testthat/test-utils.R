@@ -46,24 +46,105 @@ test_that("table helpers preserve matrix-valued model predictors", {
   expect_identical(sample$basis, x$basis[c(1, 1), ])
 })
 
-test_that("joins support ungrouped metadata and overlapping column names", {
-  x <- data.frame(id = 1:2)
-  expect_identical(
-    left_join_preserve_order(x, data.frame(value = integer()), character()),
-    data.frame(id = 1:2, value = c(NA_integer_, NA_integer_))
+test_that("left joins keep the left row order, repeated and missing matches, typed keys and overlapping names", {
+  ids <- data.frame(id = 1:2)
+  keyed_x <- data.frame(key = c("b", "a", "b", NA, "NA", "absent"), left = 1:6)
+  keyed_y <- data.frame(key = c("b", "b", "a", NA, "NA"), right = 11:15)
+  control_x <- data.frame(a = c("a\rb", "a"), b = c("c", "b\rc"))
+  control_y <- control_x
+  control_y$value <- 1:2
+
+  cases <- list(
+    list(
+      label = "no keys and no right rows",
+      x = ids,
+      y = data.frame(value = integer()),
+      by = character(),
+      check = function(out, label) {
+        expect_identical(
+          out,
+          data.frame(id = 1:2, value = c(NA_integer_, NA_integer_)),
+          info = label
+        )
+      }
+    ),
+    list(
+      label = "no keys pairs every left row with every right row",
+      x = ids,
+      y = data.frame(value = 3:4),
+      by = character(),
+      check = function(out, label) {
+        expect_identical(
+          out,
+          data.frame(id = c(1L, 1L, 2L, 2L), value = c(3L, 4L, 3L, 4L)),
+          info = label
+        )
+      }
+    ),
+    list(
+      label = "a non-key column on both sides",
+      x = data.frame(id = 1:2, value = c(1, 2)),
+      y = data.frame(id = 2:1, value = c(3, 4)),
+      by = "id",
+      check = function(out, label) {
+        expect_named(out, c("id", "value", "value"))
+        expect_identical(out[[3]], c(4, 3), info = label)
+      }
+    ),
+    list(
+      label = "repeated keys, NA and the string \"NA\"",
+      x = keyed_x,
+      y = keyed_y,
+      by = "key",
+      check = function(out, label) {
+        expect_identical(class(out), "data.frame", info = label)
+        expect_identical(
+          out$left,
+          c(1L, 1L, 2L, 3L, 3L, 4L, 5L, 6L),
+          info = label
+        )
+        expect_identical(
+          out$right,
+          c(11L, 12L, 13L, 11L, 12L, 14L, 15L, NA_integer_),
+          info = label
+        )
+      }
+    ),
+    list(
+      label = "no left rows",
+      x = keyed_x[FALSE, ],
+      y = keyed_y,
+      by = "key",
+      check = function(out, label) {
+        expect_equal(nrow(out), 0L, info = label)
+      }
+    ),
+    list(
+      label = "no right rows",
+      x = keyed_x,
+      y = keyed_y[FALSE, ],
+      by = "key",
+      check = function(out, label) {
+        expect_identical(out$right, rep(NA_integer_, nrow(keyed_x)), info = label)
+      }
+    ),
+    list(
+      label = "keys with control characters",
+      x = control_x,
+      y = control_y,
+      by = c("a", "b"),
+      check = function(out, label) {
+        expect_identical(out$value, 1:2, info = label)
+      }
+    )
   )
-  expect_identical(
-    left_join_preserve_order(x, data.frame(value = 3:4), character()),
-    data.frame(id = c(1L, 1L, 2L, 2L), value = c(3L, 4L, 3L, 4L))
-  )
-  x$value <- c(1, 2)
-  out <- left_join_preserve_order(
-    x,
-    data.frame(id = 2:1, value = c(3, 4)),
-    "id"
-  )
-  expect_named(out, c("id", "value", "value"))
-  expect_identical(out[[3]], c(4, 3))
+
+  for (case in cases) {
+    before <- serialize(list(case$x, case$y), NULL)
+    out <- left_join_preserve_order(case$x, case$y, case$by)
+    case$check(out, case$label)
+    expect_identical(serialize(list(case$x, case$y), NULL), before, info = case$label)
+  }
 })
 
 test_that("table summaries accept copied data.table inputs", {
@@ -75,27 +156,6 @@ test_that("table summaries accept copied data.table inputs", {
   )
   expect_equal(compute_ci_from_draws(x, "group")$std.error, sqrt(2))
   expect_identical(x, before)
-})
-
-test_that("joins preserve repeated-key order, missing matches and typed keys", {
-  x <- data.frame(key = c("b", "a", "b", NA, "NA", "absent"), left = 1:6)
-  y <- data.frame(key = c("b", "b", "a", NA, "NA"), right = 11:15)
-  before <- serialize(list(x, y), NULL)
-  out <- left_join_preserve_order(x, y, "key")
-  expect_identical(class(out), "data.frame")
-  expect_identical(out$left, c(1L, 1L, 2L, 3L, 3L, 4L, 5L, 6L))
-  expect_identical(out$right, c(11L, 12L, 13L, 11L, 12L, 14L, 15L, NA_integer_))
-  expect_identical(serialize(list(x, y), NULL), before)
-  expect_equal(nrow(left_join_preserve_order(x[FALSE, ], y, "key")), 0L)
-  expect_identical(
-    left_join_preserve_order(x, y[FALSE, ], "key")$right,
-    rep(NA_integer_, nrow(x))
-  )
-
-  x <- data.frame(a = c("a\rb", "a"), b = c("c", "b\rc"))
-  y <- x
-  y$value <- 1:2
-  expect_identical(left_join_preserve_order(x, y, c("a", "b"))$value, 1:2)
 })
 
 test_that("grouped reductions match aggregate ordering and missing-value rules", {

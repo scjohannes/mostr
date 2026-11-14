@@ -13,18 +13,10 @@ avg_comparisons(
   comparison = c("difference", "ratio"),
   by = TRUE,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -47,7 +39,15 @@ the first, as in the marginaleffects package: factor levels in level
 order, character values in sorted order, \code{FALSE} then \code{TRUE}, or \code{0} then
 \code{1} for a numeric variable coded 0/1. Other numeric variables need their
 values listed. The values are read from the data stored with the model,
-or from \code{newdata} for a model without stored data.}
+or from \code{newdata} for a model without stored data. The variable must be
+a column of the data. It may be a column that the model doesn't use, that
+is, one that appears nowhere in the model formula (not even inside a term
+such as \code{rms::rcs(age, 3)}) and is not the previous state. Setting such a
+column can't change any prediction, so the comparison is 0 for a
+difference and 1 for a ratio, with no uncertainty to report: its standard
+error, test and confidence interval from \code{\link[=inferences]{inferences()}}, and the
+posterior interval of a \code{blrm} fit, are \code{NA}, as in the marginaleffects
+package. Check the spelling if this happens unexpectedly.}
 
 \item{estimand}{Character scalar. One of \code{"sop"}, \code{"time_in_state"}, or
 \code{"time_benefit"}.}
@@ -63,7 +63,22 @@ reference level. \code{"time_benefit"} only supports \code{"difference"}.}
 \item{by}{How to average the comparisons of the individual profiles, as in
 the marginaleffects package. \code{TRUE} (the default) averages over all
 profiles. A character vector of column names averages within the groups
-those columns define. \code{FALSE} or \code{NULL} does not average and returns the
+those columns define, using each profile's values as observed. A \code{by}
+column must have no missing values among the averaged profiles, because
+a profile without a group would be left out of every average; drop or
+impute those patients first, in \code{newdata} or in the data given to
+\code{\link[=mostm]{mostm()}}. Naming the
+compared variable itself, for example \code{by = "tx"} with
+\code{variables = list(tx = c(0, 1))}, groups the patients by the treatment
+they actually received: the result has a \code{tx} column holding that
+observed value, and gives the average effect of treatment among the
+untreated (\code{tx = 0}) and among the treated (\code{tx = 1}). Each group's
+estimate equals the same call with \code{newdata} restricted to that group's
+profiles. For \code{comparison = "ratio"}, a group's result is the ratio of
+the group's averaged summaries. Intervals from \code{\link[=inferences]{inferences()}} with
+\code{method = "mvn"}, \code{"bootstrap"}, or \code{"fwb"} follow
+the same groups; analytical intervals (\code{method = "delta"}) are not
+available with \code{by}. \code{FALSE} or \code{NULL} does not average and returns the
 \code{\link[=comparisons]{comparisons()}} result, one comparison per profile; analytical intervals
 for it use conditional variance only, and the ordinary bootstrap is not
 available.}
@@ -72,10 +87,6 @@ available.}
 order, for example \code{times = 1:30}. Each value is one transition, so
 leaving out visits does not skip time; see the section "Choosing visits"
 and \code{\link[=avg_sops]{avg_sops()}}.}
-
-\item{y_levels}{A vector of state levels. See \code{\link[=avg_sops]{avg_sops()}}.}
-
-\item{absorb}{The absorbing state. See \code{\link[=avg_sops]{avg_sops()}}.}
 
 \item{time_map}{Optional named numeric vector or data frame mapping visit
 labels to real elapsed times. Used by \code{"time_in_state"} and
@@ -96,23 +107,9 @@ only.}
 
 \item{time_unit}{Optional label stored in output.}
 
-\item{id_var}{Name of the patient ID variable. See \code{\link[=avg_sops]{avg_sops()}}.}
-
-\item{time_var}{Name of the time variable in the model. See \code{\link[=avg_sops]{avg_sops()}}.}
-
-\item{p_var}{Name of the previous state variable in the model. See
-\code{\link[=avg_sops]{avg_sops()}}.}
-
-\item{p2_var}{Optional second previous-state variable. See \code{\link[=avg_sops]{avg_sops()}}.}
-
-\item{gap_var}{Optional name of the variable holding the time elapsed since
-the previous visit, if the model includes one. See \code{\link[=avg_sops]{avg_sops()}}.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table for explicit
-precomputed time-basis columns. See \code{\link[=avg_sops]{avg_sops()}}.}
-
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs.}
+fitted random-effect draws in posterior predictions for known IDs. Only
+\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws.}
@@ -127,7 +124,9 @@ fitted random-effect draws in posterior predictions for known IDs.}
 \item{return_draws}{Logical. For \code{blrm}, store posterior comparison draws.
 Frequentist uncertainty draws are stored by \code{\link[=inferences]{inferences()}}.}
 
-\item{...}{Additional arguments reserved for future extensions.}
+\item{...}{Additional arguments reserved for future extensions. The column
+names and states recorded by \code{\link[=mostm]{mostm()}} can't be given here; see the
+section "Settings taken from the fit".}
 }
 \value{
 A data frame of class \code{markov_avg_comparisons}, or, with
@@ -144,6 +143,11 @@ SOPs. \code{estimand = "time_benefit"} is computed before marginalization from
 paired patient/profile-level counterfactual state distributions, because it
 is nonlinear in the two state distributions.
 
+The average gives every profile the same weight. Case weights given to
+\code{\link[=mostm]{mostm()}} with \code{weights} are used only to fit the model, not in this
+average, so the result is not the same as repeating each patient according
+to their weight.
+
 Frequentist uncertainty follows the existing package workflow:
 \code{avg_comparisons(...) |> inferences(...)}. Bayesian \code{blrm} models use their
 posterior SOP draws directly and therefore return uncertainty from
@@ -154,20 +158,30 @@ analytical intervals for differences in SOPs or time in state. The default
 \code{vcov = "unconditional"} accounts for coefficient estimation and sampling
 the patients used in the averages. Use \code{vcov = "conditional"} to treat
 those patients' starting states and covariates as given and account only
-for coefficient estimation. User-supplied \code{newdata} requires the conditional
-choice. See \code{\link[=inferences]{inferences()}} for model restrictions.
+for coefficient estimation. User-supplied \code{newdata}, and models fitted with
+case weights, require the conditional choice. See \code{\link[=inferences]{inferences()}} for model
+restrictions.
 }
 \section{Choosing visits}{
 
 SOPs are calculated one visit at a time. The first value of \code{times} is the
 first transition from the starting state, and each later value is one more
-transition. The values set the time variable, and any time-varying
-covariates, for each transition; they do not say how much time passes
-between transitions. Leaving out visits therefore does not skip time. With
-daily visits, \code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
+transition. The values set the time variable, and so every time term of the
+model formula, such as \code{rms::rcs(time, 4)} or \code{log(time)}, for each
+transition; they do not say how much time passes between transitions.
+Leaving out visits therefore does not skip time. With daily visits,
+\code{times = c(1, 7, 14)} gives the probabilities after 1, 2, and 3
 transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
 and 14. To get SOPs at selected visits, request every visit, such as
 \code{times = 1:14}, and keep the rows you need.
+
+A model fitted with \code{gap_var} (see \code{\link[=mostm]{mostm()}}) includes the time since the
+previous visit. Each transition then gets the difference between its
+requested time and the one before it, and the first transition gets the
+first requested time itself, the time since time 0. With
+\code{times = c(1, 2, 4, 7)} the gaps are 1, 1, 2 and 3, so the visits may be
+spaced unevenly. When \code{newdata} starts at a later visit, the first gap is
+still the first requested time, not the time since that visit.
 
 When \code{newdata} is omitted, each patient starts from their state before the
 first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}), so
@@ -178,9 +192,28 @@ visit.
 A warning is given when \code{times} leaves out visits that occur in the data the
 model was fitted to, is not in increasing order, or, when \code{newdata} is
 omitted, does not begin at the first follow-up visit. Times after the last
-fitted visit are allowed. There is no warning when \code{gap_var} is supplied,
-because each transition then uses its own elapsed time, so the visits may be
-spaced unevenly.
+fitted visit are allowed. There is no warning for a model fitted with
+\code{gap_var}, because each transition then uses its own elapsed time, so the
+visits may be spaced unevenly.
+}
+
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, the column with the time since the
+previous visit, the states and the absorbing states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var}, \code{p2_var}, \code{gap_var} and
+\code{absorb} given to \code{\link[=mostm]{mostm()}}, and the states of the response in fitted
+order. A model fitted with \code{p2_var} is therefore always predicted with the
+second-order recursion. The \code{state} column of the result holds the fitted
+state labels. To predict with other columns or other absorbing states,
+refit the model with \code{\link[=mostm]{mostm()}}.
+
+A patient who is in an absorbing state stays there, so every profile must
+start outside the absorbing states: a profile whose previous state (the
+\code{p_var} column) is absorbing, or, for a second-order model, whose state two
+visits back (the \code{p2_var} column) is, gives an error. Remove those patients
+from \code{newdata} first.
 }
 
 \examples{
@@ -190,9 +223,7 @@ avg_comparisons(
   variables = list(tx = c(0, 1)),
   estimand = "time_in_state",
   state_sets = "1",
-  times = 1:30,
-  y_levels = 1:6,
-  absorb = 6
+  times = 1:30
 ) |>
   inferences(method = "mvn", n_draws = 500)
 }

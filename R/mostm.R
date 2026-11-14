@@ -23,6 +23,20 @@
 #'   posterior distribution with Stan. Partial proportional odds effects are
 #'   set with `ppo` and `cppo`. This engine needs the rmsb package.
 #'
+#' In a partial proportional odds model the thresholds (cut-points) between
+#' states move with the predictors that have a separate effect at each
+#' threshold, so for some covariate values, often outside the range of the
+#' data, two thresholds can cross. The model then gives a negative probability
+#' for a state, and state occupancy probabilities aren't defined. [sops()],
+#' [avg_sops()], [state_time()], [comparisons()] and the other functions that
+#' use the fit stop with an error that says for how many profiles and at which
+#' time this happens; for `"blrm"` fits it also says in how many posterior
+#' draws, and [inferences()] says in how many simulation draws or bootstrap
+#' samples. They never set the negative probability to zero. Check the
+#' covariate values of those profiles, or simplify the terms with a separate
+#' effect at each threshold. A negative value between \eqn{-10^{-10}} and zero
+#' comes from rounding, not from crossed thresholds, and is set to zero.
+#'
 #' @param formula A model formula with the current state as the response, for
 #'   example `ordered(y) ~ yprev + rms::rcs(time, 4) + tx`. Offsets are not
 #'   supported. For the `"orm"` and `"blrm"` engines, categorical predictors,
@@ -30,6 +44,14 @@
 #'   than converted with `factor()` inside the formula; for factor time, also
 #'   set `first_followup_time`. Random-effect terms are available only for the
 #'   `"blrm"` engine; see "Random effects" below.
+#'
+#'   Time terms are written inline, for example `rms::rcs(time, 4)`,
+#'   `log(time)` or `rms::pol(time, 2)`; the prediction functions evaluate
+#'   them at each requested time. For the `"orm"` and `"blrm"` engines, use
+#'   `rms::rcs()` and `rms::pol()` rather than `splines::ns()`,
+#'   `splines::bs()` or `stats::poly()`, for time and for any other variable:
+#'   rms evaluates the latter again on the prediction rows, which gives a
+#'   different basis, so `mostm()` refuses them.
 #' @param data A data frame with one row per patient and visit.
 #' @param ... Arguments for the engine, given by name. Each must be an
 #'   argument of the chosen engine; an argument that belongs to a different
@@ -58,22 +80,50 @@
 #'   `y.arg` for VGAM) are not accepted.
 #' @param engine The package that fits the model: `"orm"`, `"vglm"`, or
 #'   `"blrm"`. See the description above.
-#' @param id_var Name of the column in `data` that identifies patients. With
-#'   it, `mostm()` stores each patient's starting row for automatic
-#'   predictions, and the `"orm"` and `"vglm"` engines compute standard errors
-#'   that allow for correlation between the transitions of one patient. Without
-#'   it, a warning is given, and these features, as well as the fractional
-#'   weighted bootstrap, are not available from the fit.
+#' @param id_var Name of the column in `data` that identifies patients, for
+#'   example `"id"`. It is required, because the rows of one patient belong
+#'   together: `mostm()` uses it to store each patient's starting row for
+#'   automatic predictions, the `"orm"` and `"vglm"` engines use it for
+#'   standard errors that allow for correlation between the transitions of one
+#'   patient, and the bootstrap resamples or reweights whole patients by it.
 #' @param time_var Name of the time column in `data`. It is used to find each
-#'   patient's starting row.
+#'   patient's starting row, and [sops()] and the other prediction functions
+#'   set this column to each requested visit.
+#' @param p_var Name of the column in `data` that holds each patient's state at
+#'   the previous visit, `"yprev"` by default. Like a supplied name, the
+#'   default must be a column of `data`. The prediction functions replace
+#'   it with each possible previous state as they move from visit to visit.
+#' @param p2_var For a second-order model, the name of the column that holds
+#'   each patient's state two visits back, for example `"ypprev"`. `NULL` (the
+#'   default) fits a first-order model, in which the next state depends only on
+#'   the previous one. The prediction functions take it from the fit, as they
+#'   do `id_var`, `time_var` and `p_var`, and then use second-order
+#'   calculations. Without it, a column with the older state in the formula
+#'   would be held at each patient's starting value.
+#' @param absorb The absorbing states, such as death: states that a patient
+#'   never leaves, given as state labels, for example `absorb = "8"` or
+#'   `absorb = c("home", "dead")`. The prediction functions keep a patient who
+#'   reaches one of them there, and they never predict a transition out of
+#'   it. `NULL` (the default) means that no state is absorbing. See
+#'   "Absorbing states" below.
+#' @param gap_var Name of the column that holds the time since each
+#'   patient's previous visit, if the model includes it, for example `"gap"`.
+#'   The prediction functions set this column to the difference between
+#'   consecutive requested times, so the visits in `times` may be spaced
+#'   unevenly. Time must be numeric. See "Time since the previous visit"
+#'   below.
 #' @param first_followup_time Time of the first visit after baseline. Each
 #'   patient's row at this time is their starting row for automatic
 #'   predictions. For numeric time, `NULL` (the default) uses 1, time may not
 #'   be below 1, and a value you supply must be the earliest time in the data.
 #'   Factor and character time need an explicit value, such as `"day 1"`.
 #' @param weights Optional non-negative row weights: a column of `data` or a
-#'   vector with one value per row of `data`. Not available for
-#'   `engine = "blrm"`.
+#'   vector with one value per row of `data`. `engine = "vglm"` needs
+#'   positive weights on the rows it fits. Not available for
+#'   `engine = "blrm"`. The weights are used only to fit the model:
+#'   [avg_sops()], [avg_state_time()], and [avg_comparisons()] give every
+#'   profile the same weight, and [inferences()] offers only conditional
+#'   variance for a weighted fit.
 #' @param subset Optional selection of the rows of `data` to fit, as a logical
 #'   expression evaluated in `data`, for example `time <= 28`.
 #' @param type Small-sample correction of the patient-clustered standard
@@ -83,9 +133,9 @@
 #'   the number of model coefficients.
 #' @param cadjust Logical. Multiply the patient-clustered variance of the
 #'   `"orm"` and `"vglm"` engines by \eqn{n / (n - 1)}, where \eqn{n} is the
-#'   number of patients? `NULL` (the default) applies this correction when
-#'   `id_var` is supplied. It is independent of `type`, so `type = "HC1"` with
-#'   `cadjust = TRUE` applies both factors.
+#'   number of patients? `NULL` (the default) applies this correction. It is
+#'   independent of `type`, so `type = "HC1"` with `cadjust = TRUE` applies
+#'   both factors.
 #'
 #' @details
 #' ## Starting rows
@@ -100,25 +150,94 @@
 #' when predictions are made: a later row is never used instead. Patients
 #' without any fitted transition are not part of the fitted cohort.
 #'
+#' ## Patients left out of the fit
+#'
+#' The engine drops every row with a missing value in a model variable (the
+#' response, the previous state, or a predictor). A patient who loses only
+#' some rows stays in the fit. A patient who loses every row is not part of
+#' the fit, and `mostm()` warns and names them (a warning of class
+#' `mostr_warning_dropped_patients`, whose `ids` field holds all their IDs).
+#' These patients are left out of predictions from the stored starting rows
+#' and out of the patients that bootstrap and fractional weighted bootstrap
+#' resample in [inferences()], so every draw standardises over the same
+#' patients as the estimate. Patients whose rows are all excluded by `subset`
+#' are not named: you left them out on purpose.
+#'
+#' ## Absorbing states
+#'
+#' A patient who reaches an absorbing state, such as death, stays there. The
+#' data therefore contain transitions into it but none out of it, and the
+#' model can't say what happens after it. Name such states in `absorb`: the
+#' prediction functions then keep the probability of being in them, and
+#' predict transitions only from the other states. `mostm()` never works out
+#' the absorbing states from the data, because a state that is seen only as
+#' an outcome, at a patient's last visit, need not be absorbing.
+#'
+#' `mostm()` checks `absorb` against the fitted rows of `data`:
+#'
+#' * Each label must be a state of the response.
+#' * No fitted row may have an absorbing state as its previous state
+#'   (`p_var`) or, for a second-order model, as the state two visits back
+#'   (`p2_var`): a patient in an absorbing state has no further transitions.
+#'   Remove such rows first; [prepare_markov_data()] does this for the
+#'   previous state.
+#' * A state that occurs as an outcome but never as a previous state, and is
+#'   not named in `absorb`, gives a warning: it may be absorbing. Without
+#'   `absorb`, a model with a numeric previous state, such as
+#'   `rms::rcs(yprev, 4)`, predicts transitions out of such a state from the
+#'   other states' transitions, so dead patients can come back to life. With
+#'   a factor previous state, the prediction functions stop instead, because
+#'   the model has no coefficient for that previous state.
+#'
+#' Bootstrap refits keep the absorbing states of the fit. A resample in which
+#' no patient reaches one of them has no transitions into it, so its refit
+#' leaves that state out, and the state's probability is 0 in that resample.
+#'
+#' ## Time since the previous visit
+#'
+#' When visits are spaced unevenly, the model can include the time since each
+#' patient's previous visit as a predictor, in a column named by `gap_var`.
+#' The prediction functions then set that column for every transition: to the
+#' difference between the requested time and the one before it, and, for the
+#' first requested time, to that time itself, that is, the time since time 0.
+#' So with numeric time and `times = c(1, 2, 4, 7)`, the gaps are 1, 1, 2 and
+#' 3. A patient's first visit after baseline in the fitted data should
+#' therefore have a gap equal to its time.
+#'
+#' `mostm()` checks that the gap column is numeric, that time is numeric, and
+#' that on every row after a patient's first the gap equals the time since
+#' the patient's previous row, so that both columns use the same unit. Factor
+#' or character time can't be used with `gap_var`, because visit labels don't
+#' say how much time passes between visits.
+#'
 #' ## Weights and subsets
 #'
 #' `weights` and `subset` are evaluated once, first in `data` and then where
 #' `mostm()` was called, so they can refer to vectors outside `data`. The
-#' weights must be finite and non-negative. The data stored on the fit contain
+#' weights must be finite and non-negative. `engine = "orm"` fits a row with
+#' zero weight as if it were left out; `engine = "vglm"` cannot fit such a
+#' row, so leave it out with `subset`. The data stored on the fit contain
 #' only the rows selected by `subset`, and each row keeps its weight, so
 #' bootstrap refits resample rows together with their weights.
 #'
 #' ## Standard errors
 #'
-#' For the `"orm"` and `"vglm"` engines, `id_var` gives standard errors that
-#' remain valid when the transitions of one patient are correlated. They come
-#' from a sandwich estimator that adds up the contributions of each patient
-#' (cluster-robust standard errors); `type` and `cadjust` set its small-sample
-#' corrections. These standard errors are used by `inferences(method =
-#' "delta")` with conditional variance and by `inferences(method = "mvn")`.
-#' Unconditional variance also accounts for which patients were sampled; see
-#' [inferences()]. For the `"blrm"` engine, uncertainty comes from the
-#' posterior draws.
+#' For the `"orm"` and `"vglm"` engines, the covariance matrix of the
+#' coefficients stored on the fit gives standard errors that remain valid when
+#' the transitions of one patient are correlated. It comes from a sandwich
+#' estimator that adds up the contributions of each patient, as identified by
+#' `id_var` (cluster-robust standard errors); `type` and `cadjust` set its
+#' small-sample corrections. These standard errors are used by
+#' `inferences(method = "delta")` with conditional variance and by
+#' `inferences(method = "mvn")`. Unconditional variance also accounts for which
+#' patients were sampled; see [inferences()]. For the `"blrm"` engine,
+#' uncertainty comes from the posterior draws.
+#'
+#' `mostm()` stops when this covariance cannot be computed, for example when
+#' the fitting algorithm has not converged or some coefficients grow without
+#' bound because a transition never occurs in the data. The `"orm"` engine
+#' also needs the logit link (`family = "logistic"`, the default), which the
+#' state occupancy functions require as well.
 #'
 #' ## Random effects
 #'
@@ -134,14 +253,15 @@
 #' straight-line effect of the ID number, so `mostm()` stops with an error. To
 #' include each patient's estimated random effect in predictions, use
 #' `include_re = TRUE` in [sops()] or [avg_sops()]; see
-#' `vignette("bayesian-rmsb-sops")`.
+#' [the Bayesian article](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html).
 #'
 #' With `engine = "orm"` or `"vglm"`, `cluster()` and `mix_re()` terms are
 #' errors, although [rms::orm()] can fit them from rms version 8.2 on. State
 #' occupancy probabilities from such a fit would describe only a patient whose
-#' random effect is 0, which is not the average over patients. To allow for
-#' correlation between the transitions of one patient with these engines, use
-#' `id_var`, as described under "Standard errors". `mix_re()`, which lets the
+#' random effect is 0, which is not the average over patients. With these
+#' engines, the patient-clustered standard errors described under "Standard
+#' errors" already allow for correlation between the transitions of one
+#' patient. `mix_re()`, which lets the
 #' size of the random effect differ between the first follow-up and later visits,
 #' is not available for any engine.
 #'
@@ -160,11 +280,11 @@
 #' @return The fitted model, with the data needed by the state occupancy and
 #'   inference functions attached. The returned object's `call` is the
 #'   `mostm()` call. Its class depends on `engine`:
-#'   * `"orm"`: an `orm` object. With `id_var`, its covariance matrix
-#'     (`vcov(fit)`) holds the patient-clustered variance.
-#'   * `"vglm"`: with `id_var`, a `robcov_vglm` object that holds the
-#'     patient-clustered variance and the fitted `vglm` object in `$vglm_fit`
-#'     (see [robcov_vglm()]); without `id_var`, the S4 `vglm` object.
+#'   * `"orm"`: an `orm` object whose covariance matrix (`vcov(fit)`) holds
+#'     the patient-clustered variance.
+#'   * `"vglm"`: a `robcov_vglm` object that holds the patient-clustered
+#'     variance and the fitted `vglm` object in `$vglm_fit` (see
+#'     [robcov_vglm()]).
 #'   * `"blrm"`: a `blrm` object with the posterior draws.
 #'
 #' @examples
@@ -178,10 +298,12 @@
 #' )
 #' model_data <- prepare_markov_data(trajectories, absorbing_state = 8)
 #'
+#' # State 8, death, is absorbing: patients who reach it stay there.
 #' fit <- mostm(
 #'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
 #'   data = model_data,
-#'   id_var = "id"
+#'   id_var = "id",
+#'   absorb = "8"
 #' )
 #'
 #' # The same model fitted with VGAM
@@ -189,6 +311,7 @@
 #'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
 #'   data = model_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' # Both engines reach the same maximum of the log-likelihood
@@ -199,8 +322,7 @@
 #' sops_by_arm <- avg_sops(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:14,
-#'   absorb = "8"
+#'   times = 1:14
 #' )
 #' sops_by_arm[sops_by_arm$time == 14, ]
 #'
@@ -212,6 +334,7 @@
 #'     ordered(y) ~ yprev + time + tx,
 #'     data = model_data,
 #'     id_var = "id",
+#'     absorb = "8",
 #'     engine = "blrm",
 #'     subset = id <= 60,
 #'     ppo = ~time,
@@ -231,22 +354,26 @@ mostm <- function(
   data,
   ...,
   engine = c("orm", "vglm", "blrm"),
-  id_var = NULL,
+  id_var,
   time_var = "time",
+  p_var = "yprev",
+  p2_var = NULL,
+  absorb = NULL,
+  gap_var = NULL,
   first_followup_time = NULL,
   weights = NULL,
   subset = NULL,
   type = c("HC0", "HC1"),
   cadjust = NULL
 ) {
+  model_call <- match.call()
   refit_args <- markov_capture_refit_args(
-    match.call(),
+    model_call,
     environment(),
     names(formals(sys.function())),
     ...
   )
   engine <- match.arg(engine)
-  model_call <- match.call()
   model_call[[1L]] <- quote(mostm)
   model_call$engine <- engine
   dots <- match.call(expand.dots = FALSE)$...
@@ -254,43 +381,69 @@ mostm <- function(
 
   if (engine == "blrm") {
     if (!missing(type) || !is.null(cadjust)) {
-      stop(
+      mostr_abort(
         "`type` and `cadjust` set the patient-clustered standard errors of the ",
         "\"orm\" and \"vglm\" engines. `engine = \"blrm\"` takes its ",
-        "uncertainty from the posterior draws.",
-        call. = FALSE
+        "uncertainty from the posterior draws."
       )
     }
     if (!is.null(model_call$weights)) {
-      stop(
+      mostr_abort(
         "`weights` is not available for `engine = \"blrm\"`, because ",
-        "`rmsb::blrm()` does not accept row weights.",
-        call. = FALSE
+        "`rmsb::blrm()` does not accept row weights."
       )
     }
     if (!requireNamespace("rmsb", quietly = TRUE)) {
-      stop(
-        "Package 'rmsb' is required for `engine = \"blrm\"`.",
-        call. = FALSE
+      mostr_abort(
+        "Package 'rmsb' is required for `engine = \"blrm\"`."
       )
     }
   }
   type <- match.arg(type)
   if (missing(data) || !is.data.frame(data)) {
-    stop("`data` must be supplied as a data frame.", call. = FALSE)
+    mostr_abort("`data` must be supplied as a data frame.")
   }
   if (terms_has_offset(stats::terms(formula, specials = "offset", data = data))) {
     stop_unsupported_offset()
   }
   if (engine %in% c("orm", "blrm")) {
     mostm_check_inline_factors(formula, engine, time_var)
+    mostm_check_data_dependent_bases(formula, engine)
   }
   mostm_check_random_effects(formula, engine)
 
+  if (missing(id_var) || is.null(id_var)) {
+    stop_missing_mostm_id_var()
+  }
   id_var <- validate_markov_id_var(id_var, data, "data")
-  if (is.null(id_var)) {
-    warn_missing_markov_id_var()
-  } else {
+  if (
+    !is.character(time_var) ||
+      length(time_var) != 1L ||
+      is.na(time_var) ||
+      !time_var %in% names(data)
+  ) {
+    mostr_abort(
+      "The time column `",
+      format(time_var),
+      "` is not in `data`. Set `time_var` to the column that holds the ",
+      "visit time; `mostm()` uses it to find each patient's starting row."
+    )
+  }
+  validate_mostm_previous_state_vars(p_var, p2_var, data)
+  # The default is checked like a supplied name: the fit records it, and
+  # `absorb` is checked against this column.
+  if (!p_var %in% names(data)) {
+    mostr_abort(
+      "The column `p_var = \"",
+      p_var,
+      "\"` is not in `data`. Set `p_var` to the column that holds each ",
+      "patient's previous state (the default is \"yprev\")."
+    )
+  }
+  # Bootstrap refits use only the coefficients, so they skip the duplicate
+  # check, the starting rows, and the patient-clustered covariance.
+  coefficients_only <- markov_refit_coefficients_only()
+  if (!coefficients_only) {
     warn_duplicate_markov_id_time(data, id_var, time_var = time_var)
   }
 
@@ -313,6 +466,33 @@ mostm <- function(
   }
   subset_rows <- if (!is.null(model_call$subset)) {
     eval(model_call$subset, data, eval_env)
+  }
+  # VGAM::vglm() replaces a zero weight by a tiny positive one and then fails
+  # in its log-likelihood; rms::orm() fits zero weights as dropped rows.
+  if (engine == "vglm" && !is.null(prior_weight_column)) {
+    fitted_rows <- mostm_subset_row_index(subset_rows, nrow(data))
+    if (any(as.matrix(prior_weights)[fitted_rows, ] == 0)) {
+      mostr_abort(
+        "`VGAM::vglm()` cannot fit rows with zero weight. Leave those rows ",
+        "out with `subset`, or use `engine = \"orm\"`, which fits them as ",
+        "dropped rows."
+      )
+    }
+  }
+
+  # Bootstrap refits reuse the checked absorbing states and gap column; a
+  # resample without a death would otherwise fail the check that `absorb`
+  # names states of the response.
+  if (!coefficients_only) {
+    absorb <- validate_mostm_absorb(
+      absorb,
+      formula = formula,
+      data = data,
+      rows = mostm_subset_row_index(subset_rows, nrow(data)),
+      p_var = p_var,
+      p2_var = p2_var
+    )
+    validate_mostm_gap_var(gap_var, data, id_var, time_var)
   }
 
   setup <- list(
@@ -340,11 +520,34 @@ mostm <- function(
     data = data,
     formula = formula,
     subset = subset_rows,
-    eval_env = eval_env,
     fit_data = fit_data,
     id_var = id_var,
     time_var = time_var,
-    first_followup_time = first_followup_time
+    first_followup_time = first_followup_time,
+    starting_profiles = !coefficients_only
+  )
+  # Bootstrap refits store no starting profiles, so they find no dropped
+  # patients and stay silent.
+  if (length(stored$dropped_ids)) {
+    warn_dropped_patients(stored$dropped_ids, id_var)
+  }
+  # The column names and model settings that every later call on the fit
+  # reads, built once here. The engines record the states in fitted order
+  # (VGAM as the response's column names, rms and rmsb as its levels); an
+  # object without them can't be used to predict (`stop_no_fitted_states()`).
+  y_levels <- markov_model_ylevels_or_null(fitted$fit)
+  settings <- markov_settings(
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    p2_var = p2_var,
+    y_levels = y_levels,
+    absorb = absorb,
+    gap_var = gap_var,
+    from_fit = setdiff(
+      markov_settings_fit_fields(),
+      if (is.null(y_levels)) "y_levels"
+    )
   )
   attach_data <- function(model) {
     model <- markov_attach_model_data(
@@ -357,12 +560,18 @@ mostm <- function(
       refit_args = refit_args,
       prior_weight_column = prior_weight_column
     )
+    model <- markov_set_settings(model, settings)
     markov_set_engine(model, engine)
   }
 
   fit <- attach_data(markov_set_model_call(fitted$fit, model_call))
-  if (is.null(id_var) || engine == "blrm") {
+  if (coefficients_only || engine == "blrm") {
     return(fit)
+  }
+  # The patient-clustered covariance of orm fits needs the logit link, which
+  # every state occupancy function also requires.
+  if (engine == "orm" && !identical(fit$family, "logistic")) {
+    stop_unsupported_markov_link(fit$family)
   }
 
   robust <- switch(
@@ -383,6 +592,37 @@ mostm <- function(
   attach_data(robust)
 }
 
+# Patients with no row left in the fit are silently absent from every result
+# otherwise, and a user who expects them in the standardised cohort would not
+# know. `$ids` holds every ID; the message shows at most ten.
+warn_dropped_patients <- function(ids, id_var, limit = 10L) {
+  n <- length(ids)
+  shown <- paste(utils::head(ids, limit), collapse = ", ")
+  if (n > limit) {
+    shown <- paste0(shown, " and ", n - limit, " more")
+  }
+  several <- n > 1L
+  warning(warningCondition(
+    paste0(
+      n,
+      if (several) " patients have" else " patient has",
+      " a missing value in a model variable on every row, so ",
+      if (several) "they are" else "the patient is",
+      " not part of the fit (`",
+      id_var,
+      "`: ",
+      shown,
+      "). ",
+      if (several) "They are" else "The patient is",
+      " left out of predictions from the stored starting rows and out of ",
+      "bootstrap resamples."
+    ),
+    ids = ids,
+    class = "mostr_warning_dropped_patients",
+    call = NULL
+  ))
+}
+
 mostm_fit_orm <- function(setup, ...) {
   formula <- setup$formula
   data <- setup$data
@@ -400,7 +640,9 @@ mostm_fit_orm <- function(setup, ...) {
   if (!is.null(subset_rows)) {
     fit_call$subset <- quote(subset_rows)
   }
-  fit <- eval(fit_call)
+  # With weights, rms::orm() warns that its own bootstrap ignores them; see
+  # suppress_orm_weights_warning() for why mostr hides that one warning.
+  fit <- suppress_orm_weights_warning(eval(fit_call))
   # When its fitting algorithm fails, rms::orm() returns an object that holds
   # only `fail = TRUE` instead of stopping.
   if (isTRUE(fit$fail)) {
@@ -491,23 +733,20 @@ vglm_categorical_control <- function() {
 mostm_check_engine_args <- function(engine, dots, values) {
   supplied <- names(dots)
   if (length(dots) && (is.null(supplied) || any(supplied == ""))) {
-    stop(
-      "Arguments passed to the engine through `...` must be named.",
-      call. = FALSE
+    mostr_abort(
+      "Arguments passed to the engine through `...` must be named."
     )
   }
-  markov_reject_legacy_args(dots)
   if ("offset" %in% supplied) {
     stop_unsupported_offset()
   }
   kept <- intersect(supplied, c("x", "y", "x.arg", "y.arg"))
   if (length(kept)) {
-    stop(
+    mostr_abort(
       "`mostm()` always keeps the design matrix and response on the fit; ",
       "remove ",
       paste0("`", kept, "`", collapse = ", "),
-      ".",
-      call. = FALSE
+      "."
     )
   }
 
@@ -542,13 +781,12 @@ mostm_check_engine_args <- function(engine, dots, values) {
       },
       character(1)
     )
-    stop(
+    mostr_abort(
       "Not an argument of `engine = \"",
       engine,
       "\"`: ",
       paste(described, collapse = ", "),
-      ". See `?mostm` for the arguments each engine accepts.",
-      call. = FALSE
+      ". See `?mostm` for the arguments each engine accepts."
     )
   }
 
@@ -557,11 +795,10 @@ mostm_check_engine_args <- function(engine, dots, values) {
       !is.null(values$family) &&
       !is.character(values$family)
   ) {
-    stop(
+    mostr_abort(
       "For `engine = \"orm\"`, `family` names the link function of ",
       "`rms::orm()`, such as \"logistic\". VGAM family objects apply to ",
-      "`engine = \"vglm\"`.",
-      call. = FALSE
+      "`engine = \"vglm\"`."
     )
   }
   invisible(NULL)
@@ -593,7 +830,7 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
   converts_time <- is.character(time_var) &&
     any(vapply(calls, function(call) any(time_var %in% all.vars(call)), TRUE))
 
-  stop(
+  mostr_abort(
     fitter,
     " cannot fit ",
     if (several) {
@@ -612,11 +849,81 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
       paste0(
         " To use time as a factor, store it as a factor column of `data` ",
         "and set `first_followup_time` to the level of the first visit ",
-        "after baseline, for example `first_followup_time = \"1\"`. See ",
-        "`vignette(\"factor-time-orm-sops\")`."
+        "after baseline, for example `first_followup_time = \"1\"`. See the ",
+        "article on time as a factor: ",
+        "https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html"
       )
+    }
+  )
+}
+
+# The rows of `data` that `subset` selects, as row numbers; all rows without
+# `subset`. A missing value in a logical `subset` drops the row, as in the
+# engines.
+mostm_subset_row_index <- function(subset_rows, n) {
+  if (is.null(subset_rows)) {
+    return(seq_len(n))
+  }
+  if (is.logical(subset_rows)) {
+    return(which(rep_len(subset_rows, n)))
+  }
+  seq_len(n)[subset_rows]
+}
+
+# `splines::ns()`, `splines::bs()` and `stats::poly()` choose their knots or
+# orthogonal polynomials from the data they are evaluated on. `rms::orm()` and
+# `rmsb::blrm()` keep only the formula, so mostr's orm design matrices and
+# `rms::predictrms()` evaluate these terms again on the prediction rows and
+# get another basis, without any error. Measured on 2026-11-13
+# (benchmarks/local/settings-refactor/spline-covariates.R): with `ns(age, 3)`
+# for a covariate, the design matrix of 40 profiles differed from the fitted
+# one by up to 0.42 and their average SOPs by up to 0.042; `bs()` and `poly()`
+# were as wrong, and one profile could even fail. `rms::rcs()` and `rms::pol()`
+# store their knots or powers and agreed exactly. VGAM keeps the fitted basis,
+# so `engine = "vglm"` is not checked. `poly(raw = TRUE)` has no data-dependent
+# part and is allowed.
+mostm_check_data_dependent_bases <- function(formula, engine) {
+  calls <- formula_rhs_calls(formula, c("ns", "bs", "poly"))
+  calls <- Filter(
+    function(call) {
+      fun <- call[[1L]]
+      name <- as.character(if (is.call(fun)) fun[[3L]] else fun)
+      if (!identical(name, "poly")) {
+        return(TRUE)
+      }
+      matched <- tryCatch(
+        match.call(stats::poly, call),
+        error = function(e) call
+      )
+      !isTRUE(matched$raw)
     },
-    call. = FALSE
+    calls
+  )
+  if (!length(calls)) {
+    return(invisible(NULL))
+  }
+  labels <- unique(vapply(calls, deparse1, character(1)))
+  fitter <- switch(engine, orm = "`rms::orm()`", blrm = "`rmsb::blrm()`")
+  first <- calls[[1L]]
+  variable <- if (length(first) >= 2L && is.name(first[[2L]])) {
+    as.character(first[[2L]])
+  } else {
+    "x"
+  }
+  mostr_abort(
+    "With ",
+    fitter,
+    ", ",
+    format_sop_visit_list(paste0("`", labels, "`")),
+    if (length(labels) == 1L) " would be" else " would each be",
+    " evaluated again on the prediction rows, which gives a different basis ",
+    "without any error, so the state occupancy probabilities would be ",
+    "wrong. Use `rms::rcs()` for a spline, for example `rcs(",
+    variable,
+    ", 4)`, or `rms::pol()` for a polynomial, for example `pol(",
+    variable,
+    ", 2)`: both keep the knots or terms of the fit. `engine = \"vglm\"` ",
+    "keeps the fitted basis of these terms."
   )
 }
 
@@ -641,7 +948,7 @@ mostm_check_random_effects <- function(formula, engine) {
   formatted <- format_sop_visit_list(paste0("`", labels, "`"))
 
   if (engine == "blrm") {
-    stop(
+    mostr_abort(
       "`rmsb::blrm()` would fit ",
       formatted,
       if (several) {
@@ -651,12 +958,11 @@ mostm_check_random_effects <- function(formula, engine) {
       },
       "For a random intercept for each patient, write `cluster(id)` without ",
       "a package prefix and attach rms and rmsb with `library()`. Other ",
-      "random-effect terms, such as `mix_re()`, are not available.",
-      call. = FALSE
+      "random-effect terms, such as `mix_re()`, are not available."
     )
   }
 
-  stop(
+  mostr_abort(
     "`engine = \"",
     engine,
     "\"` does not support random effects, so remove ",
@@ -675,8 +981,7 @@ mostm_check_random_effects <- function(formula, engine) {
     },
     "`id_var` already gives standard errors that allow for correlation ",
     "between the transitions of one patient. For a random intercept for each ",
-    "patient, use `engine = \"blrm\"` with `cluster(id)` in the formula.",
-    call. = FALSE
+    "patient, use `engine = \"blrm\"` with `cluster(id)` in the formula."
   )
 }
 

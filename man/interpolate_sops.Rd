@@ -31,7 +31,9 @@ state probabilities sum to one within each time and group.}
 }
 \value{
 An interpolated data frame with the same core columns as \code{x}, where
-\code{time} is on the real-time scale.
+\code{time} is on the real-time scale. If \code{x} has tests from
+\code{inferences(null = )}, \code{statistic}, \code{p.value}, and \code{s.value} test the
+interpolated estimates against the same null value.
 }
 \description{
 Maps visit-scale SOP output from \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}} to a real elapsed
@@ -58,7 +60,7 @@ probability 1 to that state and 0 to the others.
 If \code{x} contains stored simulation, bootstrap, or posterior draws, the draws
 are interpolated too. Interval columns are then recomputed from the
 interpolated draws. Coefficient-only draws treat the empirical baseline anchor
-as fixed; empirical score-bootstrap, FWB, and refit-bootstrap draws use the
+as fixed; empirical FWB and refit-bootstrap draws use the
 corresponding draw-specific patient weights or resampled cohort.
 If interval columns are present but stored draws are unavailable,
 \code{interpolate_sops()} warns and falls back to interpolating interval endpoints.
@@ -73,7 +75,7 @@ avg <- avg_sops(
   fit,
   newdata = baseline,
   variables = list(tx = c(0, 1)),
-  times = NULL
+  times = 1:4
 )
 interpolate_sops(
   avg,

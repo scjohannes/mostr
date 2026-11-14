@@ -24,7 +24,7 @@ test_that("bootstrap_model_coefs validates inputs", {
       with_stored_refit_data(model, data.frame(id = 1:2), id_var = NULL),
       n_boot = 1
     ),
-    "No patient ID column is known",
+    "does not record which column of its data identifies patients",
     fixed = TRUE
   )
 
@@ -37,17 +37,10 @@ test_that("bootstrap_model_coefs validates inputs", {
     fixed = TRUE
   )
 
-  expect_warning(
-    expect_error(
-      bootstrap_model_coefs(
-        lm(mpg ~ wt, data = mtcars),
-        n_boot = 1,
-        parallel = TRUE
-      ),
-      "model must be an orm object",
-      fixed = TRUE
-    ),
-    "parallel.*deprecated"
+  expect_error(
+    bootstrap_model_coefs(lm(mpg ~ wt, data = mtcars), n_boot = 1),
+    "model must be an orm object",
+    fixed = TRUE
   )
 })
 
@@ -94,15 +87,7 @@ test_that("bootstrap_model_coefs orchestrates bootstrap coefficient extraction",
       )
     },
     {
-      expect_warning(
-        result <- bootstrap_model_coefs(
-          model,
-          n_boot = 2,
-          workers = 1,
-          parallel = FALSE
-        ),
-        "parallel.*deprecated"
-      )
+      result <- bootstrap_model_coefs(model, n_boot = 2, workers = 1)
     }
   )
 
@@ -188,8 +173,7 @@ test_that("bootstrap_model_coefs records coefficients and failed refits", {
       result <- bootstrap_model_coefs(
         model,
         n_boot = 2,
-        workers = 1,
-        use_coefstart = TRUE
+        workers = 1
       )
     }
   )

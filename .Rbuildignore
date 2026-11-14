@@ -18,6 +18,10 @@
 ^ANALYTICAL_CIS_PLAN\.md$
 ^mostr_.*\.tar\.gz$
 ^vignettes/\.gitignore$
+^vignettes/articles$
+^README\.Rmd$
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
+^dev$
+^\.git$

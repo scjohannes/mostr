@@ -33,18 +33,17 @@ Suggests:
     dplyr,
     knitr,
     Matrix,
-    patchwork,
     pkgload,
     posterior,
     rmsb,
     rmarkdown,
-    tibble,
     tidyr,
     testthat (>= 3.0.0),
     Hmisc,
     withr
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+Config/Needs/website: patchwork
 Config/roxygen2/version: 8.1.0
 URL: https://scjohannes.github.io/mostr/, https://github.com/scjohannes/mostr
 BugReports: https://github.com/scjohannes/mostr/issues

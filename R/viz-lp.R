@@ -13,6 +13,10 @@
 #' model covariates for the patient or scenario being plotted; `times` and
 #' `previous_states` define the plotting grid.
 #'
+#' The time column, the previous-state column and the states are those of the
+#' fitted model: the `time_var` and `p_var` given to [mostm()], and the states
+#' of the response in fitted order.
+#'
 #' @param x A fitted `orm`, `blrm`, `vglm`, or `robcov_vglm` Markov
 #'   model.
 #' @param profile One-row data frame containing the covariate profile.
@@ -20,16 +24,10 @@
 #'   first value is the reference.
 #' @param times Time values at which to evaluate the linear predictor.
 #' @param previous_states Optional previous-state values to facet by. Defaults
-#'   to all non-absorbing states in `y_levels`.
-#' @param y_levels Optional state levels. If omitted, levels are inferred from
-#'   the model when possible.
-#' @param absorb Optional absorbing-state label excluded from the default
-#'   previous-state grid.
-#' @param time_var Character name of the time column.
-#' @param p_var Character name of the previous-state column.
-#' @param gap_var Optional time-gap_var variable used by the fitted model.
-#' @param time_covariates Optional time-varying covariate lookup table used by the fitted
-#'   model.
+#'   to the fitted states that occur as the previous state in the data the
+#'   model was fitted to, which leaves out absorbing states. A supplied state
+#'   that never occurs there is an error, because the model has no linear
+#'   predictor for it.
 #' @param line_width Line width for the plotted contrasts.
 #'
 #' @return A ggplot object.
@@ -40,9 +38,7 @@
 #'   fit,
 #'   profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:28,
-#'   y_levels = 1:8,
-#'   absorb = 8
+#'   times = 1:28
 #' )
 #' }
 #' @export
@@ -52,51 +48,57 @@ plot_lp_difference <- function(
   variables,
   times,
   previous_states = NULL,
-  y_levels = NULL,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL,
-  time_covariates = NULL,
   line_width = 0.7
 ) {
   model <- x
   if (!inherits(model, c("orm", "blrm", "vglm", "robcov_vglm"))) {
-    stop(
+    mostr_abort(
       "`model` must be an `orm`, `blrm`, `vglm`, or ",
       "`robcov_vglm` object."
     )
   }
   validate_markov_model(model)
   if (!is.data.frame(profile) || nrow(profile) != 1L) {
-    stop("`profile` must be a one-row data frame.")
+    mostr_abort("`profile` must be a one-row data frame.")
   }
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied.")
+    mostr_abort("`times` must be supplied.")
   }
   variables <- validate_avg_comparison_variables(variables)
   variable <- names(variables)[1]
   if (!variable %in% names(profile)) {
-    stop("Variables not in profile: ", variable)
+    mostr_abort("Variables not in profile: ", variable)
   }
   plot_validate_scalar(line_width, "line_width", lower = 0)
+  settings <- resolve_markov_settings(model)
+  time_var <- settings$time_var
 
-  y_levels <- markov_model_ylevels(model, y_levels)
-  ylevel_names <- as_state_labels(y_levels)
-  previous_states <- previous_states %||%
-    setdiff(ylevel_names, as_state_labels(absorb))
+  y_levels <- markov_model_ylevels(model, settings$y_levels)
+  previous_states <- plot_lp_previous_states(
+    model,
+    previous_states = previous_states,
+    y_levels = y_levels,
+    settings = settings
+  )
 
+  # The grid sets `variable`, the previous state and the visit time, so only
+  # the profile's other predictors need values.
+  stop_missing_predictors(
+    model,
+    profile,
+    settings,
+    set_columns = c(variable, settings$p_var),
+    data_arg = "profile"
+  )
   data <- plot_lp_grid(
     model = model,
     profile = profile,
     variables = variables,
     times = times,
     previous_states = previous_states,
-    time_var = time_var,
-    p_var = p_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates
+    settings = settings
   )
+  data <- normalize_prediction_states(model, data, settings)
   eta <- markov_linear_predictor_matrix(model, data)
   lp_data <- plot_lp_difference_data(
     data = data,
@@ -104,7 +106,7 @@ plot_lp_difference <- function(
     variable = variable,
     values = variables[[1]],
     time_var = time_var,
-    p_var = p_var
+    p_var = settings$p_var
   )
 
   p <- ggplot2::ggplot(lp_data) +
@@ -133,29 +135,68 @@ plot_lp_difference <- function(
   p + ggplot2::scale_color_viridis_d()
 }
 
+# The previous states to facet by. A state that never occurs as the previous
+# state in the fitted data, such as an absorbing state, has no linear
+# predictor: with a factor previous-state column its grid rows get a missing
+# previous state, which `vglm` drops from the model matrix (so the predictors
+# no longer line up with the grid) and `orm` turns into missing lines. Such
+# states are left out of the default and refused when requested. Fits that do
+# not carry their data fall back to all states except the absorbing states
+# recorded in the fit's settings.
+plot_lp_previous_states <- function(
+  model,
+  previous_states,
+  y_levels,
+  settings
+) {
+  p_var <- settings$p_var
+  ylevel_names <- as_state_labels(y_levels)
+  fitted <- markov_fitted_previous_states(model, p_var)
+  if (is.null(previous_states)) {
+    out <- setdiff(ylevel_names, as_state_labels(settings$absorb))
+    if (!is.null(fitted)) {
+      out <- intersect(out, fitted)
+    }
+    return(out)
+  }
+  if (!is.null(fitted)) {
+    unfitted <- setdiff(as_state_labels(previous_states), fitted)
+    if (length(unfitted) > 0L) {
+      mostr_abort(
+        "`previous_states` includes state(s) that never occur in `",
+        p_var,
+        "` in the data the model was fitted to: ",
+        paste(unfitted, collapse = ", "),
+        ". The model has no linear predictor for a previous state it was ",
+        "not fitted on; an absorbing state, which a patient never leaves, is ",
+        "never a previous state. Use only: ",
+        paste(intersect(ylevel_names, fitted), collapse = ", "),
+        "."
+      )
+    }
+  }
+  previous_states
+}
+
 plot_lp_grid <- function(
   model,
   profile,
   variables,
   times,
   previous_states,
-  time_var,
-  p_var,
-  gap_var,
-  time_covariates
+  settings
 ) {
   variable <- names(variables)[1]
+  p_var <- settings$p_var
   time_res <- resolve_sop_times(
     model,
     profile,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
     default = "unique"
   )
   times <- time_res$times
   time_info <- time_res$time_info
-  validate_factor_gap(gap_var, time_covariates, time_info)
 
   rows <- vector(
     "list",
@@ -172,15 +213,14 @@ plot_lp_grid <- function(
           value = prev,
           model = model,
           profile = profile,
-          p_var = p_var
+          p_var = p_var,
+          states = previous_states
         )
         row <- assign_sop_visit(
           row,
-          time_var = time_var,
+          settings = settings,
           times = times,
           index = i,
-          time_covariates = time_covariates,
-          gap_var = gap_var,
           time_info = time_info
         )
         row$previous_state <- as.character(prev)
@@ -195,9 +235,21 @@ plot_lp_grid <- function(
   out
 }
 
-plot_lp_previous_state <- function(value, model, profile, p_var) {
+# `states` are the plotted previous states, the levels of a factor column
+# when the fit records neither levels nor a type for it.
+plot_lp_previous_state <- function(value, model, profile, p_var, states) {
   if (p_var %in% names(profile)) {
-    return(coerce_previous_state_values(value, profile[[p_var]], p_var))
+    # The type and levels the model reads, from an empty copy of the
+    # profile's column: a factor with only the profile's own state would make
+    # every other previous state NA. The profile's value itself is replaced,
+    # so it is not checked.
+    prototype <- fitted_state_values(
+      model,
+      profile[[p_var]][0L],
+      p_var,
+      states
+    )
+    return(coerce_previous_state_values(value, prototype, p_var))
   }
 
   model_levels <- get_model_factor_levels(model, p_var)
@@ -211,7 +263,7 @@ plot_lp_previous_state <- function(value, model, profile, p_var) {
 markov_linear_predictor_matrix <- function(model, newdata) {
   if (inherits(model, "robcov_vglm")) {
     if (is.null(model$vglm_fit)) {
-      stop(
+      mostr_abort(
         "robcov_vglm object does not contain the original vglm fit. ",
         "Please re-run robcov_vglm() with the latest version of the package."
       )
@@ -233,14 +285,16 @@ markov_linear_predictor_matrix <- function(model, newdata) {
     return(out)
   }
 
-  stop("Unsupported model class.")
+  mostr_abort("Unsupported model class.")
 }
 
 plot_blrm_lp_median_matrix <- function(model, newdata) {
   y_levels <- markov_model_ylevels(model)
   n_thresholds <- length(y_levels) - 1L
   if (n_thresholds < 1L) {
-    stop("`blrm` linear predictor plots require at least two state levels.")
+    mostr_abort(
+      "`blrm` linear predictor plots require at least two state levels."
+    )
   }
 
   out <- vapply(
@@ -265,7 +319,7 @@ plot_blrm_lp_median_matrix <- function(model, newdata) {
 
 plot_blrm_predict <- function(model, newdata, type, ...) {
   if (!requireNamespace("rmsb", quietly = TRUE)) {
-    stop("Package 'rmsb' is required for `blrm` plotting.")
+    mostr_abort("Package 'rmsb' is required for `blrm` plotting.")
   }
 
   stats::predict(model, newdata = newdata, type = type, ...)
@@ -280,13 +334,7 @@ markov_vglm_link_matrix <- function(model, newdata) {
     return(as.matrix(out))
   }
 
-  tt <- stats::delete.response(stats::terms(model))
-  x <- stats::model.matrix(
-    tt,
-    newdata,
-    contrasts.arg = if (length(model@contrasts)) model@contrasts else NULL,
-    xlev = model@xlevels
-  )
+  x <- vglm_prediction_design(model, newdata)
   attr(x, "assign") <- model@assign
 
   lm2vlm <- utils::getFromNamespace("lm2vlm.model.matrix", "VGAM")
@@ -318,6 +366,20 @@ plot_lp_difference_data <- function(
   eta <- as.matrix(eta)
   if (is.null(colnames(eta))) {
     colnames(eta) <- paste0("eta", seq_len(ncol(eta)))
+  }
+  # A model matrix drops grid rows with a missing value. The predictors would
+  # then be recycled onto the wrong rows, so this refuses instead.
+  if (nrow(eta) != nrow(data)) {
+    mostr_abort(
+      "The model returned linear predictors for ",
+      nrow(eta),
+      " of the ",
+      nrow(data),
+      " plotted rows, which happens when a row has a missing value, for ",
+      "example a value that is not a level of a factor column of `profile`. ",
+      "Check that `profile` has no missing values and that its factor ",
+      "columns have every level the model was fitted with."
+    )
   }
 
   long <- data[rep(seq_len(nrow(data)), times = ncol(eta)), , drop = FALSE]

@@ -1,12 +1,12 @@
 test_that("avg_sops averages observed covariates overall and within groups", {
+  skip_on_cran()
   case <- make_observed_average_case()
-  individual <- sops(case$model, times = case$times, absorb = case$absorb)
+  individual <- sops(case$model, times = case$times)
   for (by in list(TRUE, "tx")) {
     average <- avg_sops(
       case$model,
       by = by,
-      times = case$times,
-      absorb = case$absorb
+      times = case$times
     )
     keys <- c("time", "state", if (is.character(by)) by)
     manual <- stats::aggregate(individual$estimate, individual[keys], mean)
@@ -19,24 +19,23 @@ test_that("avg_sops averages observed covariates overall and within groups", {
   empty_by <- avg_sops(
     case$model,
     by = character(),
-    times = case$times,
-    absorb = case$absorb
+    times = case$times
   )
   explicit <- avg_sops(
     case$model,
     newdata = attr(individual, "newdata_pred"),
     variables = NULL,
-    times = case$times,
-    absorb = case$absorb
+    times = case$times
   )
   expect_equal(empty_by$estimate, explicit$estimate)
   expect_null(attr(empty_by, "avg_args")$by)
 })
 
 test_that("observed averages retain conditional and unconditional covariance", {
+  skip_on_cran()
   case <- make_observed_average_case()
-  average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
-  individual <- sops(case$model, times = case$times, absorb = case$absorb) |>
+  average <- avg_sops(case$model, times = case$times)
+  individual <- sops(case$model, times = case$times) |>
     inferences(method = "delta")
   conditional <- inferences(average, method = "delta", vcov = "conditional")
   cell <- match(
@@ -62,40 +61,10 @@ test_that("observed averages retain conditional and unconditional covariance", {
   }
 })
 
-test_that("observed simulation averages use the same patient draws and weights", {
-  case <- make_observed_average_case()
-  average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
-  individual <- sops(case$model, times = case$times, absorb = case$absorb)
-  for (method in c("mvn", "score_bootstrap")) {
-    result <- inferences(average, method = method, n_draws = 4, seed = 4211)
-    patient_result <- inferences(
-      individual,
-      method = method,
-      n_draws = 4,
-      seed = 4211
-    )
-    draws <- attr(patient_result, "draws")
-    draws$weight <- if (method == "score_bootstrap") draws$score_weight else 1
-    draws$weighted <- draws$estimate * draws$weight
-    manual <- stats::aggregate(
-      cbind(weighted, weight) ~ draw_id + time + state,
-      draws,
-      sum
-    )
-    manual$manual <- manual$weighted / manual$weight
-    compared <- merge(
-      attr(result, "draws"),
-      manual,
-      by = c("draw_id", "time", "state")
-    )
-    expect_equal(compared$estimate, compared$manual, tolerance = 1e-12)
-    expect_equal(nrow(get_draws(result)), nrow(average) * 4L)
-  }
-})
-
 test_that("observed averages support both refit bootstrap methods", {
+  skip_on_cran()
   case <- make_observed_average_case()
-  average <- avg_sops(case$model, times = case$times, absorb = case$absorb)
+  average <- avg_sops(case$model, times = case$times)
   for (method in c("bootstrap", "fwb")) {
     result <- inferences(average, method = method, n_draws = 3, seed = 5211)
     draws <- get_draws(result)

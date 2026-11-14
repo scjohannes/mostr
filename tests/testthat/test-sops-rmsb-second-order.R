@@ -1,4 +1,9 @@
-make_fake_blrm <- function(draws = NULL, gamma_draws = NULL, pppo = 0L) {
+make_fake_blrm <- function(
+  draws = NULL,
+  gamma_draws = NULL,
+  pppo = 0L,
+  p2_var = NULL
+) {
   if (is.null(draws)) {
     draws <- rbind(
       c(0.50, -0.50, 0.25),
@@ -8,39 +13,15 @@ make_fake_blrm <- function(draws = NULL, gamma_draws = NULL, pppo = 0L) {
     colnames(draws) <- c("y>=2", "y>=3", "tx")
   }
 
-  tau_info <- if (pppo > 0) {
-    data.frame(name = "tau_tx")
-  } else {
-    data.frame(name = character())
-  }
-
-  structure(
-    list(
-      draws = draws,
-      non.slopes = 2L,
-      pppo = pppo,
-      tauInfo = tau_info,
-      ylevels = 1:3,
-      yname = "y",
-      clusterInfo = list(name = "id", cluster = c("a", "b")),
-      gamma_draws = gamma_draws
-    ),
-    class = c("blrm", "orm"),
-    markov_engine = "blrm"
+  fake_blrm(
+    draws,
+    tau = if (pppo > 0) "tau_tx" else character(),
+    gamma_draws = gamma_draws,
+    p2_var = p2_var
   )
 }
 
-fake_blrm_design <- function(model, newdata, second = FALSE) {
-  if (second) {
-    out <- matrix(newdata$tx, ncol = 1)
-    colnames(out) <- "tau_tx"
-    return(out)
-  }
-
-  out <- matrix(newdata$tx, ncol = 1)
-  colnames(out) <- "tx"
-  out
-}
+tx_blrm_design <- fake_blrm_design("tx", tau_var = "tx")
 
 test_that("Markov workflows reject raw blrm fits", {
   model <- make_fake_blrm()
@@ -54,7 +35,12 @@ test_that("Markov workflows reject raw blrm fits", {
 })
 
 test_that("soprob_markov handles second-order recursion and absorbing states", {
-  model <- structure(list(), class = "vglm")
+  model <- with_fit_settings(
+    structure(list(), class = "vglm"),
+    p2_var = "ypprev",
+    y_levels = 1:3,
+    absorb = 3
+  )
 
   transition <- function(h, j) {
     if (j == 3) {
@@ -99,10 +85,7 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
       out <- soprob_markov(
         model = model,
         newdata = data,
-        times = 1:2,
-        y_levels = 1:3,
-        absorb = 3,
-        p2_var = "ypprev"
+        times = 1:2
       )
       withr::local_options(
         mostr.second_order_working_bytes = 256 * 1024^2
@@ -110,22 +93,21 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
       out_large_chunk <- soprob_markov(
         model = model,
         newdata = data,
-        times = 1:2,
-        y_levels = 1:3,
-        absorb = 3,
-        p2_var = "ypprev"
+        times = 1:2
       )
 
+      # A patient cannot start in an absorbing state.
       absorb_data <- data
       absorb_data$ypprev <- factor(3, levels = 1:3)
       absorb_data$yprev <- factor(3, levels = 1:3)
-      absorb_out <- soprob_markov(
-        model = model,
-        newdata = absorb_data,
-        times = 1:2,
-        y_levels = 1:3,
-        absorb = 3,
-        p2_var = "ypprev"
+      expect_error(
+        soprob_markov(
+          model = model,
+          newdata = absorb_data,
+          times = 1:2
+        ),
+        "`yprev` is the absorbing state 3 for 1 of the 1 prediction rows",
+        fixed = TRUE
       )
     }
   )
@@ -136,21 +118,15 @@ test_that("soprob_markov handles second-order recursion and absorbing states", {
     c("1" = 0.12, "2" = 0.64, "3" = 0.24),
     tolerance = 1e-12
   )
-  expect_equal(
-    absorb_out[1, 1, ],
-    c("1" = 0, "2" = 0, "3" = 1),
-    tolerance = 1e-12
-  )
-  expect_equal(
-    absorb_out[1, 2, ],
-    c("1" = 0, "2" = 0, "3" = 1),
-    tolerance = 1e-12
-  )
   expect_identical(out, out_large_chunk)
 })
 
 test_that("soprob_markov handles single first-order time points", {
-  model <- structure(list(), class = "vglm")
+  model <- with_fit_settings(
+    structure(list(), class = "vglm"),
+    y_levels = 1:3,
+    absorb = 3
+  )
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
@@ -172,9 +148,7 @@ test_that("soprob_markov handles single first-order time points", {
           time = 1,
           yprev = factor(1, levels = 1:3)
         ),
-        times = 1,
-        y_levels = 1:3,
-        absorb = 3
+        times = 1
       )
     }
   )
@@ -188,7 +162,11 @@ test_that("soprob_markov handles single first-order time points", {
 })
 
 test_that("soprob_markov carries absorbing labels that are not column positions", {
-  model <- structure(list(), class = "vglm")
+  model <- with_fit_settings(
+    structure(list(), class = "vglm"),
+    y_levels = 0:2,
+    absorb = 2
+  )
 
   with_mocked_bindings(
     validate_markov_model = function(object) NULL,
@@ -219,9 +197,7 @@ test_that("soprob_markov carries absorbing labels that are not column positions"
           time = 1,
           yprev = factor(0, levels = 0:2)
         ),
-        times = 1:2,
-        y_levels = 0:2,
-        absorb = 2
+        times = 1:2
       )
     }
   )
@@ -253,7 +229,9 @@ test_that("compiled second-order ORM plans match the reference recursion", {
   data$ypprev <- factor(data$ypprev, levels = 1:3)
   model <- suppressWarnings(mostm(
     y ~ tx + time + yprev + ypprev,
-    data = data[data$time > 2L, ]
+    data = data[data$time > 2L, ],
+    id_var = "id",
+    first_followup_time = 3
   ))
   baseline <- data[data$time == 1L, ]
   withr::local_options(mostr.execution_plan_max_bytes = 1)
@@ -262,8 +240,10 @@ test_that("compiled second-order ORM plans match the reference recursion", {
       model,
       baseline,
       times = 1:6,
-      y_levels = 1:3,
-      p2_var = "ypprev"
+      settings = markov_settings(
+        y_levels = 1:3,
+        p2_var = "ypprev"
+      )
     ),
     error = function(e) e
   )
@@ -277,19 +257,23 @@ test_that("compiled second-order ORM plans match the reference recursion", {
     model,
     baseline,
     times = 1:6,
-    y_levels = 1:3,
-    p2_var = "ypprev"
+    settings = markov_settings(
+      y_levels = 1:3,
+      p2_var = "ypprev"
+    )
   )
   actual <- mostr:::run_sop_execution_plan(
     plan,
     mostr:::get_effective_coefs(model)
   )
-  expected <- mostr:::soprob_markov_reference(
+  expected <- mostr:::soprob_markov_r_engine(
     model,
     baseline,
     times = 1:6,
-    y_levels = 1:3,
-    p2_var = "ypprev"
+    settings = markov_settings(
+      y_levels = 1:3,
+      p2_var = "ypprev"
+    )
   )
 
   expect_equal(plan$recursion_order, 2L)
@@ -298,7 +282,9 @@ test_that("compiled second-order ORM plans match the reference recursion", {
 })
 
 test_that("blrm posterior draw sampling is random, capped, and reproducible", {
-  model <- make_fake_blrm(draws = matrix(0, nrow = 150, ncol = 3))
+  draws <- matrix(0, nrow = 150, ncol = 3)
+  colnames(draws) <- c("y>=2", "y>=3", "tx")
+  model <- make_fake_blrm(draws = draws)
 
   draw_ids_a <- mostr:::select_posterior_draws(
     model,
@@ -322,6 +308,8 @@ test_that("blrm posterior draw sampling is random, capped, and reproducible", {
 
 
 test_that("manual blrm prediction supports PO, constrained PPO, and random effects", {
+  local_mocked_bindings(blrm_design_matrix = tx_blrm_design)
+
   gamma <- rbind(
     c(0.50, -0.50),
     c(1.00, -1.00),
@@ -335,60 +323,36 @@ test_that("manual blrm prediction supports PO, constrained PPO, and random effec
     yprev = factor(c(1, 1), levels = 1:3)
   )
 
-  with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
-    {
-      no_re <- mostr:::predict_blrm_response_markov(
-        model,
-        newdata,
-        draw_indices = 1:2
-      )
-      with_re <- mostr:::predict_blrm_response_markov(
-        model,
-        newdata,
-        include_re = TRUE,
-        draw_indices = 1:2
-      )
-
-      ppo_draws <- cbind(model$draws, tau_tx = c(0.10, -0.20, 0.15))
-      ppo_model <- make_fake_blrm(draws = ppo_draws, pppo = 1L)
-      ppo_model$cppo <- function(y) as.numeric(y) - 1
-      ppo <- mostr:::predict_blrm_response_markov(
-        ppo_model,
-        newdata[1, , drop = FALSE],
-        draw_indices = 1
-      )
-
-      cppo_string_test <- function(y) as.numeric(y) - 1
-      ppo_model$cppo <- "cppo_string_test"
-      ppo_string <- mostr:::predict_blrm_response_markov(
-        ppo_model,
-        newdata[1, , drop = FALSE],
-        draw_indices = 1
-      )
-
-      ppo_model$cppo <- "function(y) as.numeric(y) - 1"
-      cppo_error <- try(
-        mostr:::predict_blrm_response_markov(
-          ppo_model,
-          newdata[1, , drop = FALSE],
-          draw_indices = 1
-        ),
-        silent = TRUE
-      )
-
-      unknown <- newdata[1, , drop = FALSE]
-      unknown$id <- "z"
-      re_error <- try(
-        mostr:::predict_blrm_response_markov(
-          model,
-          unknown,
-          include_re = TRUE,
-          draw_indices = 1
-        ),
-        silent = TRUE
-      )
+  # Hand calculation: with linear predictors eta_k = alpha_k + tx * beta +
+  # u_id + tau * tx * cppo(k + 1) for the two cut-points, the state
+  # probabilities are 1 - P(y >= 2), P(y >= 2) - P(y >= 3) and P(y >= 3).
+  state_probabilities <- function(eta) {
+    p <- stats::plogis(eta)
+    c(1 - p[1], p[1] - p[2], p[2])
+  }
+  expected_array <- function(draw_indices, random_effects) {
+    out <- array(0, dim = c(length(draw_indices), nrow(newdata), 3L))
+    for (d in seq_along(draw_indices)) {
+      draw <- model$draws[draw_indices[d], ]
+      for (i in seq_len(nrow(newdata))) {
+        u <- if (random_effects) gamma[draw_indices[d], newdata$id[i]] else 0
+        eta <- draw[c("y>=2", "y>=3")] + newdata$tx[i] * draw[["tx"]] + u
+        out[d, i, ] <- state_probabilities(eta)
+      }
     }
+    out
+  }
+
+  no_re <- mostr:::predict_blrm_response_markov(
+    model,
+    newdata,
+    draw_indices = 1:2
+  )
+  with_re <- mostr:::predict_blrm_response_markov(
+    model,
+    newdata,
+    include_re = TRUE,
+    draw_indices = 1:2
   )
 
   expected_p1 <- 1 - stats::plogis(0.50 + 0.25)
@@ -401,13 +365,57 @@ test_that("manual blrm prediction supports PO, constrained PPO, and random effec
     c(expected_p1, expected_p2, expected_p3),
     tolerance = 1e-12
   )
-  expect_false(isTRUE(all.equal(no_re, with_re)))
-  expect_equal(sum(ppo[1, 1, ]), 1, tolerance = 1e-12)
+  expect_equal(unname(no_re), expected_array(1:2, FALSE), tolerance = 1e-12)
+  expect_equal(unname(with_re), expected_array(1:2, TRUE), tolerance = 1e-12)
+
+  # Constrained partial proportional odds: cppo(y) = y - 1 scales the tau
+  # effect by 1 at the first cut-point and 2 at the second.
+  ppo_draws <- cbind(model$draws, tau_tx = c(0.10, -0.20, 0.15))
+  ppo_model <- make_fake_blrm(draws = ppo_draws, pppo = 1L)
+  ppo_model$cppo <- function(y) as.numeric(y) - 1
+  ppo <- mostr:::predict_blrm_response_markov(
+    ppo_model,
+    newdata[1, , drop = FALSE],
+    draw_indices = 1
+  )
+  expect_equal(
+    unname(ppo[1, 1, ]),
+    state_probabilities(c(0.50, -0.50) + 0.25 + 0.10 * c(1, 2)),
+    tolerance = 1e-12
+  )
+
+  cppo_string_test <- function(y) as.numeric(y) - 1
+  ppo_model$cppo <- "cppo_string_test"
+  ppo_string <- mostr:::predict_blrm_response_markov(
+    ppo_model,
+    newdata[1, , drop = FALSE],
+    draw_indices = 1
+  )
   expect_equal(ppo_string, ppo, tolerance = 1e-12)
-  expect_s3_class(cppo_error, "try-error")
-  expect_match(as.character(cppo_error), "Inline expressions are not supported")
-  expect_s3_class(re_error, "try-error")
-  expect_match(as.character(re_error), "not present")
+
+  ppo_model$cppo <- "function(y) as.numeric(y) - 1"
+  expect_error(
+    mostr:::predict_blrm_response_markov(
+      ppo_model,
+      newdata[1, , drop = FALSE],
+      draw_indices = 1
+    ),
+    "Inline expressions are not supported",
+    fixed = TRUE
+  )
+
+  unknown <- newdata[1, , drop = FALSE]
+  unknown$id <- "z"
+  expect_error(
+    mostr:::predict_blrm_response_markov(
+      model,
+      unknown,
+      include_re = TRUE,
+      draw_indices = 1
+    ),
+    "not present",
+    fixed = TRUE
+  )
 })
 
 test_that("sops() summarizes blrm posterior SOP draws and stores optional draws", {
@@ -420,7 +428,7 @@ test_that("sops() summarizes blrm posterior SOP draws and stores optional draws"
   )
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       result <- sops(
         model,
@@ -466,6 +474,9 @@ test_that("avg_sops() streams and summarizes blrm posterior draws", {
   colnames(gamma) <- c("a", "b")
   model <- make_fake_blrm(gamma_draws = gamma)
   model$clusterInfo <- list(name = "subject", cluster = c("a", "b"))
+  # As for `mostm(..., id_var = "subject")` with `cluster(subject)`
+  attr(model, "markov_id_var") <- "subject"
+  model <- with_fit_settings(model, id_var = "subject")
   newdata <- data.frame(
     subject = c("a", "b"),
     tx = c(0, 1),
@@ -475,7 +486,7 @@ test_that("avg_sops() streams and summarizes blrm posterior draws", {
 
   gamma_calls <- 0L
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     get_blrm_gamma_draws = function(model, draw_indices) {
       gamma_calls <<- gamma_calls + 1L
       model$gamma_draws[draw_indices, , drop = FALSE]
@@ -522,7 +533,7 @@ test_that("observed blrm averages reduce individual posterior draws", {
     yprev = factor(c(1, 2), levels = 1:3),
     time = 1
   )
-  local_mocked_bindings(blrm_design_matrix = fake_blrm_design)
+  local_mocked_bindings(blrm_design_matrix = tx_blrm_design)
   individual <- sops(
     model,
     newdata = newdata,
@@ -556,7 +567,7 @@ test_that("observed blrm averages reduce individual posterior draws", {
 })
 
 test_that("second-order blrm posterior results are invariant to outer draw chunks", {
-  model <- make_fake_blrm()
+  model <- make_fake_blrm(p2_var = "ypprev")
   newdata <- data.frame(
     id = "a",
     tx = 1,
@@ -575,7 +586,6 @@ test_that("second-order blrm posterior results are invariant to outer draw chunk
         model,
         newdata = newdata,
         times = 1:3,
-        p2_var = "ypprev",
         n_draws = 3,
         return_draws = TRUE
       )
@@ -583,7 +593,7 @@ test_that("second-order blrm posterior results are invariant to outer draw chunk
   }
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       one <- run_chunked(1L)
       two <- run_chunked(2L)
@@ -597,7 +607,9 @@ test_that("second-order blrm posterior results are invariant to outer draw chunk
   expect_equal(attr(one, "draws"), attr(all, "draws"))
 })
 
-test_that("grouped blrm summaries omit incomplete grouping rows", {
+test_that("grouped blrm summaries refuse a missing grouping value", {
+  # A profile with a missing `by` value would be left out of every group, so
+  # the posterior averages refuse it like the frequentist ones.
   model <- make_fake_blrm()
   newdata <- data.frame(
     id = c("a", "b", "c"),
@@ -609,34 +621,26 @@ test_that("grouped blrm summaries omit incomplete grouping rows", {
   complete <- newdata[!is.na(newdata$grp), , drop = FALSE]
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
-      grouped <- sops(
-        model,
-        newdata = newdata,
-        times = 1:2,
-        by = "grp",
-        n_draws = 3,
-        return_draws = TRUE
+      expect_error(
+        sops(model, newdata = newdata, times = 1:2, by = "grp", n_draws = 3),
+        "`grp`, which is missing for 1 of the 3 profiles",
+        fixed = TRUE
       )
-      expected <- sops(
-        model,
-        newdata = complete,
-        times = 1:2,
-        by = "grp",
-        n_draws = 3,
-        return_draws = TRUE
+      expect_error(
+        avg_sops(
+          model,
+          newdata = newdata,
+          variables = list(tx = c(0, 1)),
+          times = 1:2,
+          by = "grp",
+          n_draws = 3
+        ),
+        "`grp`, which is missing for 1 of the 3 profiles",
+        fixed = TRUE
       )
-      avg_grouped <- avg_sops(
-        model,
-        newdata = newdata,
-        variables = list(tx = c(0, 1)),
-        times = 1:2,
-        by = "grp",
-        n_draws = 3,
-        return_draws = TRUE
-      )
-      avg_expected <- avg_sops(
+      avg_complete <- avg_sops(
         model,
         newdata = complete,
         variables = list(tx = c(0, 1)),
@@ -648,15 +652,11 @@ test_that("grouped blrm summaries omit incomplete grouping rows", {
     }
   )
 
-  expect_equal(grouped, expected, ignore_attr = TRUE)
-  expect_equal(attr(grouped, "draws"), attr(expected, "draws"))
-  expect_equal(avg_grouped, avg_expected, ignore_attr = TRUE)
-  expect_equal(attr(avg_grouped, "draws"), attr(avg_expected, "draws"))
-  expect_identical(anyNA(grouped$grp), FALSE)
-  expect_identical(anyNA(avg_grouped$grp), FALSE)
+  expect_setequal(unique(avg_complete$grp), c("a", "b"))
 })
 
 test_that("grouped blrm summaries reject entirely incomplete grouping rows", {
+  skip_on_cran()
   model <- make_fake_blrm()
   newdata <- data.frame(
     id = c("a", "b"),
@@ -667,7 +667,7 @@ test_that("grouped blrm summaries reject entirely incomplete grouping rows", {
   )
 
   with_mocked_bindings(
-    blrm_design_matrix = fake_blrm_design,
+    blrm_design_matrix = tx_blrm_design,
     {
       expect_snapshot(
         sops(

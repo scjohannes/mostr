@@ -41,8 +41,7 @@ avg_comparison_from_avg_sops <- function(
     time_unit = time_unit
   )
 
-  draw_attr <- sop_draw_attr_name(x)
-  draws <- if (!is.null(draw_attr)) attr(x, draw_attr) else NULL
+  draws <- attr(x, "draws")
 
   if (!is.null(draws)) {
     value_col <- sop_draw_value_col(draws)
@@ -81,11 +80,16 @@ avg_comparison_from_avg_sops <- function(
     }
 
     if (isTRUE(return_draws)) {
-      attr(point, draw_attr) <- draw_reduced
+      attr(point, "draws") <- restore_observed_by_names(
+        draw_reduced,
+        variables
+      )
     }
   }
 
-  point
+  # A group of the compared variable's observed value takes that variable's
+  # name; the contrasts have replaced the set values.
+  restore_observed_by_names(point, variables)
 }
 
 # Default real-time grid: the observed starting-state time, when used, followed
@@ -135,7 +139,7 @@ reduce_avg_sop_metric_df <- function(
       real_time = real_time
     )
   } else {
-    stop("Unknown comparison estimand: ", estimand)
+    mostr_abort("Unknown comparison estimand: ", estimand)
   }
 
   if (!is.null(time_unit)) {
@@ -268,11 +272,22 @@ reduce_state_time_df <- function(
   }
 }
 
-aggregate_value <- function(data, value_col, group_cols, fun) {
+# Applies `fun` to `value_col` within the groups of `group_cols`. By default a
+# row with a missing grouping value is omitted, as in `aggregate()`. With
+# `keep_na_groups = TRUE`, a missing grouping value is an ordinary value that
+# forms its own group (only rows with a missing `value_col` are omitted); the
+# summaries of SOP tables use this for profile columns the model does not use.
+aggregate_value <- function(
+  data,
+  value_col,
+  group_cols,
+  fun,
+  keep_na_groups = FALSE
+) {
   .datatable.aware <- TRUE
   data <- as.data.frame(data)
   if (nrow(data) == 0L) {
-    stop("No rows are available for the requested state set.")
+    mostr_abort("No rows are available for the requested state set.")
   }
   if (length(group_cols) == 0L) {
     out <- data.frame(.dummy = 1L)
@@ -286,9 +301,13 @@ aggregate_value <- function(data, value_col, group_cols, fun) {
   )
   # Match aggregate.formula: omit missing values and grouping keys, including
   # groups with no observed values. The first grouping column varies fastest.
-  work <- work[stats::complete.cases(work)]
+  work <- if (isTRUE(keep_na_groups)) {
+    work[!is.na(work[[value_col]])]
+  } else {
+    work[stats::complete.cases(work)]
+  }
   if (nrow(work) == 0L) {
-    stop("no rows to aggregate")
+    mostr_abort("no rows to aggregate")
   }
   out <- work[,
     lapply(.SD, fun, na.rm = TRUE),
@@ -336,7 +355,7 @@ compare_counterfactual_levels <- function(
   ref_rows <- as.character(work[[varname]]) == as.character(ref)
   ref_df <- work[ref_rows, c(base_cols, value_col), drop = FALSE]
   if (nrow(ref_df) == 0L) {
-    stop(
+    mostr_abort(
       "Reference level `",
       as.character(ref),
       "` was not found in comparison data."
@@ -348,7 +367,7 @@ compare_counterfactual_levels <- function(
     hi_rows <- as.character(work[[varname]]) == as.character(level)
     hi_df <- work[hi_rows, c(base_cols, value_col), drop = FALSE]
     if (nrow(hi_df) == 0L) {
-      stop(
+      mostr_abort(
         "Comparison level `",
         as.character(level),
         "` was not found in comparison data."
@@ -382,7 +401,7 @@ comparison_contrast_label <- function(hi, lo, comparison) {
     comparison,
     difference = " - ",
     ratio = " / ",
-    stop("Unknown comparison: ", comparison)
+    mostr_abort("Unknown comparison: ", comparison)
   )
   paste0(as.character(hi), operator, as.character(lo))
 }
@@ -396,19 +415,12 @@ comparison_value <- function(hi, lo, comparison) {
     out[lo == 0] <- NA_real_
     return(out)
   }
-  stop("Unknown comparison: ", comparison)
+  mostr_abort("Unknown comparison: ", comparison)
 }
 
 avg_comparison_time_benefit_point <- function(
   model,
   setup,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
   include_re,
   n_draws,
   seed,
@@ -422,18 +434,12 @@ avg_comparison_time_benefit_point <- function(
   time_unit,
   ...
 ) {
-  ind <- sops(
+  ind <- sops_impl(
     model = model,
     newdata = setup$newdata_pred,
+    variables = NULL,
     times = setup$times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = setup$id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = setup$settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -443,61 +449,59 @@ avg_comparison_time_benefit_point <- function(
     ...
   )
 
-  if (!is.null(time_map)) {
-    target_times <- comparison_real_time_target_times(
-      ind,
-      time_map,
-      target_times,
-      baseline_time
-    )
-    ind <- interpolate_sops(
-      ind,
-      time_map = time_map,
-      target_times = target_times,
-      baseline_time = baseline_time
+  # Each profile's time benefit, as in `comparisons()`, then the average over
+  # the profiles.
+  reducer <- profile_array_reducer(
+    "comparison",
+    list(estimand = "time_benefit", comparison = comparison, time_map = time_map)
+  )
+  tidy <- profile_tidy_reducer(
+    ind,
+    setup = setup,
+    reducer = reducer,
+    time_map = time_map,
+    baseline_time = baseline_time,
+    target_times = target_times
+  )
+  ind <- tidy$x
+  average <- function(data, value_col) {
+    average_time_benefit(
+      tidy$reduce(data, value_col),
+      setup = setup,
+      weights = NULL,
+      value_col = value_col
     )
   }
+  point <- average(as.data.frame(ind), "estimate")
+  if (!is.null(time_unit)) {
+    point$time_unit <- time_unit
+  }
 
-  setup$times <- sort(unique(ind$time))
-  setup$y_levels <- attr(ind, "y_levels")
-  point <- reduce_time_benefit_sops_df(
-    data = as.data.frame(ind),
-    setup = setup,
-    comparison = comparison,
-    value_col = "estimate",
-    real_time = inherits(ind, "markov_interpolated_sops"),
-    weights = NULL,
-    time_unit = time_unit
-  )
-
-  draw_attr <- sop_draw_attr_name(ind)
-  draws <- if (!is.null(draw_attr)) attr(ind, draw_attr) else NULL
+  draws <- attr(ind, "draws")
   if (!is.null(draws)) {
     value_col <- sop_draw_value_col(draws)
-    draw_reduced <- reduce_time_benefit_sops_df(
-      data = as.data.frame(draws),
-      setup = setup,
-      comparison = comparison,
-      value_col = value_col,
-      real_time = inherits(ind, "markov_interpolated_sops"),
-      weights = NULL,
-      time_unit = time_unit
-    )
-    if (value_col != "estimate") {
-      names(draw_reduced)[names(draw_reduced) == value_col] <- "estimate"
+    draws <- as.data.frame(draws)
+    draw_reduced <- bind_rows_fill(lapply(
+      sort(unique(draws$draw_id)),
+      function(draw_id) {
+        out <- average(draws[draws$draw_id == draw_id, , drop = FALSE], value_col)
+        out$draw_id <- draw_id
+        out
+      }
+    ))
+    if (!is.null(time_unit)) {
+      draw_reduced$time_unit <- time_unit
     }
 
     group_cols <- setdiff(names(draw_reduced), c("estimate", "draw_id"))
-    if (inherits(model, "blrm")) {
-      point <- summarize_comparison_draws(
-        draw_reduced,
-        group_cols = group_cols,
-        posterior_summary = posterior_summary,
-        conf_level = conf_level
-      )
-    }
+    point <- summarize_comparison_draws(
+      draw_reduced,
+      group_cols = group_cols,
+      posterior_summary = posterior_summary,
+      conf_level = conf_level
+    )
     if (isTRUE(return_draws)) {
-      attr(point, draw_attr) <- draw_reduced
+      attr(point, "draws") <- draw_reduced
     }
   }
 
@@ -508,64 +512,14 @@ avg_comparison_time_benefit_point <- function(
 copy_sops_attrs_to_setup <- function(setup, x) {
   call_args <- attr(x, "call_args")
   setup$times <- call_args$times %||% setup$times
-  setup$y_levels <- attr(x, "y_levels") %||% setup$y_levels
   setup$call_args <- call_args %||% setup$call_args
-  setup$time_var <- attr(x, "time_var") %||% setup$time_var
-  setup$p_var <- attr(x, "p_var") %||% setup$p_var
-  setup$p2_var <- attr(x, "p2_var") %||% setup$p2_var
-  setup$absorb <- attr(x, "absorb") %||% setup$absorb
-  setup$gap_var <- attr(x, "gap_var") %||% setup$gap_var
-  setup$time_covariates <- attr(x, "time_covariates") %||% setup$time_covariates
+  setup$settings <- markov_result_settings(x)
   setup
 }
 
-reduce_time_benefit_sops_df <- function(
-  data,
-  setup,
-  comparison,
-  value_col,
-  real_time,
-  weights,
-  time_unit
-) {
-  draw_ids <- if ("draw_id" %in% names(data)) sort(unique(data$draw_id)) else NA
-  pieces <- vector("list", length(draw_ids))
-
-  for (i in seq_along(draw_ids)) {
-    draw_id <- draw_ids[i]
-    work <- if (is.na(draw_id)) {
-      data
-    } else {
-      data[data$draw_id == draw_id, , drop = FALSE]
-    }
-    arr <- counterfactual_array_from_tidy(
-      data = work,
-      value_col = value_col,
-      setup = setup
-    )
-    out <- time_benefit_from_counterfactual_array(
-      sops_array = arr,
-      setup = setup,
-      comparison = comparison,
-      weights = weights,
-      real_time = real_time
-    )
-    if (!is.na(draw_id)) {
-      out$draw_id <- draw_id
-    }
-    pieces[[i]] <- out
-  }
-
-  out <- bind_rows_fill(pieces)
-  if (!is.null(time_unit)) {
-    out$time_unit <- time_unit
-  }
-  out
-}
-
 counterfactual_array_from_tidy <- function(data, value_col, setup) {
-  states <- as_state_labels(setup$y_levels)
-  times <- setup$times %||% sort(unique(data$time))
+  states <- as_state_labels(setup$settings$y_levels)
+  times <- setup$times
   n_states <- length(states)
   n_times <- length(times)
   arr <- array(
@@ -593,64 +547,42 @@ counterfactual_array_from_tidy <- function(data, value_col, setup) {
   arr
 }
 
-time_benefit_from_counterfactual_array <- function(
-  sops_array,
+# The averaged time benefit, from each profile's time benefit. `profile_rows`
+# has one row per profile and comparison level, the profiles of a level in one
+# block of `setup$n_each` rows (`individual_comparisons_from_array()`). They
+# are averaged over the profiles of each `setup$by` group, with `weights` if
+# given.
+average_time_benefit <- function(
+  profile_rows,
   setup,
-  comparison,
   weights,
-  real_time
+  value_col = "estimate"
 ) {
-  values <- setup$variables[[1]]
-  varname <- names(setup$variables)[1]
-  ref_idx <- 1L
-  comp_idx <- seq.int(2L, length(values))
-  times <- setup$times %||% seq_len(dim(sops_array)[3])
-  by <- setup$by
-  baseline <- setup$baseline_data
-  pieces <- vector("list", length(comp_idx))
-
-  for (i in seq_along(comp_idx)) {
-    level_idx <- comp_idx[i]
-    profile_value <- time_benefit_profile_values(
-      comparison_scenario(sops_array, ref_idx),
-      comparison_scenario(sops_array, level_idx),
-      times = times,
-      real_time = real_time
-    )
-
-    summary <- average_profile_values(
-      profile_value = profile_value,
-      baseline = baseline,
-      by = by,
-      weights = weights
-    )
-    summary$estimand <- "time_benefit"
-    summary$term <- varname
-    summary$reference_level <- values[1]
-    summary$comparison_level <- values[level_idx]
-    summary$contrast <- comparison_contrast_label(
-      values[level_idx],
-      values[1],
-      comparison
-    )
-    summary$comparison <- comparison
-    pieces[[i]] <- summary
-  }
-
-  out <- bind_rows_fill(pieces)
-  reorder_columns(
-    out,
-    c(
-      "estimand",
-      "term",
-      "reference_level",
-      "comparison_level",
-      "contrast",
-      "comparison",
-      by,
-      "estimate"
-    )
+  labels <- c(
+    "estimand",
+    "term",
+    "reference_level",
+    "comparison_level",
+    "contrast",
+    "comparison"
   )
+  rows <- seq_len(nrow(profile_rows))
+  pieces <- lapply(
+    unname(split(rows, (rows - 1L) %/% setup$n_each)),
+    function(level_rows) {
+      summary <- average_profile_values(
+        profile_value = profile_rows[[value_col]][level_rows],
+        baseline = setup$baseline_data,
+        by = setup$by,
+        weights = weights
+      )
+      for (label in labels) {
+        summary[[label]] <- profile_rows[[label]][level_rows[1L]]
+      }
+      summary
+    }
+  )
+  reorder_columns(bind_rows_fill(pieces), c(labels, setup$by, "estimate"))
 }
 
 # [scenario, profile, time, state] -> [profile, time, state] for one scenario.
@@ -690,7 +622,9 @@ ordinal_pairwise_benefit <- function(reference, comparison) {
       !is.matrix(comparison) ||
       !identical(dim(reference), dim(comparison))
   ) {
-    stop("Paired ordinal probability matrices must have identical dimensions.")
+    mostr_abort(
+      "Paired ordinal probability matrices must have identical dimensions."
+    )
   }
   n <- nrow(reference)
   states <- ncol(reference)
@@ -712,7 +646,9 @@ average_profile_values <- function(
   weights = NULL
 ) {
   if (length(profile_value) != nrow(baseline)) {
-    stop("Profile-level comparison values are not aligned with baseline data.")
+    mostr_abort(
+      "Profile-level comparison values are not aligned with baseline data."
+    )
   }
   weights <- validate_sops_weights(weights, length(profile_value))
   work <- baseline[, by %||% character(), drop = FALSE]

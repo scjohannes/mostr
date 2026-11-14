@@ -5,7 +5,7 @@
 \title{VIOLET preset for sim_markov()}
 \description{
 \code{sim_markov("violet")} simulates daily 4-state trajectories resembling the
-\href{https://doi.org/10.1056/NEJMoa1911124}{VIOLET trial} of early high-dose
+VIOLET trial (\doi{10.1056/NEJMoa1911124}) of early high-dose
 vitamin D3 versus placebo in critically ill adults with vitamin D deficiency.
 The transition model is the partial proportional-odds Markov model that
 Frank Harrell fitted to the VIOLET data to simulate his large \code{simlongord}

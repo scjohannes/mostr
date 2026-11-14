@@ -16,7 +16,15 @@
 #'   order, character values in sorted order, `FALSE` then `TRUE`, or `0` then
 #'   `1` for a numeric variable coded 0/1. Other numeric variables need their
 #'   values listed. The values are read from the data stored with the model,
-#'   or from `newdata` for a model without stored data.
+#'   or from `newdata` for a model without stored data. The variable must be
+#'   a column of the data. It may be a column that the model doesn't use, that
+#'   is, one that appears nowhere in the model formula (not even inside a term
+#'   such as `rms::rcs(age, 3)`) and is not the previous state. Setting such a
+#'   column can't change any prediction, so the comparison is 0 for a
+#'   difference and 1 for a ratio, with no uncertainty to report: its standard
+#'   error, test and confidence interval from [inferences()], and the
+#'   posterior interval of a `blrm` fit, are `NA`, as in the marginaleffects
+#'   package. Check the spelling if this happens unexpectedly.
 #' @param estimand Character scalar. One of `"sop"`, `"time_in_state"`, or
 #'   `"time_benefit"`.
 #' @param state_sets State selection for `"sop"` and `"time_in_state"`. `NULL`
@@ -28,7 +36,22 @@
 #' @param by How to average the comparisons of the individual profiles, as in
 #'   the marginaleffects package. `TRUE` (the default) averages over all
 #'   profiles. A character vector of column names averages within the groups
-#'   those columns define. `FALSE` or `NULL` does not average and returns the
+#'   those columns define, using each profile's values as observed. A `by`
+#'   column must have no missing values among the averaged profiles, because
+#'   a profile without a group would be left out of every average; drop or
+#'   impute those patients first, in `newdata` or in the data given to
+#'   [mostm()]. Naming the
+#'   compared variable itself, for example `by = "tx"` with
+#'   `variables = list(tx = c(0, 1))`, groups the patients by the treatment
+#'   they actually received: the result has a `tx` column holding that
+#'   observed value, and gives the average effect of treatment among the
+#'   untreated (`tx = 0`) and among the treated (`tx = 1`). Each group's
+#'   estimate equals the same call with `newdata` restricted to that group's
+#'   profiles. For `comparison = "ratio"`, a group's result is the ratio of
+#'   the group's averaged summaries. Intervals from [inferences()] with
+#'   `method = "mvn"`, `"bootstrap"`, or `"fwb"` follow
+#'   the same groups; analytical intervals (`method = "delta"`) are not
+#'   available with `by`. `FALSE` or `NULL` does not average and returns the
 #'   [comparisons()] result, one comparison per profile; analytical intervals
 #'   for it use conditional variance only, and the ordinary bootstrap is not
 #'   available.
@@ -36,8 +59,6 @@
 #'   order, for example `times = 1:30`. Each value is one transition, so
 #'   leaving out visits does not skip time; see the section "Choosing visits"
 #'   and [avg_sops()].
-#' @param y_levels A vector of state levels. See [avg_sops()].
-#' @param absorb The absorbing state. See [avg_sops()].
 #' @param time_map Optional named numeric vector or data frame mapping visit
 #'   labels to real elapsed times. Used by `"time_in_state"` and
 #'   `"time_benefit"`.
@@ -53,17 +74,9 @@
 #'   With `baseline_time = NULL`, the omitted grid is the mapped visit times
 #'   only.
 #' @param time_unit Optional label stored in output.
-#' @param id_var Name of the patient ID variable. See [avg_sops()].
-#' @param time_var Name of the time variable in the model. See [avg_sops()].
-#' @param p_var Name of the previous state variable in the model. See
-#'   [avg_sops()].
-#' @param p2_var Optional second previous-state variable. See [avg_sops()].
-#' @param gap_var Optional name of the variable holding the time elapsed since
-#'   the previous visit, if the model includes one. See [avg_sops()].
-#' @param time_covariates Optional time-varying covariate lookup table for explicit
-#'   precomputed time-basis columns. See [avg_sops()].
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs.
+#'   fitted random-effect draws in posterior predictions for known IDs. Only
+#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws.
 #' @param seed Optional random seed for reproducible posterior draw sampling.
@@ -72,7 +85,9 @@
 #' @param conf_level Confidence level for `blrm` posterior intervals.
 #' @param return_draws Logical. For `blrm`, store posterior comparison draws.
 #'   Frequentist uncertainty draws are stored by [inferences()].
-#' @param ... Additional arguments reserved for future extensions.
+#' @param ... Additional arguments reserved for future extensions. The column
+#'   names and states recorded by [mostm()] can't be given here; see the
+#'   section "Settings taken from the fit".
 #'
 #' @return A data frame of class `markov_avg_comparisons`, or, with
 #'   `by = FALSE`, of class `markov_comparisons`.
@@ -82,6 +97,11 @@
 #' SOPs. `estimand = "time_benefit"` is computed before marginalization from
 #' paired patient/profile-level counterfactual state distributions, because it
 #' is nonlinear in the two state distributions.
+#'
+#' The average gives every profile the same weight. Case weights given to
+#' [mostm()] with `weights` are used only to fit the model, not in this
+#' average, so the result is not the same as repeating each patient according
+#' to their weight.
 #'
 #' Frequentist uncertainty follows the existing package workflow:
 #' `avg_comparisons(...) |> inferences(...)`. Bayesian `blrm` models use their
@@ -93,10 +113,12 @@
 #' `vcov = "unconditional"` accounts for coefficient estimation and sampling
 #' the patients used in the averages. Use `vcov = "conditional"` to treat
 #' those patients' starting states and covariates as given and account only
-#' for coefficient estimation. User-supplied `newdata` requires the conditional
-#' choice. See [inferences()] for model restrictions.
+#' for coefficient estimation. User-supplied `newdata`, and models fitted with
+#' case weights, require the conditional choice. See [inferences()] for model
+#' restrictions.
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [comparisons()] for the comparison of each profile before
 #'   averaging, [avg_sops()], [sops()], [inferences()]
@@ -108,9 +130,7 @@
 #'   variables = list(tx = c(0, 1)),
 #'   estimand = "time_in_state",
 #'   state_sets = "1",
-#'   times = 1:30,
-#'   y_levels = 1:6,
-#'   absorb = 6
+#'   times = 1:30
 #' ) |>
 #'   inferences(method = "mvn", n_draws = 500)
 #' }
@@ -125,18 +145,10 @@ avg_comparisons <- function(
   comparison = c("difference", "ratio"),
   by = TRUE,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -145,8 +157,9 @@ avg_comparisons <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_removed_fit_arguments(...)
+  stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
-  stop_legacy_baseline_args(extra_args)
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)
@@ -154,11 +167,14 @@ avg_comparisons <- function(
 
   validate_comparison_times(times, "avg_comparisons()")
   conf_level <- validate_conf_level(conf_level)
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(model)
   variables <- resolve_comparison_variables(
     variables,
     model = model,
     newdata = newdata,
-    fn = "avg_comparisons()"
+    fn = "avg_comparisons()",
+    settings = settings
   )
   validate_avg_comparison_estimand(estimand, state_sets, comparison)
 
@@ -172,18 +188,10 @@ avg_comparisons <- function(
       comparison = comparison,
       by = FALSE,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
       time_map = time_map,
       baseline_time = baseline_time,
       target_times = target_times,
       time_unit = time_unit,
-      id_var = id_var,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -204,16 +212,8 @@ avg_comparisons <- function(
       variables = variables,
       by = by,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
-      include_re = include_re,
-      ...
+      settings = settings,
+      include_re = include_re
     )
     # The point estimate calls `sops()` on the counterfactual rows as supplied
     # `newdata`, so check `times` here against the original profiles.
@@ -221,20 +221,12 @@ avg_comparisons <- function(
       model,
       setup$newdata_orig,
       times,
-      time_var,
-      gap_var,
+      settings,
       setup$newdata_supplied
     )
     tb <- muffle_skipped_sop_visits(avg_comparison_time_benefit_point(
       model = model,
       setup = setup,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -251,20 +243,15 @@ avg_comparisons <- function(
     result <- tb$result
     setup <- tb$setup
   } else {
+    # The averaged SOPs hold the set value in the compared variable's column,
+    # so a group of its observed value uses an observed copy.
     avg <- avg_comparison_replay_avg_sops(
       model = model,
       newdata = newdata,
       variables = variables,
-      by = by,
+      by = observed_by(by, variables),
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -275,7 +262,7 @@ avg_comparisons <- function(
     )
     state_sets <- normalize_comparison_state_sets(
       state_sets,
-      attr(avg, "y_levels")
+      markov_result_settings(avg)$y_levels
     )
     result <- avg_comparison_from_avg_sops(
       avg,

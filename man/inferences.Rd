@@ -16,7 +16,6 @@ inferences(
   conf_type = "auto",
   null = "auto",
   return_draws = TRUE,
-  update_datadist = TRUE,
   use_coefstart = FALSE
 )
 }
@@ -31,15 +30,14 @@ inferences(
 \itemize{
 \item \code{"mvn"}: Multivariate-normal coefficient draws.
 \item \code{"delta"}: Deterministic analytical delta-method inference.
-\item \code{"score_bootstrap"}: One-step score perturbation using fixed
-exponential cluster weights.
 \item \code{"bootstrap"}: Ordinary patient-level refit bootstrap.
 \item \code{"fwb"}: Fractional weighted refits using fixed exponential
 patient weights.
 }}
 
 \item{n_draws}{Number of simulation draws (for simulation) or bootstrap
-iterations (for bootstrap). Default is 1000. For \code{blrm} SOP objects this
+iterations (for bootstrap). Default is 1000. Must be a single whole number
+of at least 2; \code{method = "delta"} does not use it. For \code{blrm} SOP objects this
 argument is ignored; rerun \code{sops()}/\code{avg_sops()} with \code{n_draws} and \code{seed}
 to change posterior draws.}
 
@@ -63,8 +61,7 @@ vector aligned with the fitting rows or a one-sided formula selecting a
 stored fitting-data column. Otherwise the model's stored \code{id_var} is used;
 fitting rows are never treated as implicit clusters. For unconditional
 inference, the cluster labels must match the stored starting-profile patient
-IDs exactly. For score bootstrap with \code{orm}, this is the row-aligned cluster
-vector.}
+IDs exactly.}
 
 \item{workers}{Number of parallel workers. If NULL (default) or 1, uses
 sequential processing. If > 1, uses parallel processing with that many
@@ -112,12 +109,12 @@ them gives a warning.}
 bootstrap draws as an attribute. Extract with \code{\link[=get_draws]{get_draws()}}. Delta
 inference never stores draws. Default is \code{TRUE}.}
 
-\item{update_datadist}{Logical. Whether to update datadist for rms models
-during bootstrap. Default is TRUE.}
-
-\item{use_coefstart}{Logical. If \code{TRUE}, \code{vglm} refits start from the
-original fit's coefficients, which can speed up convergence. Default is
-\code{FALSE}. See "Starting values in refits" in Details.}
+\item{use_coefstart}{Logical. If \code{TRUE}, each refit of
+\code{method = "bootstrap"} or \code{"fwb"} starts from the original fit's
+coefficients, which can speed up convergence. Only models fitted with
+\code{engine = "vglm"} accept starting coefficients, so \code{TRUE} is an error for
+other models and for \code{method = "mvn"} or \code{"delta"}, which do not refit.
+Default is \code{FALSE}. See "Starting values in refits" in Details.}
 }
 \value{
 The input object with added columns:
@@ -131,13 +128,20 @@ When a null value is tested (by default, for \code{\link[=comparisons]{compariso
 the object also has \code{statistic}, \code{p.value}, and \code{s.value} columns; see
 \code{null}.
 
+A comparison of a variable that the model doesn't use (see \code{variables}
+in \code{\link[=avg_comparisons]{avg_comparisons()}}) is 0 for a difference, or 1 for a ratio, whatever
+the coefficients are, so it has no uncertainty. For such results every
+method returns \code{NA} in all of these columns except \code{estimate}, as the
+marginaleffects package does. Predictions under such a variable, from
+\code{\link[=sops]{sops()}}, \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=state_time]{state_time()}}, or \code{\link[=avg_state_time]{avg_state_time()}}, are
+ordinary predictions and keep their standard errors.
+
 For simulation and bootstrap methods, \code{return_draws = TRUE} also stores a
 \code{"draws"} attribute containing all individual draws. Delta results instead
 store a low-rank \code{"analytical"} attribute and never store draws. For
 per-profile results from \code{sops()}, \code{\link[=state_time]{state_time()}}, and \code{\link[=comparisons]{comparisons()}}
-evaluated on the stored prediction cohort, score-bootstrap and FWB draws
-include the
-draw-specific \code{score_weight} or \code{fwb_weight} column.
+evaluated on the stored prediction cohort, FWB draws include the
+draw-specific \code{fwb_weight} column.
 }
 \description{
 Adds confidence intervals to SOP, average-time, and comparison objects using
@@ -184,14 +188,18 @@ Every included patient must contribute at least one usable likelihood
 transition and have exactly one complete model-stored starting profile. The
 starting profile may have a missing first transition response; its ID,
 predictors, scheduled starting time, and previous state must be observed.
-Weighted and penalized ORM fits do not support unconditional variance because
-their score/sensitivity contracts have not been established. They remain
-eligible for conditional delta inference when their fitted covariance is valid.
+Unconditional variance is not available for models fitted with case weights
+(\code{weights} in \code{\link[=mostm]{mostm()}}) with any engine, because its calculation has not
+been checked with weights; this includes the default \code{vcov = NULL} for
+averages. Nor is it available for penalized \code{orm} fits, because their
+patients' contributions to coefficient estimation have not been shown to
+account for the penalty. Both kinds of fit still give conditional variance
+with \code{vcov = "conditional"}.
 
-Analytical covariance is patient-cluster robust only when valid patient IDs
-are supplied explicitly or retained as the fitted model's \code{id_var}.
-Observation rows are not an automatic clustering fallback, and multiway or
-otherwise non-patient cluster structures are not currently supported.
+Analytical covariance is patient-cluster robust: it groups the fitting rows
+by the \code{id_var} column named in \code{\link[=mostm]{mostm()}}, or by the patient IDs given in
+\code{cluster}. Multiway or otherwise non-patient cluster structures are not
+currently supported.
 Patient-cluster robustness protects variance estimation against
 within-patient score correlation; it does not remove bias from a misspecified
 transition model, informative observation process, or Markov assumption.
@@ -204,26 +212,14 @@ The simulation method works as follows:
 \enumerate{
 \item Extract the fitted coefficient vector \eqn{\hat\beta} and its estimated
 covariance matrix \eqn{V_\beta}.
-\item Generate \code{n_draws} coefficient vectors using the selected method:
-\itemize{
-\item \code{method = "mvn"}: Multivariate-normal draws from
-\eqn{\mathcal{N}(\hat\beta, V_\beta)}.
-\item \code{method = "score_bootstrap"}: one-step score perturbation with
-cluster-level exponential multipliers.
-}
+\item Generate \code{n_draws} coefficient vectors from the multivariate normal
+distribution \eqn{\mathcal{N}(\hat\beta, V_\beta)} (\code{method = "mvn"}).
 \item For each draw, replace model coefficients and compute SOPs
 \item Compute confidence intervals from the empirical distribution
 }
-\itemize{
-\item Works for both individual-level (\code{sops()}) and averaged (\code{avg_sops()}) SOPs
-for \code{method = "mvn"}
-\item \code{method = "score_bootstrap"} supports \code{avg_sops()} and \code{sops()} with
-\code{robcov_vglm} models and with \code{orm} models when \code{cluster} is supplied.
-When the prediction rows are the stored patients, the same
-cluster-level weights used for the score perturbation are used for every
-empirical averaging step. With \code{by}, weights are normalized within each
-subgroup; without \code{by}, they are normalized over the full set of stored patients.
-}
+
+This works for both individual-level (\code{sops()}) and averaged (\code{avg_sops()})
+SOPs.
 }
 
 \subsection{Bootstrap Method}{
@@ -233,8 +229,9 @@ The bootstrap method refits the model on bootstrap-weighted data:
 \item Sample patient IDs with replacement (\code{method = "bootstrap"}) or draw
 exponential patient weights normalized to mean 1 (\code{method = "fwb"})
 \item Refit the model on the bootstrap sample by calling \code{\link[=mostm]{mostm()}} again with
-the original engine and arguments (handles missing states through
-releveling)
+the original engine and arguments. A state that no sampled patient was
+ever in is left out of that refit, and the other states keep their
+labels (see below)
 \item Compute SOPs using G-computation
 \item Compute percentile-based confidence intervals
 Bootstrap refits always resample the full longitudinal data (all time
@@ -251,28 +248,71 @@ individual prediction rows. For averages within \code{by} groups, a resample can
 also leave out every patient of a small group, and that resample would then
 have no estimate for the group. \code{inferences()} checks the resamples before
 refitting and stops if any resample lacks a group; the fractional weighted
-bootstrap keeps every patient in every refit and has no such gaps. Fractional weighted bootstrap keeps every row in
+bootstrap keeps every patient in every refit and has no such gaps.
+}
+
+In the same way, an ordinary resample can leave out every patient who was
+ever in a rare state. The refit of that resample doesn't know the state, so
+in that draw the state's occupancy probability is 0, as it is in a resample
+where no patient visits it. The refit also has no estimate for moving out
+of the state, so it cannot predict for a profile that starts there. With
+\code{newdata}, each draw predicts the same supplied profiles, so
+before refitting \code{inferences()} checks that every resample holds every
+state that a profile starts in (\code{yprev}, and for second-order models also
+the state two visits back). If one does not, it stops, naming the state
+and the number of resamples that lack it. Use \code{method = "fwb"} then, or
+remove those profiles from \code{newdata}. Without \code{newdata}, each draw
+predicts its own resampled patients, so their starting states are always
+present.
+
+A draw whose refit or prediction fails, for example because the model
+cannot be fitted to that resample, is left out with a warning that says
+why. A final warning then says how many of the draws failed, because the
+confidence intervals rest on the remaining draws only.
+
+Fractional weighted bootstrap keeps every row in
 the refit data with positive patient-level weights, so it is available for
 individual \code{sops()} objects. The same holds for \code{\link[=comparisons]{comparisons()}} results,
-which also support \code{method = "mvn"} and \code{method = "score_bootstrap"}. For
+which also support \code{method = "mvn"}. For
 FWB, the same patient weights used for
 refitting are used for marginal or subgroup averaging. Stored-data
 \code{sops()} draws and stored-data \code{\link[=comparisons]{comparisons()}} draws expose the patient
-weight as \code{fwb_weight} (or \code{score_weight} for the score bootstrap);
+weight as \code{fwb_weight};
 averaging each draw's comparisons with these weights reproduces the
 \code{\link[=avg_comparisons]{avg_comparisons()}} draws. \code{avg_sops()} uses the weights internally and
 returns already averaged draws.
 Prediction data for such per-profile draw output must not already contain a
-column named \code{fwb_weight} or \code{score_weight}, because those names are reserved
-for bootstrap draw weights.
-}
+column named \code{fwb_weight}, because that name is reserved for bootstrap draw
+weights.
 
 For marginal \code{avg_sops()} objects built from user-supplied \code{newdata}, the
 supplied patients' starting states and covariates are treated as given.
-This also applies to \code{sops(newdata = ...)}. Score bootstrap and FWB use the
-data stored on the fitted model for coefficient or refit uncertainty, but do
+This also applies to \code{sops(newdata = ...)}. FWB uses the
+data stored on the fitted model for refit uncertainty, but does
 not attach or apply draw weights to the supplied prediction profiles because
-those rows cannot be assumed to align with the bootstrap clusters.
+those rows cannot be assumed to align with the bootstrap patients.
+
+This holds even when \code{newdata} holds the very patients the model was
+fitted to. Both calls below refit the model to resamples of the stored
+data, so both reflect the uncertainty of the coefficients; they differ in
+whom each draw predicts for:
+\itemize{
+\item \code{avg_sops(fit)} predicts, in each draw, the patients of that resample,
+so the draws also vary in which starting states and covariates are
+averaged over. Its intervals match unconditional variance.
+\item \code{avg_sops(fit, newdata = profiles)} predicts the same profiles in every
+draw, so their starting states and covariates are held fixed. Its
+intervals match conditional variance and are narrower.
+}
+
+In one simulated trial (200 patients, 400 draws) with \code{newdata} set to the
+fitted patients' own starting rows, the standard errors with \code{newdata} were
+a median of 0.82 times those without it, and 0.23 times for an early visit
+whose probability depends mostly on the starting state. Leave out \code{newdata}
+to include the variation between patients; supply it to describe fixed
+profiles. A profile that starts in a state that some resample lacks has
+no prediction in that draw, so \code{inferences()} then stops and suggests
+\code{method = "fwb"}.
 }
 
 \subsection{Starting values in refits}{
@@ -280,13 +320,16 @@ those rows cannot be assumed to align with the bootstrap clusters.
 Starting values are the coefficient values from which the fitting algorithm
 begins its search. They can come from \code{use_coefstart = TRUE} (the original
 fit's coefficients) or from a \code{coefstart} argument you passed to
-\code{\link[=mostm]{mostm()}} with \code{engine = "vglm"}. A refit uses them only when its bootstrap
+\code{\link[=mostm]{mostm()}}; both need \code{engine = "vglm"}. A refit uses them only when its bootstrap
 sample contains
 every outcome state. When a state is missing, the refit has fewer intercepts
 than the original model, so the starting values no longer fit and the model
 is refitted without any. If a refit with starting values fails, for example
 because a covariate level is absent from the sample, it is retried once
 without them.
+
+Refits do not use an rms \code{datadist}. A \code{datadist} you have set with
+\code{options(datadist = ...)} is ignored during the refits and left as it is.
 
 Choosing conditional or unconditional analytical variance changes the
 standard errors and confidence intervals, not the point estimates.
@@ -297,17 +340,19 @@ standard errors and confidence intervals, not the point estimates.
 When \code{variables} in \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_state_time]{avg_state_time()}}, or \code{\link[=avg_comparisons]{avg_comparisons()}} sets
 the previous-state variable, for example
 \code{variables = list(yprev = c("1", "2"))}, every patient starts in the set
-state in each scenario. Real-time summaries then start from that state
+state in each scenario. The same holds for a second-order model when
+\code{variables} sets the state two visits back (the \code{p2_var} column, for
+example \code{variables = list(ypprev = c("1", "2"))}). Real-time summaries then start from that state
 rather than from the patients' observed starting states. Such results
 support only conditional variance: use \code{method = "delta"} with
 \code{vcov = "conditional"} (or a coefficient covariance matrix), or
-\code{method = "mvn"}. Unconditional delta inference and the score-bootstrap,
-bootstrap, and FWB methods error, because they also account for which
+\code{method = "mvn"}. Unconditional delta inference and the bootstrap and FWB
+methods error, because they also account for which
 patients were sampled, and that calculation is not supported once the
 starting state is set. \code{\link[=state_time]{state_time()}} and \code{\link[=comparisons]{comparisons()}} results are not
 averaged over
 patients, so with a set starting state they keep the conditional delta,
-MVN, score-bootstrap, and FWB methods.
+MVN, and FWB methods.
 }
 }
 \examples{
@@ -317,6 +362,7 @@ fit_robust <- mostm(
   ordered(y) ~ time + tx + yprev,
   data = data,
   id_var = "id",
+  absorb = "6",
   engine = "vglm"
 )
 
@@ -324,72 +370,48 @@ fit_robust <- mostm(
 result_sim <- avg_sops(
   model = fit_robust,
   variables = list(tx = c(0, 1)),
-  times = 1:60,
-  y_levels = factor(1:6),
-  absorb = "6"
+  times = 1:60
 ) |>
   inferences(method = "mvn", n_draws = 1000)
 
-# Step 2a-bis: Score bootstrap simulation (requires robcov_vglm)
-result_score <- avg_sops(
-  model = fit_robust,
-  variables = list(tx = c(0, 1)),
-  times = 1:60,
-  y_levels = factor(1:6),
-  absorb = "6"
-) |>
-  inferences(method = "score_bootstrap", n_draws = 1000)
-
 # The orm engine stores the package-owned full robust covariance matrix.
-dd <- rms::datadist(data)
-options(datadist = "dd")
-fit_orm <- mostm(y ~ time + tx + yprev, data = data, id_var = "id")
+fit_orm <- mostm(
+  y ~ time + tx + yprev,
+  data = data,
+  id_var = "id",
+  absorb = "6"
+)
 
 avg_orm <- avg_sops(
   model = fit_orm,
   variables = list(tx = c(0, 1)),
-  times = 1:60,
-  y_levels = factor(1:6),
-  absorb = "6"
+  times = 1:60
 )
 result_orm <- avg_orm |>
   inferences(method = "mvn", n_draws = 1000)
-
-result_orm_score <- avg_orm |>
-  inferences(
-    method = "score_bootstrap",
-    cluster = data$id,
-    n_draws = 1000
-  )
 
 # Step 2b: Bootstrap inference reuses stored full data
 result_boot <- avg_sops(
   model = fit_robust,
   variables = list(tx = c(0, 1)),
-  times = 1:60,
-  y_levels = factor(1:6),
-  absorb = "6"
+  times = 1:60
 ) |>
   inferences(method = "bootstrap", n_draws = 500)
 
 # Individual-level SOPs with simulation inference
 ind_result <- sops(
   model = fit_robust,
-  times = 1:60,
-  y_levels = factor(1:6),
-  absorb = "6") |>
+  times = 1:60) |>
   inferences(n_draws = 500)
 
 # Individual-level refit bootstrap uses FWB.
 ind_boot <- sops(
   model = fit_robust,
-  times = 1:60,
-  y_levels = factor(1:6),
-  absorb = "6") |>
+  times = 1:60) |>
   inferences(method = "fwb", n_draws = 500)
 
 # Extract draws for custom analyses
-get_draws(ind_result)
+draws <- get_draws(result_sim)
 
 # Compute treatment effect on time in state
 library(dplyr)

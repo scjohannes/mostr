@@ -18,9 +18,15 @@
 #'   covariates.
 #' @param by How to average, as in the marginaleffects package. `TRUE` (the
 #'   default) averages over all profiles, and a character vector of column
-#'   names averages within the groups those columns define. `FALSE` or `NULL`
-#'   does not average and returns the [state_time()] result, one total per
-#'   profile, value of `variables`, and state set.
+#'   names averages within the groups those columns define, using each
+#'   profile's observed values. A `by` column must have no missing values
+#'   among the averaged profiles; drop or impute those patients first, in
+#'   `newdata` or in the data given to [mostm()]. As in [avg_sops()], `by`
+#'   cannot name a
+#'   variable that `variables` also sets; copy the column first, for example
+#'   `newdata$observed_tx <- newdata$tx`, and use `by = "observed_tx"`.
+#'   `FALSE` or `NULL` does not average and returns the [state_time()] result,
+#'   one total per profile, value of `variables`, and state set.
 #' @param state_sets States to summarize. `NULL` returns every state separately.
 #'   A vector pools its states into one total; a named list returns one total
 #'   per named state set, for example
@@ -74,6 +80,11 @@
 #' the interval before the first visit is included. For example, with visits
 #' on days 3, 7, 14, and 28 and `baseline_time = 0`, totals cover days 0 to 28.
 #'
+#' The average gives every profile the same weight. Case weights given to
+#' [mostm()] with `weights` are used only to fit the model, not in this
+#' average, so the result is not the same as repeating each patient according
+#' to their weight.
+#'
 #' `inferences(method = "delta")` provides analytical standard errors and
 #' confidence intervals of the form estimate plus or minus a normal quantile
 #' times the standard error. These intervals are not restricted to the
@@ -82,7 +93,8 @@
 #' patients were sampled, including their observed starting states. Use
 #' `vcov = "conditional"` to treat the patients' starting states and
 #' covariates as given and account only for coefficient estimation. Supplied
-#' `newdata` requires conditional variance. When `variables` sets the
+#' `newdata`, and models fitted with case weights, require conditional
+#' variance. When `variables` sets the
 #' previous-state variable (a counterfactual starting state), the baseline
 #' starts in that state and only conditional variance is available
 #' (`method = "delta", vcov = "conditional"` or `method = "mvn"`). The
@@ -102,9 +114,9 @@
 #'   the distribution of starting states, fixed. It is comparable to
 #'   conditional variance, so its intervals are typically narrower than the
 #'   default analytical intervals.
-#' * `method = "score_bootstrap"`, `method = "bootstrap"`, and `method = "fwb"`
-#'   (fractional weighted bootstrap) re-draw or re-weight patients, including
-#'   their starting states. They are comparable to unconditional variance.
+#' * `method = "bootstrap"` and `method = "fwb"` (fractional weighted
+#'   bootstrap) re-draw or re-weight patients, including their starting
+#'   states. They are comparable to unconditional variance.
 #'
 #' Each of these methods, and posterior summaries for `blrm` models, first
 #' converts every draw of occupancy probabilities into time totals and then
@@ -113,6 +125,7 @@
 #' retained with `return_draws = TRUE`.
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [avg_sops()], [avg_comparisons()], [time_in_state()], [inferences()]
 #' @examples
@@ -142,18 +155,10 @@ avg_state_time <- function(
   state_sets = NULL,
   by = TRUE,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -162,6 +167,8 @@ avg_state_time <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_removed_fit_arguments(...)
+  stop_include_re_without_blrm(model, include_re)
   validate_state_time_arguments(
     times,
     baseline_time = baseline_time,
@@ -186,17 +193,9 @@ avg_state_time <- function(
           state_sets = state_sets,
           by = FALSE,
           times = times,
-          y_levels = y_levels,
-          absorb = absorb,
           time_map = time_map,
           target_times = target_times,
           time_unit = time_unit,
-          id_var = id_var,
-          time_var = time_var,
-          p_var = p_var,
-          p2_var = p2_var,
-          gap_var = gap_var,
-          time_covariates = time_covariates,
           include_re = include_re,
           n_draws = n_draws,
           seed = seed,
@@ -212,13 +211,21 @@ avg_state_time <- function(
   # From here on, `by` holds the grouping columns, or `NULL` to average over
   # all profiles.
   by <- by_choice$by
-  variables <- resolve_prediction_variables(variables, model, newdata)
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(model)
+  variables <- resolve_prediction_variables(
+    variables,
+    model,
+    newdata,
+    settings
+  )
+  stop_by_names_set_variable(by, variables, "avg_state_time()")
   reserved <- intersect(
     c(names(variables), by),
     c("state_set", if (!is.null(time_unit)) "time_unit")
   )
   if (length(reserved)) {
-    stop(
+    mostr_abort(
       "Grouping or counterfactual variables use reserved output names: ",
       paste(reserved, collapse = ", "),
       ". Rename these variables."
@@ -228,20 +235,14 @@ avg_state_time <- function(
     validate_avg_time_state_sets(state_sets)
   }
   extra_args <- list(...)
+  conf_level <- validate_conf_level(conf_level)
   avg <- avg_comparison_replay_avg_sops(
     model = model,
     newdata = newdata,
     variables = variables,
     by = by,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -252,7 +253,7 @@ avg_state_time <- function(
   )
   state_sets <- normalize_comparison_state_sets(
     state_sets,
-    attr(avg, "y_levels")
+    markov_result_settings(avg)$y_levels
   )
   args <- list(
     state_sets = state_sets,
@@ -283,30 +284,32 @@ validate_state_time_arguments <- function(
   fn
 ) {
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `", fn, "`.")
+    mostr_abort("`times` must be supplied to `", fn, "`.")
   }
   if (anyDuplicated(times)) {
-    stop(
+    mostr_abort(
       "`times` must not contain duplicate visits; each visit is counted once."
     )
   }
   if (baseline_time_supplied && !is.null(baseline_time) && is.null(time_map)) {
-    stop(
+    mostr_abort(
       "`baseline_time` requires `time_map`; without `time_map`, totals sum ",
       "occupancy probabilities at the requested visits."
     )
   }
   if (!is.null(target_times) && is.null(time_map)) {
-    stop("`target_times` requires `time_map` for real-time integration.")
+    mostr_abort("`target_times` requires `time_map` for real-time integration.")
   }
   if (!is.null(target_times) && !length(target_times)) {
-    stop("`target_times` must contain at least one time.")
+    mostr_abort("`target_times` must contain at least one time.")
   }
   if (
     !is.null(time_unit) &&
       (!is.character(time_unit) || length(time_unit) != 1L || is.na(time_unit))
   ) {
-    stop("`time_unit` must be a single non-missing character label or NULL.")
+    mostr_abort(
+      "`time_unit` must be a single non-missing character label or NULL."
+    )
   }
   invisible(NULL)
 }
@@ -332,7 +335,7 @@ validate_avg_time_state_sets <- function(state_sets) {
       any(!nzchar(labels)) ||
       anyDuplicated(labels)
   ) {
-    stop(
+    mostr_abort(
       "`state_sets` must contain nonempty state sets with unique, non-missing names."
     )
   }
@@ -343,35 +346,9 @@ replay_avg_time_sops <- function(object, conf_level, return_draws = FALSE) {
   args <- attr(object, "time_args")
   avg_args <- attr(object, "avg_args")
   if (is.null(args) || is.null(avg_args)) {
-    stop("Stored average-time arguments are required for inference.")
+    mostr_abort("Stored average-time arguments are required for inference.")
   }
-  avg_comparison_replay_avg_sops(
-    model = attr(object, "model"),
-    newdata = if (isTRUE(attr(object, "newdata_supplied"))) {
-      attr(object, "newdata_orig")
-    } else {
-      NULL
-    },
-    variables = avg_args$variables,
-    by = avg_args$by,
-    times = avg_args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    time_var = attr(object, "time_var"),
-    p_var = attr(object, "p_var"),
-    id_var = avg_args$id_var,
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates"),
-    include_re = args$include_re,
-    n_draws = args$n_draws,
-    seed = args$seed,
-    posterior_summary = args$posterior_summary,
-    conf_level = conf_level,
-    return_draws = return_draws,
-    extra_args = args$extra_args,
-    warn_skipped_visits = FALSE
-  )
+  replay_result_avg_sops(object, args, conf_level, return_draws)
 }
 
 reduce_avg_time_df <- function(
@@ -495,11 +472,10 @@ inferences_avg_time <- function(
   conf_level,
   conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   avg <- replay_avg_time_sops(object, conf_level)
-  avg <- inferences(
+  avg <- inferences_internal(
     avg,
     method = method,
     n_draws = n_draws,
@@ -509,7 +485,6 @@ inferences_avg_time <- function(
     conf_level = conf_level,
     conf_type = conf_type,
     return_draws = TRUE,
-    update_datadist = update_datadist,
     use_coefstart = use_coefstart
   )
   args <- attr(object, "time_args")

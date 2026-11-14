@@ -16,13 +16,21 @@
 #' @param variables The variable to compare: a bare name such as `"tx"`, or a
 #'   named list giving its values, such as `list(tx = c(0, 1))`. Each profile
 #'   is predicted with the variable set to each value, and the first value is
-#'   the reference. See [avg_comparisons()] for the values a bare name selects.
+#'   the reference. See [avg_comparisons()] for the values a bare name selects
+#'   and for a variable that the model doesn't use, whose comparisons are 0
+#'   (1 for a ratio) with `NA` standard errors, tests and intervals.
 #' @param by `FALSE` (the default) or `NULL` returns one comparison per
 #'   profile. `TRUE` averages the comparisons over all profiles, and a
 #'   character vector of column names averages them within the groups those
 #'   columns define. Both return the result of [avg_comparisons()] with the
-#'   same arguments. For `comparison = "ratio"`, that average is the ratio of
-#'   the averaged summaries, not the average of the profiles' ratios.
+#'   same arguments. A `by` column must have no missing values among the
+#'   averaged profiles; drop or impute those patients first. Groups use each
+#'   profile's observed values, so naming the
+#'   compared variable, for example `by = "tx"`, gives the average effect among
+#'   the untreated and among the treated; analytical intervals
+#'   (`method = "delta"`) are not available with `by`. For
+#'   `comparison = "ratio"`, that average is the ratio of the averaged
+#'   summaries, not the average of the profiles' ratios.
 #' @param return_draws Logical. For `blrm`, store the posterior draws of each
 #'   comparison for extraction with [get_draws()].
 #'
@@ -72,12 +80,12 @@
 #'     covariance. It supports differences of SOPs and of time in states for
 #'     first-order full proportional-odds `orm`, `vglm`, and `robcov_vglm`
 #'     fits; [stats::vcov()] then returns the covariance between rows.
-#'   \item `method = "mvn"`, `"score_bootstrap"`, or `"fwb"` predict every
+#'   \item `method = "mvn"` or `"fwb"` predict every
 #'     profile under each compared value within each coefficient draw or
 #'     weighted refit, and compute the comparisons within that draw before
-#'     forming the intervals. For the stored profiles, score-bootstrap and FWB
-#'     draws also carry each patient's weight in that draw (`score_weight` or
-#'     `fwb_weight`); averaging a draw's comparisons with these weights
+#'     forming the intervals. For the stored profiles, FWB
+#'     draws also carry each patient's weight in that draw
+#'     (`fwb_weight`); averaging a draw's comparisons with these weights
 #'     reproduces the [avg_comparisons()] draw. See [get_draws()].
 #' }
 #' The ordinary resampling bootstrap (`method = "bootstrap"`) is not
@@ -97,6 +105,7 @@
 #' `mostr.max_sops_draw_cells` (50 million by default, about 400 MB).
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [avg_comparisons()] for averaged comparisons, [sops()] for each
 #'   profile's state occupancy probabilities.
@@ -108,8 +117,7 @@
 #' comparisons(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:30,
-#'   absorb = 6
+#'   times = 1:30
 #' ) |>
 #'   inferences(method = "mvn", n_draws = 500)
 #'
@@ -120,8 +128,7 @@
 #'   variables = list(tx = c(0, 1)),
 #'   estimand = "time_in_state",
 #'   state_sets = "1",
-#'   times = 1:30,
-#'   absorb = 6
+#'   times = 1:30
 #' )
 #'
 #' # The same comparisons averaged within age groups.
@@ -130,8 +137,7 @@
 #'   variables = list(tx = c(0, 1)),
 #'   estimand = "time_in_state",
 #'   by = "age_group",
-#'   times = 1:30,
-#'   absorb = 6
+#'   times = 1:30
 #' )
 #' }
 #'
@@ -145,18 +151,10 @@ comparisons <- function(
   comparison = c("difference", "ratio"),
   by = FALSE,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -165,19 +163,23 @@ comparisons <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_removed_fit_arguments(...)
+  stop_include_re_without_blrm(model, include_re)
   extra_args <- list(...)
-  stop_legacy_baseline_args(extra_args)
   estimand <- match.arg(estimand)
   comparison <- match.arg(comparison)
   posterior_summary <- match.arg(posterior_summary)
   by <- resolve_by_choice(by)
   validate_comparison_times(times, "comparisons()")
   conf_level <- validate_conf_level(conf_level)
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(model)
   variables <- resolve_comparison_variables(
     variables,
     model = model,
     newdata = newdata,
-    fn = "comparisons()"
+    fn = "comparisons()",
+    settings = settings
   )
   validate_avg_comparison_estimand(estimand, state_sets, comparison)
 
@@ -191,18 +193,10 @@ comparisons <- function(
       comparison = comparison,
       by = by$by %||% TRUE,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
       time_map = time_map,
       baseline_time = baseline_time,
       target_times = target_times,
       time_unit = time_unit,
-      id_var = id_var,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -219,19 +213,12 @@ comparisons <- function(
     variables = variables,
     by = NULL,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     include_re = include_re
   )
   profile_cols <- comparison_profile_columns(
     setup$baseline_data,
-    time_var = time_var,
+    time_var = settings$time_var,
     estimand = estimand
   )
   # `sops()` below receives the counterfactual rows as supplied `newdata`, so
@@ -240,25 +227,18 @@ comparisons <- function(
     model,
     setup$newdata_orig,
     times,
-    time_var,
-    gap_var,
+    settings,
     setup$newdata_supplied
   )
 
   # Posterior comparisons are summarized from paired draws, so `blrm` SOP
   # draws are always needed here.
-  ind <- muffle_skipped_sop_visits(sops(
+  ind <- muffle_skipped_sop_visits(sops_impl(
     model = model,
     newdata = setup$newdata_pred,
+    variables = NULL,
     times = setup$times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = setup$id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = setup$settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -271,7 +251,7 @@ comparisons <- function(
   if (estimand != "time_benefit") {
     state_sets <- normalize_comparison_state_sets(
       state_sets,
-      attr(ind, "y_levels")
+      markov_result_settings(ind)$y_levels
     )
   }
 
@@ -347,21 +327,20 @@ comparison_profile_columns <- function(baseline_data, time_var, estimand) {
 # Profile columns are copied into a result next to its own columns, so they
 # must not reuse those (`reserved`) names. The profile's visit column is
 # dropped: it holds the starting visit, not a prediction time. So are the
-# row numbers and columns that mostr adds for its own bookkeeping, such as
-# `.markov_source_row`.
+# row numbers and columns that mostr adds for its own bookkeeping
+# (`markov_internal_column()`).
 profile_output_columns <- function(data, time_var, reserved, fn) {
   profile_cols <- setdiff(names(data), c("rowid", "rowidcf", time_var))
-  profile_cols <- profile_cols[!startsWith(profile_cols, ".markov_")]
+  profile_cols <- profile_cols[!markov_internal_column(profile_cols)]
   clash <- intersect(profile_cols, reserved)
   if (length(clash) > 0L) {
-    stop(
+    mostr_abort(
       "`",
       fn,
       "` uses the column name(s) ",
       paste0("`", clash, "`", collapse = ", "),
       " for its output, so the prediction profiles cannot contain them. ",
-      "Rename these columns.",
-      call. = FALSE
+      "Rename these columns."
     )
   }
   profile_cols
@@ -417,16 +396,17 @@ profile_array_reducer <- function(kind, args) {
   list(reduce_array = reduce_array, real_time = real_time)
 }
 
-profile_results_from_individual_sops <- function(
+# Prepares the reduction of the tidy SOPs `x` of every scenario and profile to
+# one row per profile. Returns `x`, interpolated to real time when `reducer`
+# works in real time, and a function that reduces its rows, or the rows of one
+# of its draws, with the values in `value_col`.
+profile_tidy_reducer <- function(
   x,
   setup,
   reducer,
   time_map,
   baseline_time,
-  target_times,
-  posterior_summary,
-  conf_level,
-  return_draws
+  target_times
 ) {
   real_time <- reducer$real_time
   if (real_time) {
@@ -447,7 +427,7 @@ profile_results_from_individual_sops <- function(
   if (real_time) {
     reduce_setup$times <- sort(unique(x$time))
   }
-  reduce_setup$y_levels <- attr(x, "y_levels")
+  reduce_setup$settings$y_levels <- markov_result_settings(x)$y_levels
 
   reduce <- function(data, value_col) {
     reducer$reduce_array(
@@ -460,6 +440,30 @@ profile_results_from_individual_sops <- function(
       value_col = value_col
     )
   }
+  list(x = x, reduce = reduce)
+}
+
+profile_results_from_individual_sops <- function(
+  x,
+  setup,
+  reducer,
+  time_map,
+  baseline_time,
+  target_times,
+  posterior_summary,
+  conf_level,
+  return_draws
+) {
+  tidy <- profile_tidy_reducer(
+    x,
+    setup = setup,
+    reducer = reducer,
+    time_map = time_map,
+    baseline_time = baseline_time,
+    target_times = target_times
+  )
+  x <- tidy$x
+  reduce <- tidy$reduce
   point <- reduce(as.data.frame(x), "estimate")
 
   draws <- attr(x, "draws")
@@ -562,7 +566,7 @@ individual_comparisons_from_array <- function(
     return(bind_rows_fill(pieces))
   }
 
-  state_labels <- as_state_labels(setup$y_levels)
+  state_labels <- as_state_labels(setup$settings$y_levels)
   for (set_i in seq_along(state_sets)) {
     occupancy <- state_set_occupancy(
       sops_array,
@@ -606,7 +610,7 @@ individual_times_from_array <- function(
 ) {
   n_cf <- dim(sops_array)[1]
   n_each <- dim(sops_array)[2]
-  state_labels <- as_state_labels(setup$y_levels)
+  state_labels <- as_state_labels(setup$settings$y_levels)
   pieces <- vector("list", length(state_sets))
   for (set_i in seq_along(state_sets)) {
     totals <- profile_time_totals(

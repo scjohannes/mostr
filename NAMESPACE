@@ -66,24 +66,18 @@ importFrom(ggplot2,
   scale_fill_viridis_d,
   vars
 )
-importFrom(methods,slot)
 importFrom(rlang,.data)
 importFrom(stats,
-  aggregate,
   ave,
   coef,
   fitted,
   model.frame,
-  model.matrix,
   nobs,
   plogis,
   pnorm,
-  predict,
   residuals,
-  setNames,
   symnum,
   update,
   vcov
 )
-importFrom(utils,modifyList)
 useDynLib(mostr, .registration = TRUE)

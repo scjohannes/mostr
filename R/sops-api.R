@@ -22,16 +22,16 @@
 #'   every row supplies a separate starting state and set of covariates. The
 #'   internal `rowid` column is regenerated. If `NULL`, uses the data stored by
 #'   [mostm()] and requires exactly one complete designated starting profile
-#'   per fitted patient.
+#'   per fitted patient. Every column the model uses needs a value in every
+#'   row, except the time and `gap_var` columns, which are set at each visit,
+#'   and columns that `variables` sets; other columns may have missing values.
+#'   The previous-state column holds states of the fitted model, as a factor
+#'   (with any levels), numbers, or text.
 #' @param times Required. The consecutive visits at which to calculate SOPs,
 #'   in increasing order, for example `times = 1:30` for daily visits up to day
 #'   30. Each value is one transition, so leaving out visits does not skip
 #'   time; see the section "Choosing visits". Numeric time variables use
 #'   numeric values; factor-valued visit indices use fitted visit levels.
-#' @param y_levels A vector of state levels in fitted outcome order. Its length
-#'   must agree with the fitted model's threshold count. If `NULL`, attempts to
-#'   infer the levels from `model`.
-#' @param absorb The absorbing state.
 #' @param variables Optional covariates to set before predicting: a named list
 #'   of values, such as `list(tx = c(0, 1))`, or bare names, such as `"tx"`.
 #'   Each profile is then predicted once for every combination of the values,
@@ -42,29 +42,14 @@
 #'   package. `FALSE` (the default) or `NULL` returns one row per profile,
 #'   time, and state. `TRUE` averages over all profiles, and a character
 #'   vector of column names averages within the groups those columns define;
-#'   both return the result of [avg_sops()] with the same arguments.
-#' @param id_var Character ID column used when `include_re = TRUE`. For `blrm`,
-#'   `NULL` is inferred from the `id_var` given to [mostm()], then
-#'   `model$clusterInfo$name`
-#'   when available, otherwise `"id"`. For frequentist models, `id_var` is used
-#'   for stored starting-profile validation and refit bootstrap metadata, not
-#'   for ordinary user-supplied prediction rows.
-#' @param time_var Name of the time variable in the model.
-#' @param p_var Name of the previous state variable in the model.
-#' @param p2_var Optional second previous-state variable. `NULL` uses a
-#'   first-order Markov recursion; a non-`NULL` column name uses a second-order
-#'   recursion.
-#' @param gap_var Optional name of the variable holding the time elapsed since
-#'   the previous visit, if the model includes one. Each transition then uses
-#'   the difference between consecutive values of `times` (the first value for
-#'   the first transition), unless `time_covariates` contains this column, so
-#'   `times` may skip visits. See the section "Choosing visits".
-#' @param time_covariates Optional time-varying covariate lookup table for
-#'   explicit basis columns. Registered inline terms such as
-#'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without
-#'   supplying `time_covariates`.
+#'   both return the result of [avg_sops()] with the same arguments. A `by`
+#'   column must have no missing values among the averaged profiles; drop or
+#'   impute those patients first.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs.
+#'   fitted random-effect draws in posterior predictions for known IDs. Only
+#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
+#'   `newdata` must then contain the patient ID column (`id_var` of [mostm()]),
+#'   so that each row gets its patient's estimated random effect.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.
@@ -74,7 +59,9 @@
 #' @param return_draws Logical. For `blrm`, store posterior SOP draws for
 #'   extraction with `get_draws()`. Large draw objects are guarded to protect
 #'   memory.
-#' @param ... Additional arguments (currently unused).
+#' @param ... Additional arguments (currently unused). The column names and
+#'   states recorded by [mostm()] can't be given here; see the section
+#'   "Settings taken from the fit".
 #'
 #' @return A data frame of class `markov_sops`, or, with `by = TRUE` or
 #'   grouping columns, the `markov_avg_sops` result of [avg_sops()]. The
@@ -128,13 +115,22 @@
 #' @section Choosing visits:
 #' SOPs are calculated one visit at a time. The first value of `times` is the
 #' first transition from the starting state, and each later value is one more
-#' transition. The values set the time variable, and any time-varying
-#' covariates, for each transition; they do not say how much time passes
-#' between transitions. Leaving out visits therefore does not skip time. With
-#' daily visits, `times = c(1, 7, 14)` gives the probabilities after 1, 2, and 3
+#' transition. The values set the time variable, and so every time term of the
+#' model formula, such as `rms::rcs(time, 4)` or `log(time)`, for each
+#' transition; they do not say how much time passes between transitions.
+#' Leaving out visits therefore does not skip time. With daily visits,
+#' `times = c(1, 7, 14)` gives the probabilities after 1, 2, and 3
 #' transitions, labelled 1, 7, and 14, instead of the probabilities on days 7
 #' and 14. To get SOPs at selected visits, request every visit, such as
 #' `times = 1:14`, and keep the rows you need.
+#'
+#' A model fitted with `gap_var` (see [mostm()]) includes the time since the
+#' previous visit. Each transition then gets the difference between its
+#' requested time and the one before it, and the first transition gets the
+#' first requested time itself, the time since time 0. With
+#' `times = c(1, 2, 4, 7)` the gaps are 1, 1, 2 and 3, so the visits may be
+#' spaced unevenly. When `newdata` starts at a later visit, the first gap is
+#' still the first requested time, not the time since that visit.
 #'
 #' When `newdata` is omitted, each patient starts from their state before the
 #' first follow-up visit (`first_followup_time` of [mostm()]), so
@@ -145,9 +141,26 @@
 #' A warning is given when `times` leaves out visits that occur in the data the
 #' model was fitted to, is not in increasing order, or, when `newdata` is
 #' omitted, does not begin at the first follow-up visit. Times after the last
-#' fitted visit are allowed. There is no warning when `gap_var` is supplied,
-#' because each transition then uses its own elapsed time, so the visits may be
-#' spaced unevenly.
+#' fitted visit are allowed. There is no warning for a model fitted with
+#' `gap_var`, because each transition then uses its own elapsed time, so the
+#' visits may be spaced unevenly.
+#'
+#' @section Settings taken from the fit:
+#' The patient ID column, the time column, the previous-state column, the
+#' column with the state two visits back, the column with the time since the
+#' previous visit, the states and the absorbing states are those of the
+#' fitted model: the `id_var`, `time_var`, `p_var`, `p2_var`, `gap_var` and
+#' `absorb` given to [mostm()], and the states of the response in fitted
+#' order. A model fitted with `p2_var` is therefore always predicted with the
+#' second-order recursion. The `state` column of the result holds the fitted
+#' state labels. To predict with other columns or other absorbing states,
+#' refit the model with [mostm()].
+#'
+#' A patient who is in an absorbing state stays there, so every profile must
+#' start outside the absorbing states: a profile whose previous state (the
+#' `p_var` column) is absorbing, or, for a second-order model, whose state two
+#' visits back (the `p2_var` column) is, gives an error. Remove those patients
+#' from `newdata` first.
 #'
 #' @seealso [avg_sops()] for averaged SOPs, [soprob_markov()] for the
 #'   underlying computation.
@@ -155,15 +168,14 @@
 #' @examples
 #' \dontrun{
 #' # SOPs for each profile
-#' sops_ind <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6)
+#' sops_ind <- sops(fit, newdata = baseline_data, times = 1:30)
 #'
 #' # Each profile's SOPs under control and under treatment
 #' sops_cf <- sops(fit, newdata = baseline_data, variables = list(tx = c(0, 1)),
-#'                 times = 1:30, y_levels = 1:6)
+#'                 times = 1:30)
 #'
 #' # Averaged within ECOG levels; the same as avg_sops(by = "ecog")
-#' sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, y_levels = 1:6,
-#'                   by = "ecog")
+#' sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, by = "ecog")
 #'
 #' # Compatible with inferences()
 #' sops_cf |> inferences(method = "mvn", n_draws = 1000)
@@ -175,16 +187,8 @@ sops <- function(
   model,
   newdata = NULL,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   variables = NULL,
   by = FALSE,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -194,28 +198,24 @@ sops <- function(
   ...
 ) {
   # --- 1. Setup & Defaults ---
+  stop_removed_fit_arguments(...)
   # Validate model compatibility
   validate_markov_model(model)
+  stop_include_re_without_blrm(model, include_re)
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `sops()`.")
+    mostr_abort("`times` must be supplied to `sops()`.")
   }
   conf_level <- validate_conf_level(conf_level)
+  settings <- resolve_markov_settings(model)
   by_choice <- resolve_by_choice(by)
   if (by_choice$average) {
-    return(avg_sops(
+    return(avg_sops_impl(
       model = model,
       newdata = newdata,
       variables = variables,
-      by = by_choice$by %||% TRUE,
+      by = by_choice$by,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      id_var = id_var,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -225,42 +225,61 @@ sops <- function(
       ...
     ))
   }
-  # One row per profile from here on; averaging is left to `avg_sops()`.
-  variables <- resolve_prediction_variables(variables, model, newdata)
+  sops_impl(
+    model = model,
+    newdata = newdata,
+    variables = variables,
+    times = times,
+    settings = settings,
+    include_re = include_re,
+    n_draws = n_draws,
+    seed = seed,
+    posterior_summary = posterior_summary,
+    conf_level = conf_level,
+    return_draws = return_draws,
+    ...
+  )
+}
 
-  data_res <- resolve_markov_source_data(
+# `sops()` once its settings are resolved: one row per profile, time, and
+# state. Averaging is left to `avg_sops_impl()`.
+sops_impl <- function(
+  model,
+  newdata,
+  variables,
+  times,
+  settings,
+  include_re = FALSE,
+  n_draws = 100L,
+  seed = NULL,
+  posterior_summary = c("mean", "median"),
+  conf_level = 0.95,
+  return_draws = FALSE,
+  ...
+) {
+  variables <- resolve_prediction_variables(
+    variables,
     model,
     newdata,
-    time_var = time_var,
-    p_var = p_var
+    settings
   )
+
+  data_res <- resolve_markov_source_data(model, newdata, settings)
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
-  id_var <- markov_model_id_var(model, id_var)
-
+  id_var <- markov_require_id_var(model, settings$id_var)
   if (inherits(model, "blrm") && isTRUE(include_re)) {
-    id_var <- resolve_blrm_id_var(model, newdata_orig, id_var)
     validate_markov_id_var(id_var, newdata_orig, "newdata")
   }
-
-  if (!is.null(id_var)) {
-    if (!is.null(refit_data)) {
-      validate_markov_id_var(
-        id_var,
-        refit_data,
-        "the refit data stored on the fitted model"
-      )
-    }
+  if (!is.null(refit_data)) {
+    validate_markov_id_var(
+      id_var,
+      refit_data,
+      "the refit data stored on the fitted model"
+    )
   }
-
   if (!newdata_supplied) {
-    if (is.null(id_var)) {
-      stop(
-        "Automatic SOP prediction from stored model data requires `id_var`. ",
-        "Fit with `mostm(..., id_var = ...)`, or supply explicit `newdata`."
-      )
-    }
     validate_markov_id_var(id_var, newdata_orig, "stored model data")
   }
 
@@ -269,18 +288,15 @@ sops <- function(
     model,
     newdata_orig,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
     default = "unique"
   )
   times <- time_res$times
-  validate_factor_gap(gap_var, time_covariates, time_res$time_info)
   warn_skipped_sop_visits(
     model,
     newdata_orig,
     times,
-    time_var,
-    gap_var,
+    settings,
     newdata_supplied
   )
 
@@ -290,34 +306,20 @@ sops <- function(
     resolve_markov_prediction_data(
       newdata_orig,
       id_var = id_var,
-      time_var = time_var
+      time_var = settings$time_var
     )
   }
+  # Every profile column is copied into the result, and the prediction rows
+  # are stored for `inferences()`, so bookkeeping columns are removed here
+  # once for the estimates, every replay, and the draws.
+  newdata <- drop_markov_internal_columns(newdata)
   newdata <- ensure_markov_rowid(newdata)
   if (length(variables) > 0L) {
     newdata <- stack_prediction_profiles(newdata, variables)
   }
 
-  if (is.null(y_levels)) {
-    # Try to infer from model
-    if (inherits(model, "vglm")) {
-      # VGAM stores response levels
-      y_levels <- model@extra$colnames.y
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
-    } else if (inherits(model, "robcov_vglm")) {
-      # robcov_vglm stores extra slot in list
-      y_levels <- model$extra$colnames.y
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
-    } else if (inherits(model, "blrm")) {
-      y_levels <- model$ylevels
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
-    } else if (inherits(model, "orm")) {
-      # rms orm stores levels
-      y_levels <- model$yunique
-      if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
-    } else {
-      stop("`y_levels` cannot be NULL")
-    }
+  if (is.null(settings$y_levels)) {
+    stop_no_fitted_states()
   }
 
   if (inherits(model, "blrm")) {
@@ -326,15 +328,8 @@ sops <- function(
       model = model,
       newdata = newdata,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
-      id_var = id_var,
       n_draws = n_draws,
       seed = seed,
       posterior_summary = posterior_summary,
@@ -347,24 +342,18 @@ sops <- function(
   }
 
   # --- 2. Compute SOPs (Vectorized) ---
-  sops_array <- soprob_markov(
+  sops_array <- predict_markov_sops(
     model = model,
     newdata = newdata,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates
+    settings = settings
   )
 
   # --- 3. Tidy the Output ---
   result <- array_to_df_individual(
     sops_array,
     times,
-    y_levels,
+    settings$y_levels,
     newdata
   )
 
@@ -373,28 +362,12 @@ sops <- function(
     result,
     class_name = "markov_sops",
     model = model,
-    call_args = sops_call_args(
-      times,
-      y_levels,
-      absorb,
-      time_var,
-      p_var,
-      p2_var,
-      gap_var,
-      time_covariates
-    ),
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    call_args = sops_call_args(times),
+    settings = settings,
     newdata_orig = newdata_orig,
     extra_attrs = list(
       newdata_pred = newdata,
       refit_data = refit_data,
-      id_var = id_var,
       newdata_supplied = newdata_supplied
     )
   )
@@ -404,15 +377,8 @@ sops_blrm <- function(
   model,
   newdata,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   include_re,
-  id_var,
   n_draws,
   seed,
   posterior_summary,
@@ -422,6 +388,7 @@ sops_blrm <- function(
   refit_data,
   newdata_supplied
 ) {
+  y_levels <- settings$y_levels
   draw_indices <- select_posterior_draws(model, n_draws, seed)
   n_pat <- nrow(newdata)
   n_times <- length(times)
@@ -433,7 +400,7 @@ sops_blrm <- function(
   max_draw_cells <- getOption("mostr.max_sops_draw_cells", 5e7)
 
   if (n_cells * n_requested > max_draw_cells) {
-    stop(
+    mostr_abort(
       "`sops()` for `blrm` would require ",
       format(n_cells * n_requested, scientific = FALSE),
       " posterior draw cells, above the current limit of ",
@@ -453,7 +420,7 @@ sops_blrm <- function(
       posterior_chunk_size(n_cells, n_requested)
   )
   gamma_draws <- cache_blrm_gamma_draws(model, draw_indices, include_re)
-  prediction_cache <- if (is.null(p2_var)) {
+  prediction_cache <- if (is.null(settings$p2_var)) {
     cache <- new.env(parent = emptyenv())
     cache$cursor <- 0L
     cache$X <- list()
@@ -467,21 +434,15 @@ sops_blrm <- function(
     if (!is.null(prediction_cache)) {
       prediction_cache$cursor <- 0L
     }
-    arr <- soprob_markov(
+    arr <- predict_markov_sops(
       model = model,
       newdata = newdata,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
-      id_var = id_var,
       n_draws = NULL,
       .draw_indices = chunk,
+      .n_draws_total = length(draw_indices),
       .gamma_draws = subset_cached_draw_matrix(
         gamma_draws,
         draw_indices,
@@ -522,27 +483,13 @@ sops_blrm <- function(
     model = model,
     call_args = sops_call_args(
       times,
-      y_levels,
-      absorb,
-      time_var,
-      p_var,
-      p2_var,
-      gap_var,
-      time_covariates,
       include_re = include_re,
-      id_var = id_var,
       n_draws = n_draws,
       seed = seed,
       posterior_summary = posterior_summary,
       conf_level = conf_level
     ),
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     newdata_orig = newdata_orig,
     extra_attrs = list(
       method = "posterior",
@@ -554,7 +501,6 @@ sops_blrm <- function(
       draws = draws_df,
       newdata_pred = newdata,
       refit_data = refit_data,
-      id_var = id_var,
       newdata_supplied = newdata_supplied
     )
   )
@@ -563,9 +509,8 @@ sops_blrm <- function(
 posterior_group_setup <- function(data, group_cols) {
   rows <- which(stats::complete.cases(data[, group_cols, drop = FALSE]))
   if (!length(rows)) {
-    stop(
-      "No complete prediction rows remain after omitting missing grouping values.",
-      call. = FALSE
+    mostr_abort(
+      "No complete prediction rows remain after omitting missing grouping values."
     )
   }
   complete_data <- data[rows, , drop = FALSE]
@@ -619,6 +564,10 @@ posterior_draw_matrix_to_df <- function(draw_values, cells, draw_indices) {
 
 split_draw_indices <- function(draw_indices, chunk_size = NULL) {
   if (is.null(chunk_size)) {
+    # Fallback only: package callers pass a chunk size (the option, or one sized
+    # by mostr.posterior_working_bytes). Nov 2026, sops() with 200 profiles x 15
+    # visits and 400 draws: 1, 10 and 50 draws per chunk took 18.5, 12.7 and
+    # 11.7 s, so 10 is close to the best.
     chunk_size <- getOption("mostr.blrm_chunk_size", 10L)
   }
   chunk_size <- max(1L, as.integer(chunk_size))
@@ -659,47 +608,6 @@ summarize_posterior_draw_matrix <- function(
   )
 }
 
-summarize_posterior_draws_df <- function(
-  draws_df,
-  group_cols,
-  posterior_summary,
-  conf_level
-) {
-  alpha <- 1 - conf_level
-  split_key <- interaction(draws_df[, group_cols, drop = FALSE], drop = TRUE)
-  groups <- split(seq_len(nrow(draws_df)), split_key)
-  out <- draws_df[vapply(groups, `[`, integer(1), 1L), group_cols, drop = FALSE]
-  values <- lapply(groups, function(idx) draws_df$estimate[idx])
-  out$estimate <- vapply(
-    values,
-    function(x) {
-      switch(
-        posterior_summary,
-        mean = mean(x, na.rm = TRUE),
-        median = stats::median(x, na.rm = TRUE)
-      )
-    },
-    numeric(1)
-  )
-  out$conf.low <- vapply(
-    values,
-    stats::quantile,
-    numeric(1),
-    probs = alpha / 2,
-    na.rm = TRUE
-  )
-  out$conf.high <- vapply(
-    values,
-    stats::quantile,
-    numeric(1),
-    probs = 1 - alpha / 2,
-    na.rm = TRUE
-  )
-  out$std.error <- vapply(values, stats::sd, numeric(1), na.rm = TRUE)
-  rownames(out) <- NULL
-  out
-}
-
 sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
   meta_cols <- setdiff(
     names(result),
@@ -729,7 +637,12 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   supplied, every row supplies a separate starting state and set of
 #'   covariates. The internal `rowid` column is regenerated. If `NULL`, uses
 #'   data stored by [mostm()] and requires exactly one complete designated
-#'   starting profile per fitted patient.
+#'   starting profile per fitted patient. Every column the model uses needs a
+#'   value in every row, except the time and `gap_var` columns, which are set
+#'   at each visit, and columns that `variables` sets; other columns may have
+#'   missing values.
+#'   The previous-state column holds states of the fitted model, as a factor
+#'   (with any levels), numbers, or text.
 #' @param variables Optional covariates to set before averaging: a named list
 #'   of values, such as `list(tx = c(0, 1))` for probabilities if every patient
 #'   received control or treatment, or bare names, such as `"tx"`. As in
@@ -743,35 +656,23 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   including their observed treatment.
 #' @param by How to average, as in the marginaleffects package. `TRUE` (the
 #'   default) averages over all profiles. A character vector of column names
-#'   averages within the groups those columns define after standardization;
-#'   rows missing any grouping value are omitted, and an error is raised if
-#'   none remain. `FALSE` or `NULL` does not average and returns the [sops()]
-#'   result, one row per profile, value of `variables`, time, and state.
+#'   averages within the groups those columns define after standardization.
+#'   A `by` column must have no missing values among the averaged profiles,
+#'   because a profile without a group would be left out of every average;
+#'   drop or impute those patients first, in `newdata` or in the data given to
+#'   [mostm()]. Without `variables`, groups use each profile's observed
+#'   values, so `by = "tx"` averages separately among the untreated and the
+#'   treated. `by` cannot name a variable that `variables` also sets: the
+#'   result's column for that variable holds the value that was set, so it
+#'   cannot also hold groups of the observed value, and this is an error. The
+#'   averages for each set value are already returned without `by`. To
+#'   average under each set treatment within groups of the observed
+#'   treatment, copy the column first, for example
+#'   `newdata$observed_tx <- newdata$tx`, and use `by = "observed_tx"`.
+#'   [avg_comparisons()] with `by = "tx"` does this for treatment effects.
+#'   `FALSE` or `NULL` does not average and returns the [sops()] result, one
+#'   row per profile, value of `variables`, time, and state.
 #' @inheritParams sops
-#' @param y_levels A vector of state levels in fitted outcome order. Its length
-#'   must agree with the fitted model's threshold count. If `NULL`, attempts to
-#'   infer the levels from `model`.
-#' @param absorb The absorbing state.
-#' @param id_var Name of the patient ID variable. Required for bootstrap
-#'   inference and for `blrm` random-effect prediction. If `NULL`, defaults to
-#'   `"id"`; for models fitted with [mostm()], it is inferred from stored
-#'   metadata.
-#'   For user-supplied `newdata`, `id_var` is required only for `blrm` random
-#'   effects. Refit bootstrap inference resamples patients by this column in
-#'   the data stored on the fitted model. For `blrm` models with
-#'   `include_re = TRUE`,
-#'   `model$clusterInfo$name` is used before the final `"id"` fallback when
-#'   no `id_var` was given to [mostm()].
-#' @param time_var Name of the time variable in the model.
-#' @param p_var Name of the previous state variable in the model.
-#' @param p2_var Optional second previous-state variable. `NULL` uses a
-#'   first-order Markov recursion; a non-`NULL` column name uses a second-order
-#'   recursion.
-#' @param time_covariates Optional time-varying covariate lookup table for
-#'   explicit precomputed time-basis columns. Registered inline terms such as
-#'   `rms::rcs(time, 4)` and `rms::lsp(time, c(3, 7))` can be used without it.
-#' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.
@@ -780,7 +681,9 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' @param conf_level Confidence level for `blrm` posterior intervals.
 #' @param return_draws Logical. For `blrm`, store posterior SOP draws for
 #'   extraction with `get_draws()`.
-#' @param ... Additional arguments reserved for future extensions.
+#' @param ... Additional arguments reserved for future extensions. The column
+#'   names and states recorded by [mostm()] can't be given here; see the
+#'   section "Settings taken from the fit".
 #'
 #' @return With `by = FALSE`, the `markov_sops` result of [sops()]. Otherwise
 #'   a data frame of class `markov_avg_sops` with columns:
@@ -818,6 +721,12 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' designated row alone does not exclude a patient who contributes a later
 #' transition. Patients with no usable fitted transition are excluded, and a
 #' fitted patient without a complete designated profile is an error.
+#'
+#' The average gives every profile the same weight. Case weights given to
+#' [mostm()] with `weights` are used only to fit the model, not in this
+#' average, so the result is not the same as repeating each patient according
+#' to their weight.
+#'
 #' For `rmsb::blrm()` models, patient-level posterior arrays are chunked and
 #' marginalized by draw before summarizing to reduce memory use.
 #' State-wise medians and interval bounds are not constrained to sum to one
@@ -830,10 +739,11 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #' accounts for coefficient estimation and sampling the patients used in the
 #' average. Use `vcov = "conditional"` to treat those patients' starting states
 #' and covariates as given and account only for coefficient estimation.
-#' User-supplied `newdata` requires the conditional choice. See [inferences()]
-#' for model restrictions.
+#' User-supplied `newdata`, and models fitted with case weights, require the
+#' conditional choice. See [inferences()] for model restrictions.
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [sops()] for individual-level SOPs, [inferences()] for analytical,
 #'   simulation, or bootstrap
@@ -845,28 +755,25 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
 #'   data = data,
 #'   id_var = "id",
+#'   absorb = 6,
 #'   engine = "vglm"
 #' )
 #'
 #' # Models fitted with mostm() can use their stored starting profiles.
-#' observed <- avg_sops(fit, times = 1:60, y_levels = 1:6, absorb = 6)
+#' observed <- avg_sops(fit, times = 1:60)
 #'
 #' # Set treatment to each requested value before averaging.
 #' result <- avg_sops(
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   y_levels = 1:6,
-#'   absorb = 6
+#'   times = 1:60
 #' ) |> inferences(method = "mvn", n_draws = 500)
 #'
 #' # Refit bootstrap resamples the patients stored on the fitted model.
 #' result_boot <- avg_sops(
 #'   model = fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60,
-#'   y_levels = 1:6,
-#'   absorb = 6
+#'   times = 1:60
 #' ) |> inferences(method = "fwb", n_draws = 500)
 #' }
 #'
@@ -877,14 +784,6 @@ avg_sops <- function(
   variables = NULL,
   by = TRUE,
   times,
-  y_levels = NULL,
-  absorb = NULL,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -894,29 +793,24 @@ avg_sops <- function(
   ...
 ) {
   # --- 1. Input Validation ---
+  stop_removed_fit_arguments(...)
   # Validate model compatibility
   validate_markov_model(model)
+  stop_include_re_without_blrm(model, include_re)
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `avg_sops()`.")
+    mostr_abort("`times` must be supplied to `avg_sops()`.")
   }
   conf_level <- validate_conf_level(conf_level)
+  settings <- resolve_markov_settings(model)
 
   by_choice <- resolve_by_choice(by)
   if (!by_choice$average) {
-    return(sops(
+    return(sops_impl(
       model = model,
       newdata = newdata,
       variables = variables,
-      by = FALSE,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      id_var = id_var,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -926,26 +820,57 @@ avg_sops <- function(
       ...
     ))
   }
-  # From here on, `by` holds the grouping columns, or `NULL` to average over
-  # all profiles.
-  by <- by_choice$by
-  var_list <- resolve_prediction_variables(variables, model, newdata)
+  avg_sops_impl(
+    model = model,
+    newdata = newdata,
+    variables = variables,
+    by = by_choice$by,
+    times = times,
+    settings = settings,
+    include_re = include_re,
+    n_draws = n_draws,
+    seed = seed,
+    posterior_summary = posterior_summary,
+    conf_level = conf_level,
+    return_draws = return_draws,
+    ...
+  )
+}
 
-  data_res <- resolve_markov_source_data(
+# `avg_sops()` once its settings are resolved. `by` holds the grouping
+# columns, or `NULL` to average over all profiles. Inference replays call this
+# with the settings stored on a result.
+avg_sops_impl <- function(
+  model,
+  newdata,
+  variables,
+  by,
+  times,
+  settings,
+  include_re = FALSE,
+  n_draws = 100L,
+  seed = NULL,
+  posterior_summary = c("mean", "median"),
+  conf_level = 0.95,
+  return_draws = FALSE,
+  ...
+) {
+  var_list <- resolve_prediction_variables(
+    variables,
     model,
     newdata,
-    time_var = time_var,
-    p_var = p_var
+    settings
   )
+  stop_by_names_set_variable(by, var_list, "avg_sops()")
+
+  data_res <- resolve_markov_source_data(model, newdata, settings)
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
 
+  id_var <- markov_require_id_var(model, settings$id_var)
   if (inherits(model, "blrm") && isTRUE(include_re)) {
-    id_var <- resolve_blrm_id_var(model, newdata_orig, id_var)
     validate_markov_id_var(id_var, newdata_orig, "newdata")
-  } else {
-    id_var <- markov_model_id_var(model, id_var) %||% "id"
   }
 
   if (!is.null(refit_data)) {
@@ -963,7 +888,7 @@ avg_sops <- function(
   # Validate variables exist in data
   missing_vars <- setdiff(names(var_list), names(newdata_orig))
   if (length(missing_vars) > 0) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+    mostr_abort("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
 
   # --- 2. Extract Baseline Data (One Row Per Patient) ---
@@ -975,9 +900,10 @@ avg_sops <- function(
     resolve_markov_prediction_data(
       newdata_orig,
       id_var = id_var,
-      time_var = time_var
+      time_var = settings$time_var
     )
   }
+  stop_missing_by_values(baseline_data, by, var_list)
   baseline_data <- ensure_markov_rowid(baseline_data)
 
   # --- 3. Create Counterfactual Datasets ---
@@ -986,82 +912,22 @@ avg_sops <- function(
 
   grid <- create_counterfactual_grid(var_list)
 
-  newdata_expanded <- create_counterfactual_data(baseline_data, grid, var_list)
+  newdata_expanded <- create_counterfactual_data(
+    baseline_data,
+    grid,
+    var_list,
+    by = by
+  )
   warn_skipped_sop_visits(
     model,
     newdata_orig,
     times,
-    time_var,
-    gap_var,
+    settings,
     newdata_supplied
   )
 
-  direct_backend <- inherits(model, c("vglm", "robcov_vglm", "orm", "blrm"))
-  if (!direct_backend) {
-    # `times` was checked above against the stored or supplied profiles.
-    sops_ind <- muffle_skipped_sop_visits(sops(
-      model,
-      newdata = newdata_expanded,
-      times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
-      ...
-    ))
-    resolved_times <- attr(sops_ind, "call_args")$times
-    group_cols <- unique(c("time", "state", names(var_list), by))
-    missing_groups <- setdiff(group_cols, names(sops_ind))
-    if (length(missing_groups) > 0L) {
-      stop(
-        "Grouping variables missing: ",
-        paste(missing_groups, collapse = ", ")
-      )
-    }
-    result <- aggregate_sops_estimates(sops_ind, group_cols)
-    return(set_sops_attrs(
-      result,
-      class_name = "markov_avg_sops",
-      model = attr(sops_ind, "model"),
-      call_args = attr(sops_ind, "call_args"),
-      time_var = attr(sops_ind, "time_var"),
-      p_var = attr(sops_ind, "p_var"),
-      p2_var = attr(sops_ind, "p2_var"),
-      y_levels = attr(sops_ind, "y_levels"),
-      absorb = attr(sops_ind, "absorb"),
-      gap_var = attr(sops_ind, "gap_var"),
-      time_covariates = attr(sops_ind, "time_covariates"),
-      newdata_orig = newdata_orig,
-      avg_args = list(
-        variables = var_list,
-        by = by,
-        times = resolved_times,
-        id_var = id_var
-      ),
-      extra_attrs = list(
-        newdata_pred = newdata_expanded,
-        refit_data = refit_data,
-        id_var = id_var,
-        newdata_supplied = newdata_supplied
-      )
-    ))
-  }
-
-  if (is.null(y_levels)) {
-    y_levels <- if (inherits(model, "robcov_vglm")) {
-      model$extra$colnames.y
-    } else if (inherits(model, "vglm")) {
-      model@extra$colnames.y
-    } else if (inherits(model, c("orm", "blrm"))) {
-      model$yunique %||% model$ylevels
-    } else {
-      NULL
-    }
-    if (is.null(y_levels)) stop("`y_levels` cannot be NULL")
+  if (is.null(settings$y_levels)) {
+    stop_no_fitted_states()
   }
 
   if (inherits(model, "blrm")) {
@@ -1073,14 +939,7 @@ avg_sops <- function(
       variables = var_list,
       by = by,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -1092,7 +951,6 @@ avg_sops <- function(
     attr(result, "newdata_orig") <- newdata_orig
     attr(result, "newdata_pred") <- newdata_expanded
     attr(result, "refit_data") <- refit_data
-    attr(result, "id_var") <- id_var
     attr(result, "newdata_supplied") <- newdata_supplied
     return(result)
   }
@@ -1102,30 +960,22 @@ avg_sops <- function(
     model,
     newdata_expanded,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
     default = "unique"
   )
   resolved_times <- time_res$times
-  validate_factor_gap(gap_var, time_covariates, time_res$time_info)
-  sops_array <- soprob_markov(
+  sops_array <- predict_markov_sops(
     model = model,
     newdata = newdata_expanded,
     times = resolved_times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     ...
   )
   result <- marginalize_sops_array(
     sops_array = sops_array,
     grid = grid,
     times = resolved_times,
-    y_levels = y_levels,
+    y_levels = settings$y_levels,
     variables = var_list,
     n_cf = nrow(grid),
     n_each = nrow(baseline_data),
@@ -1137,34 +987,17 @@ avg_sops <- function(
     result,
     class_name = "markov_avg_sops",
     model = model,
-    call_args = sops_call_args(
-      resolved_times,
-      y_levels,
-      absorb,
-      time_var,
-      p_var,
-      p2_var,
-      gap_var,
-      time_covariates
-    ),
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    call_args = sops_call_args(resolved_times),
+    settings = settings,
     newdata_orig = newdata_orig,
     avg_args = list(
       variables = var_list,
       by = by,
-      times = resolved_times,
-      id_var = id_var
+      times = resolved_times
     ),
     extra_attrs = list(
       newdata_pred = newdata_expanded,
       refit_data = refit_data,
-      id_var = id_var,
       newdata_supplied = newdata_supplied
     )
   )
@@ -1177,14 +1010,7 @@ avg_sops_blrm <- function(
   variables,
   by,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  id_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   include_re,
   n_draws,
   seed,
@@ -1193,18 +1019,16 @@ avg_sops_blrm <- function(
   return_draws,
   ...
 ) {
-  y_levels <- y_levels %||% model$ylevels
+  y_levels <- settings$y_levels
 
   time_res <- resolve_sop_times(
     model,
     newdata_expanded,
     times,
-    time_var,
-    time_covariates = time_covariates,
+    settings$time_var,
     default = "unique"
   )
   times <- time_res$times
-  validate_factor_gap(gap_var, time_covariates, time_res$time_info)
 
   validate_sops_by(by, newdata_expanded, data_arg = "expanded prediction data")
 
@@ -1239,7 +1063,7 @@ avg_sops_blrm <- function(
     ncol = n_cells,
     dimnames = list(draw_indices, NULL)
   )
-  prediction_cache <- if (is.null(p2_var)) {
+  prediction_cache <- if (is.null(settings$p2_var)) {
     cache <- new.env(parent = emptyenv())
     cache$cursor <- 0L
     cache$X <- list()
@@ -1254,21 +1078,15 @@ avg_sops_blrm <- function(
     if (!is.null(prediction_cache)) {
       prediction_cache$cursor <- 0L
     }
-    arr <- soprob_markov(
+    arr <- predict_markov_sops(
       model = model,
       newdata = prediction_data,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
-      id_var = id_var,
       n_draws = NULL,
       .draw_indices = chunk,
+      .n_draws_total = length(draw_indices),
       .gamma_draws = subset_cached_draw_matrix(
         gamma_draws,
         draw_indices,
@@ -1306,32 +1124,17 @@ avg_sops_blrm <- function(
     model = model,
     call_args = sops_call_args(
       times,
-      y_levels,
-      absorb,
-      time_var,
-      p_var,
-      p2_var,
-      gap_var,
-      time_covariates,
       include_re = include_re,
-      id_var = id_var,
       n_draws = n_draws,
       seed = seed,
       posterior_summary = posterior_summary,
       conf_level = conf_level
     ),
-    time_var = time_var,
-    p_var = p_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     avg_args = list(
       variables = variables,
       by = by,
-      times = times,
-      id_var = id_var
+      times = times
     ),
     extra_attrs = list(
       method = "posterior",
@@ -1345,6 +1148,11 @@ avg_sops_blrm <- function(
   )
 }
 
+# Draws per chunk = budget / (prediction rows x visits x states x 8 x 3); most
+# analyses fit all draws in one chunk. 256 MiB was a choice. Nov 2026 (fake
+# blrm, 2 x 1000 profiles x 29 visits, 100 draws): chunks of 8, 32 and 100 draws
+# took 14.2, 14.5 and 14.9 s with 0.17, 0.42 and 0.80 GB, so larger chunks cost
+# memory and save no time.
 posterior_chunk_size <- function(cells_per_draw, n_draws) {
   budget <- getOption("mostr.posterior_working_bytes", 256 * 1024^2)
   bytes_per_draw <- max(1, cells_per_draw * 8 * 3)

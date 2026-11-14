@@ -9,8 +9,12 @@ mostm(
   data,
   ...,
   engine = c("orm", "vglm", "blrm"),
-  id_var = NULL,
+  id_var,
   time_var = "time",
+  p_var = "yprev",
+  p2_var = NULL,
+  absorb = NULL,
+  gap_var = NULL,
   first_followup_time = NULL,
   weights = NULL,
   subset = NULL,
@@ -25,7 +29,15 @@ supported. For the \code{"orm"} and \code{"blrm"} engines, categorical predictor
 including time, must be factor or character columns of \code{data} rather
 than converted with \code{factor()} inside the formula; for factor time, also
 set \code{first_followup_time}. Random-effect terms are available only for the
-\code{"blrm"} engine; see "Random effects" below.}
+\code{"blrm"} engine; see "Random effects" below.
+
+Time terms are written inline, for example \code{rms::rcs(time, 4)},
+\code{log(time)} or \code{rms::pol(time, 2)}; the prediction functions evaluate
+them at each requested time. For the \code{"orm"} and \code{"blrm"} engines, use
+\code{rms::rcs()} and \code{rms::pol()} rather than \code{splines::ns()},
+\code{splines::bs()} or \code{stats::poly()}, for time and for any other variable:
+rms evaluates the latter again on the prediction rows, which gives a
+different basis, so \code{mostm()} refuses them.}
 
 \item{data}{A data frame with one row per patient and visit.}
 
@@ -60,15 +72,43 @@ arguments that control this (\code{x} and \code{y} for rms and rmsb, \code{x.arg
 \item{engine}{The package that fits the model: \code{"orm"}, \code{"vglm"}, or
 \code{"blrm"}. See the description above.}
 
-\item{id_var}{Name of the column in \code{data} that identifies patients. With
-it, \code{mostm()} stores each patient's starting row for automatic
-predictions, and the \code{"orm"} and \code{"vglm"} engines compute standard errors
-that allow for correlation between the transitions of one patient. Without
-it, a warning is given, and these features, as well as the fractional
-weighted bootstrap, are not available from the fit.}
+\item{id_var}{Name of the column in \code{data} that identifies patients, for
+example \code{"id"}. It is required, because the rows of one patient belong
+together: \code{mostm()} uses it to store each patient's starting row for
+automatic predictions, the \code{"orm"} and \code{"vglm"} engines use it for
+standard errors that allow for correlation between the transitions of one
+patient, and the bootstrap resamples or reweights whole patients by it.}
 
 \item{time_var}{Name of the time column in \code{data}. It is used to find each
-patient's starting row.}
+patient's starting row, and \code{\link[=sops]{sops()}} and the other prediction functions
+set this column to each requested visit.}
+
+\item{p_var}{Name of the column in \code{data} that holds each patient's state at
+the previous visit, \code{"yprev"} by default. Like a supplied name, the
+default must be a column of \code{data}. The prediction functions replace
+it with each possible previous state as they move from visit to visit.}
+
+\item{p2_var}{For a second-order model, the name of the column that holds
+each patient's state two visits back, for example \code{"ypprev"}. \code{NULL} (the
+default) fits a first-order model, in which the next state depends only on
+the previous one. The prediction functions take it from the fit, as they
+do \code{id_var}, \code{time_var} and \code{p_var}, and then use second-order
+calculations. Without it, a column with the older state in the formula
+would be held at each patient's starting value.}
+
+\item{absorb}{The absorbing states, such as death: states that a patient
+never leaves, given as state labels, for example \code{absorb = "8"} or
+\code{absorb = c("home", "dead")}. The prediction functions keep a patient who
+reaches one of them there, and they never predict a transition out of
+it. \code{NULL} (the default) means that no state is absorbing. See
+"Absorbing states" below.}
+
+\item{gap_var}{Name of the column that holds the time since each
+patient's previous visit, if the model includes it, for example \code{"gap"}.
+The prediction functions set this column to the difference between
+consecutive requested times, so the visits in \code{times} may be spaced
+unevenly. Time must be numeric. See "Time since the previous visit"
+below.}
 
 \item{first_followup_time}{Time of the first visit after baseline. Each
 patient's row at this time is their starting row for automatic
@@ -77,8 +117,12 @@ be below 1, and a value you supply must be the earliest time in the data.
 Factor and character time need an explicit value, such as \code{"day 1"}.}
 
 \item{weights}{Optional non-negative row weights: a column of \code{data} or a
-vector with one value per row of \code{data}. Not available for
-\code{engine = "blrm"}.}
+vector with one value per row of \code{data}. \code{engine = "vglm"} needs
+positive weights on the rows it fits. Not available for
+\code{engine = "blrm"}. The weights are used only to fit the model:
+\code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_state_time]{avg_state_time()}}, and \code{\link[=avg_comparisons]{avg_comparisons()}} give every
+profile the same weight, and \code{\link[=inferences]{inferences()}} offers only conditional
+variance for a weighted fit.}
 
 \item{subset}{Optional selection of the rows of \code{data} to fit, as a logical
 expression evaluated in \code{data}, for example \code{time <= 28}.}
@@ -91,20 +135,20 @@ the number of model coefficients.}
 
 \item{cadjust}{Logical. Multiply the patient-clustered variance of the
 \code{"orm"} and \code{"vglm"} engines by \eqn{n / (n - 1)}, where \eqn{n} is the
-number of patients? \code{NULL} (the default) applies this correction when
-\code{id_var} is supplied. It is independent of \code{type}, so \code{type = "HC1"} with
-\code{cadjust = TRUE} applies both factors.}
+number of patients? \code{NULL} (the default) applies this correction. It is
+independent of \code{type}, so \code{type = "HC1"} with \code{cadjust = TRUE} applies
+both factors.}
 }
 \value{
 The fitted model, with the data needed by the state occupancy and
 inference functions attached. The returned object's \code{call} is the
 \code{mostm()} call. Its class depends on \code{engine}:
 \itemize{
-\item \code{"orm"}: an \code{orm} object. With \code{id_var}, its covariance matrix
-(\code{vcov(fit)}) holds the patient-clustered variance.
-\item \code{"vglm"}: with \code{id_var}, a \code{robcov_vglm} object that holds the
-patient-clustered variance and the fitted \code{vglm} object in \verb{$vglm_fit}
-(see \code{\link[=robcov_vglm]{robcov_vglm()}}); without \code{id_var}, the S4 \code{vglm} object.
+\item \code{"orm"}: an \code{orm} object whose covariance matrix (\code{vcov(fit)}) holds
+the patient-clustered variance.
+\item \code{"vglm"}: a \code{robcov_vglm} object that holds the patient-clustered
+variance and the fitted \code{vglm} object in \verb{$vglm_fit} (see
+\code{\link[=robcov_vglm]{robcov_vglm()}}).
 \item \code{"blrm"}: a \code{blrm} object with the posterior draws.
 }
 }
@@ -131,6 +175,20 @@ odds model as \code{"orm"}, so changing \code{engine} is enough to compare the t
 posterior distribution with Stan. Partial proportional odds effects are
 set with \code{ppo} and \code{cppo}. This engine needs the rmsb package.
 }
+
+In a partial proportional odds model the thresholds (cut-points) between
+states move with the predictors that have a separate effect at each
+threshold, so for some covariate values, often outside the range of the
+data, two thresholds can cross. The model then gives a negative probability
+for a state, and state occupancy probabilities aren't defined. \code{\link[=sops]{sops()}},
+\code{\link[=avg_sops]{avg_sops()}}, \code{\link[=state_time]{state_time()}}, \code{\link[=comparisons]{comparisons()}} and the other functions that
+use the fit stop with an error that says for how many profiles and at which
+time this happens; for \code{"blrm"} fits it also says in how many posterior
+draws, and \code{\link[=inferences]{inferences()}} says in how many simulation draws or bootstrap
+samples. They never set the negative probability to zero. Check the
+covariate values of those profiles, or simplify the terms with a separate
+effect at each threshold. A negative value between \eqn{-10^{-10}} and zero
+comes from rounding, not from crossed thresholds, and is set to zero.
 \subsection{Starting rows}{
 
 Functions such as \code{\link[=sops]{sops()}} and \code{\link[=avg_sops]{avg_sops()}} predict, by default, from each
@@ -144,25 +202,99 @@ when predictions are made: a later row is never used instead. Patients
 without any fitted transition are not part of the fitted cohort.
 }
 
+\subsection{Patients left out of the fit}{
+
+The engine drops every row with a missing value in a model variable (the
+response, the previous state, or a predictor). A patient who loses only
+some rows stays in the fit. A patient who loses every row is not part of
+the fit, and \code{mostm()} warns and names them (a warning of class
+\code{mostr_warning_dropped_patients}, whose \code{ids} field holds all their IDs).
+These patients are left out of predictions from the stored starting rows
+and out of the patients that bootstrap and fractional weighted bootstrap
+resample in \code{\link[=inferences]{inferences()}}, so every draw standardises over the same
+patients as the estimate. Patients whose rows are all excluded by \code{subset}
+are not named: you left them out on purpose.
+}
+
+\subsection{Absorbing states}{
+
+A patient who reaches an absorbing state, such as death, stays there. The
+data therefore contain transitions into it but none out of it, and the
+model can't say what happens after it. Name such states in \code{absorb}: the
+prediction functions then keep the probability of being in them, and
+predict transitions only from the other states. \code{mostm()} never works out
+the absorbing states from the data, because a state that is seen only as
+an outcome, at a patient's last visit, need not be absorbing.
+
+\code{mostm()} checks \code{absorb} against the fitted rows of \code{data}:
+\itemize{
+\item Each label must be a state of the response.
+\item No fitted row may have an absorbing state as its previous state
+(\code{p_var}) or, for a second-order model, as the state two visits back
+(\code{p2_var}): a patient in an absorbing state has no further transitions.
+Remove such rows first; \code{\link[=prepare_markov_data]{prepare_markov_data()}} does this for the
+previous state.
+\item A state that occurs as an outcome but never as a previous state, and is
+not named in \code{absorb}, gives a warning: it may be absorbing. Without
+\code{absorb}, a model with a numeric previous state, such as
+\code{rms::rcs(yprev, 4)}, predicts transitions out of such a state from the
+other states' transitions, so dead patients can come back to life. With
+a factor previous state, the prediction functions stop instead, because
+the model has no coefficient for that previous state.
+}
+
+Bootstrap refits keep the absorbing states of the fit. A resample in which
+no patient reaches one of them has no transitions into it, so its refit
+leaves that state out, and the state's probability is 0 in that resample.
+}
+
+\subsection{Time since the previous visit}{
+
+When visits are spaced unevenly, the model can include the time since each
+patient's previous visit as a predictor, in a column named by \code{gap_var}.
+The prediction functions then set that column for every transition: to the
+difference between the requested time and the one before it, and, for the
+first requested time, to that time itself, that is, the time since time 0.
+So with numeric time and \code{times = c(1, 2, 4, 7)}, the gaps are 1, 1, 2 and
+3. A patient's first visit after baseline in the fitted data should
+therefore have a gap equal to its time.
+
+\code{mostm()} checks that the gap column is numeric, that time is numeric, and
+that on every row after a patient's first the gap equals the time since
+the patient's previous row, so that both columns use the same unit. Factor
+or character time can't be used with \code{gap_var}, because visit labels don't
+say how much time passes between visits.
+}
+
 \subsection{Weights and subsets}{
 
 \code{weights} and \code{subset} are evaluated once, first in \code{data} and then where
 \code{mostm()} was called, so they can refer to vectors outside \code{data}. The
-weights must be finite and non-negative. The data stored on the fit contain
+weights must be finite and non-negative. \code{engine = "orm"} fits a row with
+zero weight as if it were left out; \code{engine = "vglm"} cannot fit such a
+row, so leave it out with \code{subset}. The data stored on the fit contain
 only the rows selected by \code{subset}, and each row keeps its weight, so
 bootstrap refits resample rows together with their weights.
 }
 
 \subsection{Standard errors}{
 
-For the \code{"orm"} and \code{"vglm"} engines, \code{id_var} gives standard errors that
-remain valid when the transitions of one patient are correlated. They come
-from a sandwich estimator that adds up the contributions of each patient
-(cluster-robust standard errors); \code{type} and \code{cadjust} set its small-sample
-corrections. These standard errors are used by \code{inferences(method = "delta")} with conditional variance and by \code{inferences(method = "mvn")}.
-Unconditional variance also accounts for which patients were sampled; see
-\code{\link[=inferences]{inferences()}}. For the \code{"blrm"} engine, uncertainty comes from the
-posterior draws.
+For the \code{"orm"} and \code{"vglm"} engines, the covariance matrix of the
+coefficients stored on the fit gives standard errors that remain valid when
+the transitions of one patient are correlated. It comes from a sandwich
+estimator that adds up the contributions of each patient, as identified by
+\code{id_var} (cluster-robust standard errors); \code{type} and \code{cadjust} set its
+small-sample corrections. These standard errors are used by
+\code{inferences(method = "delta")} with conditional variance and by
+\code{inferences(method = "mvn")}. Unconditional variance also accounts for which
+patients were sampled; see \code{\link[=inferences]{inferences()}}. For the \code{"blrm"} engine,
+uncertainty comes from the posterior draws.
+
+\code{mostm()} stops when this covariance cannot be computed, for example when
+the fitting algorithm has not converged or some coefficients grow without
+bound because a transition never occurs in the data. The \code{"orm"} engine
+also needs the logit link (\code{family = "logistic"}, the default), which the
+state occupancy functions require as well.
 }
 
 \subsection{Random effects}{
@@ -179,14 +311,15 @@ identifies patients, and attach rms and rmsb with \code{library()} so that
 straight-line effect of the ID number, so \code{mostm()} stops with an error. To
 include each patient's estimated random effect in predictions, use
 \code{include_re = TRUE} in \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}}; see
-\code{vignette("bayesian-rmsb-sops")}.
+\href{https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html}{the Bayesian article}.
 
 With \code{engine = "orm"} or \code{"vglm"}, \code{cluster()} and \code{mix_re()} terms are
 errors, although \code{\link[rms:orm]{rms::orm()}} can fit them from rms version 8.2 on. State
 occupancy probabilities from such a fit would describe only a patient whose
-random effect is 0, which is not the average over patients. To allow for
-correlation between the transitions of one patient with these engines, use
-\code{id_var}, as described under "Standard errors". \code{mix_re()}, which lets the
+random effect is 0, which is not the average over patients. With these
+engines, the patient-clustered standard errors described under "Standard
+errors" already allow for correlation between the transitions of one
+patient. \code{mix_re()}, which lets the
 size of the random effect differ between the first follow-up and later visits,
 is not available for any engine.
 }
@@ -215,10 +348,12 @@ trajectories <- sim_markov(
 )
 model_data <- prepare_markov_data(trajectories, absorbing_state = 8)
 
+# State 8, death, is absorbing: patients who reach it stay there.
 fit <- mostm(
   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
   data = model_data,
-  id_var = "id"
+  id_var = "id",
+  absorb = "8"
 )
 
 # The same model fitted with VGAM
@@ -226,6 +361,7 @@ fit_vglm <- mostm(
   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
   data = model_data,
   id_var = "id",
+  absorb = "8",
   engine = "vglm"
 )
 # Both engines reach the same maximum of the log-likelihood
@@ -236,8 +372,7 @@ c(orm = stats::logLik(fit), vglm = stats::logLik(fit_vglm$vglm_fit))
 sops_by_arm <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
-  times = 1:14,
-  absorb = "8"
+  times = 1:14
 )
 sops_by_arm[sops_by_arm$time == 14, ]
 
@@ -249,6 +384,7 @@ if (requireNamespace("rmsb", quietly = TRUE)) {
     ordered(y) ~ yprev + time + tx,
     data = model_data,
     id_var = "id",
+    absorb = "8",
     engine = "blrm",
     subset = id <= 60,
     ppo = ~time,

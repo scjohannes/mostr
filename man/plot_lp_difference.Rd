@@ -10,12 +10,6 @@ plot_lp_difference(
   variables,
   times,
   previous_states = NULL,
-  y_levels = NULL,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  gap_var = NULL,
-  time_covariates = NULL,
   line_width = 0.7
 )
 }
@@ -31,22 +25,10 @@ first value is the reference.}
 \item{times}{Time values at which to evaluate the linear predictor.}
 
 \item{previous_states}{Optional previous-state values to facet by. Defaults
-to all non-absorbing states in \code{y_levels}.}
-
-\item{y_levels}{Optional state levels. If omitted, levels are inferred from
-the model when possible.}
-
-\item{absorb}{Optional absorbing-state label excluded from the default
-previous-state grid.}
-
-\item{time_var}{Character name of the time column.}
-
-\item{p_var}{Character name of the previous-state column.}
-
-\item{gap_var}{Optional time-gap_var variable used by the fitted model.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table used by the fitted
-model.}
+to the fitted states that occur as the previous state in the data the
+model was fitted to, which leaves out absorbing states. A supplied state
+that never occurs there is an error, because the model has no linear
+predictor for it.}
 
 \item{line_width}{Line width for the plotted contrasts.}
 }
@@ -64,6 +46,10 @@ the supplied profile and faceted by previous state.
 one-row \code{profile}, \code{variables}, and \code{times}. The profile should contain the
 model covariates for the patient or scenario being plotted; \code{times} and
 \code{previous_states} define the plotting grid.
+
+The time column, the previous-state column and the states are those of the
+fitted model: the \code{time_var} and \code{p_var} given to \code{\link[=mostm]{mostm()}}, and the states
+of the response in fitted order.
 }
 \examples{
 \dontrun{
@@ -71,9 +57,7 @@ plot_lp_difference(
   fit,
   profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
   variables = list(tx = c(0, 1)),
-  times = 1:28,
-  y_levels = 1:8,
-  absorb = 8
+  times = 1:28
 )
 }
 }

@@ -1,92 +1,217 @@
-test_that("relevel_factors_consecutive preserves types and updates absorbing states", {
-  int_data <- data.frame(y = c(1L, 2L), yprev = c(1L, 2L))
-  expect_warning(
-    int_out <- relevel_factors_consecutive(
-      int_data,
-      original_data = data.frame(y = factor(1:3), yprev = factor(1:3)),
-      y_levels = 1:3,
-      absorb = c(2, 3)
+# Bootstrap resamples can lack a state. drop_absent_states() then reports it,
+# removes it from the factor levels of the response and the previous state,
+# and returns the labels of the states and absorbing states present. Labels
+# are never renumbered, and numeric columns keep their values. `warning` is
+# the expected warning, or NA for none.
+test_that("drop_absent_states drops missing states and keeps the state labels", {
+  skip_on_cran()
+  letters_abc <- c("a", "b", "c")
+  cases <- list(
+    list(
+      label = "integer columns, an absorbing state is dropped",
+      args = list(
+        data = data.frame(y = c(1L, 2L), yprev = c(1L, 2L)),
+        original_data = data.frame(y = factor(1:3), yprev = factor(1:3)),
+        y_levels = 1:3,
+        absorb = c(2, 3)
+      ),
+      warning = "were dropped",
+      check = function(out, label) {
+        expect_identical(out$absorb, "2", info = label)
+        expect_identical(out$ylevels, c("1", "2"), info = label)
+      }
     ),
-    "were dropped",
-    fixed = TRUE
-  )
-  expect_equal(int_out$absorb, 2)
-  expect_equal(int_out$ylevels, 1:2)
-
-  expect_warning(
-    no_absorb <- relevel_factors_consecutive(
-      data.frame(y = c(1, 2), yprev = c(1, 2)),
-      original_data = data.frame(y = 1:3, yprev = 1:3),
-      y_levels = 1:3,
-      absorb = 3
+    list(
+      label = "the only absorbing state is dropped",
+      args = list(
+        data = data.frame(y = c(1, 2), yprev = c(1, 2)),
+        original_data = data.frame(y = 1:3, yprev = 1:3),
+        y_levels = 1:3,
+        absorb = 3
+      ),
+      warning = "Set to NULL",
+      check = function(out, label) {
+        expect_null(out$absorb, info = label)
+      }
     ),
-    "Set to NULL",
-    fixed = TRUE
+    list(
+      label = "character columns without y_levels",
+      args = list(
+        data = data.frame(y = c("a", "b"), yprev = c("a", "b")),
+        original_data = data.frame(y = letters_abc, yprev = letters_abc),
+        y_levels = NULL,
+        absorb = NULL
+      ),
+      warning = NULL,
+      check = function(out, label) {
+        expect_equal(out$ylevels, NULL, info = label)
+        expect_identical(typeof(out$data$y), "character", info = label)
+      }
+    ),
+    list(
+      label = "states inferred from the data alone",
+      args = list(
+        data = data.frame(y = c(1, 2), yprev = c(1, 2)),
+        original_data = NULL,
+        y_levels = NULL,
+        absorb = NULL
+      ),
+      warning = NULL,
+      check = function(out, label) {
+        expect_equal(out$missing_levels, character(0), info = label)
+      }
+    ),
+    list(
+      label = "states from y_levels alone",
+      args = list(
+        data = data.frame(y = c(1L, 3L), yprev = c(1L, 3L)),
+        factor_cols = c("y", "yprev"),
+        original_data = NULL,
+        y_levels = 1:3,
+        absorb = 3
+      ),
+      warning = NULL,
+      check = function(out, label) {
+        expect_equal(out$missing_levels, "2", info = label)
+        expect_identical(out$data$y, c(1L, 3L), info = label)
+        expect_identical(out$absorb, "3", info = label)
+        expect_identical(out$ylevels, c("1", "3"), info = label)
+      }
+    ),
+    list(
+      label = "ordered response with a numeric previous state",
+      args = list(
+        data = data.frame(
+          y = ordered(c(1, 3, 4), levels = 1:4),
+          yprev = c(1, 3, 4)
+        ),
+        factor_cols = c("y", "yprev"),
+        original_data = data.frame(
+          y = ordered(c(1, 2, 3, 4)),
+          yprev = c(1, 2, 3, 4)
+        ),
+        y_levels = 1:4,
+        absorb = 4
+      ),
+      warning = NULL,
+      check = function(out, label) {
+        expect_true(is.ordered(out$data$y), info = label)
+        expect_identical(levels(out$data$y), c("1", "3", "4"), info = label)
+        # A numeric previous state keeps its numbers, so rcs(yprev) or a
+        # linear yprev effect sees the original scale.
+        expect_identical(out$data$yprev, c(1, 3, 4), info = label)
+        expect_identical(out$ylevels, c("1", "3", "4"), info = label)
+        expect_identical(out$absorb, "4", info = label)
+        expect_equal(out$missing_levels, "2", info = label)
+      }
+    ),
+    list(
+      label = "a factor previous state gets no empty level",
+      args = list(
+        data = data.frame(
+          y = factor(c(1, 3, 4), levels = 1:4),
+          yprev = factor(c(1, 3, 3), levels = 1:3)
+        ),
+        factor_cols = c("y", "yprev"),
+        original_data = data.frame(
+          y = factor(1:4),
+          yprev = factor(c(1, 2, 3, 3), levels = 1:3)
+        ),
+        y_levels = 1:4,
+        absorb = 4
+      ),
+      warning = NA,
+      check = function(out, label) {
+        # rms::orm() cannot fit a factor with an empty level.
+        expect_identical(levels(out$data$yprev), c("1", "3"), info = label)
+        expect_identical(as.character(out$data$yprev), c("1", "3", "3"), info = label)
+        expect_identical(levels(out$data$y), c("1", "3", "4"), info = label)
+      }
+    ),
+    list(
+      label = "letter-labelled factor columns",
+      args = list(
+        data = data.frame(
+          y = factor(c("a", "c", "a"), levels = letters_abc),
+          yprev = factor(c("a", "a", "a"), levels = letters_abc)
+        ),
+        factor_cols = c("y", "yprev"),
+        original_data = data.frame(
+          y = factor(c("a", "b", "c", "a"), levels = letters_abc),
+          yprev = factor(c("a", "a", "b", "b"), levels = letters_abc)
+        ),
+        y_levels = letters_abc,
+        absorb = "c"
+      ),
+      warning = NA,
+      check = function(out, label) {
+        expect_identical(as.character(out$missing_levels), "b", info = label)
+        expect_identical(levels(out$data$y), c("a", "c"), info = label)
+        expect_identical(levels(out$data$yprev), "a", info = label)
+        expect_identical(out$ylevels, c("a", "c"), info = label)
+        # The absorbing state keeps its label and its place as the last state.
+        expect_identical(out$absorb, "c", info = label)
+      }
+    )
   )
-  expect_null(no_absorb$absorb)
 
-  char_out <- relevel_factors_consecutive(
-    data.frame(y = c("a", "b"), yprev = c("a", "b")),
-    original_data = data.frame(y = c("a", "b", "c"), yprev = c("a", "b", "c")),
-    y_levels = NULL,
-    absorb = NULL
-  )
-  expect_equal(char_out$ylevels, NULL)
-  expect_type(char_out$data$y, "character")
-
-  inferred <- relevel_factors_consecutive(
-    data.frame(y = c(1, 2), yprev = c(1, 2)),
-    original_data = NULL,
-    y_levels = NULL,
-    absorb = NULL
-  )
-  expect_equal(inferred$missing_levels, character(0))
+  for (case in cases) {
+    relevel <- function() do.call(drop_absent_states, case$args)
+    if (is.null(case$warning)) {
+      out <- relevel()
+    } else if (is.na(case$warning)) {
+      expect_no_warning(out <- relevel())
+    } else {
+      expect_warning(out <- relevel(), case$warning, fixed = TRUE)
+    }
+    case$check(out, case$label)
+  }
 })
 
-test_that("validate_coef_vcov reports structural mismatches", {
-  beta <- c(a = 1, b = 2)
-
-  expect_error(
-    mostr:::validate_coef_vcov(beta, c(1, 2)),
-    "must be a matrix",
-    fixed = TRUE
-  )
-  expect_error(
-    mostr:::validate_coef_vcov(beta, diag(3)),
-    "Dimension mismatch",
-    fixed = TRUE
-  )
-  bad_rows <- diag(2)
-  rownames(bad_rows) <- c("b", "a")
-  colnames(bad_rows) <- names(beta)
-  expect_error(
-    mostr:::validate_coef_vcov(beta, bad_rows),
-    "Coefficient names do not match row names",
-    fixed = TRUE
-  )
-  bad_cols <- diag(2)
-  rownames(bad_cols) <- names(beta)
-  colnames(bad_cols) <- c("b", "a")
-  expect_error(
-    mostr:::validate_coef_vcov(beta, bad_cols),
-    "Coefficient names do not match column names",
-    fixed = TRUE
-  )
-})
-
-test_that("validate_coef_vcov accepts Matrix covariance objects", {
+test_that("validate_coef_vcov reports structural mismatches and accepts Matrix covariance objects", {
   skip_if_not_installed("Matrix")
 
   beta <- c(a = 1, b = 2)
-  matrix_vcov <- Matrix::Matrix(diag(2), sparse = FALSE)
-  dimnames(matrix_vcov) <- list(names(beta), names(beta))
-  expected_vcov <- diag(2)
-  dimnames(expected_vcov) <- list(names(beta), names(beta))
-
-  expect_equal(
-    mostr:::validate_coef_vcov(beta, matrix_vcov),
-    expected_vcov
+  named <- function(x, rows = names(beta), cols = names(beta)) {
+    dimnames(x) <- list(rows, cols)
+    x
+  }
+  cases <- list(
+    list(label = "a vector", vcov = c(1, 2), error = "must be a matrix"),
+    list(label = "too many rows", vcov = diag(3), error = "Dimension mismatch"),
+    list(
+      label = "row names in another order",
+      vcov = named(diag(2), rows = c("b", "a")),
+      error = "Coefficient names do not match row names"
+    ),
+    list(
+      label = "column names in another order",
+      vcov = named(diag(2), cols = c("b", "a")),
+      error = "Coefficient names do not match column names"
+    ),
+    list(
+      label = "a dense Matrix object, returned as a base matrix",
+      vcov = named(Matrix::Matrix(diag(2), sparse = FALSE)),
+      expected = named(diag(2))
+    )
   )
+
+  for (case in cases) {
+    if (is.null(case$error)) {
+      expect_equal(
+        mostr:::validate_coef_vcov(beta, case$vcov),
+        case$expected,
+        info = case$label
+      )
+    } else {
+      expect_error(
+        mostr:::validate_coef_vcov(beta, case$vcov),
+        case$error,
+        fixed = TRUE,
+        info = case$label
+      )
+    }
+  }
 })
 
 test_that("set_coef() updates nested robcov_vglm fits", {
@@ -155,21 +280,6 @@ test_that("get_effective_coefs() reports unsupported and mismatched coefficients
   )
 })
 
-test_that("relevel_factors_consecutive can relevel from y_levels alone", {
-  out <- relevel_factors_consecutive(
-    data = data.frame(y = c(1L, 3L), yprev = c(1L, 3L)),
-    factor_cols = c("y", "yprev"),
-    original_data = NULL,
-    y_levels = 1:3,
-    absorb = 3
-  )
-
-  expect_equal(out$missing_levels, "2")
-  expect_type(out$data$y, "integer")
-  expect_equal(out$data$y, c(1L, 2L))
-  expect_equal(unname(out$absorb), 2)
-})
-
 test_that("previous-state coercion respects scalar storage modes", {
   expect_equal(
     mostr:::coerce_previous_state_values(c("1", "2"), 1L, "yprev"),
@@ -222,11 +332,6 @@ test_that("orm prediction helpers validate metadata and categorical levels", {
     y = ordered(c(1, 2, 3, 1, 2, 3)),
     z = factor(c("a", "b", "a", "b", "a", "b"))
   )
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
-
   fit <- rms::orm(y ~ z, data = data, x = TRUE, y = TRUE)
   X <- mostr:::orm_model_matrix(
     fit,
@@ -286,7 +391,7 @@ test_that("orm prediction helpers validate metadata and categorical levels", {
   expect_equal(unname(X_strat[, "x"]), c(1, 2))
 })
 
-test_that("orm score-bootstrap helpers cover validation and alignment branches", {
+test_that("orm score helpers cover validation and alignment branches", {
   skip_if_not_installed("rms")
 
   expect_error(
@@ -307,11 +412,6 @@ test_that("orm score-bootstrap helpers cover validation and alignment branches",
     y = ordered(c(1, 2, 3, 1, 2, 3, 1, 2, 3)),
     x = c(-1, 0, 1, -0.5, 0.5, 1.5, -1.5, 0.2, 1.2)
   )
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
-
   fit <- rms::orm(y ~ x, data = data, x = TRUE, y = TRUE)
   scores <- mostr:::compute_scores_orm(fit)
   expect_equal(nrow(scores), nrow(data))
@@ -353,78 +453,6 @@ test_that("orm score-bootstrap helpers cover validation and alignment branches",
   )
 
   expect_true(is.matrix(mostr:::orm_model_bread(fit)$bread))
-})
-
-test_that("score bootstrap draw helper reports malformed robust components", {
-  baseline <- data.frame(id = c("a", "b"))
-  robust <- structure(
-    list(
-      coefficients = c(a = 0, b = 0),
-      bread = diag(2),
-      scores = matrix(0, nrow = 2, ncol = 2),
-      cluster = c("a", "b")
-    ),
-    class = "robcov_vglm"
-  )
-
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(
-      robust,
-      baseline,
-      "missing",
-      1
-    ),
-    "ID variable",
-    fixed = TRUE
-  )
-
-  bad_scores <- robust
-  bad_scores$scores <- data.frame(a = 1)
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(bad_scores, baseline, "id", 1),
-    "must be a matrix",
-    fixed = TRUE
-  )
-
-  bad_bread <- robust
-  bad_bread$bread <- c(1, 2)
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(bad_bread, baseline, "id", 1),
-    "`model$bread` must be a matrix",
-    fixed = TRUE
-  )
-
-  bad_cluster <- robust
-  bad_cluster$cluster <- "a"
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(
-      bad_cluster,
-      baseline,
-      "id",
-      1
-    ),
-    "does not match",
-    fixed = TRUE
-  )
-
-  bad_coef <- robust
-  bad_coef$coefficients <- c(a = 0)
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(bad_coef, baseline, "id", 1),
-    "Coefficient length",
-    fixed = TRUE
-  )
-
-  expect_error(
-    mostr:::generate_score_bootstrap_draws(
-      robust,
-      baseline[0, , drop = FALSE],
-      "id",
-      1
-    ),
-    "Invalid baseline weights",
-    fixed = TRUE
-  )
 })
 
 test_that("robcov_vglm and score extraction cover malformed internals", {
@@ -481,151 +509,84 @@ test_that("print.robcov_vglm reports clustered fits", {
   expect_output(print(obj), "Number of clusters")
 })
 
-test_that("get_vcov_robust validates clusters before dispatching by model class", {
-  fit <- lm(mpg ~ wt, data = mtcars)
-  expect_error(
-    mostr:::get_vcov_robust(fit, cluster = ~cyl, data = mtcars),
-    "Unsupported model class",
-    fixed = TRUE
-  )
-
-  data_na <- mtcars
-  data_na$wt[1] <- NA
-  fit_na <- lm(mpg ~ wt, data = data_na)
-  expect_error(
-    mostr:::get_vcov_robust(fit_na, cluster = ~cyl, data = data_na),
-    "Unsupported model class",
-    fixed = TRUE
-  )
-  expect_error(
-    mostr:::get_vcov_robust(
-      fit,
-      cluster = ~id,
-      data = data.frame(id = seq_len(nrow(mtcars) + 1L))
-    ),
-    "Unsupported model class",
-    fixed = TRUE
-  )
-  expanded <- rbind(mtcars, mtcars[1, , drop = FALSE])
-  expanded$id <- seq_len(nrow(expanded))
-  expect_error(
-    mostr:::get_vcov_robust(fit, cluster = ~id, data = expanded),
-    "Unsupported model class",
-    fixed = TRUE
-  )
-
-  formula.weird_model <- function(x, ...) y ~ x
-  nobs.weird_model <- function(object, ...) 2L
-  assign("formula.weird_model", formula.weird_model, envir = globalenv())
-  assign("nobs.weird_model", nobs.weird_model, envir = globalenv())
-  withr::defer(rm("formula.weird_model", envir = globalenv()))
-  withr::defer(rm("nobs.weird_model", envir = globalenv()))
-
-  weird <- structure(list(), class = "weird_model")
-  expect_error(
-    mostr:::get_vcov_robust(
-      weird,
-      cluster = ~id,
-      data = data.frame(id = 1:2)
-    ),
-    "Unsupported model class",
-    fixed = TRUE
-  )
-  expect_error(
-    mostr:::get_vcov_robust(
-      weird,
-      cluster = ~id,
-      data = data.frame(id = 1:3, x = c(1, NA, 3))
-    ),
-    "Unsupported model class",
-    fixed = TRUE
-  )
-
+test_that("get_vcov_robust aligns a cluster formula with the rows an orm fit used", {
   skip_if_not_installed("rms")
-  # The states overlap across `x`, so rms can estimate the coefficients.
+
+  # The states overlap across `x`, so rms can estimate the coefficients. The
+  # missing `x` in row 2 makes orm drop that row, so the cluster IDs from `data`
+  # must drop it too; keeping the first 14 IDs instead would shift patients.
   data <- data.frame(
-    y = ordered(c(1, 2, 1, 3, 2, 1, 3, 2, 3, 1, 3, 2)),
-    x = seq_len(12),
-    id = rep(1:4, each = 3)
+    y = ordered(c(1, 2, 1, 3, 2, 1, 3, 2, 3, 1, 3, 2, 1, 2, 3)),
+    x = c(1, NA, 3:15),
+    id = rep(1:5, each = 3)
   )
-  dd <- rms::datadist(data)
-  withr::local_options(datadist = "dd")
-  assign("dd", dd, envir = globalenv())
-  withr::defer(rm("dd", envir = globalenv()))
   orm_fit <- rms::orm(y ~ x, data = data, x = TRUE, y = TRUE)
-  expect_true(is.matrix(mostr:::get_vcov_robust(
-    orm_fit,
-    cluster = data$id
-  )))
+  aligned <- mostr:::robcov_orm(orm_fit, cluster = data$id[-2])$var
+  shifted <- mostr:::robcov_orm(orm_fit, cluster = data$id[1:14])$var
+
+  from_formula <- mostr:::get_vcov_robust(orm_fit, cluster = ~id, data = data)
+  expect_equal(from_formula, aligned)
+  expect_false(isTRUE(all.equal(from_formula, shifted)))
+  expect_equal(
+    mostr:::get_vcov_robust(orm_fit, cluster = data$id[-2]),
+    aligned
+  )
 })
 
-
 test_that("markov_msm_build validates model classes and design alignment", {
-  with_mocked_bindings(
-    get_effective_coefs = function(model, beta = NULL) {
-      matrix(0, nrow = 1, ncol = 1, dimnames = list(NULL, "(Intercept)"))
-    },
-    {
-      expect_error(
-        mostr:::markov_msm_build(
-          structure(list(), class = "not_supported"),
-          data.frame(yprev = 1)
-        ),
-        "supports only vglm and orm",
-        fixed = TRUE
+  coefs_named <- function(columns) {
+    function(model, beta = NULL) {
+      matrix(0, nrow = 1, ncol = length(columns), dimnames = list(NULL, columns))
+    }
+  }
+  # Full columns at the first visit, then a design that lacks `x`.
+  shrinking_design <- function() {
+    calls <- 0
+    function(model, newdata, include_intercept = TRUE) {
+      calls <<- calls + 1
+      columns <- if (calls == 1) c("(Intercept)", "x") else "(Intercept)"
+      matrix(
+        1,
+        nrow = nrow(newdata),
+        ncol = length(columns),
+        dimnames = list(NULL, columns)
       )
     }
-  )
-  expect_error(
-    mostr:::markov_msm_build(
-      structure(list(), class = "orm"),
-      data.frame(yprev = 1),
-      time_covariates = data.frame(z = 1:2),
-      times = 1
+  }
+  cases <- list(
+    list(
+      label = "an unsupported model class",
+      mocks = list(get_effective_coefs = coefs_named("(Intercept)")),
+      args = list(
+        structure(list(), class = "not_supported"),
+        data.frame(yprev = 1),
+        settings = markov_settings(y_levels = 1:6)
+      ),
+      error = "supports only vglm and orm"
     ),
-    "one row per requested time point",
-    fixed = TRUE
+    list(
+      label = "an orm design that loses a column at a later visit",
+      mocks = list(
+        get_effective_coefs = coefs_named(c("(Intercept)", "x")),
+        orm_model_matrix = shrinking_design()
+      ),
+      args = list(
+        structure(list(), class = "orm"),
+        data.frame(id = 1, time = 2, yprev = 1),
+        times = c(2, 3),
+        settings = markov_settings(y_levels = 1:2)
+      ),
+      error = "Design matrix columns missing"
+    )
   )
 
-  calls <- 0
-  with_mocked_bindings(
-    get_effective_coefs = function(model, beta = NULL) {
-      matrix(
-        0,
-        nrow = 1,
-        ncol = 2,
-        dimnames = list(NULL, c("(Intercept)", "x"))
-      )
-    },
-    orm_model_matrix = function(model, newdata, include_intercept = TRUE) {
-      calls <<- calls + 1
-      if (calls == 1) {
-        matrix(
-          1,
-          nrow = nrow(newdata),
-          ncol = 2,
-          dimnames = list(NULL, c("(Intercept)", "x"))
-        )
-      } else {
-        matrix(
-          1,
-          nrow = nrow(newdata),
-          ncol = 1,
-          dimnames = list(NULL, "(Intercept)")
-        )
-      }
-    },
-    {
-      expect_error(
-        mostr:::markov_msm_build(
-          structure(list(), class = "orm"),
-          data.frame(id = 1, time = 2, yprev = 1),
-          times = c(2, 3),
-          y_levels = 1:2
-        ),
-        "Design matrix columns missing",
-        fixed = TRUE
-      )
+  build <- function(case) {
+    if (length(case$mocks) > 0L) {
+      do.call(local_mocked_bindings, case$mocks)
     }
-  )
+    do.call(mostr:::markov_msm_build, case$args)
+  }
+  for (case in cases) {
+    expect_error(build(case), case$error, fixed = TRUE, info = case$label)
+  }
 })

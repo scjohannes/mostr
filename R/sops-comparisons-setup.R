@@ -1,24 +1,12 @@
 # Average comparison setup helpers.
 
-stop_legacy_baseline_args <- function(extra_args) {
-  legacy_args <- intersect(names(extra_args), c("origin_time", "origin"))
-  if (length(legacy_args) > 0L) {
-    stop(
-      "`",
-      legacy_args[1L],
-      "` is no longer supported; use `baseline_time` instead.",
-      call. = FALSE
-    )
-  }
-  invisible(NULL)
-}
 
 validate_comparison_times <- function(times, fn) {
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied to `", fn, "`.")
+    mostr_abort("`times` must be supplied to `", fn, "`.")
   }
   if (anyDuplicated(times)) {
-    stop(
+    mostr_abort(
       "`times` must not contain duplicate visits; each visit is counted once."
     )
   }
@@ -34,45 +22,151 @@ bare_variable_data <- function(model, newdata) {
 }
 
 # Turns a bare variable name into the named list of values to compare, then
-# validates the list.
-resolve_comparison_variables <- function(variables, model, newdata, fn) {
+# validates the list. Values of the previous-state columns are matched to
+# states by label (`match_previous_state_variables()`).
+resolve_comparison_variables <- function(
+  variables,
+  model,
+  newdata,
+  fn,
+  settings
+) {
   if (!missing(variables) && is.character(variables)) {
     if (length(variables) != 1L || is.na(variables) || !nzchar(variables)) {
-      stop("`", fn, "` supports exactly one named variable.")
+      mostr_abort("`", fn, "` supports exactly one named variable.")
     }
     data <- bare_variable_data(model, newdata)
     if (!variables %in% names(data)) {
-      stop("Variables not in data: ", variables)
+      mostr_abort("Variables not in data: ", variables)
     }
     variables <- stats::setNames(
       list(comparison_variable_values(data[[variables]], variables)),
       variables
     )
   }
-  validate_avg_comparison_variables(variables, fn)
+  variables <- validate_avg_comparison_variables(variables, fn)
+  match_previous_state_variables(variables, model, newdata, settings)
 }
 
 # Turns bare variable names for predictions (`sops()`, `avg_sops()`,
-# `state_time()`, `avg_state_time()`) into a named list of values. `NULL`
-# and named lists are returned unchanged.
-resolve_prediction_variables <- function(variables, model, newdata) {
-  if (is.null(variables) || !is.character(variables)) {
+# `state_time()`, `avg_state_time()`) into a named list of values. Named
+# lists are kept, except that values of the previous-state columns are
+# matched to states by label (`match_previous_state_variables()`).
+resolve_prediction_variables <- function(variables, model, newdata, settings) {
+  if (is.null(variables)) {
     return(variables)
   }
-  if (anyNA(variables) || any(!nzchar(variables)) || anyDuplicated(variables)) {
-    stop("Bare variable names must be unique, non-missing, and non-empty.")
+  if (is.character(variables)) {
+    if (
+      anyNA(variables) || any(!nzchar(variables)) || anyDuplicated(variables)
+    ) {
+      mostr_abort(
+        "Bare variable names must be unique, non-missing, and non-empty."
+      )
+    }
+    data <- bare_variable_data(model, newdata)
+    missing_vars <- setdiff(variables, names(data))
+    if (length(missing_vars) > 0L) {
+      mostr_abort(
+        "Variables not in data: ",
+        paste(missing_vars, collapse = ", ")
+      )
+    }
+    variables <- stats::setNames(
+      lapply(variables, function(name) {
+        prediction_variable_values(data[[name]], name)
+      }),
+      variables
+    )
   }
-  data <- bare_variable_data(model, newdata)
-  missing_vars <- setdiff(variables, names(data))
-  if (length(missing_vars) > 0L) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+  match_previous_state_variables(variables, model, newdata, settings)
+}
+
+# State labels are names: when `variables` sets the previous state (`p_var`)
+# or the state two visits back (`p2_var`), a value means the state whose
+# label it matches, so 2, 2L and "2" are all state "2". A value that matches
+# no state is an error. Matched values are converted to the type of that
+# column in the data the model was fitted to (or `newdata`, or the stored
+# starting profiles), so every later step (the native engine, the reference
+# engine, inference replays) sees values the model's design can use. A
+# factor keeps its levels; a state that is not among them, such as an
+# absorbing state that no transition starts from, is added as a level, so
+# the absorbing-start refusal can still name it.
+match_previous_state_variables <- function(
+  variables,
+  model,
+  newdata,
+  settings
+) {
+  if (!is.list(variables) || is.null(names(variables))) {
+    return(variables)
   }
-  stats::setNames(
-    lapply(variables, function(name) {
-      prediction_variable_values(data[[name]], name)
-    }),
-    variables
+  p_var <- settings$p_var
+  columns <- intersect(c(p_var, settings$p2_var), names(variables))
+  if (length(columns) == 0L) {
+    return(variables)
+  }
+  states <- tryCatch(
+    as_state_labels(markov_model_ylevels(model, settings$y_levels)),
+    error = function(e) NULL
   )
+  for (column in columns) {
+    values <- variables[[column]]
+    labels <- as_state_labels(values)
+    if (!is.null(states)) {
+      unknown <- unique(labels[is.na(labels) | !labels %in% states])
+      if (length(unknown) > 0L) {
+        role <- if (identical(column, p_var)) {
+          "the previous state"
+        } else {
+          "the state two visits back"
+        }
+        mostr_abort(
+          "`",
+          column,
+          "` is ",
+          role,
+          ", so `variables` must set it to states. ",
+          paste(unknown, collapse = ", "),
+          if (length(unknown) == 1L) " is" else " are",
+          " not a state; the states are ",
+          paste(states, collapse = ", "),
+          "."
+        )
+      }
+    }
+    prototype <- previous_state_prototype(model, newdata, column)
+    if (is.null(prototype)) {
+      next
+    }
+    variables[[column]] <- if (is.factor(prototype)) {
+      factor(
+        labels,
+        levels = union(levels(prototype), intersect(states, labels)),
+        ordered = is.ordered(prototype)
+      )
+    } else {
+      coerce_previous_state_values(labels, prototype, column)
+    }
+  }
+  variables
+}
+
+# The previous-state column whose type `variables` values take: from the
+# data the model was fitted to, else `newdata`, else the starting profiles
+# stored by `mostm()`.
+previous_state_prototype <- function(model, newdata, column) {
+  sources <- list(
+    markov_model_refit_data(model),
+    newdata,
+    markov_model_metadata_attr(model, "markov_starting_profile_data")
+  )
+  for (data in sources) {
+    if (is.data.frame(data) && column %in% names(data)) {
+      return(data[[column]])
+    }
+  }
+  NULL
 }
 
 # Observed values of a variable named without values, chosen as in
@@ -99,11 +193,10 @@ bare_variable_values <- function(x, name, numeric = c("error", "fivenum")) {
     return(sort(unique(observed)))
   }
   if (!is.numeric(x) || is.object(x)) {
-    stop(
+    mostr_abort(
       "A bare variable name supports factor, character, logical, or numeric ",
       "variables; ",
-      explicit,
-      call. = FALSE
+      explicit
     )
   }
   unique_values <- sort(unique(observed))
@@ -113,13 +206,12 @@ bare_variable_values <- function(x, name, numeric = c("error", "fivenum")) {
   if (identical(numeric, "fivenum")) {
     return(unique(stats::fivenum(observed)))
   }
-  stop(
+  mostr_abort(
     "`",
     name,
     "` is numeric with values other than 0 and 1, so a bare name cannot ",
     "choose values to compare; ",
-    explicit,
-    call. = FALSE
+    explicit
   )
 }
 
@@ -127,11 +219,10 @@ bare_variable_values <- function(x, name, numeric = c("error", "fivenum")) {
 comparison_variable_values <- function(x, name) {
   values <- bare_variable_values(x, name, numeric = "error")
   if (length(values) < 2L) {
-    stop(
+    mostr_abort(
       "`",
       name,
-      "` needs at least two observed values to compare.",
-      call. = FALSE
+      "` needs at least two observed values to compare."
     )
   }
   values
@@ -140,7 +231,7 @@ comparison_variable_values <- function(x, name) {
 prediction_variable_values <- function(x, name) {
   values <- bare_variable_values(x, name, numeric = "fivenum")
   if (length(values) < 1L) {
-    stop("`", name, "` needs at least one observed value.", call. = FALSE)
+    mostr_abort("`", name, "` needs at least one observed value.")
   }
   values
 }
@@ -150,21 +241,25 @@ validate_avg_comparison_variables <- function(
   fn = "avg_comparisons()"
 ) {
   if (missing(variables) || is.null(variables)) {
-    stop("`variables` must be a named list with one counterfactual variable.")
+    mostr_abort(
+      "`variables` must be a named list with one counterfactual variable."
+    )
   }
   if (!is.list(variables) || is.null(names(variables))) {
-    stop("`variables` must be a named list, for example `list(tx = c(0, 1))`.")
+    mostr_abort(
+      "`variables` must be a named list, for example `list(tx = c(0, 1))`."
+    )
   }
   if (length(variables) != 1L || !nzchar(names(variables)[1])) {
-    stop("`", fn, "` supports exactly one named variable.")
+    mostr_abort("`", fn, "` supports exactly one named variable.")
   }
 
   values <- variables[[1]]
   if (length(values) < 2L) {
-    stop("`variables[[1]]` must contain at least two values.")
+    mostr_abort("`variables[[1]]` must contain at least two values.")
   }
   if (anyDuplicated(as.character(values))) {
-    stop("`variables[[1]]` must not contain duplicate values.")
+    mostr_abort("`variables[[1]]` must not contain duplicate values.")
   }
 
   variables
@@ -173,10 +268,12 @@ validate_avg_comparison_variables <- function(
 validate_avg_comparison_estimand <- function(estimand, state_sets, comparison) {
   if (estimand == "time_benefit") {
     if (!is.null(state_sets)) {
-      stop("`state_sets` is not used with `estimand = \"time_benefit\"`.")
+      mostr_abort(
+        "`state_sets` is not used with `estimand = \"time_benefit\"`."
+      )
     }
     if (comparison != "difference") {
-      stop(
+      mostr_abort(
         "`estimand = \"time_benefit\"` only supports `comparison = \"difference\"`."
       )
     }
@@ -184,35 +281,25 @@ validate_avg_comparison_estimand <- function(estimand, state_sets, comparison) {
   invisible(NULL)
 }
 
+# The profiles of a comparison or time call, stacked once per value of
+# `variables`, with the resolved `settings` of the call.
 avg_comparison_setup <- function(
   model,
   newdata,
   variables,
   by,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  id_var,
-  p2_var,
-  gap_var,
-  time_covariates,
-  include_re,
-  ...
+  settings,
+  include_re
 ) {
-  validate_markov_model(model)
-
-  data_res <- resolve_markov_source_data(model, newdata)
+  data_res <- resolve_markov_source_data(model, newdata, settings)
   newdata_orig <- data_res$source_data
   refit_data <- data_res$refit_data
   newdata_supplied <- data_res$newdata_supplied
 
+  id_var <- markov_require_id_var(model, settings$id_var)
   if (inherits(model, "blrm") && isTRUE(include_re)) {
-    id_var <- resolve_blrm_id_var(model, newdata_orig, id_var)
     validate_markov_id_var(id_var, newdata_orig, "newdata")
-  } else {
-    id_var <- markov_model_id_var(model, id_var) %||% "id"
   }
 
   if (!is.null(refit_data)) {
@@ -228,7 +315,7 @@ avg_comparison_setup <- function(
 
   missing_vars <- setdiff(names(variables), names(newdata_orig))
   if (length(missing_vars) > 0L) {
-    stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+    mostr_abort("Variables not in data: ", paste(missing_vars, collapse = ", "))
   }
 
   baseline_data <- if (newdata_supplied) {
@@ -237,10 +324,11 @@ avg_comparison_setup <- function(
     resolve_markov_prediction_data(
       newdata_orig,
       id_var = id_var,
-      time_var = time_var
+      time_var = settings$time_var
     )
   }
   validate_sops_by(by, baseline_data)
+  stop_missing_by_values(baseline_data, by, variables)
   baseline_data <- ensure_markov_rowid(baseline_data)
 
   grid <- create_counterfactual_grid(variables)
@@ -250,14 +338,7 @@ avg_comparison_setup <- function(
     variables = variables,
     by = by,
     times = times,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    y_levels = y_levels,
-    absorb = absorb,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     newdata_orig = newdata_orig,
     refit_data = refit_data,
     newdata_supplied = newdata_supplied,
@@ -284,7 +365,6 @@ avg_comparison_setup_from_sops <- function(x) {
     variables = variables,
     by = avg_args$by,
     times = avg_args$times,
-    id_var = avg_args$id_var,
     newdata_orig = attr(x, "newdata_orig"),
     refit_data = attr(x, "refit_data"),
     newdata_supplied = isTRUE(attr(x, "newdata_supplied")),
@@ -298,30 +378,19 @@ avg_comparison_setup_from_sops <- function(x) {
     n_cf = nrow(grid),
     n_each = as.integer(n_each),
     call_args = attr(x, "call_args"),
-    time_var = attr(x, "time_var"),
-    p_var = attr(x, "p_var"),
-    p2_var = attr(x, "p2_var"),
-    y_levels = attr(x, "y_levels"),
-    absorb = attr(x, "absorb"),
-    gap_var = attr(x, "gap_var"),
-    time_covariates = attr(x, "time_covariates")
+    settings = markov_result_settings(x)
   )
 }
 
+# Average SOPs again with the settings stored on a result, for inference and
+# the reductions of comparisons and times.
 avg_comparison_replay_avg_sops <- function(
   model,
   newdata,
   variables,
   by,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  id_var,
-  p2_var,
-  gap_var,
-  time_covariates,
+  settings,
   include_re,
   n_draws,
   seed,
@@ -336,18 +405,9 @@ avg_comparison_replay_avg_sops <- function(
       model = model,
       newdata = newdata,
       variables = variables,
-      # Stored averages keep `by = NULL` for the overall average, which
-      # `avg_sops()` spells `by = TRUE`.
-      by = by %||% TRUE,
+      by = by,
       times = times,
-      y_levels = y_levels,
-      absorb = absorb,
-      time_var = time_var,
-      p_var = p_var,
-      id_var = id_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = settings,
       include_re = include_re,
       n_draws = n_draws,
       seed = seed,
@@ -359,9 +419,41 @@ avg_comparison_replay_avg_sops <- function(
   )
   # Inference replays the user's request, which already warned about `times`.
   if (!isTRUE(warn_skipped_visits)) {
-    return(muffle_skipped_sop_visits(do.call(avg_sops, args)))
+    return(muffle_skipped_sop_visits(do.call(avg_sops_impl, args)))
   }
-  do.call(avg_sops, args)
+  do.call(avg_sops_impl, args)
+}
+
+# The average SOPs behind `object`, a result of `avg_comparisons()` or
+# `avg_state_time()`, computed again from the arguments stored on it. `args`
+# is its `comparison_args` or `time_args`.
+replay_result_avg_sops <- function(
+  object,
+  args,
+  conf_level,
+  return_draws = FALSE
+) {
+  avg_args <- attr(object, "avg_args")
+  avg_comparison_replay_avg_sops(
+    model = attr(object, "model"),
+    newdata = if (isTRUE(attr(object, "newdata_supplied"))) {
+      attr(object, "newdata_orig")
+    } else {
+      NULL
+    },
+    variables = avg_args$variables,
+    by = avg_args$by,
+    times = avg_args$times,
+    settings = markov_result_settings(object),
+    include_re = args$include_re,
+    n_draws = args$n_draws,
+    seed = args$seed,
+    posterior_summary = args$posterior_summary,
+    conf_level = conf_level,
+    return_draws = return_draws,
+    extra_args = args$extra_args,
+    warn_skipped_visits = FALSE
+  )
 }
 
 normalize_comparison_state_sets <- function(states, y_levels) {
@@ -387,7 +479,7 @@ normalize_comparison_state_sets <- function(states, y_levels) {
     state_labels
   )
   if (length(missing_states) > 0L) {
-    stop(
+    mostr_abort(
       "State(s) not found in SOP output: ",
       paste(missing_states, collapse = ", ")
     )
@@ -426,8 +518,7 @@ set_avg_comparison_attrs <- function(
     avg_args = list(
       variables = setup$variables,
       by = setup$by,
-      times = setup$times,
-      id_var = setup$id_var
+      times = setup$times
     ),
     comparison_args = list(
       estimand = estimand,
@@ -451,27 +542,13 @@ set_avg_comparison_attrs <- function(
     comparison_baseline_data = setup$baseline_data,
     comparison_grid = setup$grid,
     comparison_n_each = setup$n_each,
-    id_var = setup$id_var
+    call_args = setup$call_args,
+    settings = setup$settings
   )
 
   for (nm in names(attrs)) {
     if (!is.null(attrs[[nm]])) {
       attr(result, nm) <- attrs[[nm]]
-    }
-  }
-
-  for (nm in c(
-    "call_args",
-    "time_var",
-    "p_var",
-    "p2_var",
-    "y_levels",
-    "absorb",
-    "gap_var",
-    "time_covariates"
-  )) {
-    if (!is.null(setup[[nm]])) {
-      attr(result, nm) <- setup[[nm]]
     }
   }
 
@@ -484,5 +561,6 @@ set_avg_comparison_attrs <- function(
 
   result <- order_estimate_columns(result)
   class(result) <- c(class_name, "data.frame")
-  result
+  # Posterior intervals of blrm comparisons are returned here.
+  drop_unused_comparison_uncertainty(result)
 }

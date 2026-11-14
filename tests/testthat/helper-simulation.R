@@ -71,65 +71,31 @@ make_test_data <- function(
   return(data)
 }
 
-make_time_covariates <- function(data, time_col = "time", ...) {
-  cols <- c(time_col, ...)
-  out <- unique(data[cols])
-  out <- out[order(out[[time_col]]), , drop = FALSE]
-  rownames(out) <- NULL
-  out
-}
-
 #' Fit a standard VGLM model for testing
 #'
 #' @param data Data frame from make_test_data
-#' @param robust Logical, whether to return a robust covariance model
-#' @param cluster Cluster variable for robust covariance
 #'
-#' @return A fitted vglm or robcov_vglm object
-make_test_model <- function(data, robust = FALSE, cluster = NULL) {
-  if (robust && !is.null(cluster) && !identical(cluster, data$id)) {
-    stop("`cluster` must match `data$id` for mostm() test models.")
-  }
-
+#' @return A fitted robcov_vglm object, clustered on `data$id`, with state 6
+#'   absorbing
+make_test_model <- function(data) {
   suppressWarnings(mostm(
-    ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
+    ordered(y) ~ rms::rcs(time, 3) + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
     data = data,
-    id_var = if (robust) "id" else NULL,
+    id_var = "id",
+    absorb = 6,
     engine = "vglm"
   ))
 }
 
-make_score_bootstrap_case <- function(
-  seed,
-  n_patients = 60,
-  follow_up_time = 10
-) {
-  data <- make_test_data(
-    n_patients = n_patients,
-    seed = seed,
-    follow_up_time = follow_up_time
-  )
-
-  list(
-    data = data,
-    baseline = data[data$time == 1, , drop = FALSE],
-    model = mostm(
-      ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      id_var = "id",
-      engine = "vglm"
-    ),
-    times = seq_len(follow_up_time),
-    y_levels = 1:6,
-    absorb = 6
-  )
-}
-
+# Made once per test run.
 make_observed_average_case <- function() {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
+  grid_fixture("observed average case", build_observed_average_case)
+}
+
+build_observed_average_case <- function() {
   data <- make_test_data(
     n_patients = 60,
     follow_up_time = 6,
@@ -143,9 +109,9 @@ make_observed_average_case <- function() {
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
       id_var = "id",
+      absorb = 6,
       engine = "vglm"
     ),
-    times = 1:3,
-    absorb = 6
+    times = 1:3
   )
 }

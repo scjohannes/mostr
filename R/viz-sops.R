@@ -109,7 +109,7 @@ plot_sops <- function(
       length(show_uncertainty) != 1 ||
       is.na(show_uncertainty)
   ) {
-    stop("`show_uncertainty` must be TRUE or FALSE.")
+    mostr_abort("`show_uncertainty` must be TRUE or FALSE.")
   }
 
   if (is.null(prob_var) && "estimate" %in% names(data)) {
@@ -353,7 +353,8 @@ plot_sops_summary <- function(
           ribbon_mapping,
           alpha = ribbon_alpha,
           color = NA
-        )
+        ) +
+        ggplot2::labs(fill = "State")
     }
 
     p <- p +
@@ -362,7 +363,6 @@ plot_sops_summary <- function(
         x = "Time",
         y = "Probability",
         color = "State",
-        fill = "State",
         title = "State Occupancy Probabilities Over Time"
       )
 
@@ -417,12 +417,6 @@ plot_sops_draw_data <- function(
   state_levels
 ) {
   draws <- attr(data, "draws")
-  if (is.null(draws)) {
-    draws <- attr(data, "draws")
-  }
-  if (is.null(draws)) {
-    draws <- attr(data, "draws")
-  }
   if (is.null(draws) || !"draw_id" %in% names(draws)) {
     return(NULL)
   }
@@ -469,11 +463,6 @@ plot_sops_select_draw_ids <- function(draw_ids, n_draws) {
 }
 
 plot_sops_state_levels <- function(data, state_var) {
-  y_levels <- attr(data, "y_levels", exact = TRUE)
-  if (!is.null(y_levels)) {
-    return(as_state_labels(y_levels))
-  }
-
   if (is.factor(data[[state_var]])) {
     return(levels(data[[state_var]]))
   }
@@ -506,13 +495,12 @@ plot_sops_validate_summary_keys <- function(
     "Include additional grouping variables in `facet_var`, "
   }
 
-  stop(
+  mostr_abort(
     "Model-derived SOP summary data has multiple rows for the same plotted ",
     "combination of ",
     paste(key_vars, collapse = ", "),
     ". ",
     guidance,
-    "aggregate before plotting, or filter to one scenario.",
-    call. = FALSE
+    "aggregate before plotting, or filter to one scenario."
   )
 }

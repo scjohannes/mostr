@@ -7,7 +7,8 @@
 #' thresholds. In both cases this allows fast linear predictor calculation via
 #' simple matrix multiplication with the "small" design matrix.
 #'
-#' @param model A fitted `vglm` or `orm` object.
+#' @param model A fitted `vglm` or `orm` object, or the `robcov_vglm` object
+#'   that `mostm(engine = "vglm")` returns.
 #' @param beta Optional coefficient vector to use instead of `coef(model)`.
 #'   This is used internally for simulation draws.
 #'
@@ -36,20 +37,16 @@
 #' @examplesIf rlang::is_installed("rms")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' fit <- rms::orm(
-#'   y ~ time + tx + yprev,
-#'   data = markov_data,
-#'   x = TRUE,
-#'   y = TRUE,
-#'   opt_method = "LM",
-#'   scale = TRUE
-#' )
+#' fit <- rms::orm(y ~ time + tx + yprev, data = markov_data, x = TRUE, y = TRUE)
 #'
 #' effective <- get_effective_coefs(fit)
 #' dim(effective)
 #'
 #' @export
 get_effective_coefs <- function(model, beta = NULL) {
+  if (inherits(model, "robcov_vglm")) {
+    model <- model$vglm_fit
+  }
   if (inherits(model, "vglm")) {
     return(get_effective_coefs_vglm(model, beta = beta))
   }
@@ -58,7 +55,7 @@ get_effective_coefs <- function(model, beta = NULL) {
     return(get_effective_coefs_orm(model, beta = beta))
   }
 
-  stop("get_effective_coefs only supports vglm and orm objects.")
+  mostr_abort("get_effective_coefs only supports vglm and orm objects.")
 }
 
 get_effective_coefs_vglm <- function(model, beta = NULL) {
@@ -76,32 +73,22 @@ get_effective_coefs_vglm <- function(model, beta = NULL) {
   colnames(Gamma) <- term_names
   rownames(Gamma) <- paste0("eta", 1:M)
 
-  # 5. Iterate through terms and consume coefficients
   # vglm stores coefficients in the order of the terms in constraints()
   current_idx <- 1
 
   for (j in seq_along(C_list)) {
     term <- term_names[j]
     C_j <- C_list[[j]] # Matrix [M x k]
-
-    # How many coefs for this term? (k)
     k <- ncol(C_j)
-
-    # Extract the chunk of beta
     beta_chunk <- beta[current_idx:(current_idx + k - 1)]
 
-    # Compute effective coefficients for this term: C_j %*% beta_j
-    # Result is a vector of length M
+    # Effective coefficients of this term, C_j %*% beta_j: a vector of length M
     gamma_j <- C_j %*% beta_chunk
-
-    # Store in Gamma matrix
     Gamma[, term] <- as.vector(gamma_j)
 
-    # Advance index
     current_idx <- current_idx + k
   }
 
-  # Sanity check
   if (current_idx - 1 != length(beta)) {
     warning(
       "Mismatch in coefficient consumption. ",
@@ -121,16 +108,18 @@ get_effective_coefs_orm <- function(model, beta = NULL) {
   }
 
   if (is.null(model$non.slopes) || length(model$non.slopes) != 1) {
-    stop("Cannot determine the number of orm threshold coefficients.")
+    mostr_abort("Cannot determine the number of orm threshold coefficients.")
   }
 
   M <- model$non.slopes
   if (length(beta) < M) {
-    stop("Coefficient vector is shorter than the number of orm thresholds.")
+    mostr_abort(
+      "Coefficient vector is shorter than the number of orm thresholds."
+    )
   }
 
   if (length(beta) != length(stats::coef(model))) {
-    stop(
+    mostr_abort(
       "Length of beta (",
       length(beta),
       ") does not match number of model coefficients (",

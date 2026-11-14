@@ -4,7 +4,7 @@
 \alias{create_counterfactual_data}
 \title{Create Counterfactual Datasets for G-Computation}
 \usage{
-create_counterfactual_data(baseline_data, grid, variables)
+create_counterfactual_data(baseline_data, grid, variables, by = NULL)
 }
 \arguments{
 \item{baseline_data}{Data frame with one row per patient.}
@@ -12,6 +12,10 @@ create_counterfactual_data(baseline_data, grid, variables)
 \item{grid}{Data frame of variable combinations.}
 
 \item{variables}{Named list of variable values.}
+
+\item{by}{Optional grouping columns. For each internal observed-value
+column that \code{by} names, the observed value of its variable is copied
+before the variable is set.}
 }
 \value{
 Data frame with counterfactual data stacked.

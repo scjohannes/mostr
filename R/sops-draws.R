@@ -1,38 +1,11 @@
 # SOP draw summaries and extraction.
 
-#' Compute Confidence Intervals from Draws
-#'
-#' Computes confidence intervals from simulation or bootstrap draws.
-#'
-#' @param draws_df Data frame with draws (must have `estimate` and `draw_id` columns).
-#' @param group_cols Character vector of grouping columns.
-#' @param conf_level Confidence level (default 0.95).
-#' @param conf_type Type of CI: "perc" (percentile) or "wald".
-#'
-#' @return Data frame with summary statistics.
-#'
-#' @keywords internal
-compute_ci_from_draws <- function(
-  draws_df,
-  group_cols,
-  conf_level = 0.95,
-  conf_type = "perc",
-  point_estimates = NULL
-) {
-  .datatable.aware <- TRUE
-  draws_df <- as.data.frame(draws_df)
-  conf_level <- validate_conf_level(conf_level)
-  if (
-    !is.character(conf_type) ||
-      length(conf_type) != 1L ||
-      is.na(conf_type) ||
-      !conf_type %in% c("perc", "wald")
-  ) {
-    stop("conf_type must be 'perc' or 'wald'")
-  }
+# The summary of one estimate's draws `x`: its standard error (their standard
+# deviation) and its interval. A percentile interval is given as it is; a Wald
+# interval as the two distances from its centre, which the caller adds.
+draw_summary_function <- function(conf_level, conf_type) {
   alpha <- 1 - conf_level
-
-  summarize_values <- function(x) {
+  function(x) {
     if (conf_type == "perc") {
       return(c(
         conf.low = unname(stats::quantile(x, alpha / 2, na.rm = TRUE)),
@@ -49,6 +22,43 @@ compute_ci_from_draws <- function(
       std.error = se
     )
   }
+}
+
+#' Compute Confidence Intervals from Draws
+#'
+#' Computes confidence intervals from simulation or bootstrap draws.
+#'
+#' @param draws_df Data frame with draws (must have `estimate` and `draw_id` columns).
+#' @param group_cols Character vector of grouping columns.
+#' @param conf_level Confidence level (default 0.95).
+#' @param conf_type Type of CI: "perc" (percentile) or "wald".
+#' @param keep_na_groups Logical. If `FALSE` (the default), draws with a
+#'   missing value in `group_cols` are omitted. If `TRUE`, a missing value
+#'   forms its own group, as needed for profile columns the model does not use.
+#'
+#' @return Data frame with summary statistics.
+#'
+#' @keywords internal
+compute_ci_from_draws <- function(
+  draws_df,
+  group_cols,
+  conf_level = 0.95,
+  conf_type = "perc",
+  point_estimates = NULL,
+  keep_na_groups = FALSE
+) {
+  .datatable.aware <- TRUE
+  draws_df <- as.data.frame(draws_df)
+  conf_level <- validate_conf_level(conf_level)
+  if (
+    !is.character(conf_type) ||
+      length(conf_type) != 1L ||
+      is.na(conf_type) ||
+      !conf_type %in% c("perc", "wald")
+  ) {
+    mostr_abort("conf_type must be 'perc' or 'wald'")
+  }
+  summarize_values <- draw_summary_function(conf_level, conf_type)
 
   if (length(group_cols) == 0L) {
     stats <- summarize_values(draws_df$estimate)
@@ -72,9 +82,13 @@ compute_ci_from_draws <- function(
   work <- data.table::as.data.table(
     draws_df[, c(group_cols, "estimate"), drop = FALSE]
   )
-  work <- work[stats::complete.cases(work)]
+  work <- if (isTRUE(keep_na_groups)) {
+    work[!is.na(work$estimate)]
+  } else {
+    work[stats::complete.cases(work)]
+  }
   if (nrow(work) == 0L) {
-    stop("no rows to aggregate")
+    mostr_abort("no rows to aggregate")
   }
   summary_stats <- as.data.frame(work[,
     as.list(summarize_values(estimate)),
@@ -85,7 +99,13 @@ compute_ci_from_draws <- function(
   rownames(summary_stats) <- NULL
   if (conf_type == "wald") {
     if (is.null(point_estimates)) {
-      centers <- aggregate_value(draws_df, "estimate", group_cols, mean)
+      centers <- aggregate_value(
+        draws_df,
+        "estimate",
+        group_cols,
+        mean,
+        keep_na_groups = keep_na_groups
+      )
     } else {
       centers <- point_estimates[, c(group_cols, "estimate"), drop = FALSE]
     }
@@ -124,7 +144,7 @@ compute_ci_from_draws <- function(
 #'     \item draw: Draw-specific estimate of the requested quantity
 #'     \item estimate: The original point estimate from the model
 #'     \item conf.low, conf.high, std.error: Summary statistics from the point estimate object
-#'     \item fwb_weight or score_weight: Optional draw-specific patient weight
+#'     \item fwb_weight: Optional draw-specific patient weight
 #'       for eligible stored-data `sops()` or [comparisons()] draws
 #'     \item Additional columns from the original object (covariates, etc.)
 #'   }
@@ -138,15 +158,15 @@ compute_ci_from_draws <- function(
 #'
 #' Draw-specific patient weights are included only when they are meaningful for
 #' manual downstream averaging: `sops()` and [comparisons()] output
-#' from FWB or score bootstrap on the stored empirical prediction cohort. For
+#' from FWB on the stored empirical prediction cohort. For
 #' [comparisons()] draws, the weighted mean of a draw's comparisons,
 #' \eqn{\sum_i w_i x_i / \sum_i w_i} over patients \eqn{i} with weights
 #' \eqn{w_i} and draw values \eqn{x_i}, reproduces the corresponding
 #' [avg_comparisons()] draw. They are not included for
 #' `avg_sops()` because its draws are already averaged, and
 #' they are not included when the original SOP object used user-supplied
-#' prediction profiles. The column names `fwb_weight` and `score_weight` are
-#' reserved for these draw weights when they are attached.
+#' prediction profiles. The column name `fwb_weight` is reserved for these draw
+#' weights when they are attached.
 #'
 #' @examples
 #' \dontrun{
@@ -155,10 +175,7 @@ compute_ci_from_draws <- function(
 #'   model = fit,
 #'   newdata = data,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:30,
-#'   y_levels = 1:6,
-#'   absorb = 6,
-#'   id_var = "id"
+#'   times = 1:30
 #' ) |>
 #'   inferences(method = "bootstrap", n_draws = 1000, return_draws = TRUE)
 #'
@@ -211,7 +228,7 @@ get_draws <- function(x) {
       )
     )
   ) {
-    stop(
+    mostr_abort(
       "get_draws() requires an object from inferences(). ",
       "Got: ",
       paste(class(x), collapse = ", ")
@@ -227,7 +244,7 @@ get_draws <- function(x) {
     if (!is.null(method)) {
       msg <- paste0(msg, " (Method used: '", method, "')")
     }
-    stop(msg)
+    mostr_abort(msg)
   }
 
   # 2. Prepare metadata from the original object

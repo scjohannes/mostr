@@ -21,7 +21,9 @@
 #' @param by `FALSE` (the default) or `NULL` returns one total per profile.
 #'   `TRUE` averages over all profiles, and a character vector of column names
 #'   averages within the groups those columns define; both return the result
-#'   of [avg_state_time()] with the same arguments.
+#'   of [avg_state_time()] with the same arguments. A `by` column must have no
+#'   missing values among the averaged profiles; drop or impute those patients
+#'   first.
 #' @param return_draws Logical. For `blrm`, store the posterior draws of each
 #'   total for extraction with [get_draws()].
 #'
@@ -57,10 +59,10 @@
 #'     supports first-order full proportional-odds `orm`, `vglm`, and
 #'     `robcov_vglm` fits; [stats::vcov()] then returns the covariance between
 #'     rows.
-#'   \item `method = "mvn"`, `"score_bootstrap"`, or `"fwb"` compute every
+#'   \item `method = "mvn"` or `"fwb"` compute every
 #'     profile's totals within each coefficient draw or weighted refit. For
-#'     the stored profiles, score-bootstrap and FWB draws also carry each
-#'     patient's weight in that draw (`score_weight` or `fwb_weight`);
+#'     the stored profiles, FWB draws also carry each
+#'     patient's weight in that draw (`fwb_weight`);
 #'     averaging a draw's totals with these weights reproduces the
 #'     [avg_state_time()] draw. See [get_draws()].
 #' }
@@ -76,6 +78,7 @@
 #' option `mostr.max_sops_draw_cells` (50 million by default, about 400 MB).
 #'
 #' @inheritSection sops Choosing visits
+#' @inheritSection sops Settings taken from the fit
 #'
 #' @seealso [avg_state_time()] for averaged times, [sops()] for each profile's
 #'   state occupancy probabilities, [comparisons()] for each profile's
@@ -101,18 +104,10 @@ state_time <- function(
   state_sets = NULL,
   by = FALSE,
   times,
-  y_levels = NULL,
-  absorb = NULL,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL,
   time_unit = NULL,
-  id_var = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
   n_draws = 100L,
   seed = NULL,
@@ -121,6 +116,8 @@ state_time <- function(
   return_draws = FALSE,
   ...
 ) {
+  stop_removed_fit_arguments(...)
+  stop_include_re_without_blrm(model, include_re)
   validate_state_time_arguments(
     times,
     baseline_time = baseline_time,
@@ -148,17 +145,9 @@ state_time <- function(
           state_sets = state_sets,
           by = by_choice$by %||% TRUE,
           times = times,
-          y_levels = y_levels,
-          absorb = absorb,
           time_map = time_map,
           target_times = target_times,
           time_unit = time_unit,
-          id_var = id_var,
-          time_var = time_var,
-          p_var = p_var,
-          p2_var = p2_var,
-          gap_var = gap_var,
-          time_covariates = time_covariates,
           include_re = include_re,
           n_draws = n_draws,
           seed = seed,
@@ -172,7 +161,14 @@ state_time <- function(
     ))
   }
 
-  variables <- resolve_prediction_variables(variables, model, newdata)
+  validate_markov_model(model)
+  settings <- resolve_markov_settings(model)
+  variables <- resolve_prediction_variables(
+    variables,
+    model,
+    newdata,
+    settings
+  )
   if (!is.null(state_sets)) {
     validate_avg_time_state_sets(state_sets)
   }
@@ -182,19 +178,12 @@ state_time <- function(
     variables = variables,
     by = NULL,
     times = times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = settings,
     include_re = include_re
   )
   profile_cols <- profile_output_columns(
     setup$newdata_pred,
-    time_var = time_var,
+    time_var = settings$time_var,
     reserved = c(
       "state_set",
       if (!is.null(time_unit)) "time_unit",
@@ -210,25 +199,18 @@ state_time <- function(
     model,
     setup$newdata_orig,
     times,
-    time_var,
-    gap_var,
+    settings,
     setup$newdata_supplied
   )
 
   # Posterior totals are summarized from each draw's totals, so `blrm` SOP
   # draws are always needed here.
-  ind <- muffle_skipped_sop_visits(sops(
+  ind <- muffle_skipped_sop_visits(sops_impl(
     model = model,
     newdata = setup$newdata_pred,
+    variables = NULL,
     times = setup$times,
-    y_levels = y_levels,
-    absorb = absorb,
-    time_var = time_var,
-    p_var = p_var,
-    id_var = setup$id_var,
-    p2_var = p2_var,
-    gap_var = gap_var,
-    time_covariates = time_covariates,
+    settings = setup$settings,
     include_re = include_re,
     n_draws = n_draws,
     seed = seed,
@@ -240,7 +222,7 @@ state_time <- function(
   setup <- copy_sops_attrs_to_setup(setup, ind)
   state_sets <- normalize_comparison_state_sets(
     state_sets,
-    attr(ind, "y_levels")
+    markov_result_settings(ind)$y_levels
   )
 
   reducer <- profile_array_reducer(

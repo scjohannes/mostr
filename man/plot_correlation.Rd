@@ -9,15 +9,12 @@ plot_correlation(
   newdata = NULL,
   times = NULL,
   y_levels = NULL,
-  absorb = NULL,
-  id_var = "id",
-  time_var = "time",
+  id_var = NULL,
+  time_var = NULL,
   y_var = "y",
-  p_var = "yprev",
+  p_var = NULL,
   p2_var = NULL,
   facet_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   seed = NULL,
   n_draws = 100L,
   triangle = c("upper", "full"),
@@ -37,31 +34,37 @@ one prediction row per ID.}
 
 \item{times}{Optional time values to include. Required for model-based plots.}
 
-\item{y_levels}{Optional state levels. If supplied for raw trajectory data,
-state scores follow this order.}
+\item{y_levels}{The states in order. For a fitted model, \code{NULL} (the
+default) uses the states of the model; a supplied vector must hold the
+same states in the same order, otherwise it is an error. For trajectory
+data, supplied states set the order of the state scores; with \code{NULL}, the
+scores are factor codes or the integer state values.}
 
-\item{absorb}{Optional absorbing-state label for model-based recursions.}
+\item{id_var}{Name of the patient ID column. For a fitted model, \code{NULL}
+(the default) uses the \code{id_var} given to \code{\link[=mostm]{mostm()}}, which selects one
+starting row per patient from the stored data; a different name is an
+error. For trajectory data, \code{NULL} means \code{"id"}.}
 
-\item{id_var}{Character ID column for raw data and stored model-data
-extraction.}
-
-\item{time_var}{Character name of the time column.}
+\item{time_var}{Name of the time column. For a fitted model, \code{NULL} (the
+default) uses the \code{time_var} given to \code{\link[=mostm]{mostm()}}; a different name is an
+error. For trajectory data, \code{NULL} means \code{"time"}.}
 
 \item{y_var}{Character name of the state column in raw trajectory data.}
 
-\item{p_var}{Character name of the previous-state column for model
-recursions.}
+\item{p_var}{Name of the previous-state column for model recursions.
+\code{NULL} (the default) uses the \code{p_var} given to \code{\link[=mostm]{mostm()}}, \code{"yprev"}
+unless set there; a different name is an error. Not used for trajectory
+data.}
 
-\item{p2_var}{Optional second previous-state column for second-order
-model recursions.}
+\item{p2_var}{Name of the column with the state two visits back, for
+model-based plots. \code{NULL} (the default) uses the \code{p2_var} given to
+\code{\link[=mostm]{mostm()}}: a model fitted with \code{p2_var} uses a second-order recursion,
+and one fitted without it a first-order recursion. A different name is
+an error, so to plot a second-order model, give \code{p2_var} to \code{\link[=mostm]{mostm()}}.
+Supplying it for trajectory data is an error.}
 
 \item{facet_var}{Optional grouping variable. Correlations are computed
 separately within each observed stratum.}
-
-\item{gap_var}{Optional time-gap_var variable used by the fitted model.}
-
-\item{time_covariates}{Optional time-varying covariate lookup table used by the fitted
-model.}
 
 \item{seed}{Optional random seed for \code{blrm} posterior draw selection.}
 
@@ -94,8 +97,9 @@ computed from model-implied pairwise moments rather than sampled paths.
 Minimum inputs depend on the object type. For trajectory data, \code{object} must
 contain the ID, time, and state columns named by \code{id_var}, \code{time_var}, and
 \code{y_var}. For model-based plots, pass a fitted Markov model and \code{times}; use
-\code{newdata} for explicit prediction profiles and pass \code{y_levels} or \code{absorb}
-when needed. Model-based correlations are computed from exact first- or
+\code{newdata} for explicit prediction profiles. The column names and states
+default to those of the fit, and the absorbing states are those given to
+\code{\link[=mostm]{mostm()}}. Model-based correlations are computed from exact first- or
 second-order Markov recursions. For \code{blrm} fits, posterior draws are kept
 separate through the moment calculation and summarized only after
 correlations are computed for each draw.
@@ -117,6 +121,6 @@ Pearson is useful when differences between these scores are meaningful.
 \examples{
 \dontrun{
 plot_correlation(data, id_var = "id", time_var = "day")
-plot_correlation(fit, times = 1:14, y_levels = 1:8, absorb = 8)
+plot_correlation(fit, times = 1:14)
 }
 }

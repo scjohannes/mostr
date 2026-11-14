@@ -80,7 +80,7 @@ plot_comparisons <- function(
       length(show_uncertainty) != 1 ||
       is.na(show_uncertainty)
   ) {
-    stop("`show_uncertainty` must be TRUE or FALSE.")
+    mostr_abort("`show_uncertainty` must be TRUE or FALSE.")
   }
 
   plot_comparisons_validate_data(data, estimate_var)
@@ -162,7 +162,8 @@ plot_comparisons <- function(
             ribbon_mapping,
             alpha = ribbon_alpha,
             color = NA
-          )
+          ) +
+          ggplot2::labs(fill = plot_comparisons_axis_label(color_var))
       } else {
         p <- p +
           ggplot2::geom_ribbon(
@@ -201,7 +202,6 @@ plot_comparisons <- function(
         comparison
       ),
       colour = plot_comparisons_axis_label(color_var),
-      fill = plot_comparisons_axis_label(color_var),
       linetype = plot_comparisons_axis_label(linetype_var),
       title = plot_comparisons_title(data)
     )
@@ -212,7 +212,7 @@ plot_comparisons <- function(
 
 plot_comparisons_validate_data <- function(data, estimate_var) {
   if (!is.data.frame(data)) {
-    stop(
+    mostr_abort(
       "`data` must be a data frame returned by `avg_comparisons()` or ",
       "`comparisons()`."
     )
@@ -220,34 +220,31 @@ plot_comparisons_validate_data <- function(data, estimate_var) {
   required <- c("estimand", "comparison", "contrast", estimate_var)
   missing_vars <- setdiff(required, names(data))
   if (length(missing_vars) > 0) {
-    stop(
+    mostr_abort(
       "`data` is missing required comparison column(s): ",
-      paste(missing_vars, collapse = ", "),
-      call. = FALSE
+      paste(missing_vars, collapse = ", ")
     )
   }
   comparison <- unique(as.character(data$comparison))
   comparison <- comparison[!is.na(comparison)]
   if (length(comparison) != 1 || !comparison %in% c("difference", "ratio")) {
-    stop(
+    mostr_abort(
       "`plot_comparisons()` requires one comparison scale: ",
-      "`difference` or `ratio`.",
-      call. = FALSE
+      "`difference` or `ratio`."
     )
   }
   # `comparisons()` results identify their profiles by `rowid`; lines and
   # intervals would otherwise join estimates of different profiles.
   n_profiles <- if ("rowid" %in% names(data)) length(unique(data$rowid)) else 1L
   if (n_profiles > 1L) {
-    stop(
+    mostr_abort(
       "`plot_comparisons()` shows one estimate per time, state set, and ",
       "contrast, but `x` holds comparisons for ",
       n_profiles,
       " profiles (see its `rowid` column), as returned by `comparisons()`. ",
       "Plot one profile with `subset(x, rowid == 1)`, average the profiles ",
       "with `comparisons(by = TRUE)` or `avg_comparisons()`, or plot the data ",
-      "frame directly with ggplot2.",
-      call. = FALSE
+      "frame directly with ggplot2."
     )
   }
   invisible(NULL)
@@ -291,29 +288,6 @@ plot_comparisons_state_set_levels <- function(data) {
   values <- unique(as.character(data$state_set))
   if (is.factor(data$state_set)) {
     return(intersect(levels(data$state_set), values))
-  }
-
-  parsed <- strsplit(values, "+", fixed = TRUE)
-  y_levels <- attr(data, "y_levels", exact = TRUE)
-  if (!is.null(y_levels)) {
-    state_levels <- as_state_labels(y_levels)
-    state_order <- stats::setNames(seq_along(state_levels), state_levels)
-    keys <- vapply(
-      parsed,
-      function(x) {
-        if (all(x %in% names(state_order))) {
-          return(min(state_order[x]))
-        }
-        NA_real_
-      },
-      numeric(1)
-    )
-    if (any(!is.na(keys))) {
-      known <- which(!is.na(keys))
-      unknown <- which(is.na(keys))
-      known <- known[order(keys[known], lengths(parsed)[known], values[known])]
-      return(c(values[known], values[unknown]))
-    }
   }
 
   numeric_values <- suppressWarnings(as.numeric(values))

@@ -5,24 +5,18 @@ plot_transition_model_setup <- function(
   newdata,
   variables,
   times,
-  y_levels,
-  absorb,
-  time_var,
-  p_var,
-  p2_var,
-  id_var,
-  gap_var,
-  time_covariates
+  settings
 ) {
   validate_markov_model(model)
   if (missing(times) || is.null(times)) {
-    stop("`times` must be supplied for model-based plots.")
+    mostr_abort("`times` must be supplied for model-based plots.")
   }
+  time_var <- settings$time_var
 
   data_res <- resolve_markov_source_data(model, newdata)
   source_data <- data_res$source_data
   newdata_supplied <- data_res$newdata_supplied
-  id_var <- markov_model_id_var(model, id_var) %||% "id"
+  id_var <- markov_require_id_var(model, settings$id_var)
 
   if (!newdata_supplied) {
     validate_markov_id_var(id_var, source_data, "stored model data")
@@ -38,15 +32,18 @@ plot_transition_model_setup <- function(
     )
   }
 
-  plot_validate_columns(baseline_data, p_var, "`newdata`")
-  if (!is.null(p2_var)) {
-    plot_validate_columns(baseline_data, p2_var, "`newdata`")
+  plot_validate_columns(baseline_data, settings$p_var, "`newdata`")
+  if (!is.null(settings$p2_var)) {
+    plot_validate_columns(baseline_data, settings$p2_var, "`newdata`")
   }
 
   if (!is.null(variables)) {
     missing_vars <- setdiff(names(variables), names(baseline_data))
     if (length(missing_vars) > 0) {
-      stop("Variables not in data: ", paste(missing_vars, collapse = ", "))
+      mostr_abort(
+        "Variables not in data: ",
+        paste(missing_vars, collapse = ", ")
+      )
     }
     grid <- do.call(
       expand.grid,
@@ -62,41 +59,28 @@ plot_transition_model_setup <- function(
     baseline_data,
     times,
     time_var,
-    time_covariates = NULL,
     default = "unique"
   )
   plot_times <- time_res$times
   time_info <- time_res$time_info
   recursion_times <- complete_plot_recursion_times(plot_times, time_info)
-  if (
-    !is.null(time_covariates) &&
-      nrow(time_covariates) != length(recursion_times)
-  ) {
-    stop(
-      "`time_covariates` must have one row per recursion time point for model-based ",
-      "plots. Sparse plot times are expanded to the full recursion grid; ",
-      "expected ",
-      length(recursion_times),
-      " rows but got ",
-      nrow(time_covariates),
-      "."
-    )
-  }
-  validate_factor_gap(gap_var, time_covariates, time_info)
 
-  y_levels <- markov_model_ylevels(model, y_levels)
+  y_levels <- markov_model_ylevels(model, settings$y_levels)
   ylevel_names <- as_state_labels(y_levels)
   plot_indices <- match(as.character(plot_times), as.character(recursion_times))
 
+  # The trace uses the patient-ID column and the state labels resolved here.
   list(
     data = baseline_data,
-    id_var = id_var,
     times = recursion_times,
     plot_times = plot_times,
     plot_indices = plot_indices,
     y_levels = ylevel_names,
-    absorb = absorb,
-    time_var = time_var
+    settings = markov_settings_update(
+      settings,
+      id_var = id_var,
+      y_levels = ylevel_names
+    )
   )
 }
 
@@ -104,10 +88,6 @@ plot_model_trace_summaries <- function(
   model,
   setup,
   facet_var,
-  p_var,
-  p2_var,
-  gap_var,
-  time_covariates,
   seed,
   n_draws,
   return_kernels,
@@ -121,13 +101,7 @@ plot_model_trace_summaries <- function(
       object = model,
       data = setup$data,
       times = setup$times,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
-      time_var = setup$time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
+      settings = setup$settings,
       return_kernels = return_kernels
     )
     return(summarize_trace(trace, draw = FALSE))
@@ -150,17 +124,10 @@ plot_model_trace_summaries <- function(
       object = model,
       data = setup$data,
       times = setup$times,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
-      time_var = setup$time_var,
-      p_var = p_var,
-      p2_var = p2_var,
-      gap_var = gap_var,
-      time_covariates = time_covariates,
-      id_var = setup$id_var,
-      n_draws = NULL,
+      settings = setup$settings,
       return_kernels = return_kernels,
       .draw_indices = chunk,
+      .n_draws_total = length(draw_indices),
       .gamma_draws = subset_cached_draw_matrix(gamma_draws, draw_indices, chunk)
     )
     summaries[[i]] <- summarize_trace(trace, draw = TRUE)

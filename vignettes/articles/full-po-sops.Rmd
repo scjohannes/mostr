@@ -1,0 +1,434 @@
+---
+title: "State Occupancy Probabilities with Proportional-Odds Models"
+---
+
+```{r vignette-options, include = FALSE}
+source("../_setup.R", local = TRUE)
+```
+
+Many clinical trials record a patient's condition repeatedly on an ordered
+scale, for example once a day from "at home" to "dead". A natural way to
+summarize such data is the *state occupancy probability* (SOP): the
+probability that a patient is in a given state on a given day. Comparing SOPs
+between treatment arms shows when, and in which states, a treatment makes a
+difference.
+
+mostr estimates SOPs from a *transition model*: an ordinal regression that
+predicts tomorrow's state from today's state, treatment, time, and other
+covariates. Chaining these one-day predictions together gives the probability
+of each state on every later day. This article walks through the complete
+workflow:
+
+1. simulate and prepare longitudinal data;
+2. fit a proportional-odds transition model;
+3. estimate SOPs for each treatment arm, with confidence intervals;
+4. check whether the fitted model reproduces features of the observed data.
+
+We fit the model with `mostm()`, whose `engine` argument chooses the package
+that does the fitting. Fitting the same model twice, once with the VGAM
+package and once with the rms package, shows that both give the same answer.
+
+## Example data
+
+We simulate daily health states for 400 patients over 28 days. The simulation
+model is based on data from the
+[Adaptive COVID-19 Treatment Trial 2 (ACTT-2)](https://doi.org/10.1056/NEJMoa2031994),
+which enrolled adults hospitalized with moderate to severe COVID-19,[^niaid]
+so the simulated trajectories resemble those seen in the trial. We choose the
+treatment effect ourselves: `treatment_effect = log(0.8)` means that, on any
+day, treated patients have 0.8 times the odds of being in a worse state than
+control patients who started the day in the same state.
+
+States follow the trial's
+[NIAID eight-point ordinal scale](https://www.fda.gov/media/144473/download#page=10).
+Higher numbers indicate worse health:
+
+| State | Meaning |
+|---|---|
+| 1 | Outside hospital, with usual activities unrestricted |
+| 2 | Outside hospital, with restricted activities, oxygen at home, or both |
+| 3 | In hospital, without oxygen and no further medical care needed |
+| 4 | In hospital, without oxygen but still needing medical care |
+| 5 | In hospital, needing supplemental oxygen |
+| 6 | In hospital, needing high-flow oxygen or noninvasive ventilation |
+| 7 | In hospital, needing invasive ventilation or extracorporeal membrane oxygenation (ECMO) |
+| 8 | Death |
+
+Death is an *absorbing* state: once a patient enters it, they stay there for
+the rest of follow-up.
+
+[^niaid]: We thank the National Institute of Allergy and Infectious Diseases
+    (NIAID) for sharing the ACTT-2 data, which enabled us to create synthetic
+    trajectories that mimic patterns observed in real patients. Researchers
+    can apply for access through the
+    [NIAID clinical-trial data portal](https://accessclinicaldata.niaid.nih.gov/study-viewer/clinical_trials/NCT04401579).
+
+The simulated data have one row per patient and day, with the columns that
+mostr expects by default: `id` (patient), `time` (day), `y` (state on that
+day), `yprev` (state on the previous day), and `tx` (treatment, 0 or 1).
+`prepare_markov_data()` turns them into model-ready data. It drops the rows
+recorded after a patient has died, because those days carry no information
+about transitions, and converts `yprev` to a factor so that each previous
+state gets its own coefficient.
+
+```{r setup}
+library(mostr)
+library(ggplot2)
+library(rms)
+library(VGAM)
+
+N_PATIENTS <- 400
+FOLLOW_UP <- 28
+SEED <- 20260527
+STATE_LEVELS <- as.character(1:8)
+ABSORB <- "8"
+
+raw_data <- sim_markov(
+  "actt2",
+  n_patients = N_PATIENTS,
+  follow_up_time = FOLLOW_UP,
+  treatment_effect = log(0.8),
+  seed = SEED
+)
+
+model_data <- prepare_markov_data(
+  raw_data,
+  absorbing_state = as.integer(ABSORB),
+  factor_previous = TRUE
+)
+```
+
+Before modeling, it helps to look at the data. `plot_sops()` applied to raw
+trajectories shows the observed proportion of patients in each state on each
+day, separately by arm.
+
+```{r observed-sops}
+plot_sops(raw_data, facet_var = NULL, linetype_var = "tx")
+```
+
+## Fit a transition model
+
+Both models below predict the state on each day, `y`, from treatment, the
+previous day's state, and a restricted cubic spline in time with four knots,
+`rcs(time, 4)`, which lets transition probabilities change smoothly over
+follow-up. The models assume *proportional odds*: each covariate shifts the
+odds of being in a worse state by the same factor, whichever cut-point of the
+scale we look at.
+
+`engine = "vglm"` fits the model with `VGAM::vglm()`. VGAM needs an
+ordered-factor response, so the formula uses `ordered(y)`. Its default family,
+`cumulative(reverse = TRUE, parallel = TRUE)`, models the odds of worse
+(higher) states (`reverse = TRUE`) under proportional odds
+(`parallel = TRUE`). The default engine, `"orm"`, fits the model with
+`rms::orm()`. mostr does not need an rms `datadist` object; set one with
+`options(datadist = ...)` only if you also want rms's own summaries of the
+fit, such as `summary(fit_orm)` or `rms::Predict()`. Arguments of the
+engine's own fitting function can be added to the
+`mostm()` call: here `opt_method`, `scale`, and `maxit` help `rms::orm()`
+converge reliably.
+
+In both fits, `id_var = "id"` tells mostr which rows belong to the same
+patient. mostr uses it to compute standard errors that account for repeated
+observations of the same patient, and it stores the patient data needed later
+to estimate SOPs and their confidence intervals. `absorb = ABSORB` names
+death as the absorbing state. The fit records it, so every later prediction
+keeps patients who die dead, and `mostm()` checks that no fitted row starts
+in it. A state that occurs as an outcome but never as a previous state, and
+is not named in `absorb`, makes `mostm()` warn that it may be absorbing.
+
+```{r fit-models}
+fit_vglm <- mostm(
+  ordered(y) ~ tx + rcs(time, 4) + yprev,
+  data = model_data,
+  id_var = "id",
+  absorb = ABSORB,
+  engine = "vglm"
+)
+
+fit_orm <- mostm(
+  y ~ tx + rcs(time, 4) + yprev,
+  data = model_data,
+  id_var = "id",
+  absorb = ABSORB,
+  opt_method = "LM",
+  scale = TRUE,
+  maxit = 100
+)
+
+summary(fit_vglm)
+fit_orm
+```
+
+The two fits describe the same model, so their coefficients agree. The `tx`
+coefficient is the log odds ratio for treatment; a negative value means that
+treated patients tend to move to better states. Its estimate should be close
+to the simulated value, $\log(0.8) \approx -0.22$.
+
+## Estimate state occupancy probabilities
+
+`avg_sops()` answers the question: *what would the probability of each state
+be on each day if every patient in the trial had received control, and if
+every patient had received treatment?* It does so in three steps:
+
+1. For each patient, it sets `tx` to 0, starts from that patient's observed
+   state before day 1, and applies the model's one-day transition
+   probabilities day after day to obtain the patient's SOPs.
+2. It repeats the calculation with `tx` set to 1.
+3. It averages the patient-level SOPs within each arm.
+
+Because both arms are averaged over the same patients, differences between
+them reflect the treatment rather than differences in who was randomized to
+each arm.
+
+The main arguments are:
+
+- `variables = list(tx = c(0, 1))`: the treatment values to compare;
+- `times`: the days for which to report SOPs.
+
+`inferences()` then adds standard errors and 95% confidence intervals.
+`method = "delta"` computes them analytically, which is fast and needs no
+random draws. `vcov = "unconditional"` makes the intervals account both for
+uncertainty in the model coefficients and for the particular patients who
+happened to enroll. See [the analytical confidence intervals article](analytical-confidence-intervals.html) for
+details and alternatives.
+
+```{r compute-sops}
+sop_vglm <- avg_sops(
+  fit_vglm,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP)
+) |>
+  inferences(
+    method = "delta",
+    vcov = "unconditional"
+  )
+
+sop_orm <- avg_sops(
+  fit_orm,
+  variables = list(tx = c(0, 1)),
+  times = seq_len(FOLLOW_UP)
+) |>
+  inferences(
+    method = "delta",
+    vcov = "unconditional"
+  )
+
+combined_sops <- rbind(
+  data.frame(engine = "VGAM vglm", as.data.frame(sop_vglm)),
+  data.frame(engine = "rms orm", as.data.frame(sop_orm))
+)
+```
+
+The result has one row per day, state, and treatment value, with the estimated
+probability in `estimate` and its confidence limits in `conf.low` and
+`conf.high`. Plotting both engines side by side confirms that they agree.
+
+```{r plot-sops}
+plot_sops(
+  combined_sops,
+  geom = "line",
+  linetype_var = "tx",
+  facet_var = c("engine")
+) +
+  labs(
+    x = "Day",
+    y = "State occupancy probability"
+  )
+```
+
+## How the probabilities are calculated
+
+This section states the calculation behind `avg_sops()` precisely. You can
+skip it on a first reading.
+
+Let $i = 1,\ldots,n$ index patients and $t = 1,\ldots,d$ index follow-up days.
+Patient $i$'s state on day $t$ is $Y_{it}$, one of $K$ ordered states
+numbered $1,\ldots,K$, and $Y_{i0}$ is the observed state before the first
+day. The vector $\mathbf{x}_{it}$ holds treatment, time, and any other
+covariates on day $t$, and
+$\mathbf{x}_{i,1:t} = (\mathbf{x}_{i1},\ldots,\mathbf{x}_{it})$ holds their
+values up to day $t$. The SOP for state $l$ is
+
+$$
+S_{it}(l) =
+  \Pr(Y_{it} = l \mid \mathbf{x}_{i,1:t}, Y_{i0}).
+$$
+
+The fitted model supplies the *transition probability*: the probability of
+moving from state $k$ on day $t - 1$ to state $l$ on day $t$,
+
+$$
+T_{it}(l \mid k) =
+  \Pr(Y_{it} = l \mid Y_{i,t-1} = k, \mathbf{x}_{it}).
+$$
+
+This is a *first-order Markov* model: given today's state, tomorrow's state
+does not depend on earlier states. For an absorbing state $k$ we do not use
+the model at all but set $T_{it}(l \mid k) = 1$ if $l = k$ and $0$ otherwise,
+so a patient who has died stays dead.
+
+To obtain the SOPs, add up the probability of arriving in state $l$ from each
+possible previous state:
+
+$$
+S_{it}(l) = \sum_{k=1}^{K} S_{i,t-1}(k)\, T_{it}(l \mid k),
+\qquad t = 1,\ldots,d,
+$$
+
+starting from $S_{i0}(l) = 1$ for the observed starting state $l = Y_{i0}$
+and $0$ for every other state. In matrix form, if $\mathbf{s}_{it}$ is the row
+vector of SOPs and $\mathbf{P}_{it}$ is the $K \times K$ matrix with
+$T_{it}(l \mid k)$ in row $k$ and column $l$, each day's update is
+$\mathbf{s}_{it} = \mathbf{s}_{i,t-1}\mathbf{P}_{it}$. mostr performs this
+update for all patients at once and never has to predict transitions out of
+an absorbing state; probability already in such a state is simply carried
+forward.
+
+Finally, write $S_{it}(l; z)$ for the SOP calculated with treatment set to
+$z$ on every day. The arm-specific SOP reported by `avg_sops()` is the
+average over patients,
+
+$$
+\bar{S}_t(l; z) =
+  \frac{1}{n} \sum_{i=1}^n S_{it}(l; z).
+$$
+
+## Check the model against the data
+
+SOPs are only as trustworthy as the transition model behind them. mostr's
+diagnostic plots compute a summary once from the observed trajectories and
+once from the fitted model, so that you can compare the two side by side.
+Clear disagreements suggest that the model misses a feature of the data, for
+example a time trend, an interaction, or dependence on states before the
+previous day.
+
+### Correlation between days
+
+`plot_correlation()` shows the Spearman rank correlation between patients'
+states on every pair of days. The first plot uses the observed data; the
+second uses the correlations implied by the model. Both should show similar
+patterns: high correlation between nearby days that weakens as days get
+further apart. By default, each plot chooses its own color scale, so we set
+`fill_limits = c(0, 1)` to give both plots the same scale. If any
+correlation were negative, we would use `c(-1, 1)` instead, because values
+outside the limits are shown in grey.
+
+```{r correlation-diagnostics}
+ec <- plot_correlation(
+  fill_limits = c(0, 1),
+  show_values = FALSE,
+  raw_data,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y"
+)
+
+mc <- plot_correlation(
+  fill_limits = c(0, 1),
+  show_values = FALSE,
+  fit_orm,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y",
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_orm$yunique
+)
+
+ec
+mc
+```
+
+### Transitions between states
+
+`plot_transitions()` draws, for selected days, a heatmap of the proportion of
+patients who move from each previous state (rows) to each current state
+(columns). Comparing the observed and model-based heatmaps shows whether the
+model reproduces how patients move between states over follow-up. We show at
+most sixteen evenly spaced days so each panel stays readable.
+
+```{r transition-diagnostics, fig.width = 9, fig.height = 9}
+diagnostic_times <- unique(round(seq(1, FOLLOW_UP, length.out = min(16L, FOLLOW_UP))))
+
+et <- plot_transitions(
+  raw_data,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y",
+  times = diagnostic_times,
+  show_values = FALSE
+)
+
+mt <- plot_transitions(
+  fit_orm,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y",
+  times = diagnostic_times,
+  y_levels = fit_orm$yunique,
+  show_values = FALSE
+)
+
+et
+mt
+```
+
+With `comparison = "difference"`, the same function shows how treatment
+changes the model-based transition proportions: each tile is the proportion
+under `tx = 1` minus the proportion under `tx = 0`.
+
+```{r transition-difference, fig.width = 9, fig.height = 9}
+td <- plot_transitions(
+  fit_orm,
+  comparison = "difference",
+  variables = list(tx = c(0, 1)),
+  id_var = "id",
+  time_var = "time",
+  y_var = "y",
+  times = diagnostic_times,
+  y_levels = fit_orm$yunique,
+  show_values = FALSE
+)
+td
+```
+
+### How correlation decays with time
+
+`plot_variogram()` condenses the correlation matrix into a single curve: the
+correlation between two days plotted against the number of days between them.
+If the observed correlations fall off more slowly than the model's, patients'
+earlier history matters more than a first-order model allows, and a
+second-order model (see [the second-order article](second-order-orm-sops.html)) may fit better.
+
+```{r variogram-diagnostics}
+plot_variogram(
+  raw_data,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y"
+) +
+  coord_cartesian(ylim = c(0, 1))
+
+plot_variogram(
+  fit_orm,
+  id_var = "id",
+  time_var = "time",
+  y_var = "y",
+  times = seq_len(FOLLOW_UP),
+  y_levels = fit_orm$yunique
+) +
+  coord_cartesian(ylim = c(0, 1))
+```
+
+## Where to go next
+
+- [The analytical confidence intervals article](analytical-confidence-intervals.html) explains the confidence
+  intervals used here and how to compare arms directly with
+  `avg_comparisons()`, or patient by patient with `comparisons()`.
+- [The partial proportional-odds article](partial-po-vglm-sops.html), [the second-order article](second-order-orm-sops.html),
+  [the article on time as a factor](factor-time-orm-sops.html), and
+  [the article on many outcome levels](many-levels-previous-state-spline.html) show other model
+  specifications.
+- [The article comparing MVN simulation and the bootstrap](mvn-vs-bootstrap-orm-sops.html),
+  [the fractional weighted bootstrap article](fractional-weighted-bootstrap-sops.html), and
+  [the Bayesian article](bayesian-rmsb-sops.html) show simulation-based, resampling-based,
+  and Bayesian uncertainty.

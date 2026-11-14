@@ -26,28 +26,25 @@ inferences_profile_results <- function(
   method,
   n_draws,
   vcov,
-  cluster,
   workers,
   conf_level,
   conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 ) {
   if (identical(method, "bootstrap")) {
-    stop(
+    mostr_abort(
       "Standard refit bootstrap is not supported for results with one row ",
       "per profile, from ",
       profile_result_source(object),
       ", because a resample can lack outcome states that the fixed profiles ",
       "need. Use `method = \"fwb\"`, or average over the profiles ",
-      "(`by = TRUE` or grouping columns) for ordinary bootstrap inference.",
-      call. = FALSE
+      "(`by = TRUE` or grouping columns) for ordinary bootstrap inference."
     )
   }
   model <- attr(object, "model")
   if (is.null(model)) {
-    stop("Model not stored in object. Cannot perform inference.")
+    mostr_abort("Model not stored in object. Cannot perform inference.")
   }
   validate_comparison_draw_cells(n_draws, nrow(object))
   setup <- setup_from_avg_comparison_object(object)
@@ -62,7 +59,6 @@ inferences_profile_results <- function(
       reduce_draw = reduce_draw,
       n_boot = n_draws,
       workers = workers,
-      update_datadist = update_datadist,
       use_coefstart = use_coefstart,
       return_draws = return_draws
     )
@@ -71,12 +67,9 @@ inferences_profile_results <- function(
       model = model,
       setup = setup,
       reduce_draw = reduce_draw,
-      engine = method,
       n_draws = n_draws,
       vcov = vcov,
-      cluster = cluster,
-      workers = workers,
-      return_draws = return_draws
+      workers = workers
     )
   }
 
@@ -121,15 +114,14 @@ validate_comparison_draw_cells <- function(n_draws, n_rows) {
   max_cells <- getOption("mostr.max_sops_draw_cells", 5e7)
   n_cells <- as.double(n_draws) * n_rows
   if (n_cells > max_cells) {
-    stop(
+    mostr_abort(
       "Inference for one row per profile would keep ",
       format(n_cells, scientific = FALSE),
       " draw values (draws x result rows), above the current limit of ",
       format(max_cells, scientific = FALSE),
       ". Lower `n_draws`; request fewer `times`, state sets, or profiles; ",
       "average over the profiles (`by = TRUE`); or increase option ",
-      "`mostr.max_sops_draw_cells` if this allocation is intentional.",
-      call. = FALSE
+      "`mostr.max_sops_draw_cells` if this allocation is intentional."
     )
   }
   invisible(NULL)
@@ -166,10 +158,8 @@ clear_comparison_inference <- function(object) {
     "target",
     "covariance_source",
     "covariance_metadata",
-    "n_boot",
     "n_successful",
     "engine",
-    "score_weight_dist",
     "fwb_weight_type",
     "fwb_weight_scale",
     "draw_weights_attached",
@@ -188,39 +178,41 @@ clear_comparison_inference <- function(object) {
 profile_draw_reducer <- function(object, setup) {
   args <- attr(object, "comparison_args")
   reducer <- profile_array_reducer(profile_result_kind(object), args)
+  function(sops_array) {
+    profile_rows_from_stacked_sops(sops_array, setup, reducer, args)$estimate
+  }
+}
+
+# One stacked SOP array [scenario x profile, time, state] reduced to one row
+# per profile by `reducer` (`profile_array_reducer()`); `args` holds the
+# `time_map`, `baseline_time` and `target_times` of a real-time reduction.
+profile_rows_from_stacked_sops <- function(sops_array, setup, reducer, args) {
+  if (!reducer$real_time) {
+    return(reducer$reduce_array(
+      stacked_to_counterfactual_array(
+        sops_array,
+        n_cf = setup$n_cf,
+        n_each = setup$n_each
+      ),
+      setup = setup
+    ))
+  }
   # Interpolation needs each row's starting state only; the other profile
   # columns would be copied into every interpolated row.
   slim_setup <- setup
   slim_setup$newdata_pred <- setup$newdata_pred[,
-    intersect(setup$p_var, names(setup$newdata_pred)),
+    intersect(setup$settings$p_var, names(setup$newdata_pred)),
     drop = FALSE
   ]
-
-  function(sops_array) {
-    out <- if (reducer$real_time) {
-      profile_results_from_individual_sops(
-        x = time_benefit_sops_from_array(sops_array, slim_setup),
-        setup = setup,
-        reducer = reducer,
-        time_map = args$time_map,
-        baseline_time = args$baseline_time,
-        target_times = args$target_times,
-        posterior_summary = "mean",
-        conf_level = 0.95,
-        return_draws = FALSE
-      )
-    } else {
-      reducer$reduce_array(
-        stacked_to_counterfactual_array(
-          sops_array,
-          n_cf = setup$n_cf,
-          n_each = setup$n_each
-        ),
-        setup = setup
-      )
-    }
-    out$estimate
-  }
+  tidy <- profile_tidy_reducer(
+    time_benefit_sops_from_array(sops_array, slim_setup),
+    setup = setup,
+    reducer = reducer,
+    time_map = args$time_map,
+    baseline_time = args$baseline_time,
+    target_times = args$target_times
+  )
+  tidy$reduce(as.data.frame(tidy$x), "estimate")
 }
 
 # [scenario x profile, time, state], with scenarios in consecutive blocks of
@@ -228,7 +220,9 @@ profile_draw_reducer <- function(object, setup) {
 stacked_to_counterfactual_array <- function(sops_array, n_cf, n_each) {
   dims <- dim(sops_array)
   if (dims[1L] != n_cf * n_each) {
-    stop("Stacked SOP rows are not aligned with the comparison scenarios.")
+    mostr_abort(
+      "Stacked SOP rows are not aligned with the comparison scenarios."
+    )
   }
   aperm(
     array(sops_array, dim = c(n_each, n_cf, dims[2L], dims[3L])),
@@ -239,32 +233,27 @@ stacked_to_counterfactual_array <- function(sops_array, n_cf, n_each) {
 # Draws are reduced without their row labels, so first check that reducing
 # the fitted model's predictions reproduces the stored estimates.
 check_comparison_replay <- function(object, setup, reduce_draw, model) {
-  replayed <- reduce_draw(soprob_markov(
+  replayed <- reduce_draw(predict_markov_sops(
     model = model,
     newdata = setup$newdata_pred,
     times = setup$times,
-    y_levels = setup$y_levels,
-    absorb = setup$absorb,
-    time_var = setup$time_var,
-    p_var = setup$p_var,
-    p2_var = setup$p2_var,
-    gap_var = setup$gap_var,
-    time_covariates = setup$time_covariates
+    settings = setup$settings
   ))
   stored <- object$estimate
+  # Each draw goes through the same reducer, which drops row labels, so check
+  # that a replay at the fitted coefficients rebuilds the stored rows in order.
+  # The values are identical when both came from the compiled code and differ by
+  # about 1e-14 when the estimates came from the R engine; a larger gap means
+  # edited estimates or rows the draws would not line up with.
   same_missing <- identical(is.na(replayed), is.na(stored))
   ok <- !is.na(stored)
   if (
     length(replayed) != length(stored) ||
       !same_missing ||
-      any(
-        abs(replayed[ok] - stored[ok]) >
-          1e-12 + 1e-10 * pmax(abs(replayed[ok]), abs(stored[ok]))
-      )
+      estimates_differ(replayed[ok], stored[ok])
   ) {
-    stop(
-      "Replaying `comparisons()` did not reproduce the stored estimates.",
-      call. = FALSE
+    mostr_abort(
+      "Replaying `comparisons()` did not reproduce the stored estimates."
     )
   }
   invisible(NULL)
@@ -278,19 +267,11 @@ comparison_coefficient_predictor <- function(model, setup) {
       compile_sop_execution_plan(
         model = model_plan,
         newdata = setup$newdata_pred,
-        time_covariates = setup$time_covariates,
         times = setup$times,
-        y_levels = setup$y_levels,
-        absorb = setup$absorb,
-        time_var = setup$time_var,
-        p_var = setup$p_var,
-        p2_var = setup$p2_var,
-        gap_var = setup$gap_var,
-        builder = "streamed",
-        output = "individual"
+        settings = setup$settings
       ),
       error = function(e) {
-        notify_sop_reference_fallback(conditionMessage(e))
+        notify_sop_r_engine_fallback(conditionMessage(e))
         NULL
       }
     )
@@ -304,17 +285,11 @@ comparison_coefficient_predictor <- function(model, setup) {
     }
   }
   function(beta) {
-    soprob_markov(
+    predict_markov_sops(
       model = set_coef(model, beta),
       newdata = setup$newdata_pred,
       times = setup$times,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
-      time_var = setup$time_var,
-      p_var = setup$p_var,
-      p2_var = setup$p2_var,
-      gap_var = setup$gap_var,
-      time_covariates = setup$time_covariates
+      settings = setup$settings
     )
   }
 }
@@ -323,37 +298,22 @@ comparison_simulation_draws <- function(
   model,
   setup,
   reduce_draw,
-  engine,
   n_draws,
   vcov,
-  cluster,
-  workers,
-  return_draws
+  workers
 ) {
-  # Score-bootstrap patient weights are not used here, because nothing is
-  # averaged, but they are returned with the draws as `score_weight`, as for
-  # `sops()`, so the profiles' comparisons can be averaged afterwards.
-  simulation_draws <- generate_sop_coefficient_draws(
+  beta_draws <- generate_sop_coefficient_draws(
     model = model,
-    engine = engine,
-    score_weight_dist = "exponential",
     n_draws = n_draws,
-    vcov = vcov,
-    cluster = cluster,
-    baseline_data = setup$baseline_data,
-    id_var = setup$id_var,
-    newdata_supplied = setup$newdata_supplied,
-    is_avg = FALSE,
-    return_draws = return_draws,
-    prediction_data = setup$newdata_pred
+    vcov = vcov
   )
-  beta_draws <- simulation_draws$beta_draws
   predict_array <- comparison_coefficient_predictor(model, setup)
 
   analysis_fn <- function(i) {
     sops_array <- tryCatch(
       predict_array(beta_draws[i, ]),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning(
           "SOP prediction failed in draw ",
           i,
@@ -372,32 +332,16 @@ comparison_simulation_draws <- function(
   results <- apply_sop_simulation_draws(
     n_draws = nrow(beta_draws),
     analysis_fn = analysis_fn,
-    workers = workers,
-    globals = c("beta_draws", "predict_array", "reduce_draw")
+    workers = workers
   )
   successful <- which(!vapply(results, is.null, logical(1)))
   if (length(successful) == 0L) {
-    stop("All simulation draws failed.")
+    mostr_abort("All simulation draws failed.")
   }
-  weights <- simulation_draws$baseline_weights_draws
-  weight_col <- simulation_draws$draw_weight_col
   list(
     values = do.call(rbind, results[successful]),
     draw_ids = successful,
-    weights = if (!is.null(weight_col) && !is.null(weights)) {
-      weights[successful, , drop = FALSE]
-    },
-    metadata = c(
-      list(n_successful = length(successful)),
-      if (identical(engine, "score_bootstrap")) {
-        list(
-          draw_weights_attached = simulation_draws$draw_weights_attached,
-          draw_weight_col = weight_col,
-          draw_weight_omission_reason =
-            simulation_draws$draw_weight_omission_reason
-        )
-      }
-    )
+    metadata = list(n_successful = length(successful))
   )
 }
 
@@ -408,13 +352,21 @@ comparison_fwb_draws <- function(
   reduce_draw,
   n_boot,
   workers,
-  update_datadist,
   use_coefstart,
   return_draws
 ) {
   refit_data <- stored_refit_bootstrap_data(object, model)
-  validate_refit_bootstrap_data(refit_data, setup$id_var, setup$time_var)
-  factor_cols <- intersect(c("y", setup$p_var, setup$p2_var), names(refit_data))
+  validate_refit_bootstrap_data(
+    refit_data,
+    setup$settings$id_var,
+    setup$settings$time_var
+  )
+  factor_cols <- bootstrap_state_columns(
+    model,
+    refit_data,
+    setup$settings$p_var,
+    setup$settings$p2_var
+  )
 
   # The patient weights enter the comparisons only through the refits, but,
   # as for `sops()`, the stored patients' weights are returned with the draws
@@ -426,7 +378,7 @@ comparison_fwb_draws <- function(
       warn_fixed_profile_draw_weights("FWB")
     }
   } else {
-    validate_prediction_weight_ids(setup$baseline_data, setup$id_var)
+    validate_prediction_weight_ids(setup$baseline_data, setup$settings$id_var)
     validate_draw_weight_column_available(setup$newdata_pred, weight_col)
   }
 
@@ -436,9 +388,8 @@ comparison_fwb_draws <- function(
       model = model,
       factor_cols = factor_cols,
       original_data = refit_data,
-      y_levels = setup$y_levels,
-      absorb = setup$absorb,
-      update_datadist = update_datadist,
+      y_levels = setup$settings$y_levels,
+      absorb = setup$settings$absorb,
       use_coefstart = use_coefstart,
       fit_weights = boot_data$fwb_weight
     )
@@ -454,19 +405,18 @@ comparison_fwb_draws <- function(
       return(NULL)
     }
     sops_array <- tryCatch(
-      soprob_markov(
+      predict_markov_sops(
         model = boot_result$model,
         newdata = setup$newdata_pred,
         times = setup$times,
-        y_levels = factor(boot_result$ylevels %||% boot_result$y_levels),
-        absorb = boot_result$absorb,
-        time_var = setup$time_var,
-        p_var = setup$p_var,
-        p2_var = setup$p2_var,
-        gap_var = setup$gap_var,
-        time_covariates = setup$time_covariates
+        settings = markov_settings_update(
+          setup$settings,
+          y_levels = state_factor(boot_result$ylevels),
+          absorb = boot_result$absorb
+        )
       ),
       error = function(e) {
+        rethrow_crossed_thresholds(e)
         warning("soprob_markov failed: ", conditionMessage(e), call. = FALSE)
         NULL
       }
@@ -477,38 +427,29 @@ comparison_fwb_draws <- function(
     list(
       estimate = reduce_draw(sops_array),
       weight = if (!is.null(weight_col)) {
-        fwb_baseline_weights(fwb_weights, setup$baseline_data, setup$id_var)
+        fwb_baseline_weights(
+          fwb_weights,
+          setup$baseline_data,
+          setup$settings$id_var
+        )
       }
     )
   }
 
   fwb_samples <- generate_fwb_bootstrap_weights(
     data = refit_data,
-    id_var = setup$id_var,
+    id_var = setup$settings$id_var,
     n_boot = n_boot
   )
   results <- apply_to_fwb_bootstrap(
     fwb_samples = fwb_samples,
     analysis_fn = analysis_fn,
     data = refit_data,
-    id_var = setup$id_var,
+    id_var = setup$settings$id_var,
     workers = workers,
-    packages = c("rms", "VGAM", "Hmisc", "stats"),
-    globals = c(
-      "model",
-      "setup",
-      "refit_data",
-      "factor_cols",
-      "update_datadist",
-      "use_coefstart",
-      "reduce_draw",
-      "weight_col"
-    )
+    packages = c("rms", "VGAM", "Hmisc", "stats")
   )
-  results <- Filter(Negate(is.null), results)
-  if (length(results) == 0L) {
-    stop("All bootstrap iterations failed.")
-  }
+  results <- keep_successful_draws(results)
   list(
     values = do.call(rbind, lapply(results, `[[`, "estimate")),
     draw_ids = seq_along(results),
@@ -516,7 +457,6 @@ comparison_fwb_draws <- function(
       do.call(rbind, lapply(results, `[[`, "weight"))
     },
     metadata = list(
-      n_boot = n_boot,
       n_successful = length(results),
       draw_weights_attached = !is.null(weight_col) && isTRUE(return_draws),
       draw_weight_col = weight_col,

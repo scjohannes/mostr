@@ -1,27 +1,3 @@
-local_spline_delta_datadist <- function(data, env = parent.frame()) {
-  name <- "spline_delta_test_dd"
-  old_exists <- exists(name, envir = globalenv(), inherits = FALSE)
-  old_value <- if (old_exists) {
-    get(name, envir = globalenv(), inherits = FALSE)
-  } else {
-    NULL
-  }
-  assign(name, rms::datadist(data), envir = globalenv())
-  old_options <- options(datadist = name)
-  withr::defer(
-    {
-      options(old_options)
-      if (old_exists) {
-        assign(name, old_value, envir = globalenv())
-      } else if (exists(name, envir = globalenv(), inherits = FALSE)) {
-        rm(list = name, envir = globalenv())
-      }
-    },
-    envir = env
-  )
-  invisible(NULL)
-}
-
 local_spline_delta_orm_case <- local({
   value <- NULL
   function() {
@@ -44,7 +20,6 @@ local_spline_delta_orm_case <- local({
       )
       data$y <- ordered(data$y, levels = state_levels)
 
-      local_spline_delta_datadist(data)
       model <- mostm(
         y ~ rms::rcs(time, 3) + tx + rms::rcs(yprev, 4),
         data = data,
@@ -66,57 +41,22 @@ replay_spline_avg_sops <- function(object, model) {
     variables = avg_args$variables,
     # Stored averages use `by = NULL` for the overall average.
     by = avg_args$by %||% TRUE,
-    times = avg_args$times,
-    y_levels = attr(object, "y_levels"),
-    absorb = attr(object, "absorb"),
-    id_var = avg_args$id_var,
-    time_var = attr(object, "time_var") %||% "time",
-    p_var = attr(object, "p_var") %||% "yprev",
-    p2_var = attr(object, "p2_var"),
-    gap_var = attr(object, "gap_var"),
-    time_covariates = attr(object, "time_covariates")
+    times = avg_args$times
   )
 }
 
 central_spline_avg_jacobian <- function(object, model) {
-  coefficient <- get_coef(model)
   avg_args <- attr(object, "avg_args")
   key_columns <- c("time", "state", names(avg_args$variables), avg_args$by)
   object_key <- sop_draw_cell_key(object, key_columns)
-  jacobian <- matrix(
-    NA_real_,
-    nrow = nrow(object),
-    ncol = length(coefficient),
-    dimnames = list(NULL, names(coefficient))
-  )
-
-  for (column in seq_along(coefficient)) {
-    step <- .Machine$double.eps^(1 / 3) *
-      max(1, abs(coefficient[column]))
-    upper <- coefficient
-    lower <- coefficient
-    upper[column] <- upper[column] + step
-    lower[column] <- lower[column] - step
-    upper_result <- replay_spline_avg_sops(object, set_coef(model, upper))
-    lower_result <- replay_spline_avg_sops(object, set_coef(model, lower))
-    upper_index <- match(
-      object_key,
-      sop_draw_cell_key(upper_result, key_columns)
-    )
-    lower_index <- match(
-      object_key,
-      sop_draw_cell_key(lower_result, key_columns)
-    )
-    if (anyNA(upper_index) || anyNA(lower_index)) {
+  numeric_jacobian(model, function(model) {
+    result <- replay_spline_avg_sops(object, model)
+    index <- match(object_key, sop_draw_cell_key(result, key_columns))
+    if (anyNA(index)) {
       stop("Finite-difference spline SOP cells did not align.")
     }
-    jacobian[, column] <-
-      (upper_result$estimate[upper_index] -
-        lower_result$estimate[lower_index]) /
-      (2 * step)
-  }
-
-  jacobian
+    result$estimate[index]
+  })
 }
 
 test_that("backend orm spline covariance labels preserve coefficient order", {
@@ -162,9 +102,9 @@ test_that("backend orm spline covariance labels preserve coefficient order", {
 })
 
 test_that("unnamed orm bread preserves transformed and interaction coefficient order", {
+  skip_on_cran()
   data <- local_spline_delta_orm_case()$data
   data$yprev_factor <- factor(data$yprev)
-  local_spline_delta_datadist(data)
   formulas <- list(
     y ~ rms::rcs(time, 3) * tx + rms::rcs(yprev, 4),
     y ~ log(time + 1) * tx + yprev_factor
@@ -206,22 +146,20 @@ test_that("unnamed orm bread preserves transformed and interaction coefficient o
 })
 
 test_that("penalized orm previous-state splines support delta inference", {
+  skip_on_cran()
   case <- local_spline_delta_orm_case()
   fit <- case$model
   avg <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = 1:3,
-    y_levels = fit$yunique,
-    p_var = "yprev"
+    times = 1:3
   )
 
   plan <- delta_compile_plan(
     object = avg,
     model_plan = fit,
     newdata = attr(avg, "newdata_pred"),
-    times = attr(avg, "avg_args")$times,
-    output = "average"
+    times = attr(avg, "avg_args")$times
   )
   native <- run_sop_delta_plan(plan, fit)
   oracle <- run_sop_delta_r_oracle(plan, fit)
@@ -245,38 +183,6 @@ test_that("penalized orm previous-state splines support delta inference", {
   expect_match(
     conditionMessage(condition),
     "does not currently support penalized orm likelihoods",
-    fixed = TRUE
-  )
-})
-
-test_that("unconditional delta rejects weighted orm score construction", {
-  case <- local_spline_delta_orm_case()
-  data <- case$data
-  local_spline_delta_datadist(data)
-  weighted <- suppressWarnings(mostm(
-    y ~ rms::rcs(time, 3) + tx + rms::rcs(yprev, 4),
-    data = data,
-    weights = rep(c(1, 2), length.out = nrow(data)),
-    id_var = "id",
-    opt_method = "LM",
-    scale = TRUE
-  ))
-  avg <- avg_sops(
-    weighted,
-    variables = list(tx = c(0, 1)),
-    times = 1:2,
-    y_levels = weighted$yunique,
-    p_var = "yprev"
-  )
-
-  condition <- tryCatch(
-    inferences(avg, method = "delta", vcov = "unconditional"),
-    error = identity
-  )
-  expect_s3_class(condition, "error")
-  expect_match(
-    conditionMessage(condition),
-    "does not currently support orm fits with non-unit case weights",
     fixed = TRUE
   )
 })

@@ -1,5 +1,27 @@
 # SOP model adapters and time helpers.
 
+# Only `rmsb::blrm()` fits have random effects, so `include_re = TRUE` on any
+# other fit would otherwise be ignored without notice. Every public function
+# with an `include_re` argument calls this before doing any work.
+stop_include_re_without_blrm <- function(model, include_re) {
+  if (!isTRUE(include_re)) {
+    return(invisible(NULL))
+  }
+  fit <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
+  if (inherits(fit, "blrm")) {
+    return(invisible(NULL))
+  }
+  engine <- markov_model_engine(model) %||% class(fit)[1]
+  mostr_abort(
+    "`include_re = TRUE` adds each patient's random effect to the ",
+    "predictions, and only models fitted with `rmsb::blrm()` ",
+    "(`mostm(engine = \"blrm\")`) have random effects. This model was fitted ",
+    "with engine \"",
+    engine,
+    "\"; drop `include_re` or set it to FALSE."
+  )
+}
+
 #' Validate Model for Markov Simulation
 #'
 #' Internal helper that checks whether a model is compatible with Markov
@@ -30,17 +52,12 @@ validate_markov_model <- function(object) {
     !is.null(expected_engine) &&
       !identical(markov_model_engine(object), expected_engine)
   ) {
-    stop(
+    mostr_abort(
       "Model-based Markov workflows require fits created by `mostm()`. ",
       "Refit this model with `mostm(engine = \"",
       expected_engine,
-      "\")`.",
-      call. = FALSE
+      "\")`."
     )
-  }
-
-  if (model_uses_offset(model_chk)) {
-    stop_unsupported_offset()
   }
 
   if (inherits(model_chk, "blrm")) {
@@ -54,7 +71,7 @@ validate_markov_model <- function(object) {
 
     # Check if it's cumulative family
     if (!grepl("cumulative", fam@vfamily[1], ignore.case = TRUE)) {
-      stop(
+      mostr_abort(
         "For vglm models, only the cumulative family is supported.\n",
         "Current family: ",
         fam@vfamily[1],
@@ -75,7 +92,7 @@ validate_markov_model <- function(object) {
 
     # Reject fits whose reverse coding cannot be verified.
     if (is.null(reverse_param)) {
-      stop(
+      mostr_abort(
         "Cannot determine 'reverse' parameter from the fitted vglm family.\n",
         "For safety, please refit with: family = cumulative(reverse = TRUE, ...)"
       )
@@ -83,7 +100,7 @@ validate_markov_model <- function(object) {
 
     # Check that reverse = TRUE
     if (!isTRUE(reverse_param)) {
-      stop(
+      mostr_abort(
         "For vglm models, the cumulative family must use reverse = TRUE.\n",
         "Current setting: reverse = ",
         reverse_param,
@@ -107,8 +124,6 @@ validate_markov_model <- function(object) {
     }
   }
 
-  # Other model types will be caught by the existing class check in soprob_markov
-
   invisible(NULL)
 }
 
@@ -131,32 +146,56 @@ stop_unsupported_markov_link <- function(link = NULL) {
     "Only cumulative-logit models are supported; ",
     "refit the model with a logit link."
   )
-  condition <- structure(
-    list(
-      message = message,
-      call = NULL,
+  mostr_abort(
+    message,
+    class = "mostr_unsupported_link",
+    data = list(
       link = if (length(link)) as.character(link) else NA_character_
-    ),
-    class = c("mostr_unsupported_link", "error", "condition")
+    )
   )
-  stop(condition)
+}
+
+# The vglm design matrix of `newdata`, one row per row of `newdata`.
+# stats::model.matrix() given a data frame builds its model frame with the
+# default `na.action`, stats::na.omit(), which drops rows with a missing value
+# without a word; the recursion then matched the remaining rows' probabilities
+# to the wrong profiles. The frame is built with stats::na.pass() instead, and
+# a missing value in the design is refused. The public routes refuse missing
+# predictor values earlier, naming the column (`stop_missing_predictors()`);
+# this keeps any other route from returning shifted probabilities.
+vglm_prediction_design <- function(
+  model,
+  newdata,
+  terms = stats::delete.response(stats::terms(model))
+) {
+  frame <- stats::model.frame(
+    terms,
+    newdata,
+    na.action = stats::na.pass,
+    xlev = model@xlevels
+  )
+  X <- stats::model.matrix(
+    terms,
+    frame,
+    contrasts.arg = if (length(model@contrasts)) model@contrasts else NULL
+  )
+  if (anyNA(X)) {
+    columns <- colnames(X)[colSums(is.na(X)) > 0]
+    mostr_abort(
+      "The vglm design matrix has missing values in ",
+      sum(rowSums(is.na(X)) > 0),
+      " of the ",
+      nrow(X),
+      " prediction rows, in columns ",
+      paste0("`", columns, "`", collapse = ", "),
+      ". Supply prediction rows with a value of every column the model uses."
+    )
+  }
+  X
 }
 
 predict_vglm_response_markov <- function(object, newdata) {
-  if (
-    !isTRUE(attr(object, "markov_vglm")) &&
-      !isTRUE(attr(object, "markov_split_assign"))
-  ) {
-    return(VGAM::predict(object, newdata, type = "response"))
-  }
-
-  tt <- stats::delete.response(stats::terms(object))
-  X <- stats::model.matrix(
-    tt,
-    newdata,
-    contrasts.arg = if (length(object@contrasts)) object@contrasts else NULL,
-    xlev = object@xlevels
-  )
+  X <- vglm_prediction_design(object, newdata)
   attr(X, "assign") <- object@assign
 
   lm2vlm <- utils::getFromNamespace("lm2vlm.model.matrix", "VGAM")
@@ -190,7 +229,7 @@ predict_orm_response_markov <- function(object, newdata) {
 select_posterior_draws <- function(model, n_draws = 100L, seed = NULL) {
   n_available <- nrow(model$draws)
   if (is.null(n_available) || n_available < 1) {
-    stop("`blrm` model does not contain posterior draws.")
+    mostr_abort("`blrm` model does not contain posterior draws.")
   }
 
   if (is.null(n_draws)) {
@@ -202,7 +241,7 @@ select_posterior_draws <- function(model, n_draws = 100L, seed = NULL) {
         is.na(n_draws) ||
         n_draws < 1
     ) {
-      stop("`n_draws` must be a positive integer or NULL.")
+      mostr_abort("`n_draws` must be a positive integer or NULL.")
     }
     n <- min(as.integer(n_draws), n_available)
   }
@@ -242,7 +281,7 @@ select_posterior_draws <- function(model, n_draws = 100L, seed = NULL) {
 
 blrm_design_matrix <- function(model, newdata, second = FALSE) {
   if (!requireNamespace("rms", quietly = TRUE)) {
-    stop("Package 'rms' is required for `blrm` prediction.")
+    mostr_abort("Package 'rms' is required for `blrm` prediction.")
   }
   X <- rms::predictrms(model, newdata = newdata, type = "x", second = second)
   normalize_blrm_design_names(model, X, second = second)
@@ -269,22 +308,6 @@ normalize_blrm_design_names <- function(model, X, second = FALSE) {
   X
 }
 
-resolve_blrm_id_var <- function(model, newdata, id_var = NULL) {
-  id_var <- markov_model_id_var(model, id_var)
-  if (!is.null(id_var)) {
-    return(id_var)
-  }
-
-  cluster_name <- model$clusterInfo$name
-  if (
-    !is.null(cluster_name) && length(cluster_name) == 1 && nzchar(cluster_name)
-  ) {
-    return(cluster_name)
-  }
-
-  "id"
-}
-
 get_blrm_gamma_draws <- function(model, draw_indices) {
   if (!is.null(model$gamma_draws)) {
     gamma <- model$gamma_draws
@@ -292,10 +315,10 @@ get_blrm_gamma_draws <- function(model, draw_indices) {
   }
 
   if (!requireNamespace("rmsb", quietly = TRUE)) {
-    stop("Package 'rmsb' is required for `include_re = TRUE`.")
+    mostr_abort("Package 'rmsb' is required for `include_re = TRUE`.")
   }
   if (!requireNamespace("posterior", quietly = TRUE)) {
-    stop("Package 'posterior' is required for `include_re = TRUE`.")
+    mostr_abort("Package 'posterior' is required for `include_re = TRUE`.")
   }
 
   stan_fit <- rmsb::stanGet(model)
@@ -310,7 +333,9 @@ get_blrm_gamma_draws <- function(model, draw_indices) {
   )
 
   if (ncol(gamma) == 0) {
-    stop("No random-effect draws named `gamma` were found in the `blrm` fit.")
+    mostr_abort(
+      "No random-effect draws named `gamma` were found in the `blrm` fit."
+    )
   }
 
   gamma[draw_indices, , drop = FALSE]
@@ -333,7 +358,9 @@ subset_cached_draw_matrix <- function(x, all_draw_indices, draw_indices) {
 
   idx <- match(draw_indices, all_draw_indices)
   if (anyNA(idx)) {
-    stop("Cached posterior draw matrix is missing requested draw indices.")
+    mostr_abort(
+      "Cached posterior draw matrix is missing requested draw indices."
+    )
   }
 
   x[idx, , drop = FALSE]
@@ -348,20 +375,26 @@ blrm_random_effect_matrix <- function(
 ) {
   cluster <- model$clusterInfo$cluster
   if (is.null(cluster) || length(cluster) == 0) {
-    stop(
+    mostr_abort(
       "`include_re = TRUE` requires a `blrm` model fitted with `cluster()` ",
       "and stored cluster information."
     )
   }
   if (!id_var %in% names(newdata)) {
-    stop("`newdata` must contain `", id_var, "` when `include_re = TRUE`.")
+    mostr_abort(
+      "`newdata` must contain `",
+      id_var,
+      "` when `include_re = TRUE`."
+    )
   }
 
   patient_ids <- as.character(newdata[[id_var]])
 
   gamma <- gamma_draws %||% get_blrm_gamma_draws(model, draw_indices)
   if (nrow(gamma) != length(draw_indices)) {
-    stop("Random-effect draw matrix does not match requested posterior draws.")
+    mostr_abort(
+      "Random-effect draw matrix does not match requested posterior draws."
+    )
   }
 
   gamma_names <- colnames(gamma)
@@ -381,7 +414,7 @@ blrm_random_effect_matrix <- function(
 
   if (anyNA(gamma_index)) {
     missing_ids <- unique(patient_ids[is.na(gamma_index)])
-    stop(
+    mostr_abort(
       "`newdata` contains IDs not present in the fitted `blrm` clusters: ",
       paste(utils::head(missing_ids, 5), collapse = ", "),
       if (length(missing_ids) > 5) " ..." else ""
@@ -389,7 +422,9 @@ blrm_random_effect_matrix <- function(
   }
 
   if (max(gamma_index) > ncol(gamma)) {
-    stop("Random-effect draw matrix has fewer columns than fitted clusters.")
+    mostr_abort(
+      "Random-effect draw matrix has fewer columns than fitted clusters."
+    )
   }
 
   gamma[, gamma_index, drop = FALSE]
@@ -403,14 +438,14 @@ resolve_blrm_cppo <- function(cppo, envir = parent.frame()) {
   if (
     !is.character(cppo) || length(cppo) != 1L || is.na(cppo) || !nzchar(cppo)
   ) {
-    stop(
+    mostr_abort(
       "Only constrained partial proportional odds `blrm` models are supported."
     )
   }
 
   is_syntactic_name <- make.names(cppo) == cppo && !grepl("^\\.[0-9]", cppo)
   if (!is_syntactic_name) {
-    stop(
+    mostr_abort(
       "String `cppo` values must name an available function. ",
       "Inline expressions are not supported."
     )
@@ -419,12 +454,11 @@ resolve_blrm_cppo <- function(cppo, envir = parent.frame()) {
   tryCatch(
     get(cppo, mode = "function", envir = envir, inherits = TRUE),
     error = function(e) {
-      stop(
+      mostr_abort(
         "String `cppo` values must name an available function. ",
         "Could not find function `",
         cppo,
-        "`.",
-        call. = FALSE
+        "`."
       )
     }
   )
@@ -442,130 +476,107 @@ predict_blrm_response_markov <- function(
   if (is.null(draw_indices)) {
     draw_indices <- seq_len(nrow(object$draws))
   }
-  manual_error <- NULL
-
-  manual <- tryCatch(
-    {
-      cache_index <- NULL
-      if (!is.null(prediction_cache)) {
-        prediction_cache$cursor <- prediction_cache$cursor + 1L
-        cache_index <- prediction_cache$cursor
-      }
-      X <- if (
-        !is.null(cache_index) && length(prediction_cache$X) >= cache_index
-      ) {
-        prediction_cache$X[[cache_index]]
-      } else {
-        value <- blrm_design_matrix(object, newdata = newdata, second = FALSE)
-        if (!is.null(cache_index)) {
-          prediction_cache$X[[cache_index]] <- value
-        }
-        value
-      }
-      draws <- object$draws[draw_indices, , drop = FALSE]
-      ndraws <- nrow(draws)
-      ns <- object$non.slopes
-      cn <- colnames(draws)
-      tauinfo <- object$tauInfo
-      tau_names <- if (!is.null(tauinfo) && length(tauinfo$name) > 0L) {
-        tauinfo$name
-      } else {
-        character()
-      }
-
-      intercept_draws <- draws[, seq_len(ns), drop = FALSE]
-      beta_names <- setdiff(cn, c(cn[seq_len(ns)], tau_names))
-      if (length(beta_names) == 0) {
-        xb <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
-      } else {
-        beta_draws <- draws[, beta_names, drop = FALSE]
-        missing_beta <- setdiff(beta_names, colnames(X))
-        if (length(missing_beta) > 0) {
-          stop(
-            "Could not match `blrm` posterior coefficients to prediction ",
-            "design columns. Missing columns: ",
-            paste(utils::head(missing_beta, 10), collapse = ", "),
-            if (length(missing_beta) > 10) " ..." else "",
-            "."
-          )
-        }
-        X <- X[, beta_names, drop = FALSE]
-        xb <- beta_draws %*% t(X)
-      }
-
-      pppo <- object$pppo %||% 0L
-      has_npo <- pppo > 0
-      if (has_npo) {
-        cppo <- resolve_blrm_cppo(object$cppo, envir = parent.frame())
-        Z <- if (
-          !is.null(cache_index) && length(prediction_cache$Z) >= cache_index
-        ) {
-          prediction_cache$Z[[cache_index]]
-        } else {
-          value <- blrm_design_matrix(object, newdata = newdata, second = TRUE)
-          if (!is.null(cache_index)) {
-            prediction_cache$Z[[cache_index]] <- value
-          }
-          value
-        }
-        tau_draws <- draws[, tau_names, drop = FALSE]
-        zt <- tau_draws %*% t(Z)
-        cppos <- vapply(object$ylevels[-1], cppo, numeric(1))
-      }
-
-      u_draws <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
-      if (include_re) {
-        id_var <- resolve_blrm_id_var(object, newdata, id_var)
-        u_draws <- blrm_random_effect_matrix(
-          object,
-          newdata,
-          id_var,
-          draw_indices,
-          gamma_draws = gamma_draws
-        )
-      }
-
-      ynam <- if (!is.null(object$yname)) {
-        paste(object$yname, object$ylevels, sep = "=")
-      } else {
-        as_state_labels(object$ylevels)
-      }
-      base_eta <- xb + u_draws
-      out <- blrm_probabilities_native(
-        base_eta,
-        intercept_draws,
-        threshold_eta = if (has_npo) zt else numeric(),
-        threshold_scale = if (has_npo) cppos else numeric()
-      )
-      dimnames(out) <- list(draw_indices, rownames(newdata), ynam)
-      out
-    },
-    error = function(e) {
-      manual_error <<- e
-      NULL
+  cache_index <- NULL
+  if (!is.null(prediction_cache)) {
+    prediction_cache$cursor <- prediction_cache$cursor + 1L
+    cache_index <- prediction_cache$cursor
+  }
+  X <- if (
+    !is.null(cache_index) && length(prediction_cache$X) >= cache_index
+  ) {
+    prediction_cache$X[[cache_index]]
+  } else {
+    value <- blrm_design_matrix(object, newdata = newdata, second = FALSE)
+    if (!is.null(cache_index)) {
+      prediction_cache$X[[cache_index]] <- value
     }
-  )
-
-  if (!is.null(manual)) {
-    return(manual)
+    value
   }
+  draws <- object$draws[draw_indices, , drop = FALSE]
+  ndraws <- nrow(draws)
+  ns <- object$non.slopes
+  cn <- colnames(draws)
+  tauinfo <- object$tauInfo
+  tau_names <- if (!is.null(tauinfo) && length(tauinfo$name) > 0L) {
+    tauinfo$name
+  } else {
+    character()
+  }
+
+  intercept_draws <- draws[, seq_len(ns), drop = FALSE]
+  beta_names <- setdiff(cn, c(cn[seq_len(ns)], tau_names))
+  if (length(beta_names) == 0) {
+    xb <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
+  } else {
+    beta_draws <- draws[, beta_names, drop = FALSE]
+    missing_beta <- setdiff(beta_names, colnames(X))
+    if (length(missing_beta) > 0) {
+      mostr_abort(
+        "Could not match `blrm` posterior coefficients to prediction ",
+        "design columns. Missing columns: ",
+        paste(utils::head(missing_beta, 10), collapse = ", "),
+        if (length(missing_beta) > 10) " ..." else "",
+        "."
+      )
+    }
+    X <- X[, beta_names, drop = FALSE]
+    xb <- beta_draws %*% t(X)
+  }
+
+  pppo <- object$pppo %||% 0L
+  has_npo <- pppo > 0
+  if (has_npo) {
+    cppo <- resolve_blrm_cppo(object$cppo, envir = parent.frame())
+    Z <- if (
+      !is.null(cache_index) && length(prediction_cache$Z) >= cache_index
+    ) {
+      prediction_cache$Z[[cache_index]]
+    } else {
+      value <- blrm_design_matrix(object, newdata = newdata, second = TRUE)
+      if (!is.null(cache_index)) {
+        prediction_cache$Z[[cache_index]] <- value
+      }
+      value
+    }
+    tau_draws <- draws[, tau_names, drop = FALSE]
+    zt <- tau_draws %*% t(Z)
+    cppos <- vapply(object$ylevels[-1], cppo, numeric(1))
+  }
+
+  u_draws <- matrix(0, nrow = ndraws, ncol = nrow(newdata))
   if (include_re) {
-    stop(manual_error$message, call. = FALSE)
+    id_var <- markov_require_id_var(object, id_var)
+    u_draws <- blrm_random_effect_matrix(
+      object,
+      newdata,
+      id_var,
+      draw_indices,
+      gamma_draws = gamma_draws
+    )
   }
 
-  stop(
-    "Manual `blrm` prediction failed: ",
-    manual_error$message,
-    call. = FALSE
+  ynam <- if (!is.null(object$yname)) {
+    paste(object$yname, object$ylevels, sep = "=")
+  } else {
+    as_state_labels(object$ylevels)
+  }
+  base_eta <- xb + u_draws
+  out <- blrm_probabilities_native(
+    base_eta,
+    intercept_draws,
+    threshold_eta = if (has_npo) zt else numeric(),
+    threshold_scale = if (has_npo) cppos else numeric()
   )
+  dimnames(out) <- list(draw_indices, rownames(newdata), ynam)
+  out
 }
 
 orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
   if (!inherits(model, "orm")) {
-    stop("orm_model_matrix() requires an orm model.")
+    mostr_abort("orm_model_matrix() requires an orm model.")
   }
   if (is.null(model$Design) || is.null(model$sformula)) {
-    stop(
+    mostr_abort(
       "Fast orm prediction requires a model fitted by rms::orm() with ",
       "stored Design metadata."
     )
@@ -604,7 +615,7 @@ orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
 
   expected_cols <- design$colnames
   if (length(expected_cols) != ncol(X)) {
-    stop(
+    mostr_abort(
       "Could not reconstruct the orm design matrix. Expected ",
       length(expected_cols),
       " columns, got ",
@@ -635,7 +646,7 @@ normalize_orm_prediction_data <- function(model, newdata) {
     coerced <- factor(as.character(values), levels = levels_nm)
     bad <- is.na(coerced) & !is.na(values)
     if (any(bad)) {
-      stop(
+      mostr_abort(
         "Values in `",
         nm,
         "` are not among fitted orm levels: ",
@@ -670,10 +681,11 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
   if (is.integer(prototype)) {
     out <- suppressWarnings(as.integer(labels))
     if (anyNA(out) && any(!is.na(labels))) {
-      stop(
-        "`y_levels` must be integer-compatible when `",
+      mostr_abort(
+        "The fitted states must be integer-compatible when the ",
+        "previous-state column `",
         p_var,
-        "` is an integer previous-state variable."
+        "` holds integers."
       )
     }
     return(out)
@@ -682,10 +694,11 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
   if (is.numeric(prototype)) {
     out <- suppressWarnings(as.numeric(labels))
     if (anyNA(out) && any(!is.na(labels))) {
-      stop(
-        "`y_levels` must be numeric-compatible when `",
+      mostr_abort(
+        "The fitted states must be numeric-compatible when the ",
+        "previous-state column `",
         p_var,
-        "` is a numeric previous-state variable."
+        "` holds numbers."
       )
     }
     return(out)
@@ -698,13 +711,83 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
   labels
 }
 
+# `values` of the previous-state column `column` (`p_var`, or `p2_var` for the
+# state two visits back) in the form the model reads them, whatever their own
+# type or factor levels. The recursion builds the previous states of later
+# visits with the type and levels of the starting rows' column
+# (`make_previous_state_column()`), so a factor holding only the profiles' own
+# states turned every other state into NA: orm then stopped with an error
+# about missing transition probabilities, vglm with a dimension error from
+# src/sops.cpp. A column the model reads as a factor gets its fitted levels in
+# fitted order; one it reads as a number gets numbers; with neither recorded
+# (a fit without its metadata) a factor gets the fitted states as levels.
+# Values that are not fitted states are refused, naming the column, because
+# vglm would otherwise stop in stats::model.frame() ("factor yprev has new
+# levels 9") and blrm would predict from a state the model never saw.
+# Missing values are left for stop_missing_predictors().
+fitted_state_values <- function(model, values, column, states) {
+  labels <- as_state_labels(values)
+  fitted <- markov_model_refit_data(model)[[column]]
+  levels <- get_model_factor_levels(model, column) %||%
+    (if (is.factor(fitted)) levels(fitted))
+  allowed <- levels %||% as_state_labels(states)
+  unknown <- !is.na(values) & !labels %in% allowed
+  if (any(unknown)) {
+    shown <- unique(labels[unknown])
+    mostr_abort(
+      "`",
+      column,
+      "` holds ",
+      paste(utils::head(shown, 5L), collapse = ", "),
+      if (length(shown) > 5L) ", ...",
+      " in ",
+      sum(unknown),
+      " of the ",
+      length(values),
+      " prediction rows, which ",
+      if (length(shown) == 1L) "is not a state" else "are not states",
+      " the model can predict from. The states of `",
+      column,
+      "` in the fitted model are ",
+      paste(allowed, collapse = ", "),
+      "."
+    )
+  }
+  if (!is.null(levels)) {
+    return(factor(
+      labels,
+      levels = levels,
+      ordered = is.ordered(if (is.null(fitted)) values else fitted)
+    ))
+  }
+  if (is.numeric(fitted) && !is.numeric(values)) {
+    return(if (is.integer(fitted)) as.integer(labels) else as.numeric(labels))
+  }
+  if (is.null(fitted) && is.factor(values)) {
+    return(factor(labels, levels = allowed, ordered = is.ordered(values)))
+  }
+  values
+}
+
+# The prediction rows with their previous-state columns in the form the model
+# reads them (`fitted_state_values()`).
+normalize_prediction_states <- function(model, data, settings) {
+  for (column in c(settings$p_var, settings$p2_var)) {
+    if (column %in% names(data)) {
+      data[[column]] <- fitted_state_values(
+        model,
+        data[[column]],
+        column,
+        settings$y_levels
+      )
+    }
+  }
+  data
+}
+
 make_previous_state_column <- function(states, prototype, n, p_var) {
   values <- coerce_previous_state_values(states, prototype, p_var)
   rep(values, each = n)
-}
-
-normalize_previous_state_column <- function(values, prototype, p_var) {
-  coerce_previous_state_values(values, prototype, p_var)
 }
 
 get_model_factor_levels <- function(model, varname) {
@@ -725,12 +808,13 @@ get_model_factor_levels <- function(model, varname) {
   }
 
   if (inherits(model_chk, c("orm", "blrm"))) {
-    parms <- tryCatch(
-      model_chk$Design$parms,
-      error = function(e) NULL
-    )
-    if (!is.null(parms[[varname]])) {
-      return(as.character(parms[[varname]]))
+    design <- tryCatch(model_chk$Design, error = function(e) NULL)
+    # rms keeps other settings in `parms` too, such as the knots of
+    # rcs(yprev, 4), which are not levels. Only categorical terms (the codes
+    # that normalize_orm_prediction_data() turns into factors) have levels.
+    categorical <- design$name[design$assume.code %in% c(5L, 8L)]
+    if (varname %in% categorical && !is.null(design$parms[[varname]])) {
+      return(as.character(design$parms[[varname]]))
     }
   }
 
@@ -765,15 +849,8 @@ get_time_info <- function(model, data, time_var) {
   )
 }
 
-default_sop_times <- function(data, time_var, time_covariates, default) {
-  if (default == "max_sequence") {
-    return(seq_len(max(data[[time_var]], na.rm = TRUE)))
-  }
-
+default_sop_times <- function(data, time_var, default) {
   if (default == "fast") {
-    if (!is.null(time_covariates)) {
-      return(seq_len(nrow(time_covariates)))
-    }
     if (!is.null(time_var) && time_var %in% names(data)) {
       return(sort(unique(data[[time_var]])))
     }
@@ -781,7 +858,7 @@ default_sop_times <- function(data, time_var, time_covariates, default) {
   }
 
   if (is.null(time_var) || !time_var %in% names(data)) {
-    stop("`times` must be specified if `time_var` is not in data.")
+    mostr_abort("`times` must be specified if `time_var` is not in data.")
   }
 
   sort(unique(data[[time_var]]))
@@ -792,7 +869,7 @@ coerce_visit_times <- function(times, time_info, time_var) {
   bad <- is.na(match(labels, time_info$levels))
   if (any(bad)) {
     bad_values <- unique(labels[bad])
-    stop(
+    mostr_abort(
       "Requested visit values are not among fitted factor levels for `",
       time_var,
       "`: ",
@@ -813,8 +890,7 @@ resolve_sop_times <- function(
   data,
   times,
   time_var,
-  time_covariates = NULL,
-  default = c("unique", "max_sequence", "fast")
+  default = c("unique", "fast")
 ) {
   default <- match.arg(default)
   time_info <- get_time_info(model, data, time_var)
@@ -823,16 +899,12 @@ resolve_sop_times <- function(
     times <- if (time_info$is_factor) {
       time_info$levels
     } else {
-      default_sop_times(data, time_var, time_covariates, default)
+      default_sop_times(data, time_var, default)
     }
   }
 
   if (time_info$is_factor) {
     times <- coerce_visit_times(times, time_info, time_var)
-  }
-
-  if (!is.null(time_covariates) && nrow(time_covariates) != length(times)) {
-    stop("`time_covariates` must have one row per requested time point.")
   }
 
   list(times = times, time_info = time_info)
@@ -851,83 +923,27 @@ assign_sop_time <- function(data, time_var, value, time_info) {
   data
 }
 
-validate_factor_gap <- function(gap_var, time_covariates, time_info) {
-  if (is.null(gap_var) || !isTRUE(time_info$is_factor)) {
-    return(invisible(NULL))
-  }
-
-  if (
-    is.null(time_covariates) ||
-      !gap_var %in% names(time_covariates) ||
-      !is.numeric(time_covariates[[gap_var]])
-  ) {
-    stop(
-      "Factor visit time with `gap_var` requires numeric gap_var values in ",
-      "`time_covariates[[\"",
-      gap_var,
-      "\"]]`; elapsed gaps are not inferred from ",
-      "factor visit labels."
-    )
-  }
-
-  invisible(NULL)
-}
-
-assign_sop_gap <- function(
-  data,
-  gap_var,
-  times,
-  index,
-  time_covariates,
-  time_info
-) {
+# The gap since the previous requested visit, for a model fitted with
+# `gap_var`. The first transition's gap is its own time, the time since time
+# 0; `?mostm` and the "Choosing visits" section of `?sops` document this rule.
+# `mostm()` accepts `gap_var` only with numeric time, so the times can be
+# subtracted.
+assign_sop_gap <- function(data, gap_var, times, index) {
   if (is.null(gap_var)) {
     return(data)
   }
-
-  validate_factor_gap(gap_var, time_covariates, time_info)
-  if (
-    !isTRUE(time_info$is_factor) &&
-      (is.null(time_covariates) || !gap_var %in% names(time_covariates))
-  ) {
-    data[[gap_var]] <- if (index == 1L) {
-      times[index]
-    } else {
-      times[index] - times[index - 1L]
-    }
-  }
-
-  data
-}
-
-assign_sop_t_covs <- function(data, time_covariates, index) {
-  if (is.null(time_covariates)) {
-    return(data)
-  }
-
-  for (nm in names(time_covariates)) {
-    data[[nm]] <- time_covariates[index, nm]
+  data[[gap_var]] <- if (index == 1L) {
+    times[index]
+  } else {
+    times[index] - times[index - 1L]
   }
   data
 }
 
-assign_sop_visit <- function(
-  data,
-  time_var,
-  times,
-  index,
-  time_covariates,
-  gap_var,
-  time_info
-) {
-  data <- assign_sop_time(data, time_var, times[index], time_info)
-  data <- assign_sop_gap(
-    data,
-    gap_var,
-    times,
-    index,
-    time_covariates,
-    time_info
-  )
-  assign_sop_t_covs(data, time_covariates, index)
+# Set the columns of visit `index` of `times`: the time column and the gap
+# since the previous visit, as named in `settings`. Time terms of the formula,
+# such as `rcs(time, 4)`, are evaluated from the time column.
+assign_sop_visit <- function(data, settings, times, index, time_info) {
+  data <- assign_sop_time(data, settings$time_var, times[index], time_info)
+  assign_sop_gap(data, settings$gap_var, times, index)
 }

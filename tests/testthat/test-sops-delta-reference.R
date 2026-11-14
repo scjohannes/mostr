@@ -97,6 +97,7 @@ delta_absorbing_sets <- list(
 )
 
 test_that("native delta recursion matches the reference on synthetic designs", {
+  skip_on_cran()
   case <- delta_synthetic_case()
 
   for (absorb in delta_absorbing_sets) {
@@ -117,6 +118,7 @@ test_that("native delta recursion matches the reference on synthetic designs", {
 })
 
 test_that("native delta recursion matches the reference for grouped averages", {
+  skip_on_cran()
   case <- delta_synthetic_case()
 
   grouped_sets <- delta_absorbing_sets[c("none", "first_and_last", "two_inner")]
@@ -187,9 +189,11 @@ delta_reference_fits <- local({
       data <- make_test_data(n_patients = 80, follow_up_time = 6, seed = 7331)
       orm_fit <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
-        data = data
+        data = data,
+        id_var = "id",
+        absorb = 6
       ))
-      vglm_fit <- make_test_model(data)
+      vglm_fit <- make_test_model(data)$vglm_fit
       equidistant_fit <- suppressWarnings(mostm(
         ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
         family = VGAM::cumulative(
@@ -198,8 +202,10 @@ delta_reference_fits <- local({
           Thresh = "equid"
         ),
         data = data,
+        id_var = "id",
+        absorb = 6,
         engine = "vglm"
-      ))
+      ))$vglm_fit
       baseline <- data[!duplicated(data$id), , drop = FALSE]
       baseline <- baseline[1:4, , drop = FALSE]
       value <<- list(
@@ -297,6 +303,7 @@ expect_delta_plan_matches_reference <- function(plan, model) {
 }
 
 test_that("fitted orm and vglm delta plans match the independent reference", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   fits <- delta_reference_fits()
@@ -307,8 +314,7 @@ test_that("fitted orm and vglm delta plans match the independent reference", {
         model = model,
         newdata = fits$baseline,
         times = 1:4,
-        y_levels = 1:6,
-        absorb = absorb
+        settings = markov_settings(y_levels = 1:6, absorb = absorb)
       )
       expect_delta_plan_matches_reference(plan, model)
     }
@@ -316,6 +322,7 @@ test_that("fitted orm and vglm delta plans match the independent reference", {
 })
 
 test_that("factor-time delta plans match the independent reference", {
+  skip_on_cran()
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
   data <- delta_factor_time_data()
@@ -323,14 +330,18 @@ test_that("factor-time delta plans match the independent reference", {
   models <- list(
     orm = suppressWarnings(mostm(
       y ~ time + tx + yprev,
-      data = data
+      data = data,
+      id_var = "id",
+      first_followup_time = "1"
     )),
     vglm = suppressWarnings(mostm(
       y ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
       data = data,
+      id_var = "id",
+      first_followup_time = "1",
       engine = "vglm"
-    ))
+    ))$vglm_fit
   )
 
   for (model in models) {
@@ -339,8 +350,7 @@ test_that("factor-time delta plans match the independent reference", {
         model = model,
         newdata = baseline,
         times = levels(data$time),
-        y_levels = seq_len(4),
-        absorb = absorb
+        settings = markov_settings(y_levels = seq_len(4), absorb = absorb)
       )
       expect_delta_plan_matches_reference(plan, model)
     }

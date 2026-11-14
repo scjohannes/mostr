@@ -2,12 +2,81 @@
 
 ## Breaking changes
 
+* A second-order model is declared once, when it is fitted:
+  `mostm(..., p2_var = "ypprev")` names the column with the state two visits
+  back. `mostm()` also takes `p_var`, the previous-state column (`"yprev"` by
+  default). The fit records these with `id_var` and `time_var`, and its
+  states in fitted order, and every model-based function uses them. Before,
+  leaving out `p2_var` for a second-order fit, or `time_var` with `newdata`
+  for a fit whose time column is not `"time"`, silently held that column at
+  each profile's starting value and gave wrong probabilities.
+
+  The absorbing states and the column with the time since the previous visit
+  are declared when the model is fitted too: `mostm(..., absorb = "8")` and
+  `mostm(..., gap_var = "gap")`. `mostm()` checks them against the data:
+
+  * the `p_var` column must be in `data`, also when it is the default
+    `"yprev"`, so that `absorb` is checked against the real previous states;
+  * every `absorb` label must be a state of the response;
+  * no fitted row may have an absorbing state as its previous state, or, for
+    a second-order model, as the state two visits back (remove such rows
+    first; `prepare_markov_data(absorbing_state = )` does this for the
+    previous state);
+  * a state that occurs as an outcome but never as a previous state, and is
+    not named in `absorb`, gives a warning: it may be absorbing, such as
+    death. Before, a model with a numeric previous state (for example
+    `rms::rcs(yprev, 4)`) fitted without `absorb` let dead patients move back
+    to other states without any message;
+  * the `gap_var` column must be numeric and, on every row after a patient's
+    first, equal the time since the patient's previous row, so that a gap in
+    another unit than the time column is caught. `gap_var` needs numeric
+    time.
+
+  As before, the first predicted transition gets the first requested time as
+  its gap, the time since time 0. Absorbing states are never worked out from
+  the data, and they can't be changed at prediction time.
+
+  `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, `soprob_markov()`, and `plot_lp_difference()` no
+  longer have the arguments `id_var`, `time_var`, `p_var`, `p2_var`,
+  `y_levels`, `absorb`, and `gap_var`; passing one is an error. Drop them from
+  these calls, and give `absorb` and `gap_var`, and `p2_var`, `p_var`, and
+  `time_var` when they differ from the defaults, to `mostm()` instead. The
+  `state` column of the results now always holds the fitted state labels (for
+  example `"1"`, `"2"`, ...); before, it took the type of a supplied
+  `y_levels`, such as integers for `y_levels = 1:6`.
+
+  `time_covariates` is removed from these functions too. Write time terms
+  inline in the model formula instead, for example `rms::rcs(time, 4)`,
+  `log(time)`, `rms::pol(time, 2)` or `as.numeric(time > 7)`; the prediction
+  functions evaluate them at each requested time. They give the same results
+  as the precomputed columns that `time_covariates` supplied. For a model
+  with factor time there is now no way to give each visit's gap, so
+  `gap_var` with factor time is an error.
+
+  `plot_transitions()`, `plot_correlation()`, and `plot_variogram()` keep
+  `id_var`, `time_var`, `p_var`, `p2_var`, and `y_levels`, because they also
+  plot observed data, where nothing else names the columns. For a fitted
+  model they default to the fit's values, and a value that differs from the
+  fit's is an error, now also a `y_levels` with a different number of states.
+  They no longer have `absorb`, `gap_var`, and `time_covariates`, which only
+  model-based plots used; these come from the fit.
+
+* With `engine = "orm"` or `"blrm"`, `mostm()` refuses `splines::ns()`,
+  `splines::bs()` and `stats::poly()` (other than `raw = TRUE`) in the
+  formula, for time and for any other variable. rms evaluates these terms
+  again on the prediction rows, which gives a different basis without any
+  error: with `ns(age, 3)` the average probabilities of 40 profiles were off
+  by up to 0.04. Use `rms::rcs()` and `rms::pol()`, which keep the fitted
+  knots and terms. `engine = "vglm"` keeps the fitted basis and accepts them.
+
 * `mostm()` replaces `orm_markov()`, `vglm_markov()`, and `blrm_markov()`
   (#11). Choose the package that fits the model with `engine`: `"orm"` (the
   default) uses `rms::orm()`, `"vglm"` uses `VGAM::vglm()`, and `"blrm"` uses
   `rmsb::blrm()`. The shared arguments `id_var`, `time_var`,
   `first_followup_time`, `weights`, `subset`, `type`, and `cadjust` work as
-  before. Translate existing calls as follows:
+  before, except that `id_var` is now required (see below). Translate existing
+  calls as follows:
 
   * `orm_markov(formula, data, ...)` becomes `mostm(formula, data, ...)`.
   * `vglm_markov(formula, family, data, ...)` becomes
@@ -35,8 +104,26 @@
 * `data` must be a data frame for every engine. `vglm_markov()` also looked up
   variables in the formula's environment when `data` was missing.
 
-* Without `id_var`, every engine warns. `vglm_markov()` warned only when
-  `data` had an `id` column.
+* `mostm()` requires `id_var`, the name of the column that identifies
+  patients, for every engine; a fit without it is an error. The removed
+  functions only warned, or, for `vglm_markov()`, warned only when `data` had
+  an `id` column. Such fits did not store each patient's starting row and used
+  the model-based covariance instead of patient-clustered standard errors.
+  Later steps then failed or quietly used a column called `id`: for example,
+  `avg_sops(newdata = ...)` failed with "ID variable 'id' not found" when the
+  patient column had another name, and the bootstrap resampled patients by an
+  `id` column the fit did not know about. Because `mostm()` now always finds
+  each patient's starting row, it also requires the time column named by
+  `time_var`. Every `"orm"` and `"vglm"` fit now computes the
+  patient-clustered covariance, so a fit for which it cannot be computed, such
+  as one whose coefficients grow without bound, or an `"orm"` fit with a link
+  other than logit, stops in `mostm()` instead of later.
+
+* `bootstrap_model_coefs()` no longer has an `id_var` argument. It resamples
+  patients by the `id_var` given to `mostm()`.
+
+* `get_effective_coefs()` accepts the `robcov_vglm` object that
+  `mostm(engine = "vglm")` returns.
 
 * `weights`, `type`, and `cadjust` are errors with `engine = "blrm"`:
   `rmsb::blrm()` has no row weights, and Bayesian fits take their uncertainty
@@ -47,7 +134,314 @@
   arguments. They no longer compute patient-clustered standard errors for each
   refit, which only the original fit uses.
 
+* `avg_sops()`, `avg_comparisons()`, and `avg_state_time()`, and `sops()`,
+  `comparisons()`, and `state_time()` when they average with `by`, now stop
+  when a `by` column has a missing value among the averaged profiles, and say
+  how many profiles are affected. Previously those profiles were silently
+  left out of every group, which changed who was averaged. Drop or impute
+  those patients first, in `newdata` or in the data given to `mostm()`. Only
+  the averaged profiles count: with stored data, a missing value at a later
+  visit, which is not a starting row, does not matter. Summaries such as
+  `time_in_state()` still keep missing values as their own group.
+
+* A patient can no longer start in an absorbing state. With `absorb`,
+  `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, and `soprob_markov()` stop when a profile's previous
+  state (`p_var`, usually `yprev`) is absorbing, or, with `p2_var`, when its
+  state two visits back is. The error names the column and says how many
+  profiles are affected; remove those patients from `newdata` first.
+  Previously, first-order models predicted a move out of the absorbing state
+  from a previous state never seen in the fitted data (a numeric `yprev` gave
+  a probability of staying dead below 1, a factor `yprev` failed with an
+  unrelated error), while second-order models kept such patients in the
+  absorbing state with probability 1.
+
+* `inferences()` no longer offers `method = "score_bootstrap"`; asking for it
+  is an error. Use `method = "mvn"`, `"delta"`, `"bootstrap"`, or `"fwb"`
+  instead. The score bootstrap has been removed from the package entirely.
+
+* `inferences(method = "delta")` refuses unconditional variance for every
+  model fitted with case weights (`mostm(weights = )`), whatever the engine,
+  because the calculation has not been checked with weights. Previously
+  weighted `"orm"` fits were refused but weighted `"vglm"` fits were not.
+  Unconditional variance is the default for `avg_sops()`,
+  `avg_state_time()`, and `avg_comparisons()` results, so for a weighted fit
+  pass `vcov = "conditional"`.
+
+* `include_re = TRUE` is an error for fits other than `rmsb::blrm()` in
+  `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, and `soprob_markov()`. Only `blrm` fits have random
+  effects; previously the argument was silently ignored for `"orm"` and
+  `"vglm"` fits.
+
+* `use_coefstart = TRUE` in `inferences()` and `bootstrap_model_coefs()` is an
+  error unless the model was fitted with `engine = "vglm"`. It is meant to
+  start each bootstrap refit from the original coefficients, but only `vglm`
+  refits take starting coefficients, so for `"orm"` fits the argument was
+  silently ignored. `inferences()` also refuses it with `method = "mvn"` or
+  `"delta"`, which do not refit the model. Leave `use_coefstart` at its
+  default, `FALSE`; the results are the same as before.
+
+* State occupancy probabilities from partial proportional-odds models now stop
+  with an error where the model's thresholds (cut-points) cross. For some
+  covariate values, often outside the range of the data, a predictor with a
+  separate effect at each threshold can push two thresholds past each other,
+  and the model then gives a negative probability for a state. Previously the
+  compiled engine set such a probability to zero and rescaled the others, the
+  reference engine for `"vglm"` fits kept the negative probability, and
+  `blrm` fits clipped and rescaled each posterior draw, so the two
+  `"vglm"` engines could disagree by as much as 0.5. Now `sops()`,
+  `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()`, and `soprob_markov()` stop and say for how many
+  profiles and at which time the thresholds cross (and in how many posterior
+  draws for `blrm` fits). `inferences()` with `method = "mvn"`,
+  `"bootstrap"`, or `"fwb"` likewise stops, saying in how many simulation draws
+  or bootstrap samples the thresholds cross, instead of dropping those draws
+  with a warning. A negative value between -1e-10 and zero comes from rounding
+  and is still set to zero.
+
+* `inferences()` no longer has an `update_datadist` argument; passing it is an
+  error. mostr does not need an rms `datadist`, and bootstrap refits
+  (`inferences()` with `method = "bootstrap"` or `"fwb"`, and
+  `bootstrap_model_coefs()`) no longer create a `dd` object in the global
+  environment or set `options(datadist = "dd")` while they run. Instead, each
+  refit runs with the `datadist` option unset and restores it afterwards, so a
+  `datadist` you have set is ignored by the refits and left as it is.
+  Previously, `update_datadist = FALSE` together with a `datadist` option
+  naming an object that does not exist made every refit fail. Remove
+  `update_datadist` from your calls; the estimates and standard errors are the
+  same as before.
+
+* `time_in_state()` no longer accepts a data frame with `boot_id`, `tx` and
+  `state_*` columns, which no function of the package has produced for some
+  time. Pass SOPs from `sops()` or `avg_sops()`, after `inferences()` if you
+  want intervals; any other data frame is refused.
+
+* The deprecated arguments `adjust` of `robcov_vglm()` and `get_vcov_robust()`
+  and `parallel` of `bootstrap_model_coefs()` are removed. Use `cadjust` and
+  `workers`. The value of `robcov_vglm()` no longer has an `adjust` element;
+  read `cadjust`.
+
+* `mostm()`, `comparisons()` and `avg_comparisons()` no longer name the
+  replacement when they are given `start_time`, `origin_time`, `origin` or
+  `time_map` from earlier versions.
+
+* Results of `inferences()` no longer carry an `n_boot` attribute; `n_draws`
+  holds the same number.
+
+## Minor improvements
+
+* When `rms::orm()` cannot fit a model, the error now suggests
+  `opt_method = "LM", maxit = 100` together, and merging rarely observed
+  states. Since rms 8.2-0, the `"LM"` algorithm often needs more than the
+  default 30 iterations.
+
+* Every error that mostr raises now has class `mostr_error`, so you can catch
+  them with `tryCatch(..., mostr_error = function(e) ...)`. The "Error in" line
+  names the mostr function you called, such as `sops()`, instead of an
+  internal helper. The messages themselves are unchanged.
+
+* Large predictions use less memory and are faster: the options
+  `mostr.max_batched_design_rows` (now `5e4` rows per visit, was `2e6`) and
+  `mostr.second_order_working_bytes` (now 32 MiB, was 256 MiB) have smaller
+  defaults. They change only how the work is split, not the results.
+
+## Documentation
+
+* `?inferences` now explains that a bootstrap with `newdata`, even when it
+  holds the fitted patients themselves, keeps the profiles fixed: its
+  intervals match conditional variance and are narrower than those of the
+  same call without `newdata`, which match unconditional variance.
+
+* The new help page `?mostr_options` describes the options that limit memory
+  use, their defaults, and when to change them. It replaces
+  `?mostr.delta_max_bytes`, which now opens the same page.
+
+* The help pages of `avg_sops()`, `avg_state_time()`, `avg_comparisons()`,
+  and `mostm()` now say that the averages give every profile the same weight:
+  case weights given to `mostm(weights = )` are used only to fit the model,
+  so the result is not the same as repeating each patient according to their
+  weight.
+
 ## Bug fixes
+
+* Analytical standard errors with unconditional variance no longer depend on
+  the data frame the model was fitted to. `inferences(method = "delta")` took
+  the patient of each fitted row by evaluating the `data` of the `mostm()`
+  call again, so a data frame that was reordered after the fit gave wrong
+  standard errors without a message, and a filtered one gave an error. The
+  patients now come from the data stored on the fit.
+
+* `inferences()` refuses an `n_draws` that is not a single whole number of at
+  least 2 for `method = "mvn"`, `"bootstrap"` and `"fwb"`. Before, 0, a
+  negative or missing value gave an R error that did not name the argument,
+  and 1 returned missing standard errors and equal confidence limits.
+
+* `mostm(engine = "vglm")` refuses a zero weight on a fitted row and says to
+  leave the row out with `subset`. Before, the fit stopped inside VGAM with
+  "missing value where TRUE/FALSE needed". `engine = "orm"` still fits a
+  zero-weight row as if it were left out.
+
+* `sim_markov()` refuses a `baseline_data` with a `time` or a `y` column,
+  which it creates itself. Before, the result had two columns of that name.
+
+* Analytical standard errors with unconditional variance no longer build the
+  covariance between all pairs of cells to take its diagonal, which took 20
+  seconds and 380 MB for 5,000 cells and was not counted against
+  `mostr.delta_max_bytes`. `vcov()` on the result still gives the covariance.
+
+* `mostm()` now warns (class `mostr_warning_dropped_patients`) when patients
+  lose every row because a model variable (a predictor, the response, or the
+  previous state) is missing on each, and names them. The bootstrap and the
+  fractional weighted bootstrap in `inferences()` now leave these patients out
+  of the resamples, as the estimate does. Before, every draw failed with a
+  missing-predictor error.
+
+* `inferences()` run again on its own result now fully replaces the earlier
+  run. Before, the stored derivatives of a `method = "delta"` run stayed on
+  the result after a later `"mvn"`, `"bootstrap"` or `"fwb"` run, so
+  `time_in_state()` reported delta-method standard errors and intervals
+  instead of ones from the new draws.
+
+* For `blrm` fits, the crossed cut-point error now reports the call's number
+  of posterior draws. Draws are predicted in chunks and the first chunk with
+  crossed cut-points stops the call, so the error then says "at least X of
+  the N posterior draws" instead of counting only that chunk.
+
+* When `variables` sets the starting state of a second-order model, the
+  bootstrap refusal now recommends only `method = "mvn"`. It also named
+  `method = "delta"`, which refuses second-order models.
+
+* `time_in_state()` on SOPs that have confidence limits but no stored draws
+  (posterior SOPs from `sops()` or `avg_sops()` with the default
+  `return_draws = FALSE`, or SOPs from `inferences(return_draws = FALSE)`)
+  now returns `conf.low`, `conf.high`, and `std.error` as `NA`, with a
+  warning naming `return_draws = TRUE`. The limits of a total cannot be
+  computed from the limits of its SOPs. Before, the columns were dropped
+  without a word, and with `time_map` the only warning, from
+  `interpolate_sops()`, said that interval endpoints would be interpolated.
+  The totals themselves are unchanged. `state_time()` and `avg_state_time()`
+  were not affected.
+
+* A missing value in a column the model uses, in `newdata` or in the
+  `profile` of `plot_lp_difference()`, is now an error that names each such
+  column and counts its rows, for every engine. Before, `"vglm"` fits dropped
+  the row: with two profiles, the other profile's probabilities filled both
+  rows and were returned without a warning, and with other numbers of
+  profiles the call stopped with an error from base R. `"orm"` and `"blrm"`
+  fits stopped with an error about invalid probabilities that named no
+  column. Columns the model doesn't use may still hold missing values, and
+  so may a column that `variables` sets.
+
+* The previous-state column of `newdata` (and, for a second-order model, the
+  column with the state two visits back) may now be a factor with only the
+  profiles' own states, or integers or text, whatever type the model was
+  fitted with; predictions use the model's fitted states. Before, a factor
+  with fewer levels than the fit stopped `"orm"`, `"vglm"`, and `"blrm"`
+  fits with misleading errors about missing transition probabilities or
+  mismatched dimensions, and integers stopped `"vglm"` fits with "contrasts
+  apply only to factors". A value that is not a fitted state is now an error
+  that names the column for every engine; before, `"vglm"` stopped with an
+  error from base R, and a fit that reads the previous state as a number
+  predicted from it as if it were a state.
+
+* The robust variance of `"vglm"` fits now accepts or refuses a nearly
+  singular covariance by the same rule as `"orm"` fits: it checks the
+  correlation matrix, so the units of the covariates no longer matter. Before,
+  a `"vglm"` fit with a covariate whose values are tiny, such as a covariate
+  multiplied by 10^-6, stopped with "`stats::vcov(fit)` is not numerically
+  positive definite" although the same model fitted with `"orm"` worked, and
+  `"vglm"` accepted correlations that `"orm"` refuses as too close to
+  singular to invert reliably.
+
+* Parallel bootstrap and simulation inference (`workers` greater than 1) now
+  restore every level of a nested future plan when they finish. Before, a
+  plan such as `future::plan(list(multisession, multisession))` came back with
+  only its outer level.
+
+* `time_in_state()` on SOPs from `inferences(method = "delta")` now returns
+  `std.error`, `conf.low`, and `conf.high` for the totals, with conditional or
+  unconditional variance as chosen in `inferences()`. They match
+  `avg_state_time()` and `state_time()` with delta inference. Before, the
+  uncertainty was silently dropped. Delta SOPs that already went through
+  `interpolate_sops()` now give an error; pass `time_map` to
+  `time_in_state()` instead.
+
+* `plot_lp_difference()` no longer needs `absorb` for a fit made by `mostm()`:
+  by default it shows only the previous states that occur in the fitted data.
+  Before, it failed on vglm fits ("replacement has 72 rows, data has 96") and
+  drew empty panels for the absorbing state on orm fits. Asking for a state
+  that never occurs as a previous state through `previous_states` is now an
+  error that lists the valid states.
+
+* `sops()` on the patients stored by `mostm()` no longer returns the internal
+  column `.markov_source_row`, either in its estimates or in the results and
+  draws of `inferences()`.
+
+* `mostm()` no longer shows rms's warning "currently weights are ignored in
+  model validation and bootstrapping orm fits" for a weighted `"orm"` fit. The
+  warning concerns rms's own `validate()` and `bootcov()`, which mostr does not
+  use; mostr's bootstrap and fractional weighted bootstrap keep the weights.
+
+* The ordinary bootstrap (`inferences(method = "bootstrap")`) gave wrong
+  results when a resample lacked a state other than the absorbing one. The
+  refit renumbered the remaining states, for example 1, 3, 4 as 1, 2, 3, but
+  the profiles supplied in `newdata` kept their labels. A profile in the
+  missing state 2 was then predicted as if it started in state 3, without
+  any message, and a profile in state 3 was read as the absorbing state, so
+  the draw was dropped with a misleading warning. Averages within `by`
+  groups reported the probability of state 3 under state 2. `orm` refits of
+  such resamples always failed, and a numeric `yprev` was renumbered too,
+  which changed linear or spline terms such as `rcs(yprev, 3)`. Refits now
+  keep the original state labels and numbers and only drop the missing
+  state. When some resample lacks a state that a supplied profile starts in,
+  `inferences()` now stops before refitting, naming the state and the number
+  of resamples that lack it; use `method = "fwb"`, which keeps every patient
+  in every refit, or remove those profiles. A state that no profile starts
+  in may still be missing from a resample, with probability 0 in that draw.
+
+* Bootstrap and FWB draws whose refit or prediction fails are still left out
+  with one warning each, and now also with one warning that says how many of
+  the draws failed and why the first one did.
+
+* `variables` that set the state two visits back in a second-order model,
+  for example `variables = list(ypprev = c("1", "2"))`, now support only
+  conditional variance, as `variables` that set `yprev` do: the bootstrap,
+  FWB, and unconditional delta inference are refused. Previously they ran,
+  and the bootstrap could predict from the wrong state.
+
+* A comparison of a variable that the model doesn't use, for example
+  `avg_comparisons(fit, variables = list(note = c(0, 1)))` where `note` is a
+  column of the data but not of the model formula, is 0 (1 for a ratio)
+  whatever the coefficients are. `inferences()` now reports its standard
+  error, test statistic, p-value, s-value, and confidence interval as `NA`
+  with every method, and so do the posterior intervals of `blrm` fits, as the
+  marginaleffects package does. Previously the standard error was 0, the
+  `statistic` `NaN`, and the interval of zero width. Such calls still run without a message, and
+  predictions under such a variable from `sops()`, `avg_sops()`,
+  `state_time()`, and `avg_state_time()` keep their standard errors. A column
+  counts as used when it appears anywhere in the model formula, including
+  inside terms such as `rms::rcs(age, 3)`, or is the previous state.
+
+* `avg_comparisons()` and `comparisons()` with `by` naming the compared
+  variable, for example `variables = list(tx = c(0, 1))` with `by = "tx"`,
+  now group patients by the treatment they were observed with for every
+  estimand, giving the average effect among the untreated and among the
+  treated. Each group's estimate equals the same call with `newdata`
+  restricted to that group, and intervals from `inferences()` with
+  `method = "mvn"`, `"bootstrap"`, or `"fwb"` follow the
+  same groups. Previously, SOP and time-in-state comparisons silently ignored
+  such a `by` and returned the overall average without a `tx` column, and
+  with `time_map` they mixed the starting states of one group with the
+  averages of all patients. Time benefit was already grouped correctly.
+  Analytical intervals (`method = "delta"`) remain unavailable with `by`.
+
+* `avg_sops()` and `avg_state_time()` now stop with an explanation when `by`
+  names a variable that `variables` also sets. Their result's column for that
+  variable holds the value that was set, so `by` was silently ignored. To
+  average within groups of the observed value, copy the column first, for
+  example `newdata$observed_tx <- newdata$tx`, and use `by = "observed_tx"`.
+  `by` without `variables`, or on other columns, works as before.
 
 * With `engine = "vglm"`, starting values given through `etastart` or
   `mustart`, with one row per row of `data`, now drop the rows that `subset`
@@ -96,6 +490,25 @@
   not fit the model, which rms 8.2 and later report by returning a fit without
   coefficients. Previously it stopped with an error about unsupported model
   families.
+
+* Bootstrap refits (`inferences()` with `method = "bootstrap"` or `"fwb"`,
+  and `bootstrap_model_coefs()`) now treat state labels as labels. When a
+  resample lacked a state, the refit renumbered the remaining states and
+  converted the labels to numbers, so text labels on factor columns, such as
+  `"home"`, `"ward"`, `"dead"`, gave an "NAs introduced by coercion" warning
+  for every refit and a missing state went unnoticed. States are now matched
+  by label, in the model's state order, for numbers and text alike, and
+  refits keep the labels (see the first bug fix above).
+
+* Bootstrap refits now notice a missing state in the response column
+  whatever it is called, for example `state` in
+  `ordered(state) ~ yprev + time`. Previously only a column called `y` was
+  checked, so with another name a resample that lacked a state was not
+  noticed and that refit's state occupancy probabilities failed and were
+  dropped. `bootstrap_model_coefs()` now treats only the response and `yprev`
+  as states; previously it also renumbered every factor covariate, such as a
+  factor `tx`, together with the states, which gave wrong labels or failed
+  refits when a resample lacked a state.
 
 # mostr 0.2.0
 

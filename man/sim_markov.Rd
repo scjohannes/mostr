@@ -49,7 +49,9 @@ treatment effect per day. The effect on day \code{t} is \code{treatment_effect *
 patients that a preset would sample. It must contain \code{id}, \code{yprev} (the
 state on the day before the first simulated day), and every covariate
 that the model uses: \code{tx} for \code{"actt1"} and \code{"actt2"}, and \code{age}, \code{sofa},
-and \code{tx} for \code{"violet"}. Required when \code{preset = NULL}.}
+and \code{tx} for \code{"violet"}. It must not contain a \code{time} or a \code{y} column,
+because \code{sim_markov()} creates these itself. Required when
+\code{preset = NULL}.}
 
 \item{intercepts}{Numeric vector of thresholds, one fewer than the number of
 states, in increasing order. With \code{K} states numbered from 1 (best) to \code{K}

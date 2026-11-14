@@ -8,15 +8,7 @@ soprob_markov(
   model,
   newdata,
   times = NULL,
-  y_levels,
-  absorb = NULL,
-  time_var = "time",
-  p_var = "yprev",
-  p2_var = NULL,
-  gap_var = NULL,
-  time_covariates = NULL,
   include_re = FALSE,
-  id_var = NULL,
   n_draws = 100L,
   seed = NULL,
   ...
@@ -24,7 +16,7 @@ soprob_markov(
 }
 \arguments{
 \item{model}{A Markov transition model fitted by \code{\link[=mostm]{mostm()}}, including the
-\code{robcov_vglm} object that the vglm engine returns with \code{id_var}. Models
+\code{robcov_vglm} object that the vglm engine returns. Models
 fitted directly with rms, VGAM, or rmsb are not supported.}
 
 \item{newdata}{A data frame containing one baseline prediction row per
@@ -35,27 +27,10 @@ recursion takes one transition per value, so leaving out visits does not
 skip time; see \code{\link[=sops]{sops()}}. Unlike \code{\link[=sops]{sops()}}, this function does not warn
 when \code{times} leaves out fitted visits.}
 
-\item{y_levels}{Ordered outcome-state levels. The number of levels must equal
-the fitted threshold count plus one.}
-
-\item{absorb}{Optional absorbing state levels.}
-
-\item{time_var}{Name of the model time variable.}
-
-\item{p_var}{Name of the previous-state variable.}
-
-\item{p2_var}{Optional second previous-state variable. A non-\code{NULL} value
-selects second-order recursion.}
-
-\item{gap_var}{Optional elapsed-time-gap variable.}
-
-\item{time_covariates}{Optional data frame with one row per requested visit
-containing precomputed time-varying covariates.}
-
 \item{include_re}{For \code{blrm} fits, include fitted random-effect draws for
-known IDs.}
-
-\item{id_var}{ID column used for \code{blrm} random effects.}
+known IDs, which \code{newdata} gives in the patient ID column (\code{id_var} of
+\code{\link[=mostm]{mostm()}}). Only \code{blrm} fits have random effects, so \code{TRUE} gives an
+error for other fits.}
 
 \item{n_draws}{Number of \code{blrm} posterior draws, or \code{NULL} for all draws.}
 
@@ -66,10 +41,30 @@ known IDs.}
 \value{
 An array of state probabilities. Frequentist fits return
 \verb{[patient, time, state]}; Bayesian fits return
-\verb{[draw, patient, time, state]}.
+\verb{[draw, patient, time, state]}. The state dimension is named by the
+fitted states.
 }
 \description{
 Computes patient-level state occupancy probabilities from a supported
 Markov transition model. Frequentist first-order models use the optimized
-native engine; other supported workflows use the reference engine.
+native engine; other supported workflows use an engine written in R.
 }
+\section{Settings taken from the fit}{
+
+The patient ID column, the time column, the previous-state column, the
+column with the state two visits back, the column with the time since the
+previous visit, the states and the absorbing states are those of the
+fitted model: the \code{id_var}, \code{time_var}, \code{p_var}, \code{p2_var}, \code{gap_var} and
+\code{absorb} given to \code{\link[=mostm]{mostm()}}, and the states of the response in fitted
+order. A model fitted with \code{p2_var} is therefore always predicted with the
+second-order recursion. The \code{state} column of the result holds the fitted
+state labels. To predict with other columns or other absorbing states,
+refit the model with \code{\link[=mostm]{mostm()}}.
+
+A patient who is in an absorbing state stays there, so every profile must
+start outside the absorbing states: a profile whose previous state (the
+\code{p_var} column) is absorbing, or, for a second-order model, whose state two
+visits back (the \code{p2_var} column) is, gives an error. Remove those patients
+from \code{newdata} first.
+}
+

@@ -1,10 +1,14 @@
+# The update kernels mark their output when the cut-points cross for a
+# profile; `time` labels the visit in the resulting error.
 markov_update_logits_native <- function(
   previous,
   logits,
   non_absorb,
-  absorb
+  absorb,
+  time = NULL
 ) {
-  cpp_markov_update_logits(previous, logits, non_absorb, absorb)
+  out <- cpp_markov_update_logits(previous, logits, non_absorb, absorb)
+  check_native_crossed_thresholds(out, nrow(previous), time)
 }
 
 markov_update_po_native <- function(
@@ -12,34 +16,23 @@ markov_update_po_native <- function(
   scalar_predictor,
   cutpoints,
   non_absorb,
-  absorb
+  absorb,
+  time = NULL
 ) {
-  cpp_markov_update_po(
+  out <- cpp_markov_update_po(
     previous,
     scalar_predictor,
     cutpoints,
     non_absorb,
     absorb
   )
-}
-
-normalize_probability_array_native <- function(probs) {
-  dims <- dim(probs)
-  values <- if (is.double(probs)) probs else as.numeric(probs)
-  out <- cpp_normalize_probability_array(
-    values,
-    dims[1],
-    dims[2],
-    dims[3]
-  )
-  dimnames(out) <- dimnames(probs)
-  out
+  check_native_crossed_thresholds(out, nrow(previous), time)
 }
 
 reduce_sops_draw_array <- function(probs, groups, group_count) {
   dims <- dim(probs)
   if (length(dims) != 4L || length(groups) != dims[2]) {
-    stop("Posterior SOP array and grouping index are not aligned.")
+    mostr_abort("Posterior SOP array and grouping index are not aligned.")
   }
   values <- if (is.double(probs)) probs else as.numeric(probs)
   cpp_reduce_sops_draws(
@@ -96,6 +89,8 @@ markov_update_second_order_native <- function(
   )
 }
 
+# Rows whose cut-points cross keep their raw probabilities, negative values
+# included, for check_crossed_thresholds() to report.
 blrm_probabilities_native <- function(
   base_eta,
   intercepts,
@@ -119,10 +114,11 @@ markov_update_second_order_po_native <- function(
   cutpoints,
   older,
   current,
-  absorb
+  absorb,
+  time = NULL
 ) {
   dims <- dim(previous)
-  cpp_markov_update_second_order_po(
+  out <- cpp_markov_update_second_order_po(
     previous,
     scalar_predictor,
     cutpoints,
@@ -132,4 +128,5 @@ markov_update_second_order_po_native <- function(
     as.integer(current),
     as.integer(absorb)
   )
+  check_native_crossed_thresholds(out, dims[1L], time)
 }

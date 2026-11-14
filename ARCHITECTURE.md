@@ -24,11 +24,39 @@ that every reference page containing equations loads the renderer.
 `.github/workflows/pkgdown.yaml` builds the site with R 4.6.1 on pull requests,
 pushes to `main`, and manual runs. Only pushes and manual runs publish, using the
 GitHub Pages artifact and deployment actions. In repository Settings > Pages,
-the source must be set to GitHub Actions. Local previews use
-`pkgdown::build_site()` with Pandoc available; this executes the vignette articles.
+the source must be set to GitHub Actions. pkgdown publishes every top-level `.md`
+file and has no option to skip one, so the workflow deletes `AGENTS.md` and
+`ARCHITECTURE.md` from its checkout before building and then checks that neither
+page was built. Local previews use `pkgdown::build_site()` with Pandoc available;
+this executes the vignette articles, and it does render those two developer notes
+into the ignored `docs/` folder.
 
-`man/figures/logo.png` supplies the README and pkgdown logo. All vignettes source
-`vignettes/_setup.R`, which keeps code and figures visible and wraps text output
+User documentation is organised by task. `?mostr` (`R/mostr-package.R`) lists
+every exported function under what a user wants to do, so a new export needs an
+entry there and in a `_pkgdown.yml` reference section; every reference section
+has a `desc:`. `vignettes/mostr.Rmd` is the only vignette shipped with the
+package and the "Get started" article: one small `sim_markov()` to `mostm()`
+to `avg_sops()`, `avg_comparisons()` and `inferences(method = "delta")`
+example that knits in a few seconds, because CRAN rebuilds vignettes, followed
+by links to the other articles by question. Every other article lives in
+`vignettes/articles/`, which is in `.Rbuildignore`: pkgdown builds them for the
+website, and neither the package tarball nor CRAN sees them. Rebuilding the
+nine longer analyses took about 7 minutes in an `R CMD check --as-cran` run,
+more than CRAN's 10-minute budget allows once installation, examples and tests
+are added. Because these articles are not installed, `vignette("name")` cannot
+open them: help pages, the README, the shipped vignette and error messages link
+to their website URLs, and the articles link to each other with relative links
+such as `full-po-sops.html` (pkgdown puts all articles in one `articles/`
+folder). The articles source `../_setup.R` and are listed in `_pkgdown.yml` as
+`articles/<name>`; the articles index and navbar menu group them by question
+rather than model type. Packages that only these articles use belong in
+`Config/Needs/website` in `DESCRIPTION`, not in Suggests.
+`vignettes/articles/faq.Rmd` runs small examples so its error and warning
+messages are the package's current ones. `README.md` is rendered from `README.Rmd` with
+`devtools::build_readme()`, which writes its figures to `man/figures/README-*`.
+
+`man/figures/logo.png` supplies the README and pkgdown logo. The vignette and all
+articles source `vignettes/_setup.R`, which keeps code and figures visible and wraps text output
 longer than ten lines in native HTML `details` elements. Non-HTML output retains
 the usual knitr formatting. The website workflow sets
 `MOSTR_RUN_BAYESIAN_VIGNETTE=true` to execute the Bayesian model and its posterior
@@ -49,7 +77,7 @@ Vignette correlation heatmaps omit tile labels. `plot_correlation_heatmap()`
 chooses a 0-1 fill scale for nonnegative finite correlations and -1 to 1 when
 negative values occur or no finite values are available; explicit `fill_limits`
 override this choice for both observed and model-based plots.
-The introductory vignette documents the ACTT-2 population, NIAID eight-point
+The proportional-odds vignette (`full-po-sops`) documents the ACTT-2 population, NIAID eight-point
 health-state scale, and data-access acknowledgment; its 400-patient, 28-day
 description matches the simulation code.
 Its plot chunks have descriptive names so inserting or renaming other chunks
@@ -75,12 +103,14 @@ flowchart TD
 | Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`, `violet_baseline`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
 | Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
+| Settings | `R/markov-settings.R` | `markov_settings` (validating constructor), `markov_model_settings` (a fit's settings), `resolve_markov_settings` (a public call's settings), `markov_result_settings` (a result's settings); see "Settings" below |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
-| Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `src/sops.cpp` | Native propagation with supported R reference paths; first- and second-order histories |
+| Recursion | `R/sops-dispatch.R`, `R/sops-engine.R`, `R/sops-native.R`, `R/sops-crossed-thresholds.R`, `src/sops.cpp` | Native propagation, with an engine in R for `blrm` and oversized designs; first- and second-order histories; errors for crossed thresholds |
 | Analytical inference | `R/sops-delta-core.R`, `R/sops-delta-unconditional.R`, `R/sops-delta-inference.R`, `R/sops-delta-comparisons-individual.R` | Native derivative recursion, coefficient uncertainty, and patient sampling contributions |
-| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/sops-score-bootstrap.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits, one-step score bootstrap |
+| Draw and bootstrap inference | `R/sops-inference.R`, `R/sops-inference-draws.R`, `R/sops-bootstrap-inference.R`, `R/bootstrap_helpers.R`, `R/sops-comparisons-individual-inference.R` | `inferences`; MVN draws, posterior draws, ordinary and fractional weighted refits |
 | Summaries | `R/sops-time-in-state.R`, `R/sops-interpolate.R`, `R/sops-delta-accessors.R` | `time_in_state`, `interpolate_sops`, `vcov`; integration, visit-time mapping, covariance subsets |
-| Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons |
+| Errors | `R/mostr-abort.R` | `mostr_abort` raises every package error with class `mostr_error`; `mostr_error_call` picks the exported function shown in the error |
+| Diagnostics and plots | `R/diagnostic-*.R`, `R/viz-*.R` | Occupancy, average time in states (`plot_time`: stacked bars require non-overlapping state sets read from `time_args`), contrasts, transitions, correlation, variograms, and linear predictor comparisons (`plot_lp_difference`: previous states from `markov_fitted_previous_states()`, the rule SOP prediction applies, so a state never seen as a previous state, such as an absorbing one, is left out by default and refused when requested) |
 
 Longitudinal rows use `id`, `time`, `y`, `yprev`, and covariates such as `tx`.
 `mostm()` preserves the patient starting profiles used when `newdata` is omitted.
@@ -101,7 +131,7 @@ blrm fit can pass rmsb's own `backend` (rstan or cmdstan) through `...`.
 ```mermaid
 flowchart TD
     A["mostm(formula, data, ..., engine)"] --> B[Check engine arguments in ...]
-    B --> C[Validate data, offsets, inline factors, id_var; evaluate weights and subset once]
+    B --> C[Validate data, offsets, inline factors, required id_var and time_var; evaluate weights and subset once]
     C --> D{engine}
     D -->|orm| E[mostm_fit_orm: rms::orm]
     D -->|vglm| F[mostm_fit_vglm: VGAM model build]
@@ -109,19 +139,53 @@ flowchart TD
     E --> H[Fit and aligned fitting rows]
     F --> H
     G --> H
-    H --> I[Stored refit data, starting profiles, refit argument values]
+    H --> I[Stored refit data, starting profiles, refit argument values, settings]
     I --> J[mostm call and markov_engine attribute]
-    J --> K{id_var and orm or vglm?}
+    J --> K{orm or vglm, and not a bootstrap refit?}
     K -->|yes| L[robcov_orm or robcov_vglm]
     K -->|no| M[Fit returned]
     L --> M
 ```
 
 - Shared arguments are named and handled once in `mostm()`: `id_var`,
-  `time_var`, `first_followup_time`, `weights`, `subset`, and the
-  patient-clustered covariance settings `type` and `cadjust`. `data` must be a
-  data frame. A missing `id_var` warns (`warn_missing_markov_id_var()`), and
-  duplicate ID-time rows warn (`warn_duplicate_markov_id_time()`).
+  `time_var`, `p_var`, `p2_var`, `first_followup_time`, `weights`, `subset`,
+  and the patient-clustered covariance settings `type` and `cadjust`. `data`
+  must be a data frame. `id_var` has no default: a missing or `NULL` value
+  stops with `stop_missing_mostm_id_var()`, and `validate_markov_id_var()`
+  requires one column name present in `data`. The `time_var` column must also
+  be present, because every fit stores its starting profiles. `p_var`
+  (default `"yprev"`) and `p2_var` (default `NULL`, a first-order model) name
+  the previous-state columns; `validate_mostm_previous_state_vars()` requires
+  single, distinct names, and a supplied `p2_var` and `p_var`, default
+  included, must be columns of `data`; an unchecked default would be recorded
+  on the fit and skip the `absorb` check. Duplicate ID-time rows warn
+  (`warn_duplicate_markov_id_time()`).
+- `absorb` and `gap_var` are recorded in the settings and checked before
+  fitting, except in coefficient-only bootstrap refits, which reuse the
+  checked values (a resample without a death would fail the first check).
+  `validate_mostm_absorb()` (`R/markov-settings.R`) evaluates the response on
+  the rows `subset` selects (`mostm_subset_row_index()`) and refuses labels
+  that are not states of the response, and rows whose `p_var`, or for a
+  second-order fit `p2_var`, is absorbing; states are compared by label. It
+  warns (`warn_outcome_only_states()`, class
+  `mostr_warning_outcome_only_states`) about a state that occurs as an
+  outcome but never as `p_var` and is not in `absorb`. Absorbing states are
+  never inferred from the data, and there is no per-call `absorb`, so
+  first-passage probabilities (treating a non-absorbing state as absorbing at
+  prediction) are not available. `validate_mostm_gap_var()` requires a numeric
+  gap column and numeric time, and on every row after a patient's first a gap
+  equal to the time since the patient's previous row, within
+  `sqrt(.Machine$double.eps)` relative; the full `data` is used, so a
+  `subset` that leaves out visits does not create false mismatches.
+- For `"orm"` and `"blrm"`, `mostm_check_data_dependent_bases()` refuses
+  `splines::ns()`, `splines::bs()` and `stats::poly()` (unless `raw = TRUE`)
+  anywhere on the right-hand side. `orm_model_matrix()` and
+  `rms::predictrms()` evaluate the stored formula again on the prediction
+  rows, so these terms get knots or orthogonal polynomials from those rows: on
+  2026-11-13 their design matrices for 40 profiles differed from the fitted
+  ones by up to 0.5, and the average SOPs by up to 0.04
+  (`benchmarks/local/settings-refactor/spline-covariates.R`). VGAM keeps the
+  fitted `predvars`, and its SOPs agreed to 1e-16.
 - For `"orm"` and `"blrm"`, `mostm_check_inline_factors()` stops before
   fitting when the right-hand side of the formula calls `factor()`,
   `as.factor()`, `ordered()`, or `as.ordered()` (found at any depth by
@@ -151,8 +215,7 @@ flowchart TD
   another engine is an error naming that engine. Unknown names are errors for
   `"orm"` and `"vglm"`; `"blrm"` passes them on, because `rmsb::blrm()` hands
   its own `...` to the Stan optimizer. `x`, `y`, `x.arg`, `y.arg`, and `offset`
-  are rejected (the design matrix and response are always kept), as are the
-  former starting-profile arguments (`markov_reject_legacy_args()`). `type`,
+  are rejected (the design matrix and response are always kept). `type`,
   `cadjust`, and `weights` are rejected for `"blrm"`. The other engines'
   argument lists are looked up only when a name is not accepted, because the
   blrm list loads rmsb and rstan, which would slow every orm or vglm fit and
@@ -172,13 +235,30 @@ flowchart TD
   (`markov_prepare_stored_data()`, `markov_attach_model_data()`), replaces the
   engine's call with the matched `mostm()` call including the resolved
   `engine` (`markov_set_model_call()`), and records the `markov_engine`
-  attribute (`markov_set_engine()`). With `id_var`, `"orm"` fits receive the
-  package-owned sandwich (`robcov_orm()`), and `"vglm"` fits are returned as a
-  `robcov_vglm` object holding the `vglm` fit in `$vglm_fit`.
+  attribute (`markov_set_engine()`). `"orm"` fits always receive the
+  package-owned patient-clustered sandwich (`robcov_orm()`), and `"vglm"` fits
+  are always returned as a `robcov_vglm` object holding the `vglm` fit in
+  `$vglm_fit`; only bootstrap refits skip this step (see below). Before
+  `robcov_orm()`, a non-logistic orm family stops with
+  `stop_unsupported_markov_link()`, the classed error `validate_markov_model()`
+  raises, so such fits fail at fit time rather than in the sandwich code.
+- Downstream code reads the patient column with `markov_require_id_var()` in
+  `R/markov-model-data.R`, which returns an explicit `id_var` argument or the
+  one stored by `mostm()` and otherwise stops; no column name is guessed. The
+  same holds for `resolve_delta_cluster()` in `R/sops-delta-unconditional.R`,
+  which serves analytical inference with conditional and unconditional
+  variance: without an explicit `cluster`, it needs the stored fitting data
+  and `id_var`, and never treats rows as separate patients. Such errors are
+  reachable only for objects whose `mostm()` metadata were removed.
 - `validate_markov_model()` in `R/sops-backends.R` accepts a model only when
   `markov_model_engine()` matches its class. Raw engine fits and fits from the
   removed `orm_markov()`, `vglm_markov()`, and `blrm_markov()` lack the
-  attribute and are rejected with a pointer to `mostm(engine = ...)`.
+  attribute and are rejected with a pointer to `mostm(engine = ...)`. The
+  public function that was called checks the model once; the engines, the
+  execution plan and the analytical inference code below it take a checked
+  model. Likewise the number of thresholds is checked once per call, when
+  `markov_msm_build()` builds the designs, and not again for each set of
+  coefficients.
 - Fits that reach mostr without passing `mostm()`'s formula checks are caught
   later. `validate_markov_model()` and `validate_robcov_orm_fit()` in
   `R/robcov_orm.R` reject orm fits that hold random effects
@@ -199,6 +279,41 @@ replays that call `inferences()` on intermediate SOP objects therefore never
 add tests, and the warnings for Bayesian outputs or missing standard errors
 fire only when the user supplied a numeric null.
 
+A comparison whose `variables` column is not used by the model is 0 (1 for a
+ratio) by construction. As in marginaleffects 1.0.0, such calls run without a
+message, and `drop_unused_comparison_uncertainty()` in
+`R/sops-result-helpers.R` sets `std.error`, `statistic`, `p.value`, `s.value`,
+`conf.low`, and `conf.high` to `NA`. `inferences_impl()` applies it after
+every method, including the null test, and `set_avg_comparison_attrs()` in
+`R/sops-comparisons-setup.R` applies it to the posterior summaries of blrm
+comparisons. It acts only on `markov_comparisons` and `markov_avg_comparisons`
+objects, so SOPs and times predicted under the same `variables` keep their
+standard errors. `comparison_variable_unused()` decides from the model's
+columns, `markov_model_variables()` in `R/markov-model-data.R`: the variables
+of the right-hand side of the stored formula (`sformula` for orm and blrm, plus
+blrm's partial proportional-odds `zsformula` and its `cluster()` column from
+`clusterInfo`; `formula()` of the inner vglm fit for `robcov_vglm`), together
+with the result's `p_var` and `p2_var`. Because `all.vars()` reads names inside
+calls, `rms::rcs(age, 3)`, `poly()`, and interactions count. Coefficients are
+never inspected. When no formula can be read, or it contains `.`, the result
+is left alone. A column absent from the data is still an error ("Variables not
+in data: ...").
+
+The fitted cohort is the patients with at least one fitted row.
+`markov_prepare_stored_data()` removes the rows of all other patients from the
+stored refit data and returns their IDs (`dropped_ids`), which `mostm()` turns
+into a `mostr_warning_dropped_patients` warning. Bootstrap resamples and the
+cohort each draw standardises over therefore hold the same patients as the
+estimate. Patients excluded by `subset` are not counted as dropped.
+
+An `inferences()` run owns the inference columns (`inference_columns()`) and
+the attributes listed in `inference_attributes()`
+(`R/sops-result-helpers.R`). `inferences_impl()` clears both with
+`clear_inference_results()` before it starts, for all results except `blrm`
+posterior results, so a result passed in again keeps nothing of the earlier
+run and `attr(x, "method")` names the run behind every inference attribute.
+`time_in_state()` chooses its uncertainty from that method alone.
+
 Ordinary and fractional weighted bootstrap refits (`update_bootstrap_model()` in
 `R/bootstrap_helpers.R`) are restricted to `mostm()` fits. They always resample
 the refit data stored on the fit (`markov_model_refit_data()`); the public API
@@ -209,10 +324,78 @@ internal `refit_data` attribute, and `stored_refit_bootstrap_data()` in
 `R/sops-bootstrap-inference.R` reads it back or errors when a model has none.
 User-supplied `newdata` only changes the prediction profiles, never the refit
 data. `bootstrap_model_coefs()` resamples the same stored data, clustered on the
-fit's stored `id_var` unless the user names another column. The low-level
+fit's stored `id_var`. The low-level
 helpers (`fast_group_bootstrap()`, `materialize_bootstrap_sample_indexed()`,
 `apply_to_bootstrap()`, `bootstrap_analysis_wrapper()`, and
-`relevel_factors_consecutive()`) are internal.
+`drop_absent_states()`) are internal. `fast_group_bootstrap()` gives
+each copy of a patient drawn more than once its own character `new_id`
+(`"<id>_1"`, `"<id>_2"`), numbered by sampled position so that factor,
+character, and integer IDs give the same resamples; refits and the averaged
+cohort use `new_id` as the patient ID.
+
+A resample can lack a state. `drop_absent_states()` (in `R/markov-data.R`)
+then removes the empty levels from each factor state column (`droplevels()`,
+which keeps the level order and ordered factors) and leaves numeric and
+character state columns unchanged. It returns the labels of the states and
+absorbing states present (`ylevels`, `absorb`) and the missing labels. The
+states are never renumbered: the refit's response categories, previous-state
+levels, intercepts, and coefficient names keep the original labels, so
+supplied prediction profiles and `variables` values need no translation, and
+a numeric `yprev` keeps its numbers, which matters for linear or spline terms
+such as `rcs(yprev, 3)`. Empty levels must go, because `rms::orm()` cannot fit
+an empty response category or an empty previous-state level (VGAM drops the
+latter itself); when no state is missing the data are left exactly as they
+are. States are matched by label (`as_state_labels()`), never converted to
+numbers, so text labels on factor columns work as numbers do. The state order
+is `y_levels`, then any other labels of the original data
+(`state_column_labels()`: factor level order, or sorted values; numeric
+columns are sorted together), and a state counts as present when any state
+column of the resample holds it. The state columns come from
+`bootstrap_state_columns()` in `R/bootstrap_helpers.R`: the response column
+read from the model formula (`bootstrap_response_column()`, so
+`ordered(state) ~ ...` handles `state`), plus `p_var` and `p2_var` in the SOP,
+comparison, and time-benefit bootstrap paths, or `yprev` in
+`bootstrap_model_coefs()`, which has no `p_var`. Factor covariates are never
+treated as states. The SOP paths pass the present labels to
+`predict_markov_sops()` in the refit's settings
+(`markov_settings_update(settings, y_levels = state_factor(ylevels))`), a
+factor that keeps the state order (`factor()` would sort text labels), and pad the missing states with
+probability 0 by label: positionally into the full state matrix in
+`inferences_bootstrap()`, by merging on `state` in
+`complete_bootstrap_sop_states()` for `by` groups, and by name in
+`complete_comparison_sops_array_states()` for time benefit. The native and
+reference recursions index states through `y_levels`, so a state set with a
+gap such as `1, 3, 4` needs nothing else. Earlier versions renumbered the
+present states to `1, 2, ...`; supplied profiles then kept the original
+labels, so a profile in a missing state was predicted from the next state
+and a profile in the last non-absorbing state was read as absorbing.
+
+A refit without a state cannot predict for a profile that starts in it. With
+supplied `newdata`, the same profiles are predicted in every draw, so
+`check_bootstrap_starting_states()` in `R/sops-bootstrap-inference.R`
+compares each resample's sampled IDs (`fast_group_bootstrap()`) with the
+patients holding each starting state in any state column of the refit data,
+before any refit, and stops with the states, their resample counts, and a
+pointer to FWB, in the style of `check_bootstrap_by_groups()`. The starting
+states come from `bootstrap_starting_states()`: the `p_var` and `p2_var`
+values of the stored prediction rows when `newdata` was supplied, plus any
+values that `variables` sets for those columns (which `sets_starting_state()`
+already refuses for the bootstrap). Stored-profile averages predict each
+resample's own patients, whose starting states are present by construction.
+The check runs in `inferences_bootstrap()` and in the time-benefit
+bootstrap; FWB keeps every patient and needs none. A target state missing
+from a resample keeps probability 0.
+
+A draw fails when its analysis function returns `NULL` after a warning
+(`"Bootstrap model fitting failed: ..."`, `"soprob_markov failed: ..."`).
+`apply_to_bootstrap()` and `apply_to_fwb_bootstrap()` run each draw through
+`run_draw_recording_failure()`, which keeps the draw's last warning message in
+a `mostr_failed_draw` marker (also in parallel workers), and
+`collect_failed_draws()` turns the markers back into `NULL` with the messages
+in a `"failure_reasons"` attribute. The callers then use
+`keep_successful_draws()` instead of filtering `NULL`s: it warns once with the
+number of failed draws and the first reason, and stops with "All bootstrap
+iterations failed." and that reason when every draw failed.
 
 The ordinary bootstrap refits each resample on all of its patients, so a state
 missing from one `by` group but present elsewhere still has its coefficients.
@@ -229,11 +412,19 @@ is always present.
 Refits evaluate the fitted model's stored `mostm()` call
 (`bootstrap_model_call()`), so every refit calls `mostm()` again with the
 original engine, the resampled data, bootstrap weights, and optional starting
-coefficients. Refits drop `id_var`: they need only the coefficients, so
-`mostm()` skips the patient-clustered covariance and the starting profiles,
-and a `"vglm"` refit is a plain `vglm` fit. `suppress_expected_refit_warnings()`
-muffles the resulting missing-`id_var` warning and the rms warning that its own
-bootstrap ignores weights. `mostm()` stores the values of the arguments the
+coefficients. Refits keep `id_var`, which `mostm()` requires, but need only
+the coefficients: `update_bootstrap_model()` evaluates the refit inside
+`markov_with_coefficients_only_refit()`, which sets the package-level
+`markov_refit_state` so that `markov_refit_coefficients_only()` is `TRUE` while
+the refit runs. `mostm()` then skips the duplicate ID-time warning, the starting
+profiles, and the patient-clustered covariance, so a `"vglm"` refit is a plain
+`vglm` fit. The flag is restored on exit, also in parallel workers, where the
+refit runs in the worker's own session. `suppress_orm_weights_warning()`
+(`R/bootstrap_helpers.R`) hides rms's orm warning that its own validation and
+bootstrap ignore weights, and only that warning: mostr never calls rms's
+`validate()` or `bootcov()`, and its own bootstrap keeps the weights.
+`mostm_fit_orm()` applies it to the fit and `suppress_expected_refit_warnings()`
+to bootstrap refits of orm models. `mostm()` stores the values of the arguments the
 user passed at fit time
 (`markov_capture_refit_args()`, read back with `markov_model_refit_args()`),
 and refits inline those values instead of re-evaluating the call's argument
@@ -243,11 +434,21 @@ those values. A fit-time `coefstart` is inlined the same way unless the refit
 supplies its own starting coefficients or drops starting values
 (`drop_coefstart = TRUE`). `bootstrap_analysis_wrapper()` decides on starting
 values in one place: when the sample contains every state, it refits with the
-original coefficients (`use_coefstart = TRUE`, `vglm` only) or the stored
+original coefficients (`use_coefstart = TRUE`) or the stored
 `coefstart`, and retries once without any starting values if that refit errors
 (for example, VGAM's non-conformable arguments after a covariate level drops
-out). When states are missing, the relevelled refit has fewer intercepts, so it
-is fitted without any `coefstart`, including the stored one. Row-aligned
+out). When states are missing, the refit has fewer intercepts, so it
+is fitted without any `coefstart`, including the stored one. Only `vglm`
+refits take starting coefficients, so `check_use_coefstart()` (called once by
+`inferences()` and `bootstrap_model_coefs()`, before any work) refuses
+`use_coefstart = TRUE` for any other model and for `inferences()` methods that
+do not refit (`"mvn"`, `"delta"`); internal callers such as
+`inferences_internal()` pass the already checked value on.
+`bootstrap_analysis_wrapper()` also unsets the rms `datadist` option for the
+duration of each refit (`options(datadist = NULL)`, restored on exit). rms
+fitting functions read that option and stop when it names an object that does
+not exist, but the coefficients do not depend on it, so refits neither read a
+user's `datadist` nor write to the global environment. Row-aligned
 arguments are not stored as values:
 
 - Row `weights` are evaluated once at fit time (in `data`, enclosed by the
@@ -260,8 +461,7 @@ arguments are not stored as values:
   use `.mostr_fit_weight`, the stored weight times the random weight.
   `mostm()` fits never fall back to unweighted refits; bootstrap data without
   the column
-  are rejected. The column is removed from stored starting profiles and
-  excluded from bootstrap `datadist` data.
+  are rejected. The column is removed from stored starting profiles.
 - `subset` is evaluated once at fit time (`mostm()` passes the evaluated rows
   to the engine) and the stored refit data contain only the
   selected rows, so refit calls drop `subset`. They also drop `etastart` and
@@ -281,14 +481,142 @@ and their contribution to coefficient estimation. It is available for supported
 averaged results using stored patient profiles; supplied `newdata` requires
 conditional variance. Individual results support conditional variance only.
 
+Fits with case weights other than 1 (`mostm(weights = )`) support
+conditional variance only, for every engine, because the unconditional
+formula has not been checked with weights. `delta_resolve_vcov()`
+(`R/sops-delta-inference.R`) calls `delta_reject_weighted_unconditional()`
+(`R/sops-delta-unconditional.R`) as soon as unconditional variance is chosen,
+explicitly or as the default for averages, so the error comes before any
+derivative is computed and tells the user to pass `vcov = "conditional"`.
+`delta_fit_case_weights()` reads the `prior.weights` slot of a vglm fit (the
+inner fit of a `robcov_vglm`) or `weights` of an orm fit.
+`get_delta_score_components()` repeats the check for direct internal callers.
+Penalized orm fits are refused separately
+(`delta_reject_penalized_orm_unconditional()`).
+
+Case weights are used only to fit the model. `avg_sops()`, `avg_state_time()`,
+and `avg_comparisons()` average over profiles with equal weight per profile,
+so results differ from duplicating patients according to their weights; their
+help pages and `mostm()`'s `weights` say so.
+
+`inferences()` offers `method = "mvn"`, `"delta"`, `"bootstrap"`, and `"fwb"`
+(`inferences_public_methods()`) and refuses `"score_bootstrap"`, which was
+removed from the package, with an error that names the remaining methods.
+`inferences()` hands every call to the unexported `inferences_internal()`,
+which runs `inferences_impl()` inside the seed and fallback-notification
+scopes. Internal replays that pass the outer method on,
+`inferences_avg_time()` and `inferences_avg_comparisons_linear()`, call
+`inferences_internal()` directly.
+
+`include_re = TRUE` is meaningful only for `rmsb::blrm()` fits, the only fits
+with random effects. `stop_include_re_without_blrm()` (`R/sops-backends.R`) is
+called first in every public function with the argument (`sops()`,
+`avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+`avg_comparisons()`, and `soprob_markov()`) and stops for any other fit,
+instead of letting the frequentist paths ignore it.
+
+### Settings
+
+The column names and model settings that the prediction, comparison,
+inference and diagnostic code needs travel as one object of class
+`markov_settings` (`R/markov-settings.R`), not as separate arguments and
+result attributes.
+
+```mermaid
+flowchart LR
+    A["mostm()"] -->|markov_settings, from_fit| B[(fit attribute markov_settings)]
+    B --> C["resolve_markov_settings(model)"]
+    P["Plots: also id_var, time_var, p_var, p2_var, y_levels"] -.->|checked against the fit| C
+    C --> E["internal functions: settings argument"]
+    E --> F[(result attribute settings)]
+    F --> G["markov_result_settings(): inference, replays, interpolation"]
+```
+
+- Fields: `engine`, `id_var`, `time_var`, `p_var`, `p2_var`, `order` (1 or
+  2, from `p2_var`), `y_levels`, `absorb`, `gap_var`, `first_followup_time`,
+  and `from_fit`, the names of the fields the fit fixes. `markov_settings()`
+  is the one constructor and validates the column names (single non-empty
+  strings, `p2_var` different from `p_var`);
+  `markov_settings_update()` replaces fields and validates again, for example
+  for the states present in a bootstrap resample.
+- Built once: `mostm()` stores the settings of every fit, including
+  coefficient-only bootstrap refits, with `markov_set_settings()` in the
+  `markov_settings` attribute. `engine`, `id_var`, `time_var`, `p_var`,
+  `p2_var`, `y_levels` (`markov_model_ylevels()` of the engine fit), `absorb`
+  and `gap_var` are fixed. `robcov_vglm()` and derived models
+  (`bootstrap_refit_model()`,
+  `update_bootstrap_model()`) copy them through `markov_inherit_engine()`.
+  `markov_model_settings()` reads them, from the inner `vglm_fit` when needed.
+  The hand-made fits of the tests record settings the same way:
+  `with_fit_settings()` in `tests/testthat/helper-mocks.R` attaches a
+  `markov_settings` object with every field fixed, and `fake_blrm()` and the
+  test models given a `markov_engine` attribute by hand use it, with
+  `p2_var`, other column names, or other state labels where a test needs
+  them. Objects without stored settings get settings built from their
+  `markov_engine` and `markov_id_var` records and the default column names,
+  with nothing fixed.
+- The prediction functions (`sops()`, `avg_sops()`, `state_time()`,
+  `avg_state_time()`, `comparisons()`, `avg_comparisons()`, `soprob_markov()`,
+  and `plot_lp_difference()`) have no `id_var`, `time_var`, `p_var`, `p2_var`,
+  `y_levels`, `absorb`, `gap_var` or `time_covariates` argument: the columns,
+  the Markov order, the states, the absorbing states and the gap column come
+  from the fit only, so a second-order fit always predicts with the
+  second-order recursion. Each calls `resolve_markov_settings(model)` once.
+  Their `...` would swallow a removed argument silently, so each first calls
+  `stop_removed_fit_arguments(...)` (`R/markov-settings.R`), which names the
+  argument and says that the fit records it (for `time_covariates`, that it
+  was removed and time terms go inline in the formula); `plot_lp_difference()` has no `...`, so R refuses the argument
+  itself. The `state` column of their results takes the type of the fit's
+  state labels. A fit without state labels stops with
+  `stop_no_fitted_states()`.
+- The diagnostic plots that also take observed data (`plot_transitions()`,
+  `plot_correlation()` and `plot_variogram()`, through
+  `plot_markov_settings()` in `R/markov-plot-helpers.R`) keep the five
+  column and state arguments, because for a data frame nothing else names the
+  columns; they lost `absorb`, `gap_var` and `time_covariates`, which only
+  their model-based recursions used and which now come from the fit; they
+  build settings with `markov_settings()` and the defaults. For a fit they
+  pass them to `resolve_markov_settings()`, where `NULL` means the fit's value
+  and a supplied value of a fixed field must agree, or
+  `stop_setting_contradicts_fit()` (or `stop_y_levels_contradict_fit()`, which
+  compares state labels and also refuses a different number of states)
+  stops. A supplied `y_levels` that agrees is kept. For a first-order fit,
+  `p2_var` is refused with advice to refit with `mostm(..., p2_var = )`.
+- Internal functions take the `settings` argument instead of the separate
+  names: `sops_impl()`, `avg_sops_impl()` (which the public pairs and every
+  replay, `avg_comparison_replay_avg_sops()`, call after resolving),
+  `sops_blrm()`, `avg_sops_blrm()`, `predict_markov_sops()` (the internal
+  form of `soprob_markov()`, used by every package caller),
+  `soprob_markov_r_engine()`, `compile_sop_execution_plan()`,
+  `markov_msm_build()`, `assign_sop_visit()`,
+  `stop_absorbing_start()`, `resolve_markov_source_data()`,
+  `resolve_prediction_variables()`, `resolve_comparison_variables()`,
+  `match_previous_state_variables()`, `warn_skipped_sop_visits()`,
+  `avg_comparison_setup()` (whose setup list carries `settings`), and the
+  diagnostic internals (`markov_transition_trace()`,
+  `plot_transition_model_setup()`, `plot_correlation_model_data()` and their
+  helpers).
+- Results store the call's settings in one `settings` attribute
+  (`set_sops_attrs()`, `set_avg_comparison_attrs()`), and
+  `markov_result_settings()` reads it back. `call_args` holds only the
+  resolved `times` and, for `blrm`, the posterior options, and `avg_args` no
+  longer holds `id_var`. Inference, replays, interpolation and the time
+  summaries read the stored settings, so they predict with exactly the
+  columns and states of the original call.
+
 ### Requested visit times
 
 The recursion takes one transition per value of `times`, in the order given:
-each value sets the time variable for that step, and, when `gap_var` is
-supplied without a column in `time_covariates`, the elapsed gap is the
-difference from the previous value (`assign_sop_visit()` in
-`R/sops-backends.R`). A request that leaves out visits therefore relabels later
-transitions rather than skipping time.
+each value sets the time variable for that step, and so every inline time
+term of the formula, and, for a fit with `gap_var`, the elapsed gap is the
+difference from the previous value (`assign_sop_visit()` and
+`assign_sop_gap()` in `R/sops-backends.R`). The first transition's gap is
+the first requested time itself, the time since time 0, also when supplied
+`newdata` starts at a later visit; `?mostm` and `?sops` document this rule.
+There is no lookup table of visit-specific columns any more
+(`time_covariates` was removed on 2026-11-13; see `dev/decisions.md`), and
+`mostm()` accepts `gap_var` only with numeric time. A request that leaves
+out visits therefore relabels later transitions rather than skipping time.
 
 `warn_skipped_sop_visits()` in `R/sops-times.R` compares the requested times
 with the fitted visit schedule: the fitted levels for factor time
@@ -299,8 +627,8 @@ start before the first follow-up visit of the stored starting profiles, or
 leave out fitted visits between the starting visit and the last requested
 time. The starting visit is the stored `first_followup_time` when `newdata` is
 omitted and the first requested visit when `newdata` is supplied, because
-supplied rows may hold the state before a later visit. There is no check when
-`gap_var` is supplied, when the schedule is unknown, or when requested times
+supplied rows may hold the state before a later visit. There is no check for a
+fit with `gap_var`, when the schedule is unknown, or when requested times
 inside the schedule's range are not fitted visits; times after the last fitted
 visit are allowed.
 
@@ -315,14 +643,150 @@ treat the stored starting profiles as supplied rows and accept `times` that
 begin after the first follow-up visit. `comparisons()` and `state_time()` hand
 `by` averages to `avg_comparisons()` and `avg_state_time()` before the check,
 so it still runs once. Internal `sops()` calls and inference replays
-(`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, used by
-`replay_avg_time_sops()` and the comparison replays) run inside
+(`avg_comparison_replay_avg_sops(warn_skipped_visits = FALSE)`, which
+`replay_result_avg_sops()` calls with the arguments stored on an
+`avg_comparisons()` or `avg_state_time()` result, for every inference method)
+run inside
 `muffle_skipped_sop_visits()`. The per-profile intervals
 (`inferences_profile_results()`, `inferences_delta_profile_results()`) call
 `soprob_markov()` or the native recursion without going through `sops()`, so
 `inferences()` never repeats the warning. `soprob_markov()` does not check. The model-based diagnostic plots expand
 sparse plot times to the full recursion grid (`complete_plot_recursion_times()`
 in `R/markov-plot-helpers.R`) and never call `sops()`.
+
+### Starting states
+
+A patient cannot start in an absorbing state. When the fit records absorbing
+states (`mostm(absorb = )`, which also refuses fitted rows that start in
+one), `stop_absorbing_start()` in `R/sops-dispatch.R` refuses starting rows whose
+previous state (`p_var`) is absorbing and, for second-order calls, rows whose
+state two visits back (`p2_var`) is absorbing, an impossible history. It
+compares state labels (`as_state_labels()`), so factor, character, and numeric
+previous-state columns behave alike, and checks `p_var` before `p2_var`. The
+error names the column, the absorbing state, and how many rows are affected.
+
+It runs at two places, before anything is predicted:
+
+- `resolve_markov_source_data()` in `R/markov-model-data.R`, which every public
+  SOP call passes through: `sops()` and `avg_sops()` directly, and
+  `comparisons()`, `avg_comparisons()`, `state_time()`, and `avg_state_time()`
+  through `avg_comparison_setup()` or `avg_sops()`. Here the rows are the
+  user's profiles, before `variables` stacks copies of them, so the count is
+  of patients. Supplied `newdata` and the starting profiles stored by `mostm()`
+  get different advice; the latter lists the patient IDs.
+- `soprob_markov()`, for direct calls, internal callers such as inference
+  replays, and `variables` that set the previous state to an absorbing state.
+  Its rows are prediction rows, which may hold several copies of a profile.
+
+Plans compiled without `soprob_markov()` (the delta-method and per-profile
+inference paths) start from the prediction rows of a result that already
+passed the check. The engines therefore have no special case for an absorbing
+start: the first-order recursion predicts the first visit from the starting
+row, and the second-order engines (`soprob_markov_second_order_run()` in
+`R/sops-engine.R`, `run_second_order_execution_plan()` in
+`R/sops-execution-plan.R`, and the test reference
+`reference_second_order_plan_sops()`) put each patient's predicted first-visit
+probabilities next to their most recent starting state. Before the check, a
+first-order start in an absorbing state was predicted from a previous state the
+model never saw, and the second-order engines kept such a patient in the
+absorbing state.
+
+### Prediction rows
+
+Rows enter the engines through `prepare_prediction_rows()` in
+`R/sops-dispatch.R`, called by `predict_markov_sops()` (every SOP route:
+the public SOP, time and comparison functions, `soprob_markov()`, and the
+bootstrap, draw and comparison replays) and by `compile_sop_execution_plan()`
+when the inference paths call it directly on the rows of an earlier result
+(`predict_markov_sops()` passes it rows that are already prepared, with
+`rows_prepared = TRUE`). It runs after `stop_absorbing_start()` and after
+`variables` has set its columns, so a column that `variables` sets may be
+missing in `newdata`. It does two things:
+
+- `stop_missing_predictors()` refuses missing values in the columns the
+  fitted formula uses (`markov_model_variables()`), naming each column and
+  counting its prediction rows. The time, gap and ID columns are left out:
+  the recursion sets the first two at every visit, and the ID only looks up
+  blrm random effects. Columns the model does not use are not checked, and
+  nor is a model whose columns cannot be read. `plot_lp_difference()` runs
+  the same check on its `profile`, leaving out the columns its grid sets.
+- `normalize_prediction_states()` puts `p_var` and `p2_var` in the form the
+  model reads them (`fitted_state_values()` in `R/sops-backends.R`): a factor
+  with the fitted levels in fitted order (`get_model_factor_levels()`, which
+  reads orm and blrm levels only for categorical terms, because
+  `Design$parms` also holds the knots of terms such as `rcs(yprev, 4)`), or
+  numbers when the model reads the column as a number, whatever the type or
+  levels of the user's column. Values that are not fitted states are refused,
+  naming the column. The recursion builds the previous states of later visits
+  with the type and levels of these starting rows
+  (`make_previous_state_column()`), so before this a factor with only the
+  profiles' own states turned the other states into NA.
+
+Only the rows handed to the engines are converted; the profile columns copied
+into results keep the user's types. vglm designs are built by
+`vglm_prediction_design()`, with `na.action = na.pass` and an error for a
+missing value in the design, because `stats::model.matrix()` on a data frame
+drops such rows and the remaining probabilities would be matched to the
+wrong profiles.
+
+### Crossed thresholds
+
+In a partial proportional-odds model (`"vglm"` with `parallel = FALSE ~ ...`,
+or `"blrm"` with `ppo`) the cut-points move with the non-proportional
+predictors, so for some covariate values two of them can cross. The cumulative
+probabilities P(Y >= k) then stop decreasing in k and a category probability
+is negative. SOPs are not defined there, so every route that turns linear
+predictors into category probabilities stops with a classed
+`mostr_crossed_thresholds` error; none clips and rescales.
+
+The tolerance is `crossed_threshold_tolerance()` = 1e-10 in
+`R/sops-crossed-thresholds.R`, mirrored by `kCrossedTolerance` in
+`src/sops.cpp` and already used by the analytical recursion
+(`delta_category_probabilities()` in `src/sops.cpp`). Rounding in a
+difference of two logistic values is of order 1e-16, so values in
+[-1e-10, 0) are rounding: they are set to zero and the row is rescaled, as
+before. Anything lower is a crossing.
+
+Where the check lives:
+
+- Probability-returning code keeps crossed values for the caller:
+  `lp_to_probs()` (fast-path first visit, second-order plans, `"orm"`
+  reference predictions) clips only rounding negatives;
+  `cpp_blrm_probabilities()` returns crossed rows raw; VGAM's own prediction
+  (`predict_vglm_response_markov()`) never clipped. The callers run
+  `check_crossed_thresholds()` next to `check_transition_probabilities()`:
+  `markov_msm_run()`, `run_second_order_execution_plan()`,
+  `soprob_markov_r_engine()` and its second-order run, and the transition
+  trace in `R/diagnostic-trace.R`. Prediction rows stack the profiles once per
+  previous state (or pair), so row r is profile (r - 1) %% n + 1; posterior
+  arrays also give the number of draws.
+- The update kernels that never return probabilities
+  (`cpp_markov_update_logits()`, `cpp_markov_update_po()`,
+  `cpp_markov_update_second_order_po()`) check every row, including previous
+  states with no probability at that visit, and mark their output with
+  `crossed_profiles` and `minimum_probability` attributes;
+  `check_native_crossed_thresholds()` in the `R/sops-native.R` wrappers turns
+  the mark into the error.
+- The analytical recursion reports crossing through its status code
+  (`mostr_delta_crossed_probabilities`); point estimates are computed first
+  with the same coefficients, so users meet the error above first.
+
+The message names the number of profiles, the time of the first visit where
+the cut-points cross, the lowest probability, and the number of posterior
+draws for `blrm`. Simulation and bootstrap loops otherwise turn a failed draw
+into a warning and drop it; their error handlers call
+`rethrow_crossed_thresholds()` first, and the drivers
+(`apply_sop_simulation_draws()`, `apply_to_bootstrap()`,
+`apply_to_fwb_bootstrap()`) record each crossed draw with
+`run_draw_recording_crossings()` and stop afterwards with
+`stop_crossed_threshold_draws()`, which counts the affected draws or samples.
+
+The test-only reference `reference_checked_probabilities()` in
+`tests/testthat/helper-sops-native-reference.R` follows the same rule, and
+`reference_posterior_probabilities()` describes the raw rows of the blrm
+kernel. `tests/testthat/test-sops-crossed-thresholds.R` covers the public
+calls, the R engine (`soprob_markov_r_engine()`), the tolerance, MVN and bootstrap inference, and a
+hand-made `blrm` fit with a non-proportional effect of time.
 
 ### Average time in states
 
@@ -378,9 +842,12 @@ operators then add the baseline weight times that constant anchor (which
 differs between compared starting states) before checking stored estimates.
 Because a set starting state has no sampling distribution in the observed
 cohort, `sets_starting_state()` makes `delta_resolve_vcov()` reject
-unconditional variance and `inferences_impl()` reject score bootstrap,
-bootstrap, and FWB for such averages; conditional delta and MVN remain
-available. Only `p_var` defines the anchor; `p2_var` does not.
+unconditional variance and `inferences_impl()` reject bootstrap and FWB for
+such averages; conditional delta and MVN remain
+available. Only `p_var` defines the anchor; `p2_var` does not. A scenario
+that sets `p2_var` still fixes every patient's history, so
+`sets_starting_state()` treats it like one that sets `p_var` and the same
+methods are refused.
 Time inference uses Wald intervals and the existing memory guards and covariance
 accessors; it does not modify the native recursion or infer uncertainty by
 interpolating standard errors. Fresh replay replaces previous uncertainty
@@ -407,6 +874,51 @@ Internally, averaged results still store `by = NULL` for the overall average
 average SOPs goes through `avg_comparison_replay_avg_sops()`, which passes
 `by %||% TRUE` so it keeps getting averages.
 
+`by` groups use each profile's observed values. A column that `variables`
+sets holds the set value in the averaged SOPs, so for `avg_sops()` and
+`avg_state_time()` a `by` naming such a variable would need the same column
+for two meanings; `stop_by_names_set_variable()` refuses it and tells the user
+to group by a copy of the column. `avg_comparisons()` (and `comparisons(by =)`,
+which hands off to it) does group by the observed value of the compared
+variable. Time benefit groups the paired per-profile values on the
+pre-counterfactual profiles (`average_profile_values()`), so it reads `by` as
+given. SOP and time-in-state comparisons are reduced from averaged SOPs, so
+`avg_comparisons()` replaces the compared variable in `by` with an internal
+observed copy, `observed_by()` and `observed_by_column()`
+(`.mostr_observed_<variable>`), before replaying `avg_sops()`; that internal
+`by` is what `avg_args$by` stores, so every replay groups the same way.
+`create_counterfactual_data(by = )` copies the observed value into that
+column before setting the variable, which covers `avg_sops()`, the MVN draws
+(`inferences_simulation()`), and the bootstrap and FWB
+refits (`inferences_bootstrap_sops_fwb()`, whose `check_bootstrap_by_groups()`
+labels the copy by its variable's name). `empirical_baseline_anchor_from_data()`
+adds the copy to the baseline rows with `add_observed_by_columns()`, so with
+`time_map` each observed group starts from its own starting-state
+distribution. `avg_comparison_from_avg_sops()` renames the copy to the
+variable's name with `restore_observed_by_names()` once the contrasts have
+replaced the set values, in the estimates and in the stored draws. Ratios
+stay ratios of each group's averaged summaries. The delta method still
+refuses any `by` (`delta_validate_comparison_scope()` in
+`R/sops-delta-comparisons.R`).
+
+A `by` column may name any column of the averaged profiles, whether the model
+uses it or not, but it must have no missing values among them, because a
+profile without a group would be dropped from every average.
+`stop_missing_by_values()` (`R/sops-result-helpers.R`) refuses such a column,
+naming it (`observed_by_label()` turns an internal observed copy back into the
+user's name) and counting the affected profiles out of all averaged profiles.
+It runs where the averaged profiles are resolved, before any prediction: in
+`avg_sops()`, which also serves `avg_state_time()`, the SOP and time-in-state
+estimands of `avg_comparisons()`, and the `by` hand-offs of `sops()`,
+`state_time()`, and `comparisons()`; and in `avg_comparison_setup()` for time
+benefit. Only those profiles are checked, `newdata` or the starting profiles
+from `resolve_markov_prediction_data()`, so a missing value at a later visit
+of the fitted data does not matter. In `avg_sops()` and `avg_state_time()`,
+`stop_by_names_set_variable()` runs first. Because the user's call refuses missing groups up front, inference
+replays and bootstrap refits only see complete `by` values: resamples draw
+from those same patients, and the omission of missing keys by the grouping
+helpers below never drops a profile from an average.
+
 Grouping therefore exists only on averaged results, in `avg_args$by`. A
 `markov_sops` result always has one row per profile, time, and state, and
 stores no `by` attribute or `call_args$by`. The code that reads it assumes
@@ -414,21 +926,64 @@ this: `sops()` and `sops_blrm()` (`R/sops-api.R`) and
 `array_to_df_individual()` (`R/sops-result-helpers.R`) build per-profile rows
 only; `inferences_simulation()` (`R/sops-inference.R`) and
 `inferences_bootstrap_sops_fwb()` (`R/sops-bootstrap-inference.R`) match draws
-to rows by `rowid`, `time`, and `state`, attach score-bootstrap or FWB patient
-weights for stored profiles, and build no baseline-anchor draws, because each
-profile's anchor is its own fixed starting state. `generate_sop_coefficient_draws()`
-(`R/sops-inference-draws.R`) uses only `is_avg` to decide between averaging
-with the patient weights and attaching them to the draws.
+to rows by `rowid`, `time`, and `state`, attach FWB patient weights for stored
+profiles, and build no baseline-anchor draws, because each profile's anchor is
+its own fixed starting state. MVN draws (`generate_sop_coefficient_draws()` in
+`R/sops-inference-draws.R`) carry no patient weights.
 In `R/sops-interpolate.R`, `empirical_baseline_anchor()` anchors per-profile
 SOPs at each row's `p_var` value and errors if that column is missing, while
 `empirical_baseline_anchor_from_data()` and `baseline_rows_for_anchor()` serve
 averaged results, reading their scenarios and groups from `avg_args`.
 
+`interpolate_sops()` and tidy-SOP `time_in_state()` group by every column
+other than `time`, `state`, the measures (`sop_measure_cols()`), the null-test
+columns (`sop_test_cols()`), and draw weights, because those columns are the
+profile, scenario, and draw identifiers. Two rules keep one group per series:
+
+- A missing identifier, such as a profile column the model does not use, is an
+  ordinary key value. These paths call `split_key(keep_na = TRUE)`,
+  `aggregate_value(keep_na_groups = TRUE)`, and
+  `compute_ci_from_draws(keep_na_groups = TRUE)`; all three default to
+  omitting missing keys, which the comparison reductions and `by` averages
+  keep; `by` averages never meet a missing key, because
+  `stop_missing_by_values()` refuses it first.
+- The null tests from `inferences(null = )` are never keys.
+  `interpolate_sops()` removes them before interpolating and recomputes them
+  with `add_null_test()` from the interpolated estimates against the stored
+  `null`; `time_in_state()` drops them, because a null for probabilities
+  does not apply to a total time.
+
+On delta SOPs (`markov_sops` or `markov_avg_sops` from
+`inferences(method = "delta")`), `time_in_state_delta()` keeps the uncertainty.
+Each total is a weighted sum of SOP rows (visit weights, or trapezoid weights
+from `delta_real_time_weights()` with `time_map`) plus a starting-state term, so
+its delta-method variance follows from what the result stores:
+`delta_propagate_comparison_state()`, shared with `avg_comparisons()`, applies
+the weights to how each SOP changes with each coefficient (conditional
+variance) and to the patient influence values (unconditional variance), and the
+starting-state term adds each patient's influence as in
+`inferences_delta_avg_time()`. No covariance for every pair of SOPs is formed.
+Rows are matched to the stored derivatives by row key, and the weights must
+reproduce the reported totals. Delta SOPs already passed through
+`interpolate_sops()` are refused.
+
+Other tidy SOPs get the limits of their totals from stored draws
+(`time_in_state_tidy_inference()` reduces each draw and calls
+`compute_ci_from_draws()`). SOPs with `conf.low`, `conf.high`, or `std.error`
+but no draw table (`sop_has_draw_table()`), such as posterior SOPs with
+`return_draws = FALSE` or SOPs from `inferences(return_draws = FALSE)`, go
+through `time_in_state_without_draws()`: the totals keep those columns as `NA`
+and a warning names `return_draws = TRUE`, because limits of a sum cannot be
+computed from the limits of its terms. With `time_map`, such SOPs lose their
+interval columns (`sop_point_estimates()`) before `interpolate_sops()`, so its
+warning about interpolating interval endpoints is not raised for values that
+would be discarded.
+
 `sops(variables = ...)` predicts each profile once per combination of values,
 as marginaleffects' `predictions()`: `stack_prediction_profiles()` stacks the
 copies, renumbers `rowid` over them, and records the profile in `rowidcf`.
-Score-bootstrap and FWB draw weights are drawn and validated on one row per
-patient (`prediction_weight_profiles()`) and given to every copy by `rowidcf`.
+FWB draw weights are drawn and validated on one row per patient
+(`prediction_weight_profiles()`) and given to every copy by `rowidcf`.
 
 Bare variable names are resolved before other validation, with values read
 from the model's stored refit data, or `newdata` when there is none
@@ -440,6 +995,18 @@ the five-number summary, as `predictions()` does, while comparisons
 (`resolve_comparison_variables()`) stop: marginaleffects' default for them,
 each row's value plus one, is not a comparison of fixed values. Inference
 replays use the resolved list stored in `avg_args$variables`.
+
+Both resolvers then pass the list to `match_previous_state_variables()`,
+which treats values of the previous-state columns (`p_var`, and `p2_var` for
+second-order models) as state labels: `2`, `2L` and `"2"` all mean state
+`"2"`, and a value that matches no state (`markov_model_ylevels()`) is an
+error naming the column and the states. Matched values are converted once,
+here, to the column's type in the model's refit data (else `newdata`, else
+the stored starting profiles; `previous_state_prototype()`): a factor with
+the fitted levels, plus any matched state missing from them, such as an
+absorbing state no transition starts from, so `stop_absorbing_start()` can
+still refuse it; or a number. Every later route (native engine, reference
+engine, delta, mvn, bootstrap, stored results) sees the converted values.
 
 ### Comparisons and times for each profile
 
@@ -484,15 +1051,23 @@ flowchart TD
   and applies `comparison_value()`. Rows are ordered by state set, comparison
   level, visit, then profile. Time benefit uses
   `time_benefit_profile_values()`, `comparison_scenario()`, and
-  `trapezoid_row_totals()` in `R/sops-comparisons-reduce.R`, which
-  `time_benefit_from_counterfactual_array()` also uses before averaging.
+  `trapezoid_row_totals()` in `R/sops-comparisons-reduce.R`. The averaged
+  time benefit of `avg_comparisons()` is this per-profile result followed by
+  `average_time_benefit()`, the mean over the profiles of each `by` group, for
+  the point estimate (`profile_tidy_reducer()`) and for every draw
+  (`profile_rows_from_stacked_sops()`).
 - The output keeps each profile's observed covariates and starting state; in
   `comparisons()` the compared variable keeps its observed value (the contrast
   spans the scenarios), while in `state_time()` it holds the scenario's value.
   The profile's visit column is
   dropped because output times are prediction times. Bookkeeping columns that
   mostr adds to stored profiles (names starting with `.markov_`, such as
-  `.markov_source_row`) are dropped too.
+  `.markov_source_row`; `markov_internal_column()` in `R/markov-model-data.R`)
+  are dropped too, as they are from every result: `sops_impl()` removes them
+  from the prediction rows (`drop_markov_internal_columns()`), so they never
+  reach estimates, recomputations in `inferences()`, or draws. Results match
+  profiles to patients through the ID column and `rowid`; no code reads
+  `.markov_source_row`.
 - For `blrm`, every posterior draw is reduced to the same rows, and
   `summarize_posterior_draw_matrix()` summarizes them column by column, so
   estimates come from paired draws rather than from SOP summaries. Draws are
@@ -507,8 +1082,8 @@ inference dispatch on those classes. `inferences()` returns `blrm` results
 unchanged and sends frequentist ones to `inferences_profile_results()`
 (`R/sops-comparisons-individual-inference.R`):
 
-- `method = "mvn"` and `"score_bootstrap"` draw coefficients with
-  `generate_sop_coefficient_draws()`, as for individual `sops()`, and predict
+- `method = "mvn"` draws coefficients with
+  `generate_sop_coefficient_draws()`, as for individual `sops()`, and predicts
   the stacked profiles through the compiled execution plan
   (`comparison_coefficient_predictor()`, with the `soprob_markov()` fallback).
   `method = "fwb"` refits with `bootstrap_analysis_wrapper()` on the stored
@@ -516,10 +1091,9 @@ unchanged and sends frequentist ones to `inferences_profile_results()`
   bootstrap is rejected, as for individual `sops()`. `sets_starting_state()`
   covers only averaged classes, so a set starting state keeps these methods:
   no patient average is formed.
-- The comparisons are not averaged, but for stored profiles the score-bootstrap
-  and FWB patient weights of each draw are kept (`baseline_weights_draws`, or
-  `fwb_baseline_weights()` per refit) and returned with the draws as
-  `score_weight` or `fwb_weight`, matched to rows by profile
+- The comparisons are not averaged, but for stored profiles the FWB patient
+  weights of each draw are kept (`fwb_baseline_weights()` per refit) and
+  returned with the draws as `fwb_weight`, matched to rows by profile
   (`profile_index()`: `rowidcf` when present, else `rowid`), with the same
   `draw_weights_attached`, `draw_weight_col`, and
   `draw_weight_omission_reason` metadata as `sops()`. The weighted mean of a
@@ -537,7 +1111,9 @@ unchanged and sends frequentist ones to `inferences_profile_results()`
   requires them to reproduce the stored estimates, because draws are matched
   to rows by position. `validate_comparison_draw_cells()` stops before drawing
   when draws x rows exceeds `mostr.max_sops_draw_cells`.
-- Intervals come from `summarize_sop_draw_matrix()`; returned draws carry only
+- Intervals come from `summarize_sop_draw_matrix()`, which summarises each
+  cell's draws with the same function as `compute_ci_from_draws()`
+  (`draw_summary_function()`); returned draws carry only
   the comparison key columns (plus any draw weight), and `get_draws()` joins
   the profile columns.
   Earlier inference columns and metadata are cleared first
@@ -583,7 +1159,9 @@ models. `cpp11` registers native routines. `mvtnorm` supports coefficient draws;
 `future`, `future.callr`, and `furrr` support parallel inference. `ggplot2`
 produces plots. `data.table` handles repeated row binding, ordered joins,
 grouped reductions, bootstrap row extraction, and baseline selection internally.
-`patchwork` is only suggested for vignette composition. Arrow,
+`rlang` raises errors (see "Errors" below).
+`patchwork` composes figures in two website articles only, so it is listed in
+`Config/Needs/website` rather than Suggests. Arrow,
 sdprisk, survival, and ordinal are not required.
 
 `sim_markov()` is the only exported generator. `preset` has no default: a
@@ -661,7 +1239,7 @@ their existing data-frame subsetting semantics.
 |---|---|
 | Draw chunks, bootstrap results, diagnostic panels, interpolation pieces | `utils.R`: `bind_rows_fill` uses `rbindlist(use.names = TRUE, fill = TRUE)` and resets row names. |
 | Interpolation, time-in-state and empirical plot metadata | `utils.R`: `left_join_preserve_order` uses a typed data-table join, preserves left row/column order and repeated right matches, and permits many-to-many expansion. Missing keys match missing keys, not the literal string `"NA"`. |
-| Treatment state-set sums, unweighted averages, time-in-state draw totals | `sops-comparisons-reduce.R`: `aggregate_value` groups observed rows without constructing formulas. It preserves aggregate's missing-value omission, factor levels, and ordering with the first grouping column varying fastest. |
+| Treatment state-set sums, unweighted averages, time-in-state draw totals | `sops-comparisons-reduce.R`: `aggregate_value` groups observed rows without constructing formulas. It preserves aggregate's missing-value omission, factor levels, and ordering with the first grouping column varying fastest; `keep_na_groups = TRUE` keeps missing grouping values as their own groups. |
 | Weighted averages | `sops-result-helpers.R`: `aggregate_sops_estimates` groups through data.table and retains `weighted_sop_mean`, including missing estimates and zero-total-weight groups. |
 | Percentile and Wald intervals | `sops-draws.R`: `compute_ci_from_draws` groups through data.table and retains R's quantile and standard-deviation calculations and point-estimate centering. |
 | Patient bootstrap materialization | `bootstrap_helpers.R`: the existing cached row plan still determines sampled copies and row order; data.table extracts the rows without constructing data-frame row names. |
@@ -680,6 +1258,41 @@ Reproducible local timing scripts, original implementations, and measured result
 are in ignored `benchmarks/local/`. Benchmarks include data-frame conversion and
 output ordering, check old/new equivalence before timing, and distinguish helper
 speedups from whole model fitting or inference performance.
+
+### Errors
+
+Every error the R code raises goes through `mostr_abort()` in
+`R/mostr-abort.R`, a wrapper around `rlang::abort()`; `R/` has no `stop()`
+calls, and a test in `tests/testthat/test-errors.R` fails if one appears. The
+contract:
+
+- Message parts are pasted without a separator, as `stop()` does, so a call
+  converted from `stop()` keeps its wording. The text is used literally
+  (`use_cli_format = FALSE`): braces and `%` are not interpolated and there are
+  no cli bullets, so the package does not depend on cli.
+- Every error has class `mostr_error`. `class` adds classes in front of it
+  (`mostr_crossed_thresholds`, `mostr_delta_too_large`,
+  `mostr_execution_plan_too_large`, `mostr_unsupported_link` and the
+  `mostr_delta_*` classes of `sop_delta_condition()`), and `data` stores named
+  fields in the condition, such as `required_bytes` or `draws`. Handlers that
+  catch one kind of error test these classes, never the message.
+- The call in "Error in `f()`:" is the exported function the user called,
+  never an internal one. `mostr_error_call()` walks the call stack for frames
+  running an exported function and takes the innermost one called from outside
+  the package, so `inferences(sops(fit))` reports `sops()` when the error comes
+  from `sops()`. When all such frames were called from package code (test files
+  run inside the namespace), it takes the outermost one; with none, as in a
+  parallel worker or a direct call of an internal function, no call is shown. A
+  `call` argument threaded from every exported function was rejected: about 600
+  call sites sit in internal functions several levels below the export, and
+  each would need the argument.
+- `mostr_abort(condition)` inside an error handler re-raises a caught condition
+  unchanged, adding class `mostr_error` when it lacks it.
+
+Errors raised in C++ with `cpp11::stop()` (36 in `src/sops.cpp`) are plain
+`simpleError`s without a call. They check internal invariants (dimensions,
+indices, probability mass) that the R code validates first, so users normally
+meet the R error. Warnings still use `warning()`.
 
 ## Validation
 
@@ -718,9 +1331,140 @@ Every native routine in `src/sops.cpp` is checked against an independent
 test-only R reference written from the mathematics of the calculation
 (`tests/testthat/helper-sops-native-reference.R` and
 `tests/testthat/helper-sops-delta-oracle.R`); these references are never
-production fallbacks. GitHub Actions runs R CMD check and runs the native and
-analytical-inference tests under address/undefined sanitizers and Valgrind.
-The ten vignettes demonstrate Markov-generated data, including a custom
+production fallbacks. They start from prediction designs that the package built,
+so they cannot see a bug in how those designs are made.
+`tests/testthat/test-sops-hmisc-equivalence.R` and the first test in
+`tests/testthat/test-sops.R` compare first-order `soprob_markov()` results on
+`vglm` fits with `Hmisc::soprobMarkovOrdm()`, which shares no `mostr` code.
+Hmisc is only suggested, so these tests are skipped without it.
+
+`tests/testthat/helper-slow-loop.R` closes that gap. It holds plain per-patient,
+per-visit, per-previous-state loops for first- and second-order recursion, which
+call no package code and take transition probabilities only from the fitting
+package's `predict()`. `tests/testthat/test-sops-native-slow-loop.R` compares
+public `sops()` and `avg_sops()` with those loops on a shared grid of model set-ups
+from `tests/testthat/helper-grid.R` (engine, Markov order, time coding, odds
+structure, absorbing states recorded by `mostm()` including an inner one, gaps,
+an inline `log(time)` term, numeric previous states, and weights). It also compares analytical derivatives with numerical differences
+(`tests/testthat/helper-numeric-jacobian.R`). Every finite-difference check
+over model coefficients uses that file's one central-difference routine,
+`central_difference_jacobian()`, which takes a function of the coefficients,
+the coefficients and a relative step; `numeric_jacobian()` applies it to a
+fitted model through `set_coef()`. The function being differentiated re-runs
+the public calculation, so these checks share no derivative code with the
+package.
+`tests/testthat/test-sops-native-blrm-slow-loop.R` does the same draw by draw for
+`blrm`, on hand-made posterior draws with a mocked design matrix. All hand-made
+`blrm` fits in the tests come from `fake_blrm()` in
+`tests/testthat/helper-mocks.R`, and the mocked design matrices from
+`fake_blrm_design()` there.
+`tests/testthat/test-slow-blrm.R` uses real `rmsb::blrm()` fits and runs only with
+`MOSTR_RUN_SLOW=true`. Fixtures that many tests build with the same arguments,
+such as the three-state `vglm` fit of `make_comparisons_case()`, are made once
+per test run through `grid_fixture()` in `tests/testthat/helper-grid.R`, which
+keeps them with the grid's fits.
+
+Consistency checks run on the same grid, with patient-ID type (numeric,
+character, factor) as a further axis. They need no known answer: each computes
+one number by two public routes, checks a limit that holds for any model, or
+checks that a change which should not matter leaves the result alone.
+`tests/testthat/test-grid-consistency.R` covers probability limits, averages as
+means of per-profile results, contrasts as differences of averages, state sets,
+interpolation, analytical covariances, restarting the recursion part-way,
+swapped comparison values, unused variables (zero contrasts whose analytical
+standard errors are `NA`), later visits, and orm against vglm
+on the same proportional-odds model. `tests/testthat/test-grid-consistency-time.R`
+covers time in state, comparisons and time benefit, on the visit scale and in
+real time, overall and within `by` groups. On CRAN only one set-up per engine
+and Markov order runs. `tests/testthat/test-grid-data-changes.R` refits base
+set-ups after changes to the data (row order, ID labels and types, treatment
+coding, covariate units, an unused column with missing values, case weights
+against duplicated patients) using the checks in
+`tests/testthat/helper-grid-changes.R`; `tests/testthat/test-slow-grid-data-changes.R`
+runs them on the remaining set-ups with `MOSTR_RUN_SLOW=true`.
+
+Three tiers decide which tests run. On CRAN (`NOT_CRAN` unset or `false`) only
+fast tests that pass for any seed run; every other test starts with
+`skip_on_cran()`, and those whose pass depends on the seed say so in a comment.
+With `NOT_CRAN=true` (`devtools::test()`, CI) every test runs except the
+`test-slow-*.R` files, which also need `MOSTR_RUN_SLOW=true`. `AGENTS.md` gives
+the rule for the CRAN tier and its time budget.
+
+Inference is checked the same way, with few draws (MVN 20, refit bootstraps 3)
+and the checks in `tests/testthat/helper-grid-inference.R`: non-negative
+standard errors, ordered and nested limits, Wald centring and its agreement with
+the null test, logit limits within [0, 1], percentile limits of an absorbing
+state that never fall, zero variance for the sum over all states, standard
+errors and contrast variances from the joint covariance or the draws, same seed
+same draws with the caller's random state restored, swapped comparison values,
+and bootstrap bookkeeping. `tests/testthat/test-grid-inference.R` crosses engine,
+time coding and method in full on `avg_sops()` and checks that weighted
+fractional-bootstrap profile draws reproduce the averaged draws;
+`tests/testthat/test-grid-inference-array.R` covers result type, method,
+engine, order, odds, weights, profiles, `by`, time scale and comparison type
+pairwise in a 27-row covering array whose coverage a test re-checks; pairs the
+package refuses are left to the refusal table. Every refusal is one row of the
+table in `tests/testthat/test-refusals.R`, grouped into fitting, prediction,
+inference, simulation (`sim_markov()`) and robust variance (`robcov_vglm()`):
+a call, and the phrase or condition class its error must have; a `mostr_error`
+must also show no call or an exported function. Other test files
+check a refusal only where the table cannot: an error-text snapshot whose wording
+is longer than the table's phrase, a warning or state after the error, or an
+internal validator called directly.
+
+Unconditional variance has an exact check that needs no draws.
+`tests/testthat/test-sops-delta-unconditional-identity.R` rebuilds it from
+three parts on the first-order orm and vglm grid fits, for `avg_sops()`, an
+`avg_comparisons()` contrast and `avg_state_time()` in real time: the
+conditional variance, the sample covariance of the patients' own predictions
+divided by `n`, and twice their covariance with the coefficient influence
+`n B s_i` carried through the Jacobian. The per-patient predictions come from
+public `sops()` and `state_time()`, the scores and bread from
+`compute_scores_orm()`, `compute_scores_vglm()`, `orm_model_bread()` and
+`compute_observed_bread_vglm()`, and the Jacobian from the conditional result,
+not from the code that adds the parts. At the maximum of the likelihood, with
+the default `type = "HC0"` and `cadjust = TRUE`, the sum matches to rounding
+(about 1e-12 relative), so the test asks for 1e-8; a part off by 1% fails it.
+`tests/testthat/test-slow-mvn-delta.R` (`MOSTR_RUN_SLOW=true`) gives MVN and
+conditional delta the same scaled covariance `1e-3 V`, so that the recursion
+is linear over the draws, and asks MVN standard deviations from 20,000 draws to
+match delta standard errors within 2%. Bootstrap against unconditional
+variance and the coverage of the intervals are not tests: they are a one-off
+validation study in the ignored `benchmarks/local/validation-unconditional/`,
+whose scenarios and acceptance bands are in its README.
+
+One function, `markov_msm_build()`, builds the prediction designs of every
+visit for first- and second-order orm and vglm fits; `sops()`, MVN draws and
+delta inference all use it through `compile_sop_execution_plan()`. It builds a
+visit's design in one piece, or one combination of previous states at a time
+above `mostr.max_batched_design_rows` rows, with identical results. Designs
+built one previous state at a time (`markov_msm_build()` and
+`markov_msm_run()`) are compared with
+public `sops()` on every first-order grid set-up, plus spline, numeric
+previous-state and factor-time set-ups, in `tests/testthat/test-orm-fast-path.R`.
+Since `sops()` is checked against the readable loop, this check is indirectly
+independent too.
+
+The remaining test files are mostly table-driven: tests that differ only in
+inputs share one `test_that()` with a list of cases, each named in the failure
+message through `info`, and share their fits.
+
+`soprob_markov_r_engine()` in `R/sops-engine.R` is not one of these test-only
+references. It is the production engine written in R: the only one for `blrm`,
+and the fallback when prediction designs exceed
+`mostr.execution_plan_max_bytes`. It shares the visit and previous-state
+helpers (`assign_sop_visit()`, `make_previous_state_column()`) with the
+compiled path, so agreement between the two is not an independent check.
+
+GitHub Actions runs R CMD check and runs the native and analytical-inference
+tests under address/undefined sanitizers and Valgrind. Planted-bug checks, which
+test whether the tests would fail on wrong code, are local tools in the ignored
+`benchmarks/local/mutation/`. They plant bugs in the recursion, its derivatives,
+the prediction designs, `blrm` prediction, simulation, robust covariance,
+`mostm()` argument checks and plots; a test consolidation must not turn any
+caught bug into a missed one.
+
+The vignettes demonstrate Markov-generated data, including a custom
 30-state generator and a waning-treatment-effect simulation study comparing
 constant and time-varying treatment models on full-grid SOP and time-in-state
 contrasts.

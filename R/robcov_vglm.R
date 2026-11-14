@@ -10,9 +10,6 @@
 #'   cluster-robust standard errors. Must have the same length as the fitted
 #'   observations, or the same length as the original pre-NA data when the fitted
 #'   model records omitted rows in `fit@na.action`.
-#' @param adjust Deprecated compatibility alias for `cadjust`. A non-missing
-#'   logical value is accepted so existing calls continue to work. Do not
-#'   supply both `adjust` and `cadjust`.
 #' @param bread Character string selecting the sandwich bread. `"observed"`
 #'   (the default) numerically differentiates the summed analytic scores.
 #'   `"vglm"` uses the inverse final VGAM IRLS working information returned by
@@ -82,7 +79,6 @@
 #'   \item{type}{The HC correction type}
 #'   \item{cadjust}{Whether the cluster correction was applied}
 #'   \item{adjustment_factor}{The combined HC and cluster scalar correction}
-#'   \item{adjust}{Compatibility alias for `cadjust`}
 #'
 #' @details
 #' Let \eqn{\beta} be the vector of all \eqn{p} model coefficients and
@@ -174,27 +170,24 @@
 robcov_vglm <- function(
   fit,
   cluster = NULL,
-  adjust = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
   cadjust = NULL
 ) {
   if (!inherits(fit, "vglm")) {
-    stop("'fit' must be a vglm object")
+    mostr_abort("'fit' must be a vglm object")
   }
 
   bread_type <- match.arg(bread)
   type <- match.arg(type)
-  correction <- resolve_vglm_corrections(
-    cluster = cluster,
-    adjust = adjust,
-    cadjust = cadjust,
-    adjust_missing = missing(adjust),
-    cadjust_missing = missing(cadjust)
-  )
-  cadjust <- correction$cadjust
+  # The default G / (G - 1) cluster correction follows sandwich::vcovCL(); see
+  # the comment at the same default in robcov_orm().
+  if (is.null(cadjust)) {
+    cadjust <- !is.null(cluster)
+  } else if (!is.logical(cadjust) || length(cadjust) != 1L || is.na(cadjust)) {
+    mostr_abort("`cadjust` must be TRUE or FALSE.")
+  }
 
-  # --- 1. Extract key quantities from the vglm object ---
   n <- nobs(fit, type = "lm")
   p <- length(coef(fit))
   coefficients <- coef(fit)
@@ -205,10 +198,10 @@ robcov_vglm <- function(
       any(names(coefficients) == "") ||
       anyDuplicated(names(coefficients))
   ) {
-    stop("vglm coefficients must have unique, non-missing names.")
+    mostr_abort("vglm coefficients must have unique, non-missing names.")
   }
   if (any(!is.finite(coefficients))) {
-    stop("vglm coefficients must all be finite.")
+    mostr_abort("vglm coefficients must all be finite.")
   }
 
   # Use VGAM's covariance-scale bread. For cumulative proportional-odds
@@ -224,37 +217,44 @@ robcov_vglm <- function(
   )
   original_se <- sqrt(diag(model_vcov))
   names(original_se) <- names(coefficients)
+  # The check above passed on the correlation scale, so the Cholesky factor
+  # exists whatever the covariate units. solve() would refuse a covariate in
+  # large units, because it tests the condition number of the raw matrix: with
+  # one covariate multiplied by 1e6 (variance 4e-15 against about 2.5 for the
+  # intercepts) its reciprocal condition number was 2e-18 although the
+  # correlation matrix was well conditioned (measured Nov 2026).
+  model_information <- chol2inv(chol(model_vcov))
+  dimnames(model_information) <- dimnames(model_vcov)
 
-  # --- 2. Compute observation-level score contributions ---
   scores <- compute_scores_vglm(fit)
 
-  # Validate scores dimensions
-
   if (nrow(scores) != n) {
-    stop("Number of score rows does not match number of observations")
+    mostr_abort("Number of score rows does not match number of observations")
   }
   if (ncol(scores) != p) {
-    stop("Number of score columns does not match number of parameters")
+    mostr_abort("Number of score columns does not match number of parameters")
   }
   if (!identical(colnames(scores), names(coefficients))) {
-    stop("Score columns must exactly match vglm coefficient names and order.")
+    mostr_abort(
+      "Score columns must exactly match vglm coefficient names and order."
+    )
   }
   if (any(!is.finite(scores))) {
-    stop("Observation-level vglm scores must all be finite.")
+    mostr_abort("Observation-level vglm scores must all be finite.")
   }
 
-  convergence <- validate_vglm_convergence(fit, scores, model_vcov)
+  convergence <- validate_vglm_convergence(fit, scores, model_information)
 
   bread_result <- if (bread_type == "observed") {
     compute_observed_bread_vglm(fit)
   } else {
     list(
       bread = model_vcov,
-      information = solve(model_vcov),
+      information = model_information,
       jacobian_asymmetry = NA_real_,
       min_information_eigenvalue = min(
         eigen(
-          solve(model_vcov),
+          model_information,
           symmetric = TRUE,
           only.values = TRUE
         )$values
@@ -274,12 +274,11 @@ robcov_vglm <- function(
     names(coefficients)
   )
 
-  # --- 3. Compute the meat matrix ---
   if (!is.null(cluster)) {
     cluster <- align_cluster_vglm(fit, cluster, n)
 
     if (anyNA(cluster)) {
-      stop(
+      mostr_abort(
         "'cluster' contains missing values after alignment with the fitted ",
         "data."
       )
@@ -295,7 +294,7 @@ robcov_vglm <- function(
     n_clusters <- nrow(scores_clustered)
 
     if (n_clusters < 2L) {
-      stop("Cluster-robust covariance requires at least two clusters.")
+      mostr_abort("Cluster-robust covariance requires at least two clusters.")
     }
     if (n_clusters < 30L) {
       warning(
@@ -305,14 +304,10 @@ robcov_vglm <- function(
       )
     }
 
-    # Compute meat matrix from clustered scores
     sandwich_scores <- scores_clustered
-    meat <- crossprod(scores_clustered)
   } else {
     n_clusters <- NULL
-    # Standard (unclustered) meat matrix
     sandwich_scores <- scores
-    meat <- crossprod(scores)
   }
 
   assembled <- markov_assemble_sandwich(
@@ -334,7 +329,6 @@ robcov_vglm <- function(
     positive_semidefinite = TRUE
   )
 
-  # --- 4. Compute the sandwich: V = B * M * B ---
   # The crossproduct form is algebraically equivalent for symmetric bread and
   # remains numerically positive semidefinite for ill-conditioned fits.
   robust_var <- assembled$covariance
@@ -346,23 +340,19 @@ robcov_vglm <- function(
     positive_semidefinite = TRUE
   )
 
-  # Extract standard errors
   robust_se <- sqrt(pmax(diag(robust_var), 0))
   names(robust_se) <- names(coefficients)
 
-  # --- 5. Compute z-statistics and p-values ---
   z_stats <- coefficients / robust_se
   pvalues <- 2 * pnorm(-abs(z_stats))
   names(z_stats) <- names(coefficients)
   names(pvalues) <- names(coefficients)
 
-  # --- 6. Extract model information from vglm object ---
-  # Use slot() for S4 objects, with tryCatch for optional slots
+  # Optional slots may be absent.
   safe_slot <- function(obj, name) {
     tryCatch(methods::slot(obj, name), error = function(e) NULL)
   }
 
-  # --- 7. Build result object with all model information ---
   result <- list(
     # Model coefficients and inference
     coefficients = coefficients,
@@ -393,7 +383,6 @@ robcov_vglm <- function(
     type = type,
     cadjust = cadjust,
     adjustment_factor = adjustment_factor,
-    adjust = cadjust,
     convergence = convergence,
 
     # Original vglm fit (for prediction)
@@ -442,11 +431,6 @@ robcov_vglm <- function(
     "markov_split_assign",
     exact = TRUE
   )
-  attr(result, "markov_basis_terms") <- attr(
-    fit,
-    "markov_basis_terms",
-    exact = TRUE
-  )
   result <- markov_inherit_engine(result, fit)
   return(result)
 }
@@ -481,7 +465,7 @@ robcov_vglm <- function(
 #' @keywords internal
 compute_scores_vglm <- function(fit) {
   if (!inherits(fit, "vglm")) {
-    stop("'fit' must be a vglm object")
+    mostr_abort("'fit' must be a vglm object")
   }
 
   # Get dimensions
@@ -493,7 +477,7 @@ compute_scores_vglm <- function(fit) {
   # wt_info$deriv is an n x M matrix containing d(log L)/d(eta_m) for each obs
   wt_info <- VGAM::weights(fit, type = "working", deriv.arg = TRUE)
   if (!is.list(wt_info) || is.null(wt_info$deriv)) {
-    stop(
+    mostr_abort(
       "Could not extract d logLik / d eta from ",
       "VGAM::weights(..., deriv.arg = TRUE)."
     )
@@ -504,7 +488,7 @@ compute_scores_vglm <- function(fit) {
     deriv_eta <- matrix(deriv_eta, nrow = n)
   }
   if (nrow(deriv_eta) != n || ncol(deriv_eta) != M) {
-    stop(
+    mostr_abort(
       "Unexpected derivative dimensions: got [",
       nrow(deriv_eta),
       " x ",
@@ -521,7 +505,7 @@ compute_scores_vglm <- function(fit) {
   X_vlm <- stats::model.matrix(fit, type = "vlm")
 
   if (nrow(X_vlm) != n * M || ncol(X_vlm) != p) {
-    stop(
+    mostr_abort(
       "Unexpected VLM model matrix dimensions: got [",
       nrow(X_vlm),
       " x ",
@@ -534,7 +518,7 @@ compute_scores_vglm <- function(fit) {
     )
   }
   if (!identical(colnames(X_vlm), names(coef(fit)))) {
-    stop(
+    mostr_abort(
       "VLM model-matrix columns must exactly match vglm coefficient names ",
       "and order."
     )
@@ -557,38 +541,6 @@ compute_scores_vglm <- function(fit) {
 }
 
 
-resolve_vglm_corrections <- function(
-  cluster,
-  adjust,
-  cadjust,
-  adjust_missing,
-  cadjust_missing
-) {
-  has_adjust <- !adjust_missing && !is.null(adjust)
-  has_cadjust <- !cadjust_missing && !is.null(cadjust)
-
-  if (has_adjust && has_cadjust) {
-    stop("Supply only one of legacy `adjust` and `cadjust`, not both.")
-  }
-
-  validate_flag <- function(x, arg) {
-    if (!is.logical(x) || length(x) != 1L || is.na(x)) {
-      stop("`", arg, "` must be TRUE or FALSE.")
-    }
-    x
-  }
-
-  if (has_adjust) {
-    adjust <- validate_flag(adjust, "adjust")
-    # The legacy argument never adjusted the unclustered covariance.
-    return(list(cadjust = adjust && !is.null(cluster)))
-  }
-  if (has_cadjust) {
-    return(list(cadjust = validate_flag(cadjust, "cadjust")))
-  }
-
-  list(cadjust = !is.null(cluster))
-}
 
 
 validate_vglm_matrix <- function(
@@ -600,48 +552,44 @@ validate_vglm_matrix <- function(
 ) {
   p <- length(coefficient_names)
   if (!is.matrix(x) || !is.numeric(x) || !identical(dim(x), c(p, p))) {
-    stop("`", label, "` must be a numeric [", p, " x ", p, "] matrix.")
+    mostr_abort("`", label, "` must be a numeric [", p, " x ", p, "] matrix.")
   }
   if (
     !identical(rownames(x), coefficient_names) ||
       !identical(colnames(x), coefficient_names)
   ) {
-    stop(
+    mostr_abort(
       "Rows and columns of `",
       label,
       "` must exactly match vglm coefficient names and order."
     )
   }
   if (any(!is.finite(x))) {
-    stop("`", label, "` contains non-finite values.")
+    mostr_abort("`", label, "` contains non-finite values.")
   }
 
   scale <- max(1, max(abs(x)))
   symmetry_error <- max(abs(x - t(x))) / scale
   if (!is.finite(symmetry_error) || symmetry_error > 1e-8) {
-    stop("`", label, "` is not numerically symmetric.")
+    mostr_abort("`", label, "` is not numerically symmetric.")
   }
 
-  if (positive_definite || positive_semidefinite) {
+  # Covariances and breads, which are inverted downstream, use the rule shared
+  # with orm.
+  if (positive_definite && !markov_correlation_positive_definite(x)) {
+    mostr_abort("`", label, "` is not numerically positive definite.")
+  }
+  if (positive_semidefinite) {
     eigenvalues <- eigen(
       (x + t(x)) / 2,
       symmetric = TRUE,
       only.values = TRUE
     )$values
-    eigen_scale <- max(1, max(abs(eigenvalues))) * p
-    positive_definite_tolerance <- 100 * .Machine$double.eps * eigen_scale
-    positive_semidefinite_tolerance <- sqrt(.Machine$double.eps) * eigen_scale
-    if (
-      positive_definite &&
-        min(eigenvalues) <= positive_definite_tolerance
-    ) {
-      stop("`", label, "` is not numerically positive definite.")
-    }
-    if (
-      positive_semidefinite &&
-        min(eigenvalues) < -positive_semidefinite_tolerance
-    ) {
-      stop("`", label, "` is not numerically positive semidefinite.")
+    positive_semidefinite_tolerance <- sqrt(.Machine$double.eps) *
+      max(1, max(abs(eigenvalues))) *
+      p
+    if (min(eigenvalues) < -positive_semidefinite_tolerance) {
+      mostr_abort("`", label, "` is not numerically positive semidefinite.")
     }
   }
 
@@ -649,7 +597,7 @@ validate_vglm_matrix <- function(
 }
 
 
-validate_vglm_convergence <- function(fit, scores, model_vcov) {
+validate_vglm_convergence <- function(fit, scores, model_information) {
   iter <- tryCatch(fit@iter, error = function(e) NA_integer_)
   maxit <- tryCatch(fit@control$maxit, error = function(e) NA_integer_)
   if (
@@ -659,7 +607,7 @@ validate_vglm_convergence <- function(fit, scores, model_vcov) {
       is.finite(maxit) &&
       iter >= maxit
   ) {
-    stop(
+    mostr_abort(
       "The vglm fit reached its IRLS iteration limit without convergence. ",
       "Refit the model before computing a robust covariance."
     )
@@ -670,14 +618,13 @@ validate_vglm_convergence <- function(fit, scores, model_vcov) {
     is.logical(regularity) && length(regularity) == 1L && !is.na(regularity)
   ) {
     if (!regularity) {
-      stop(
+      mostr_abort(
         "VGAM reports that maximum-likelihood regularity conditions were ",
         "violated; robust covariance estimation is not reliable."
       )
     }
   }
 
-  model_information <- solve(model_vcov)
   information_scale <- sqrt(pmax(diag(model_information), .Machine$double.eps))
   standardized_score <- colSums(scores) / information_scale
   score_norm <- max(abs(standardized_score))
@@ -687,7 +634,7 @@ validate_vglm_convergence <- function(fit, scores, model_vcov) {
   }
   score_tolerance <- max(1e-3, sqrt(epsilon))
   if (!is.finite(score_norm) || score_norm > score_tolerance) {
-    stop(
+    mostr_abort(
       "The standardized norm of the summed vglm scores is ",
       format(score_norm, digits = 4),
       ", exceeding the convergence tolerance ",
@@ -713,7 +660,7 @@ vglm_score_evaluator <- function(fit) {
   X_vlm <- stats::model.matrix(fit, type = "vlm")
 
   if (!identical(colnames(X_vlm), names(beta_hat))) {
-    stop(
+    mostr_abort(
       "VLM model-matrix columns must exactly match vglm coefficient names ",
       "and order."
     )
@@ -727,7 +674,7 @@ vglm_score_evaluator <- function(fit) {
   )
   predictor_offset <- fit@predictors - fitted_linear_predictors
   if (any(!is.finite(predictor_offset))) {
-    stop("The fitted vglm predictor offset contains non-finite values.")
+    mostr_abort("The fitted vglm predictor offset contains non-finite values.")
   }
 
   evaluate <- function(beta) {
@@ -878,7 +825,7 @@ compute_observed_bread_vglm <- function(fit) {
     }
 
     if (is.null(derivative) || any(!is.finite(derivative))) {
-      stop(
+      mostr_abort(
         "Could not compute a valid central score derivative for coefficient `",
         names(beta)[j],
         "` after adaptive step reduction. The fitted model may be too close ",
@@ -892,7 +839,7 @@ compute_observed_bread_vglm <- function(fit) {
   jacobian_scale <- max(1, max(abs(jacobian)))
   jacobian_asymmetry <- max(abs(jacobian - t(jacobian))) / jacobian_scale
   if (!is.finite(jacobian_asymmetry) || jacobian_asymmetry > 1e-5) {
-    stop(
+    mostr_abort(
       "The numerical score Jacobian is materially asymmetric (relative ",
       "asymmetry ",
       format(jacobian_asymmetry, digits = 4),
@@ -908,15 +855,10 @@ compute_observed_bread_vglm <- function(fit) {
     symmetric = TRUE,
     only.values = TRUE
   )$values
-  information_tolerance <- 100 *
-    .Machine$double.eps *
-    max(1, max(abs(information_eigenvalues))) *
-    p
-  if (
-    any(!is.finite(information_eigenvalues)) ||
-      min(information_eigenvalues) <= information_tolerance
-  ) {
-    stop(
+  # The information is inverted into the bread, so it must pass the same rule
+  # as orm's bread.
+  if (!markov_correlation_positive_definite(information)) {
+    mostr_abort(
       "The observed vglm information is singular or not positive definite. ",
       "Use `bread = \"vglm\"` only if working-information inference is ",
       "acceptable."
@@ -957,7 +899,7 @@ align_cluster_vglm <- function(fit, cluster, n) {
     return(cluster[-na_action])
   }
 
-  stop(
+  mostr_abort(
     "Length of 'cluster' must equal nobs(fit, type = \"lm\") = ",
     n,
     ", or must be the original pre-NA vector from which fit@na.action ",
@@ -980,7 +922,7 @@ align_cluster_vglm <- function(fit, cluster, n) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
@@ -1079,7 +1021,7 @@ summary.robcov_vglm <- function(object, ...) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
@@ -1135,7 +1077,7 @@ print.robcov_vglm <- function(x, ...) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
@@ -1163,7 +1105,7 @@ coef.robcov_vglm <- function(object, ...) {
 #' @examplesIf rlang::is_installed("VGAM")
 #' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
-#' # With `id_var`, the vglm engine of mostm() returns a robcov_vglm object
+#' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
@@ -1189,6 +1131,8 @@ vcov.robcov_vglm <- function(object, ...) {
 #' @param vglm_fit A fitted vglm object from the VGAM package. Should be fit
 #'   with `cumulative(parallel = TRUE, reverse = TRUE)` to match orm's
 #'   parameterization for ordinal outcomes, or `binomialff` for binary outcomes.
+#'   For a fit from `mostm(engine = "vglm")`, which returns a `robcov_vglm`
+#'   object, pass its `$vglm_fit` element, as in the example.
 #' @param cluster Optional cluster variable for robust standard errors. Must
 #'   have the same length as the number of observations in both models.
 #'
@@ -1223,8 +1167,6 @@ vcov.robcov_vglm <- function(object, ...) {
 #' library(VGAM)
 #'
 #' # Fit models
-#' dd <- datadist(mydata)
-#' options(datadist = "dd")
 #' m_orm <- orm(y ~ x1 + x2, data = mydata, x = TRUE, y = TRUE)
 #' m_vglm <- vglm(y ~ x1 + x2,
 #'                family = cumulative(parallel = TRUE, reverse = TRUE),
@@ -1236,6 +1178,16 @@ vcov.robcov_vglm <- function(object, ...) {
 #'
 #' # With clustering
 #' comparison_cl <- compare_se_orm_vglm(m_orm, m_vglm, cluster = mydata$id)
+#'
+#' # With fits from mostm(), pass the vglm fit stored in the robcov_vglm object
+#' fit_orm <- mostm(y ~ yprev + time + tx, data = model_data, id_var = "id")
+#' fit_vglm <- mostm(
+#'   ordered(y) ~ yprev + time + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   engine = "vglm"
+#' )
+#' compare_se_orm_vglm(fit_orm, fit_vglm$vglm_fit, cluster = model_data$id)
 #' }
 #'
 #' @importFrom stats vcov

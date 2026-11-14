@@ -4,14 +4,7 @@
 \alias{bootstrap_model_coefs}
 \title{Bootstrap confidence intervals for model coefficients}
 \usage{
-bootstrap_model_coefs(
-  model,
-  n_boot,
-  workers = NULL,
-  parallel = NULL,
-  id_var = NULL,
-  use_coefstart = FALSE
-)
+bootstrap_model_coefs(model, n_boot, workers = NULL, use_coefstart = FALSE)
 }
 \arguments{
 \item{model}{A model fitted with \code{\link[=mostm]{mostm()}} and the \code{"orm"} or \code{"vglm"}
@@ -23,18 +16,13 @@ resamples patients from those stored data.}
 \item{workers}{Number of workers for parallel processing. If NULL (default)
 or 1, sequential processing is used. If > 1, uses parallel processing.}
 
-\item{parallel}{(Deprecated) Logical indicating whether to use parallel
-processing. Use the \code{workers} parameter instead.}
-
-\item{id_var}{Name of the patient ID column in the stored data. The default,
-\code{NULL}, uses the \code{id_var} given when the model was fitted. Supply it only
-when the model was fitted without \code{id_var}.}
-
-\item{use_coefstart}{Logical. If \code{TRUE}, \code{vglm} refits start from the
-original model coefficients, which can speed up convergence. Starting
-values, including a \code{coefstart} passed to \code{\link[=mostm]{mostm()}}, are used only
-when a resample contains every outcome state; a refit with starting values
-that fails is retried once without them. Default is \code{FALSE}.}
+\item{use_coefstart}{Logical. If \code{TRUE}, each refit starts from the
+original model coefficients, which can speed up convergence. Only models
+fitted with \code{engine = "vglm"} accept starting coefficients, so \code{TRUE} with
+an \code{orm} model is an error. Starting values, including a \code{coefstart}
+passed to \code{\link[=mostm]{mostm()}}, are used only when a resample contains every outcome
+state; a refit with starting values that fails is retried once without
+them. Default is \code{FALSE}.}
 }
 \value{
 A data frame with one row per bootstrap sample:
@@ -59,25 +47,33 @@ excluded, and fitting weights stay attached to their rows.
 For each bootstrap iteration:
 \enumerate{
 \item Draws patients with replacement from the stored data
-\item Renumbers outcome and previous-state levels to consecutive integers
-when a state is absent from the resample
-\item Updates the \code{rms} datadist for \code{orm} models (safe with
-future.callr workers)
+\item When a state is absent from the resample, removes it from the
+factor levels of the response column (the variable on the left of the
+model formula) and of \code{yprev}. The other states keep their labels;
+they are not renumbered. States are matched by their labels, so numbers
+and text labels such as \code{"home"} work alike. Other factor columns
+are covariates and are left as they are.
 \item Refits the model by calling \code{\link[=mostm]{mostm()}} again with the original
 engine and arguments, and extracts its coefficients
 }
 
 When a state is missing from a resample, the refit has fewer intercepts than
-the original model, so the intercept columns of that row refer to renumbered
-states.
+the original model. Coefficients named after a state, such as the
+intercept \code{y>=2} of an \code{"orm"} fit or the previous-state
+coefficient \code{yprev=2}, are then \code{NA} in that row. The intercepts of
+a \code{"vglm"} fit are numbered (\code{(Intercept):1}, \code{(Intercept):2},
+...) in order of the states present, so in that row they belong to other
+cut-points than in the rows with every state.
 
-Parallelization is handled via future.callr::callr strategy, which provides
-isolated R processes for each worker, making it safe to modify the global
-environment (for datadist) without conflicts.
+The refits do not use an rms \code{datadist}: a \code{datadist} you have set with
+\code{options(datadist = ...)} is ignored during the refits and left as it is.
+
+With \code{workers > 1}, the refits run in separate R processes started by
+the \code{future.callr} package.
 
 \strong{Previous-state type:} \code{yprev} may be a factor for categorical
-previous-state effects or numeric for linear/spline effects. Bootstrap
-releveling preserves the column type used to fit the original model.
+previous-state effects or numeric for linear/spline effects. Refits keep
+the column type and the state numbers used to fit the original model.
 }
 \examples{
 \dontrun{

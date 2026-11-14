@@ -28,49 +28,33 @@ markov_rms_model_frame <- function(
 }
 
 validate_markov_id_var <- function(id_var, data, data_arg = "data") {
-  if (is.null(id_var)) {
-    return(NULL)
-  }
   if (!is.character(id_var) || length(id_var) != 1 || is.na(id_var)) {
-    stop("`id_var` must be a single column name.")
+    mostr_abort("`id_var` must be a single column name.")
   }
   if (!id_var %in% names(data)) {
-    stop("ID variable '", id_var, "' not found in ", data_arg, ".")
+    mostr_abort("ID variable '", id_var, "' not found in ", data_arg, ".")
   }
   id_var
 }
 
-warn_missing_markov_id_var <- function() {
-  warning(
-    "`id_var` was not supplied to mostm(); stored patient-ID metadata, ",
-    "cluster-robust standard errors for the \"orm\" and \"vglm\" engines, ",
-    "and automatic FWB refits will not be available from the fitted object.",
-    call. = FALSE
+stop_missing_mostm_id_var <- function() {
+  mostr_abort(
+    "`mostm()` needs `id_var`, the name of the column in `data` that ",
+    "identifies patients, for example `id_var = \"id\"`. Standard errors that ",
+    "allow for correlation between the transitions of one patient, the ",
+    "stored starting row of each patient, and the bootstrap all need to know ",
+    "which rows belong to the same patient."
   )
 }
 
-warn_duplicate_markov_id_time <- function(
-  data,
-  id_var,
-  time_var = "time",
-  wrapper = "mostm()"
-) {
-  if (
-    is.null(id_var) ||
-      !id_var %in% names(data) ||
-      !time_var %in% names(data)
-  ) {
-    return(invisible(NULL))
-  }
-
+warn_duplicate_markov_id_time <- function(data, id_var, time_var = "time") {
   key <- data[c(id_var, time_var)]
   if (anyDuplicated(key) == 0L) {
     return(invisible(NULL))
   }
 
   warning(
-    wrapper,
-    " received data with duplicate `",
+    "mostm() received data with duplicate `",
     id_var,
     "` x `",
     time_var,
@@ -132,16 +116,15 @@ markov_eval_prior_weights <- function(expr, data, eval_env) {
   }
   n_weights <- if (is.matrix(weights)) nrow(weights) else length(weights)
   if (!is.numeric(weights) || n_weights != nrow(data)) {
-    stop(
-      "`weights` must be numeric with one value per row of `data`.",
-      call. = FALSE
+    mostr_abort(
+      "`weights` must be numeric with one value per row of `data`."
     )
   }
   if (any(!is.finite(weights))) {
-    stop("`weights` must be finite.", call. = FALSE)
+    mostr_abort("`weights` must be finite.")
   }
   if (any(weights < 0)) {
-    stop("negative weights not allowed", call. = FALSE)
+    mostr_abort("negative weights not allowed")
   }
   weights
 }
@@ -194,7 +177,7 @@ markov_set_engine <- function(model, engine) {
       is.na(engine) ||
       !engine %in% markov_engines()
   ) {
-    stop("Internal Markov model engine provenance is invalid.")
+    mostr_abort("Internal Markov model engine provenance is invalid.")
   }
   attr(model, "markov_engine") <- engine
   model
@@ -220,50 +203,106 @@ markov_model_engine <- function(model) {
   engine
 }
 
+# Names of the data columns on the right-hand side of the fitted model's
+# formula, including those inside terms such as `rms::rcs(age, 3)`, `poly()`,
+# interactions and a blrm `cluster(id)`, and those of a blrm partial proportional
+# odds formula (`ppo`). They come from the stored formula, never from the
+# coefficients. `NULL` when the variables cannot be read from the object, for
+# example a formula with `.`, so that callers can leave such models alone.
+markov_model_variables <- function(model) {
+  model_chk <- if (inherits(model, "robcov_vglm")) model$vglm_fit else model
+  formulas <- tryCatch(
+    if (isS4(model_chk)) {
+      list(stats::formula(model_chk))
+    } else {
+      list(
+        model_chk$sformula %||% stats::formula(model_chk),
+        model_chk$zsformula
+      )
+    },
+    error = function(e) NULL
+  )
+  formulas <- Filter(Negate(is.null), formulas)
+  if (
+    length(formulas) == 0L ||
+      !inherits(formulas[[1L]], "formula") ||
+      !all(vapply(formulas, inherits, logical(1), "formula"))
+  ) {
+    return(NULL)
+  }
+  # An object that only looks like a fit, such as a robcov_vglm without its
+  # vglm fit, can give an empty formula, whose right-hand side can't be read.
+  variables <- tryCatch(
+    unique(unlist(lapply(formulas, function(formula) {
+      all.vars(formula[[length(formula)]])
+    }))),
+    error = function(e) NULL
+  )
+  if (is.null(variables) || "." %in% variables) {
+    return(NULL)
+  }
+  # rmsb::blrm() keeps `cluster(id)` out of its stored formula. The random
+  # effect of each patient is looked up by that column.
+  cluster <- if (inherits(model_chk, "blrm")) model_chk$clusterInfo$name
+  unique(c(variables, if (is.character(cluster)) cluster))
+}
+
+# A model derived from `source`, such as a refit or the inner vglm fit, keeps
+# its engine record and, when the derived model has none of its own, its
+# settings.
 markov_inherit_engine <- function(model, source) {
   engine <- markov_model_engine(source)
   if (is.null(engine)) {
     return(model)
   }
+  settings <- markov_model_metadata_attr(source, "markov_settings")
+  if (
+    inherits(settings, "markov_settings") &&
+      is.null(attr(model, "markov_settings", exact = TRUE))
+  ) {
+    model <- markov_set_settings(model, settings)
+  }
   markov_set_engine(model, engine)
 }
 
 markov_model_data <- function(model) {
-  data <- attr(model, "markov_data", exact = TRUE)
-  if (!is.null(data)) {
-    return(data)
-  }
+  markov_model_metadata_attr(model, "markov_data")
+}
 
-  if (inherits(model, "robcov_vglm") && !is.null(model$vglm_fit)) {
-    data <- attr(model$vglm_fit, "markov_data", exact = TRUE)
-    if (!is.null(data)) {
-      return(data)
-    }
+# The states that occur as the previous state in the data the model was fitted
+# to, as labels, or NULL when the fit does not carry those data. An absorbing
+# state never occurs there: a patient in it has no further transition, so the
+# model has no linear predictor for it as a previous state.
+markov_fitted_previous_states <- function(model, p_var) {
+  model_data <- markov_model_data(model)
+  if (is.null(model_data) || !p_var %in% names(model_data)) {
+    return(NULL)
   }
-
-  NULL
+  values <- model_data[[p_var]]
+  unique(as_state_labels(values[!is.na(values)]))
 }
 
 markov_model_id_var <- function(model, id_var = NULL) {
-  if (!is.null(id_var)) {
-    return(id_var)
-  }
-
-  out <- attr(model, "markov_id_var", exact = TRUE)
-  if (!is.null(out)) {
-    return(out)
-  }
-
-  if (inherits(model, "robcov_vglm") && !is.null(model$vglm_fit)) {
-    out <- attr(model$vglm_fit, "markov_id_var", exact = TRUE)
-    if (!is.null(out)) {
-      return(out)
-    }
-  }
-
-  NULL
+  id_var %||% markov_model_metadata_attr(model, "markov_id_var")
 }
 
+# The patient-ID column: `id_var` when given, otherwise the column named in the
+# `mostm()` call. Every `mostm()` fit records one, so a model without it was
+# not made by `mostm()` or lost its metadata; no column is guessed.
+markov_require_id_var <- function(model, id_var = NULL) {
+  id_var <- markov_model_id_var(model, id_var)
+  if (is.null(id_var)) {
+    mostr_abort(
+      "The model does not record which column of its data identifies ",
+      "patients. Refit it with `mostm(..., id_var = ...)`."
+    )
+  }
+  id_var
+}
+
+# What `mostm()` recorded on the fit under `name`. A `robcov_vglm` fit may
+# carry the record on the vglm fit inside it, so every reader of fit metadata
+# goes through here.
 markov_model_metadata_attr <- function(model, name) {
   value <- attr(model, name, exact = TRUE)
   if (!is.null(value)) {
@@ -309,10 +348,9 @@ markov_validate_starting_profiles <- function(
   profiles <- markov_model_metadata_attr(model, "markov_starting_profile_data")
   metadata <- markov_model_starting_profile_metadata(model)
   if (is.null(profiles) || is.null(metadata)) {
-    stop(
-      "Provide newdata, or fit with `mostm(..., id_var = ...)` so ",
-      "automatic SOP prediction has stored starting-profile metadata.",
-      call. = FALSE
+    mostr_abort(
+      "Provide newdata: the model has no stored starting row for each ",
+      "patient. Fits made by `mostm()` store these rows."
     )
   }
 
@@ -325,19 +363,18 @@ markov_validate_starting_profiles <- function(
       any(fitted_ids == "") ||
       anyDuplicated(fitted_ids)
   ) {
-    stop("Stored starting-profile patient metadata is invalid.", call. = FALSE)
+    mostr_abort("Stored starting-profile patient metadata is invalid.")
   }
 
   profile_ids <- as.character(profiles[[id_var]])
   missing_ids <- setdiff(fitted_ids, profile_ids)
   if (length(missing_ids)) {
-    stop(
+    mostr_abort(
       "Fitted patient(s) lack a row at the designated starting visit `",
       as.character(metadata$first_followup_time),
       "`: ",
       markov_format_patient_ids(missing_ids),
-      ". A later likelihood row is not substituted for the starting profile.",
-      call. = FALSE
+      ". A later likelihood row is not substituted for the starting profile."
     )
   }
 
@@ -346,35 +383,32 @@ markov_validate_starting_profiles <- function(
       duplicated(profile_ids, fromLast = TRUE)
   ])
   if (length(duplicated_ids)) {
-    stop(
+    mostr_abort(
       "Fitted patient(s) have multiple rows at the designated starting visit ",
       "`",
       as.character(metadata$first_followup_time),
       "`: ",
       markov_format_patient_ids(duplicated_ids),
-      ". Exactly one starting profile is required per fitted patient.",
-      call. = FALSE
+      ". Exactly one starting profile is required per fitted patient."
     )
   }
 
   required <- unique(c(metadata$required_variables, required_variables))
   missing_variables <- setdiff(required, names(profiles))
   if (length(missing_variables)) {
-    stop(
+    mostr_abort(
       "Stored starting profiles are missing required prediction variables: ",
       paste(missing_variables, collapse = ", "),
-      ".",
-      call. = FALSE
+      "."
     )
   }
   incomplete <- !stats::complete.cases(profiles[, required, drop = FALSE])
   if (any(incomplete)) {
-    stop(
+    mostr_abort(
       "Fitted patient(s) have incomplete starting-profile predictors: ",
       markov_format_patient_ids(profile_ids[incomplete]),
       ". The transition response is not required, but ID, modeled predictors, ",
-      "time metadata, and the previous state must be complete.",
-      call. = FALSE
+      "time metadata, and the previous state must be complete."
     )
   }
 
@@ -390,26 +424,24 @@ markov_validate_starting_profiles <- function(
     supported <- unique(as.character(fitting_data[[variable]]))
     unsupported <- !as.character(profiles[[variable]]) %in% supported
     if (any(unsupported)) {
-      stop(
+      mostr_abort(
         "Fitted patient(s) have unsupported factor value(s) for starting ",
         "predictor `",
         variable,
         "`: ",
         markov_format_patient_ids(profile_ids[unsupported]),
-        ".",
-        call. = FALSE
+        "."
       )
     }
   }
 
   unexpected_ids <- setdiff(profile_ids, fitted_ids)
   if (length(unexpected_ids)) {
-    stop(
+    mostr_abort(
       "Stored starting profiles contain patient(s) with no usable likelihood ",
       "transition: ",
       markov_format_patient_ids(unexpected_ids),
-      ".",
-      call. = FALSE
+      "."
     )
   }
 
@@ -418,57 +450,40 @@ markov_validate_starting_profiles <- function(
   profiles
 }
 
-markov_subset_source_data <- function(data, subset, eval_env) {
+markov_subset_source_data <- function(data, subset) {
   if (is.null(subset)) {
     return(list(data = data, rows = seq_len(nrow(data))))
   }
 
-  selection <- eval(subset, data, eval_env)
-  rows <- seq_len(nrow(data))[selection]
+  rows <- seq_len(nrow(data))[subset]
   rows <- rows[!is.na(rows)]
   list(data = data[rows, , drop = FALSE], rows = rows)
 }
 
-# Earlier fitting functions accepted these starting-profile arguments.
-markov_reject_legacy_args <- function(dots) {
-  legacy <- intersect(c("start_time", "origin_time", "time_map"), names(dots))
-  if (!length(legacy)) {
-    return(invisible(NULL))
-  }
-
-  stop(
-    "mostm() does not accept the former starting-profile argument(s) ",
-    paste0("`", legacy, "`", collapse = ", "),
-    ". Use `first_followup_time` to select the stored starting profiles; ",
-    "supply baseline and time-mapping arguments to downstream SOP summary ",
-    "functions.",
-    call. = FALSE
-  )
-}
 
 markov_first_followup_time <- function(time, first_followup_time) {
   if (is.numeric(time)) {
     scheduled <- time[!is.na(time)]
     if (!length(scheduled)) {
-      stop("The numeric time variable has no non-missing scheduled values.")
+      mostr_abort(
+        "The numeric time variable has no non-missing scheduled values."
+      )
     }
     if (any(!is.finite(scheduled))) {
-      stop("The numeric time variable must contain only finite values.")
+      mostr_abort("The numeric time variable must contain only finite values.")
     }
     if (any(scheduled < 1)) {
-      stop(
+      mostr_abort(
         "The numeric time variable contains a value below 1; follow-up time ",
-        "must begin at 1 or later.",
-        call. = FALSE
+        "must begin at 1 or later."
       )
     }
 
     if (is.null(first_followup_time)) {
       if (!1 %in% scheduled) {
-        stop(
+        mostr_abort(
           "The default `first_followup_time = 1` is not observed in the ",
-          "numeric time variable.",
-          call. = FALSE
+          "numeric time variable."
         )
       }
       return(1)
@@ -479,60 +494,53 @@ markov_first_followup_time <- function(time, first_followup_time) {
         is.na(first_followup_time) ||
         !is.finite(first_followup_time)
     ) {
-      stop(
+      mostr_abort(
         "For numeric time, `first_followup_time` must be one finite numeric ",
-        "value.",
-        call. = FALSE
+        "value."
       )
     }
     if (!first_followup_time %in% scheduled) {
-      stop(
+      mostr_abort(
         "`first_followup_time = ",
         as.character(first_followup_time),
-        "` is not observed in the numeric time variable.",
-        call. = FALSE
+        "` is not observed in the numeric time variable."
       )
     }
     earliest <- min(scheduled)
     if (!identical(as.numeric(first_followup_time), as.numeric(earliest))) {
-      stop(
+      mostr_abort(
         "For numeric time, `first_followup_time` must equal the earliest ",
         "observed scheduled time (`",
         as.character(earliest),
-        "`).",
-        call. = FALSE
+        "`)."
       )
     }
     return(first_followup_time)
   }
 
   if (!is.factor(time) && !is.character(time)) {
-    stop(
-      "The time variable must be numeric, factor, or character.",
-      call. = FALSE
+    mostr_abort(
+      "The time variable must be numeric, factor, or character."
     )
   }
   if (is.null(first_followup_time)) {
-    stop(
-      "Factor and character time require an explicit `first_followup_time`.",
-      call. = FALSE
+    mostr_abort(
+      "Factor and character time require an explicit `first_followup_time`."
     )
   }
   if (length(first_followup_time) != 1L || is.na(first_followup_time)) {
-    stop(
-      "`first_followup_time` must contain one non-missing value.",
-      call. = FALSE
+    mostr_abort(
+      "`first_followup_time` must contain one non-missing value."
     )
   }
 
   resolved <- as.character(first_followup_time)
   observed <- unique(as.character(time[!is.na(time)]))
   if (!resolved %in% observed) {
-    stop(
+    mostr_abort(
       "`first_followup_time = ",
       resolved,
-      "` is not observed in the factor or character time variable.",
-      call. = FALSE
+      "` is not observed in the factor or character time variable."
     )
   }
   resolved
@@ -542,46 +550,49 @@ markov_prepare_stored_data <- function(
   data,
   formula,
   subset,
-  eval_env,
   fit_data,
   id_var,
   time_var,
-  first_followup_time
+  first_followup_time,
+  starting_profiles = TRUE
 ) {
-  if (!is.data.frame(data)) {
-    return(list(
-      refit_data = NULL,
-      starting_profile_data = NULL,
-      starting_profile_metadata = NULL
-    ))
-  }
-  source <- markov_subset_source_data(data, subset, eval_env)
+  source <- markov_subset_source_data(data, subset)
   refit_data <- source$data
-  if (is.null(id_var)) {
+  if (!starting_profiles) {
     return(list(
       refit_data = refit_data,
       starting_profile_data = NULL,
       starting_profile_metadata = NULL
     ))
   }
-  validate_markov_id_var(time_var, refit_data, "data")
   scheduled_start <- markov_first_followup_time(
     refit_data[[time_var]],
     first_followup_time
   )
-  validate_markov_id_var(id_var, fit_data, "fitted data")
 
   fitted_ids <- unique(as.character(fit_data[[id_var]]))
   if (anyNA(fitted_ids) || any(fitted_ids == "")) {
-    stop("Fitted patient IDs must be non-missing and non-empty.", call. = FALSE)
+    mostr_abort("Fitted patient IDs must be non-missing and non-empty.")
   }
+  # The fitted cohort is the patients with at least one row in the fit. A
+  # patient whose every row the engine dropped (a model variable is missing on
+  # each) is left out of the stored data as well, so that bootstrap resamples,
+  # and the cohort each draw standardises over, hold the same patients as the
+  # point estimate. Bootstrap refits are unchanged: the engine dropped these
+  # rows anyway. Patients excluded by `subset` were removed above and are not
+  # counted as dropped.
+  in_fit <- as.character(refit_data[[id_var]]) %in% fitted_ids
+  dropped_ids <- unique(as.character(refit_data[[id_var]][!in_fit]))
+  refit_data <- refit_data[in_fit, , drop = FALSE]
+  source_rows <- source$rows[in_fit]
   at_start <- as.character(refit_data[[time_var]]) %in%
     as.character(scheduled_start)
-  in_fit <- as.character(refit_data[[id_var]]) %in% fitted_ids
-  starting_profile_data <- refit_data[at_start & in_fit, , drop = FALSE]
+  starting_profile_data <- refit_data[at_start, , drop = FALSE]
   # Stored row weights are fitting metadata, not prediction variables.
   starting_profile_data[[markov_prior_weight_column()]] <- NULL
-  starting_profile_data$.markov_source_row <- source$rows[at_start & in_fit]
+  # A bookkeeping column, so it starts with `.markov_`; see
+  # `markov_internal_column()`.
+  starting_profile_data$.markov_source_row <- source_rows[at_start]
 
   predictor_terms <- stats::delete.response(stats::terms(formula, data = data))
   predictor_variables <- all.vars(predictor_terms)
@@ -593,99 +604,85 @@ markov_prepare_stored_data <- function(
 
   list(
     refit_data = refit_data,
+    dropped_ids = dropped_ids,
     starting_profile_data = starting_profile_data,
     starting_profile_metadata = list(
       id_var = id_var,
-      time_var = time_var,
       first_followup_time = scheduled_start,
       required_variables = required,
       predictor_variables = predictor_variables,
-      fitted_ids = fitted_ids,
-      factor_levels = lapply(
-        refit_data[vapply(refit_data, is.factor, logical(1))],
-        levels
-      )
+      fitted_ids = fitted_ids
     )
   )
 }
 
-markov_align_model_data <- function(data, model_or_frame) {
-  if (!is.data.frame(data)) {
-    return(NULL)
-  }
+# Columns that mostr adds to the stored starting profiles for its own
+# bookkeeping start with `.markov_`, such as `.markov_source_row` (the row of
+# the source data each profile came from). They are not patient variables, so
+# no result shows them, whichever function or inference method made it.
+# Results match profiles to patients through the ID column and `rowid`, not
+# through these columns.
+markov_internal_column <- function(names) {
+  startsWith(names, ".markov_")
+}
 
-  rn <- NULL
-  if (is.data.frame(model_or_frame)) {
-    rn <- rownames(model_or_frame)
-  } else {
-    mf <- tryCatch(stats::model.frame(model_or_frame), error = function(e) NULL)
-    if (!is.null(mf)) {
-      rn <- rownames(mf)
-    }
+drop_markov_internal_columns <- function(data) {
+  for (col in names(data)[markov_internal_column(names(data))]) {
+    data[[col]] <- NULL
   }
-
-  if (!is.null(rn) && length(rn) > 0 && all(rn %in% rownames(data))) {
-    return(data[rn, , drop = FALSE])
-  }
-
-  model_n <- tryCatch(stats::nobs(model_or_frame), error = function(e) NULL)
-  if (!is.null(model_n) && nrow(data) != model_n) {
-    model_vars <- tryCatch(
-      all.vars(stats::formula(model_or_frame)),
-      error = function(e) character()
-    )
-    model_vars <- intersect(model_vars, names(data))
-    if (length(model_vars) > 0) {
-      keep <- stats::complete.cases(data[, model_vars, drop = FALSE])
-      if (sum(keep) == model_n) {
-        return(data[keep, , drop = FALSE])
-      }
-    }
-  }
-
   data
 }
 
-resolve_markov_source_data <- function(
-  model,
-  newdata,
-  time_var = NULL,
-  p_var = NULL
-) {
+# The rows of `data` that a fit used, in fitted order. `frame` is the model
+# frame built from `data` when the model was fitted, whose row names are those
+# of the rows left after `subset` and `na.action`. A fitted model is not
+# accepted: `stats::model.frame()` on a model evaluates the `data` of its call
+# again, and by then the user may have changed that data frame.
+markov_align_model_data <- function(data, frame) {
+  if (!is.data.frame(data)) {
+    return(NULL)
+  }
+  if (!is.data.frame(frame)) {
+    mostr_abort(
+      "Internal error: `markov_align_model_data()` needs the model frame of ",
+      "the fit, not the fitted model."
+    )
+  }
+
+  rn <- rownames(frame)
+  if (length(rn) > 0 && all(rn %in% rownames(data))) {
+    return(data[rn, , drop = FALSE])
+  }
+  data
+}
+
+# The data that SOP calls start from: the supplied `newdata`, or the starting
+# profiles stored by `mostm()`. With `settings$absorb`, profiles that start in
+# an absorbing state are refused here, before anything is predicted, so the
+# error counts the user's profiles rather than the stacked prediction rows.
+# Without `settings` (bare variable names look up values) nothing is checked.
+resolve_markov_source_data <- function(model, newdata, settings = NULL) {
+  time_var <- settings$time_var
   newdata_supplied <- !is.null(newdata)
   refit_data <- markov_model_refit_data(model)
   source_data <- if (newdata_supplied) {
     newdata
   } else {
-    metadata <- markov_model_starting_profile_metadata(model)
-    if (
-      !is.null(time_var) &&
-        !is.null(metadata$time_var) &&
-        !identical(time_var, metadata$time_var)
-    ) {
-      stop(
-        "Automatic SOP prediction requested `time_var = \"",
-        time_var,
-        "\"`, but `mostm()` stored the starting profiles using `",
-        metadata$time_var,
-        "`. Refit with the intended `time_var` or supply explicit `newdata`.",
-        call. = FALSE
-      )
-    }
     markov_validate_starting_profiles(
       model,
-      required_variables = c(time_var, p_var)
+      required_variables = c(time_var, settings$p_var)
     )
   }
 
-  if (is.null(source_data)) {
-    stop(
-      "Provide `newdata`, or fit with `mostm(..., id_var = ...)` so ",
-      "the model stores its designated starting profiles."
-    )
-  }
   if (!is.data.frame(source_data)) {
-    stop("`newdata` must be a data frame.")
+    mostr_abort("`newdata` must be a data frame.")
+  }
+  if (!is.null(settings)) {
+    stop_absorbing_start(
+      source_data,
+      settings,
+      source = if (newdata_supplied) "newdata" else "stored"
+    )
   }
 
   list(

@@ -1,34 +1,3 @@
-make_factor_visit_case <- function(n_patients = 80, n_visits = 4, seed = 2026) {
-  set.seed(seed)
-  visits <- as.character(seq_len(n_visits))
-  ids <- seq_len(n_patients)
-  tx <- stats::rbinom(n_patients, 1, 0.5)
-
-  data <- expand.grid(
-    id = ids,
-    time = visits,
-    KEEP.OUT.ATTRS = FALSE
-  )
-  data <- data[order(data$id, data$time), , drop = FALSE]
-  data$time <- factor(data$time, levels = visits)
-  data$tx <- tx[data$id]
-  data$yprev <- factor(
-    sample(seq_len(4), nrow(data), replace = TRUE),
-    levels = as.character(seq_len(4))
-  )
-  eta <- -0.35 *
-    data$tx +
-    0.25 * as.integer(data$time) +
-    0.2 * as.integer(as.character(data$yprev))
-  p_worse <- stats::plogis(eta - mean(eta))
-  y_num <- pmin(
-    4L,
-    pmax(1L, 1L + stats::rbinom(nrow(data), 3L, p_worse))
-  )
-  data$y <- ordered(y_num, levels = as.character(seq_len(4)))
-  data
-}
-
 make_interpolation_case <- function() {
   x <- expand.grid(
     time = factor(c("v1", "v2"), levels = c("v1", "v2")),
@@ -67,8 +36,10 @@ make_interpolation_case <- function() {
   )
 
   class(x) <- c("markov_avg_sops", class(x))
-  attr(x, "p_var") <- "yprev"
-  attr(x, "y_levels") <- factor(1:2)
+  attr(x, "settings") <- markov_settings(
+    p_var = "yprev",
+    y_levels = factor(1:2)
+  )
   attr(x, "avg_args") <- list(
     variables = list(tx = c(0, 1)),
     by = NULL,
@@ -133,6 +104,26 @@ make_absorbing_factor_visit_data <- function(n_patients = 80, seed = 20260531) {
   )
 }
 
+# An orm fit to `make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)`,
+# made once per test run.
+absorbing_factor_visit_fit <- function() {
+  grid_fixture("absorbing factor visit fit", function() {
+    case <- make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)
+    case$fit <- mostm(
+      y ~ tx + time + yprev,
+      data = case$data,
+      id_var = "id",
+      first_followup_time = "1",
+      absorb = case$absorb,
+      opt_method = "LM",
+      scale = TRUE,
+      penalty = 0.1,
+      maxit = 100
+    )
+    case
+  })
+}
+
 add_interpolation_draws <- function(x) {
   draws <- x[rep(seq_len(nrow(x)), each = 3L), , drop = FALSE]
   draws$draw_id <- rep(seq_len(3), times = nrow(x))
@@ -154,236 +145,16 @@ add_interpolation_intervals <- function(x) {
   x
 }
 
-test_that("factor visit time works through SOP APIs and the fast path", {
-  skip_if_not_installed("VGAM")
-
-  data <- make_factor_visit_case()
-  fit <- suppressWarnings(
-    mostm(
-      y ~ time + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      first_followup_time = "1",
-      engine = "vglm"
-    )
-  )
-  baseline <- data[!duplicated(data$id), , drop = FALSE]
-
-  direct <- soprob_markov(
-    fit,
-    newdata = baseline,
-    times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev"
-  )
-  expect_equal(dim(direct), c(nrow(baseline), 4L, 4L))
-  expect_equal(dimnames(direct)[[2]], as.character(1:4))
-
-  individual <- sops(
-    fit,
-    newdata = baseline,
-    times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev"
-  )
-  expect_equal(sort(unique(as.character(individual$time))), as.character(1:4))
-
-  averaged <- avg_sops(
-    fit,
-    newdata = baseline,
-    variables = list(tx = c(0, 1)),
-    times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev"
-  )
-  expect_equal(
-    as.character(attr(averaged, "avg_args")$times),
-    as.character(1:4)
-  )
-
-  components <- mostr:::markov_msm_build(
-    model = fit,
-    data = baseline,
-    times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev"
-  )
-  fast <- mostr:::markov_msm_run(
-    components,
-    get_effective_coefs(fit),
-    times = attr(averaged, "avg_args")$times
-  )
-  expect_equal(unname(fast), unname(direct), tolerance = 1e-10)
-})
-
-test_that("factor visit gap requires explicit numeric time_covariates", {
-  skip_if_not_installed("VGAM")
-
-  data <- make_factor_visit_case(n_patients = 40)
-  fit <- suppressWarnings(
-    mostm(
-      y ~ time + tx + yprev,
-      family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-      data = data,
-      first_followup_time = "1",
-      engine = "vglm"
-    )
-  )
-  baseline <- data[!duplicated(data$id), , drop = FALSE]
-
-  expect_error(
-    soprob_markov(
-      fit,
-      newdata = baseline,
-      times = 1:4,
-      y_levels = factor(1:4),
-      p_var = "yprev",
-      gap_var = "gap"
-    ),
-    "Factor visit time with `gap_var` requires numeric gap_var values"
-  )
-
-  out <- soprob_markov(
-    fit,
-    newdata = baseline,
-    times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev",
-    gap_var = "gap",
-    time_covariates = data.frame(gap = c(3, 4, 7, 14))
-  )
-  expect_equal(dim(out), c(nrow(baseline), 4L, 4L))
-})
-
-test_that("factor visit simulation and bootstrap inference smoke-test", {
-  skip_if_not_installed("VGAM")
-  skip_if_not_installed("mvtnorm")
-
-  data <- make_factor_visit_case(n_patients = 60, seed = 2027)
-  fit <- mostm(
-    y ~ time + tx + yprev,
-    family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
-    data = data,
-    id_var = "id",
-    first_followup_time = "1",
-    engine = "vglm"
-  )
-  baseline <- data[!duplicated(data$id), , drop = FALSE]
-
-  avg_baseline <- avg_sops(
-    fit,
-    newdata = baseline,
-    variables = list(tx = c(0, 1)),
-    times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev"
-  )
-  sim <- inferences(avg_baseline, n_draws = 2, return_draws = TRUE)
-  expect_s3_class(sim, "markov_avg_sops")
-  expect_false(is.null(attr(sim, "draws")))
-
-  avg_full <- avg_sops(
-    fit,
-    variables = list(tx = c(0, 1)),
-    times = 1:4,
-    y_levels = factor(1:4),
-    p_var = "yprev"
-  )
-  boot <- inferences(
-    avg_full,
-    method = "bootstrap",
-    n_draws = 1,
-    return_draws = TRUE
-  )
-  expect_s3_class(boot, "markov_avg_sops")
-  expect_false(is.null(attr(boot, "draws")))
-})
-
-test_that("factor visit orm avg_sops requires absorbing state", {
-  skip_if_not_installed("rms")
-
-  case <- make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)
-  data <- case$data
-
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  old_options <- options(datadist = "dd")
-  on.exit(
-    {
-      options(old_options)
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    add = TRUE
-  )
-
-  fit <- mostm(
-    y ~ tx + time + yprev,
-    data = data,
-    id_var = "id",
-    first_followup_time = "1",
-    opt_method = "LM",
-    scale = TRUE,
-    penalty = 0.1,
-    maxit = 100
-  )
-
-  expect_error(
-    avg_sops(
-      fit,
-      variables = list(tx = c(0, 1)),
-      times = names(case$visit_days),
-      y_levels = fit$yunique
-    ),
-    "pass it via `absorb`"
-  )
-})
-
 test_that("factor visit orm SOP interpolation uses absorbing state", {
   skip_if_not_installed("rms")
 
-  case <- make_absorbing_factor_visit_data(n_patients = 80, seed = 2031)
-  data <- case$data
-
-  dd <- rms::datadist(data)
-  old_dd_exists <- exists("dd", envir = globalenv(), inherits = FALSE)
-  old_dd <- if (old_dd_exists) get("dd", envir = globalenv()) else NULL
-  assign("dd", dd, envir = globalenv())
-  old_options <- options(datadist = "dd")
-  on.exit(
-    {
-      options(old_options)
-      if (old_dd_exists) {
-        assign("dd", old_dd, envir = globalenv())
-      } else if (exists("dd", envir = globalenv(), inherits = FALSE)) {
-        remove(list = "dd", envir = globalenv())
-      }
-    },
-    add = TRUE
-  )
-
-  fit <- mostm(
-    y ~ tx + time + yprev,
-    data = data,
-    id_var = "id",
-    first_followup_time = "1",
-    opt_method = "LM",
-    scale = TRUE,
-    penalty = 0.1,
-    maxit = 100
-  )
+  case <- absorbing_factor_visit_fit()
+  fit <- case$fit
 
   sop_visit <- avg_sops(
     fit,
     variables = list(tx = c(0, 1)),
-    times = names(case$visit_days),
-    y_levels = fit$yunique,
-    absorb = case$absorb
+    times = names(case$visit_days)
   )
   expect_equal(
     as.character(attr(sop_visit, "avg_args")$times),
@@ -403,65 +174,103 @@ test_that("factor visit orm SOP interpolation uses absorbing state", {
   expect_equal(sums$estimate, rep(1, nrow(sums)), tolerance = 1e-10)
 })
 
-test_that("interpolate_sops maps visits, anchors baseline, and normalizes states", {
+test_that("interpolate_sops maps visits, anchors baseline, and normalizes states for each time grid", {
+  skip_on_cran()
   x <- make_interpolation_case()
-  out <- interpolate_sops(
-    x,
-    time_map = c(v1 = 3, v2 = 7),
-    target_times = c(0, 1, 3, 5, 7),
-    baseline_time = 0
+  time_map <- c(v1 = 3, v2 = 7)
+
+  # `times` is the expected time grid and `baseline_time` the stored baseline
+  # time. `values` holds hand-computed estimates; `same_as` names a case whose
+  # result this one must equal.
+  cases <- list(
+    list(
+      label = "explicit target times from baseline",
+      args = list(
+        time_map = time_map,
+        target_times = c(0, 1, 3, 5, 7),
+        baseline_time = 0
+      ),
+      times = c(0, 1, 3, 5, 7),
+      baseline_time = 0,
+      # Linear interpolation between the baseline anchor 0.25 on day 0 and
+      # 0.8 on day 3, and between 0.8 on day 3 and 0.4 on day 7.
+      values = data.frame(
+        tx = c(0, 0),
+        time = c(1, 5),
+        state = c("1", "1"),
+        estimate = c(0.25 + (0.8 - 0.25) / 3, 0.6)
+      )
+    ),
+    list(
+      label = "default target times",
+      args = list(time_map = time_map),
+      times = c(0, 3, 7),
+      baseline_time = 0
+    ),
+    list(
+      label = "no baseline",
+      args = list(time_map = time_map, baseline_time = NULL),
+      times = c(3, 7),
+      baseline_time = NULL
+    ),
+    list(
+      label = "unused time-map entry",
+      args = list(time_map = c(unused = -10, time_map)),
+      times = c(0, 3, 7),
+      baseline_time = 0,
+      same_as = "default target times"
+    )
   )
 
-  day_1 <- out[out$tx == 0 & out$time == 1 & out$state == "1", ]
-  mid <- out[out$tx == 0 & out$time == 5 & out$state == "1", ]
-  expect_equal(day_1$estimate, 0.25 + (0.8 - 0.25) / 3, tolerance = 1e-10)
-  expect_equal(mid$estimate, 0.6, tolerance = 1e-10)
+  results <- list()
+  for (case in cases) {
+    out <- do.call(interpolate_sops, c(list(x), case$args))
+    results[[case$label]] <- out
+    expect_equal(sort(unique(out$time)), case$times, info = case$label)
+    expect_equal(attr(out, "baseline_time"), case$baseline_time, info = case$label)
 
-  baseline <- out[out$time == 0, c("tx", "state", "estimate")]
-  expect_equal(
-    baseline[baseline$tx == 0, c("state", "estimate")],
-    baseline[baseline$tx == 1, c("state", "estimate")],
-    ignore_attr = TRUE
-  )
-  expect_equal(
-    baseline$estimate[baseline$state == "1" & baseline$tx == 0],
-    0.25
-  )
-  expect_equal(
-    baseline$estimate[baseline$state == "2" & baseline$tx == 0],
-    0.75
-  )
+    for (i in seq_len(NROW(case$values))) {
+      value <- case$values[i, ]
+      row <- out[
+        out$tx == value$tx & out$time == value$time & out$state == value$state,
+      ]
+      expect_equal(row$estimate, value$estimate, tolerance = 1e-10, info = case$label)
+    }
 
-  sums <- stats::aggregate(estimate ~ tx + time, out, sum)
-  expect_equal(sums$estimate, rep(1, nrow(sums)), tolerance = 1e-10)
-})
+    # The baseline anchor is the starting-state distribution of the stored
+    # profiles (one of four starts in state 1), the same in every scenario.
+    if (0 %in% case$times) {
+      baseline <- out[out$time == 0, c("tx", "state", "estimate")]
+      expect_equal(
+        baseline[baseline$tx == 0, c("state", "estimate")],
+        baseline[baseline$tx == 1, c("state", "estimate")],
+        ignore_attr = TRUE,
+        info = case$label
+      )
+      expect_equal(
+        baseline$estimate[baseline$state == "1" & baseline$tx == 0],
+        0.25,
+        info = case$label
+      )
+      expect_equal(
+        baseline$estimate[baseline$state == "2" & baseline$tx == 0],
+        0.75,
+        info = case$label
+      )
+    }
 
-test_that("interpolate_sops defaults to baseline plus mapped follow-up nodes", {
-  x <- make_interpolation_case()
+    sums <- stats::aggregate(estimate ~ tx + time, out, sum)
+    expect_equal(
+      sums$estimate,
+      rep(1, nrow(sums)),
+      tolerance = 1e-10,
+      info = case$label
+    )
 
-  anchored <- interpolate_sops(x, time_map = c(v1 = 3, v2 = 7))
-  unanchored <- interpolate_sops(
-    x,
-    time_map = c(v1 = 3, v2 = 7),
-    baseline_time = NULL
-  )
-
-  expect_equal(sort(unique(anchored$time)), c(0, 3, 7))
-  expect_equal(attr(anchored, "baseline_time"), 0)
-  expect_equal(sort(unique(unanchored$time)), c(3, 7))
-  expect_null(attr(unanchored, "baseline_time"))
-})
-
-test_that("unused time-map entries do not change baseline ordering", {
-  x <- make_interpolation_case()
-  expected <- interpolate_sops(x, time_map = c(v1 = 3, v2 = 7))
-  actual <- interpolate_sops(
-    x,
-    time_map = c(unused = -10, v1 = 3, v2 = 7)
-  )
-
-  expect_equal(actual, expected, ignore_attr = TRUE)
-  expect_equal(sort(unique(actual$time)), c(0, 3, 7))
+    if (!is.null(case$same_as)) {
+      expect_equal(out, results[[case$same_as]], ignore_attr = TRUE, info = case$label)
+    }
+  }
 })
 
 test_that("interpolate_sops gives individual profiles one-hot baselines", {
@@ -474,8 +283,10 @@ test_that("interpolate_sops gives individual profiles one-hot baselines", {
   x$yprev <- factor(ifelse(x$id == 1, "1", "2"), levels = c("1", "2"))
   x$estimate <- 0.5
   class(x) <- c("markov_sops", class(x))
-  attr(x, "p_var") <- "yprev"
-  attr(x, "y_levels") <- factor(1:2)
+  attr(x, "settings") <- markov_settings(
+    p_var = "yprev",
+    y_levels = factor(1:2)
+  )
 
   out <- interpolate_sops(x, time_map = c(v1 = 3, v2 = 7))
   baseline <- out[out$time == 0, , drop = FALSE]
@@ -513,41 +324,59 @@ test_that("interpolate_sops gives individual profiles one-hot baselines", {
   expect_equal(sort(unique(unanchored$time)), c(3, 7))
 })
 
-test_that("interpolate_sops interpolates stored draws from fixed baseline anchor", {
-  x <- add_interpolation_draws(make_interpolation_case())
-  out <- interpolate_sops(
-    x,
-    time_map = c(v1 = 3, v2 = 7),
-    target_times = 0:7,
-    baseline_time = 0
+test_that("interpolate_sops takes percentile intervals from interpolated stored draws", {
+  skip_on_cran()
+  simulated <- add_interpolation_draws(make_interpolation_case())
+  # blrm results store posterior draws next to their intervals.
+  posterior <- add_interpolation_intervals(make_interpolation_case())
+  attr(posterior, "draws") <- attr(simulated, "draws")
+  attr(posterior, "method") <- "posterior"
+  attr(posterior, "conf_level") <- 0.8
+
+  cases <- list(
+    list(label = "simulation draws", x = simulated),
+    list(label = "posterior draws", x = posterior)
   )
-  draws <- attr(out, "draws")
+  for (case in cases) {
+    expect_warning(
+      out <- interpolate_sops(
+        case$x,
+        time_map = c(v1 = 3, v2 = 7),
+        target_times = 0:7,
+        baseline_time = 0
+      ),
+      NA,
+      info = case$label
+    )
+    draws <- attr(out, "draws")
+    expect_true(is.data.frame(draws), info = case$label)
+    expect_equal(sort(unique(draws$time)), 0:7, info = case$label)
 
-  expect_s3_class(draws, "data.frame")
-  expect_equal(sort(unique(draws$time)), 0:7)
+    # Every draw shares the fixed baseline anchor, so the interval is a point.
+    baseline <- out[out$time == 0 & out$tx == 0 & out$state == "1", ]
+    expect_equal(baseline$estimate, 0.25, tolerance = 1e-10, info = case$label)
+    expect_equal(baseline$conf.low, 0.25, tolerance = 1e-10, info = case$label)
+    expect_equal(baseline$conf.high, 0.25, tolerance = 1e-10, info = case$label)
+    expect_equal(baseline$std.error, 0, tolerance = 1e-10, info = case$label)
 
-  baseline <- out[out$time == 0 & out$tx == 0 & out$state == "1", ]
-  expect_equal(baseline$estimate, 0.25, tolerance = 1e-10)
-  expect_equal(baseline$conf.low, 0.25, tolerance = 1e-10)
-  expect_equal(baseline$conf.high, 0.25, tolerance = 1e-10)
-  expect_equal(baseline$std.error, 0, tolerance = 1e-10)
-
-  day_1 <- out[out$time == 1 & out$tx == 0 & out$state == "1", ]
-  expect_false(is.na(day_1$conf.low))
-  expect_false(is.na(day_1$conf.high))
-  expect_gt(day_1$conf.high, day_1$conf.low)
-
-  day_1_draws <- draws[draws$time == 1 & draws$tx == 0 & draws$state == "1", ]
-  expect_equal(
-    day_1$conf.low,
-    unname(stats::quantile(day_1_draws$estimate, probs = 0.1)),
-    tolerance = 1e-10
-  )
-  expect_equal(
-    day_1$conf.high,
-    unname(stats::quantile(day_1_draws$estimate, probs = 0.9)),
-    tolerance = 1e-10
-  )
+    day_1 <- out[out$time == 1 & out$tx == 0 & out$state == "1", ]
+    expect_false(is.na(day_1$conf.low), info = case$label)
+    expect_false(is.na(day_1$conf.high), info = case$label)
+    expect_gt(day_1$conf.high, day_1$conf.low)
+    day_1_draws <- draws[draws$time == 1 & draws$tx == 0 & draws$state == "1", ]
+    expect_equal(
+      day_1$conf.low,
+      unname(stats::quantile(day_1_draws$estimate, probs = 0.1)),
+      tolerance = 1e-10,
+      info = case$label
+    )
+    expect_equal(
+      day_1$conf.high,
+      unname(stats::quantile(day_1_draws$estimate, probs = 0.9)),
+      tolerance = 1e-10,
+      info = case$label
+    )
+  }
 })
 
 test_that("interpolate_sops centers Wald intervals on interpolated estimates", {
@@ -611,52 +440,6 @@ test_that("interpolate_sops warns when interval-bearing objects do not store dra
   )
 })
 
-test_that("interpolate_sops handles blrm-style stored posterior draws", {
-  x <- add_interpolation_intervals(make_interpolation_case())
-  draws <- attr(
-    add_interpolation_draws(make_interpolation_case()),
-    "draws"
-  )
-  attr(x, "draws") <- draws
-  attr(x, "method") <- "posterior"
-  attr(x, "conf_level") <- 0.8
-
-  expect_warning(
-    out <- interpolate_sops(
-      x,
-      time_map = c(v1 = 3, v2 = 7),
-      target_times = 0:7,
-      baseline_time = 0
-    ),
-    NA
-  )
-
-  posterior_draws <- attr(out, "draws")
-  expect_s3_class(posterior_draws, "data.frame")
-  expect_equal(sort(unique(posterior_draws$time)), 0:7)
-
-  baseline <- out[out$time == 0 & out$tx == 0 & out$state == "1", ]
-  expect_equal(baseline$conf.low, 0.25, tolerance = 1e-10)
-  expect_equal(baseline$conf.high, 0.25, tolerance = 1e-10)
-
-  day_1 <- out[out$time == 1 & out$tx == 0 & out$state == "1", ]
-  day_1_draws <- posterior_draws[
-    posterior_draws$time == 1 &
-      posterior_draws$tx == 0 &
-      posterior_draws$state == "1",
-  ]
-  expect_equal(
-    day_1$conf.low,
-    unname(stats::quantile(day_1_draws$estimate, probs = 0.1)),
-    tolerance = 1e-10
-  )
-  expect_equal(
-    day_1$conf.high,
-    unname(stats::quantile(day_1_draws$estimate, probs = 0.9)),
-    tolerance = 1e-10
-  )
-})
-
 test_that("plot_sops bars work with derived facet labels on interpolated draws", {
   x <- add_interpolation_draws(make_interpolation_case())
   out <- interpolate_sops(
@@ -713,7 +496,7 @@ test_that("interpolate_sops does not extrapolate estimates or draws", {
     estimate = c(0.4, 0.8, 0.7, 0.6, 0.2)
   )
   class(x) <- c("markov_sops", "data.frame")
-  attr(x, "y_levels") <- c("1", "2")
+  attr(x, "settings") <- markov_settings(y_levels = c("1", "2"))
   attr(x, "conf_level") <- 0.8
   attr(x, "draws") <- do.call(
     rbind,
@@ -770,8 +553,10 @@ test_that("individual bootstrap weights propagate through baseline interpolation
   )
   x$estimate <- ifelse(x$state == "1", 0.6, 0.4)
   class(x) <- c("markov_sops", class(x))
-  attr(x, "p_var") <- "yprev"
-  attr(x, "y_levels") <- factor(c("1", "2"))
+  attr(x, "settings") <- markov_settings(
+    p_var = "yprev",
+    y_levels = factor(c("1", "2"))
+  )
   attr(x, "newdata_orig") <- profiles
   attr(x, "newdata_pred") <- profiles
 
@@ -780,7 +565,7 @@ test_that("individual bootstrap weights propagate through baseline interpolation
     lapply(1:2, function(draw_id) {
       draw <- x
       draw$draw_id <- draw_id
-      draw$score_weight <- c(0.25, 1.75)[draw$rowid]
+      draw$fwb_weight <- c(0.25, 1.75)[draw$rowid]
       draw
     })
   )
@@ -795,9 +580,9 @@ test_that("individual bootstrap weights propagate through baseline interpolation
   early <- out_draws[out_draws$time < 3, , drop = FALSE]
 
   expect_false(anyNA(early$estimate))
-  expect_false(anyNA(early$score_weight))
+  expect_false(anyNA(early$fwb_weight))
   expect_equal(
-    early$score_weight,
+    early$fwb_weight,
     c(0.25, 1.75)[early$rowid]
   )
   baseline <- early[early$time == 0, , drop = FALSE]
@@ -860,10 +645,6 @@ test_that("interpolate_sops guardrails are clear", {
     "`target_times` must stay within the supported time range"
   )
   expect_error(
-    interpolate_sops(x, time_map = c(v1 = 3, v2 = 7), baseline_time = 3),
-    "`baseline_time` must be earlier than the earliest mapped SOP time"
-  )
-  expect_error(
     interpolate_sops(x, time_map = c(v1 = 3, v2 = 7), baseline_time = Inf),
     "`baseline_time` must be a single finite numeric value or `NULL`"
   )
@@ -904,6 +685,67 @@ test_that("time_in_state restricts stored draws to the requested time range", {
   expect_equal(result$conf.low, c(1.24, 1.14))
   expect_equal(result$conf.high, c(1.56, 1.46))
   expect_equal(result$std.error, c(0.2, 0.2))
+})
+
+test_that("time_in_state() gives NA limits and one warning for SOPs with limits but no draws", {
+  # SOPs from `inferences(return_draws = FALSE)` (here method "mvn") or from
+  # posterior `sops()` without draws. The limits of a total cannot be added up
+  # from the limits of its SOPs, so they must come out NA, with a warning that
+  # names the argument that keeps the draws, and never be dropped silently.
+  collect_warnings <- function(expr) {
+    warnings <- character()
+    value <- withCallingHandlers(expr, warning = function(w) {
+      warnings <<- c(warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+    list(value = value, warnings = warnings)
+  }
+  point <- make_interpolation_case()
+  time_map <- c(v1 = 3, v2 = 7)
+  for (method in c("mvn", "posterior")) {
+    x <- add_interpolation_intervals(point)
+    attr(x, "method") <- method
+    calls <- list(
+      visits = function(sops) time_in_state(sops, target_states = "1"),
+      real_time = function(sops) {
+        time_in_state(sops, target_states = "1", time_map = time_map)
+      },
+      interpolated = function(sops) {
+        interpolated <- suppressWarnings(
+          interpolate_sops(sops, time_map = time_map, target_times = 0:7)
+        )
+        time_in_state(interpolated, target_states = "1")
+      }
+    )
+    for (label in names(calls)) {
+      info <- paste(method, label)
+      result <- collect_warnings(calls[[label]](x))
+      # One warning: with `time_map`, `interpolate_sops()` must not also
+      # announce interval endpoints that are then discarded.
+      expect_length(result$warnings, 1L)
+      expect_match(result$warnings, "return_draws = TRUE", fixed = TRUE, info = info)
+      expect_no_match(result$warnings, "interval endpoints", fixed = TRUE, info = info)
+      # The call to rerun is the one that computed the limits.
+      rerun <- if (method == "posterior") "`avg_sops()`" else "`inferences()`"
+      expect_match(result$warnings, rerun, fixed = TRUE, info = info)
+      totals <- result$value
+      expect_identical(
+        intersect(c("total_time", "conf.low", "conf.high", "std.error"), names(totals)),
+        c("total_time", "conf.low", "conf.high", "std.error"),
+        info = info
+      )
+      for (column in c("conf.low", "conf.high", "std.error")) {
+        expect_true(all(is.na(totals[[column]])), info = paste(info, column))
+      }
+      # The totals are those of the SOPs without any limits.
+      expected <- calls[[label]](point)
+      expect_equal(totals$total_time, expected$total_time, info = info)
+    }
+  }
+
+  # SOPs without limits give totals without limits and no warning.
+  expect_no_warning(totals <- time_in_state(point, target_states = "1"))
+  expect_false(any(c("conf.low", "conf.high", "std.error") %in% names(totals)))
 })
 
 test_that("time_in_state uses trapezoidal AUC on mapped real time", {

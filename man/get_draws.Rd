@@ -19,7 +19,7 @@ A data frame with columns:
 \item draw: Draw-specific estimate of the requested quantity
 \item estimate: The original point estimate from the model
 \item conf.low, conf.high, std.error: Summary statistics from the point estimate object
-\item fwb_weight or score_weight: Optional draw-specific patient weight
+\item fwb_weight: Optional draw-specific patient weight
 for eligible stored-data \code{sops()} or \code{\link[=comparisons]{comparisons()}} draws
 \item Additional columns from the original object (covariates, etc.)
 }
@@ -39,15 +39,15 @@ the draws is renamed to \code{draw}.
 
 Draw-specific patient weights are included only when they are meaningful for
 manual downstream averaging: \code{sops()} and \code{\link[=comparisons]{comparisons()}} output
-from FWB or score bootstrap on the stored empirical prediction cohort. For
+from FWB on the stored empirical prediction cohort. For
 \code{\link[=comparisons]{comparisons()}} draws, the weighted mean of a draw's comparisons,
 \eqn{\sum_i w_i x_i / \sum_i w_i} over patients \eqn{i} with weights
 \eqn{w_i} and draw values \eqn{x_i}, reproduces the corresponding
 \code{\link[=avg_comparisons]{avg_comparisons()}} draw. They are not included for
 \code{avg_sops()} because its draws are already averaged, and
 they are not included when the original SOP object used user-supplied
-prediction profiles. The column names \code{fwb_weight} and \code{score_weight} are
-reserved for these draw weights when they are attached.
+prediction profiles. The column name \code{fwb_weight} is reserved for these draw
+weights when they are attached.
 }
 \examples{
 \dontrun{
@@ -56,10 +56,7 @@ result <- avg_sops(
   model = fit,
   newdata = data,
   variables = list(tx = c(0, 1)),
-  times = 1:30,
-  y_levels = 1:6,
-  absorb = 6,
-  id_var = "id"
+  times = 1:30
 ) |>
   inferences(method = "bootstrap", n_draws = 1000, return_draws = TRUE)
 

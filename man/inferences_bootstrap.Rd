@@ -6,21 +6,21 @@
 \usage{
 inferences_bootstrap(
   object,
-  engine,
+  method,
   n_boot,
   workers,
   conf_level,
-  conf_type = "perc",
+  conf_type,
   return_draws,
-  update_datadist,
   use_coefstart
 )
 }
 \arguments{
 \item{object}{A \code{markov_avg_sops} object, or a \code{markov_sops} object when
-\code{engine = "fwb"}.}
+\code{method = "fwb"}.}
 
-\item{engine}{Bootstrap engine, \code{"standard"} or \code{"fwb"}.}
+\item{method}{\code{"bootstrap"}, which resamples patients, or \code{"fwb"}, which
+reweights them.}
 
 \item{n_boot}{Number of bootstrap iterations.}
 
@@ -30,8 +30,6 @@ processing. If > 1, uses parallel processing.}
 \item{conf_level}{Confidence level.}
 
 \item{return_draws}{Store individual bootstrap draws?}
-
-\item{update_datadist}{Update datadist for rms models?}
 
 \item{use_coefstart}{Use original coefficients as starting values?}
 }
