@@ -1,4 +1,4 @@
-# mostr (development version)
+# mostr 0.2.1
 
 ## Breaking changes
 
