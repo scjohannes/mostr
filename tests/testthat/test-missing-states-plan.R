@@ -71,10 +71,30 @@ test_that("steps at the end of a stretch that allow every state are trimmed", {
   plan <- ms_plan(trailing, absorb = integer())
   expect_identical(plan$n_steps_total, 0L)
   expect_identical(nrow(plan$instances), 0L)
-  # With death absorbing they say "alive".
+  # With death absorbing they say nothing either: the patient may have been
+  # lost to follow-up.
   plan <- ms_plan(trailing, absorb = 4L)
+  expect_identical(plan$n_steps_total, 0L)
+  # Known to be alive (`Ocens(1, 3)`), they say "not dead".
+  plan <- ms_plan(
+    trailing,
+    absorb = 4L,
+    lower = c(2, NA, 1, 1),
+    upper = c(2, NA, 3, 3)
+  )
   expect_identical(plan$n_steps_total, 3L)
   expect_identical(plan$step_hi, c(3L, 3L, 3L))
+  # A missing state between recorded visits is alive, one after them is not
+  # known: the stretch ends with the last range.
+  plan <- ms_plan(
+    trailing,
+    absorb = 4L,
+    lower = c(2, NA, 2, NA),
+    upper = c(2, NA, 3, NA)
+  )
+  expect_identical(plan$n_steps_total, 2L)
+  expect_identical(plan$step_lo, c(1L, 2L))
+  expect_identical(plan$step_hi, c(3L, 3L))
 
   # A range before the trailing visits is kept, and only it.
   ranged <- trailing

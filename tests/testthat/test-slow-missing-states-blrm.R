@@ -1,7 +1,10 @@
 # engine = "blrm" with unobserved states samples from mostr's own Stan
 # program. Compiling it takes minutes the first time (it is then cached in
 # tools::R_user_dir("mostr", "cache")), so this runs only with
-# MOSTR_RUN_SLOW=true.
+# MOSTR_RUN_SLOW=true. The test uses that default cache on purpose: a
+# temporary directory would force the compile on every run. It writes there
+# what any first blrm fit with unobserved states writes, and the cache code
+# removes the files of earlier versions of the program.
 
 test_that("blrm with unobserved states agrees with the orm path fit", {
   skip_on_cran() # The pass depends on the seed.

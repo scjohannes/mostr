@@ -12,9 +12,10 @@ test_that("the fitted log-likelihood equals the path enumeration of the data", {
   expect_equal(info$loglik, reference(coef(fit)), tolerance = 1e-8)
   # The deviance stored on the fit is the same likelihood.
   expect_equal(fit$deviance[[2]], -2 * reference(coef(fit)), tolerance = 1e-8)
-  # One stretch per run of hidden visits, of the run's length plus the
-  # observed visit after it if there is one. The patient whose first rows
-  # have no previous state has none.
+  # One stretch per run of hidden visits followed by an observed visit, of
+  # the run's length plus that visit. A run after the patient's last
+  # observed visit says nothing and leaves no stretch. The patient whose
+  # first rows have no previous state has none.
   hidden <- attr(data, "hidden")
   n_stretches <- 0L
   n_steps <- 0L
@@ -22,9 +23,10 @@ test_that("the fitted log-likelihood equals the path enumeration of the data", {
     times <- sort(hidden$time[hidden$id == id])
     runs <- split(times, cumsum(c(1, diff(times) != 1)))
     for (run in runs) {
-      n_stretches <- n_stretches + 1L
       followed <- any(data$id == id & data$time == max(run) + 1)
-      n_steps <- n_steps + length(run) + followed
+      if (!followed) next
+      n_stretches <- n_stretches + 1L
+      n_steps <- n_steps + length(run) + 1L
     }
   }
   expect_identical(info$n_stretches, n_stretches)
@@ -32,6 +34,7 @@ test_that("the fitted log-likelihood equals the path enumeration of the data", {
 })
 
 test_that("the fit maximises the reference log-likelihood", {
+  skip_on_cran() # Slow: numerical gradients; the log-likelihood check runs on CRAN.
   data <- ms_fixture("gaps")
   fit <- ms_fixture("gap_fit")
   reference <- ms_reference(data)
@@ -88,6 +91,7 @@ test_that("the information is the negative Hessian of the reference", {
 })
 
 test_that("a gap before death excludes death during the gap", {
+  skip_on_cran() # Slow: the reference per patient; the full fit is checked on CRAN.
   data <- ms_fixture("gaps")
   fit <- ms_fixture("gap_fit")
   dead <- attr(data, "special")$dead_late[1]
@@ -130,30 +134,64 @@ test_that("a gap before death excludes death during the gap", {
   expect_gt(abs(with_death - attr(fit, "markov_path_fit")$loglik), 1e-3)
 })
 
-test_that("a gap at the end of follow-up counts as survival with `absorb`", {
-  skip_on_cran() # Slow: refits; the reference check of the full fit runs on CRAN.
+test_that("missing states after the last observed visit say nothing", {
+  skip_on_cran() # Slow: three fits; the plan test of the rule runs on CRAN.
   data <- ms_fixture("gaps")
   fit <- ms_fixture("gap_fit")
   trailing <- attr(data, "special")$trailing
-  # Removing the trailing unobserved rows changes the fit: with death
-  # absorbing and always recorded, they say the patient was alive.
+  # The patient may have been lost to follow-up with the rows left in the
+  # data, so the rows say nothing, also with `absorb`: the fit is the one
+  # without them.
   shortened <- data[!(data$id == trailing & is.na(data$y)), ]
   fit_short <- ms_fit(shortened)
-  expect_gt(max(abs(coef(fit) - coef(fit_short))), 1e-6)
-  reference_short <- ms_reference(shortened)
+  expect_equal(coef(fit), coef(fit_short), tolerance = 1e-10)
+  expect_equal(fit$var, fit_short$var, tolerance = 1e-10)
   expect_equal(
+    attr(fit, "markov_path_fit")$loglik,
     attr(fit_short, "markov_path_fit")$loglik,
-    reference_short(coef(fit_short)),
+    tolerance = 1e-10
+  )
+  # The reference sums them over every state, which adds a factor of 1.
+  per_patient <- ms_reference(data)(coef(fit), per_patient = TRUE)
+  per_patient_short <- ms_reference(shortened)(coef(fit), per_patient = TRUE)
+  expect_equal(per_patient, per_patient_short, tolerance = 1e-12)
+
+  # Known to be alive at those visits: `Ocens(1, 3)` adds log P(not dead at
+  # both visits) to the patient's contribution and changes the fit.
+  alive <- data
+  alive$lower <- alive$upper <- as.integer(as.character(alive$y))
+  rows <- alive$id == trailing & is.na(alive$y)
+  alive$lower[rows] <- 1
+  alive$upper[rows] <- 3
+  fit_alive <- ms_fit(alive, formula = Ocens(lower, upper) ~ yprev + time + tx)
+  expect_gt(max(abs(coef(fit_alive) - coef(fit))), 1e-6)
+  reference_alive <- ms_reference(
+    alive,
+    ranges = ms_row_ranges(alive, lower = alive$lower, upper = alive$upper)
+  )
+  expect_equal(
+    attr(fit_alive, "markov_path_fit")$loglik,
+    reference_alive(coef(fit_alive)),
     tolerance = 1e-8
   )
-  ms_expect_maximum(fit_short, reference_short)
-  # The trailing rows add log P(not dead at both visits) to the patient's
-  # contribution.
-  per_patient <- ms_reference(data)(coef(fit), per_patient = TRUE)
-  per_patient_short <- reference_short(coef(fit), per_patient = TRUE)
-  expect_lt(per_patient[[as.character(trailing)]], per_patient_short[[as.character(trailing)]])
-  others <- setdiff(names(per_patient), as.character(trailing))
-  expect_equal(per_patient[others], per_patient_short[others], tolerance = 1e-12)
+  ms_expect_maximum(fit_alive, reference_alive)
+  per_patient_alive <- reference_alive(coef(fit), per_patient = TRUE)
+  id <- as.character(trailing)
+  expect_lt(per_patient_alive[[id]], per_patient[[id]])
+})
+
+test_that("a patient without any recorded state is not fitted", {
+  skip_on_cran() # Slow: two fits.
+  data <- ms_fixture("downstream")
+  unseen <- data[data$id == attr(data, "special")$alive_long[7], ]
+  unseen$id <- max(data$id) + 1
+  unseen$y <- NA
+  unseen$yprev[-1] <- NA
+  with_unseen <- rbind(data, unseen)
+  expect_warning(fit <- ms_fit(with_unseen), "1 patient has")
+  fit_without <- ms_fit(data)
+  expect_equal(coef(fit), coef(fit_without), tolerance = 1e-10)
+  expect_false(as.character(unseen$id[1]) %in% attr(fit, "markov_path_fit")$ids)
 })
 
 test_that("without `absorb` a gap at the end of follow-up contributes nothing", {
@@ -235,4 +273,95 @@ test_that("each kind of stretch alone matches the reference", {
   from_third <- rows[-(1:2), ]
   alone <- ms_reference(from_third)(theta)
   expect_equal(reference[[as.character(first)]], alone, tolerance = 1e-12)
+})
+
+test_that("a formula without the previous state counts each row once", {
+  skip_on_cran() # Slow: a fit; the two-state test of the same fix runs on CRAN.
+  # A row with an observed state after an unobserved visit ends a stretch; it
+  # must not also be fitted as an observed transition, which happened when
+  # the formula did not contain `yprev` and so the engine kept the row.
+  data <- ms_fixture("gaps")
+  fit <- ms_fit(data, formula = ordered(y) ~ time + tx)
+  info <- attr(fit, "markov_path_fit")
+  reference <- ms_reference(data, previous_effect = FALSE)
+  expect_equal(info$loglik, reference(coef(fit)), tolerance = 1e-8)
+  ms_expect_maximum(fit, reference)
+  # Every visit with an observed state and a recorded previous state is an
+  # observed transition, every other one in a stretch is a step.
+  observed <- !is.na(data$y) & !is.na(data$yprev)
+  expect_identical(info$n_observed_transitions, sum(observed))
+})
+
+# Two states, the second absorbing: an unobserved visit before a later
+# recorded one can only have been in state 1. 40 patients over 5 days, death
+# on a fixed day for some of them.
+ms_two_state_data <- function() {
+  rows <- lapply(1:40, function(i) {
+    death <- (i * 7) %% 9 + 1
+    times <- seq_len(min(5, death))
+    data.frame(
+      id = i,
+      time = times,
+      tx = i %% 2,
+      yprev = 1,
+      y = ifelse(times == death, 2L, 1L)
+    )
+  })
+  data <- do.call(rbind, rows)
+  data$yprev <- factor(data$yprev, levels = 1)
+  data
+}
+
+test_that("an unobserved visit with one possible state is summed over", {
+  skip_on_cran() # Slow: two fits; the plan and kernel tests run on CRAN.
+  complete <- ms_two_state_data()
+  hidden <- complete
+  # Interior visits of every third patient, followed by a recorded visit.
+  hide <- hidden$id %% 3 == 0 & hidden$time %in% 2:3 &
+    hidden$time < stats::ave(hidden$time, hidden$id, FUN = max)
+  hidden$y[hide] <- NA
+  hidden$yprev[which(hide) + 1L] <- NA
+  expect_gt(sum(hide), 10L)
+  fit_two <- function(data) {
+    mostm(ordered(y) ~ time + tx, data = data, id_var = "id", absorb = 2)
+  }
+  fit <- fit_two(hidden)
+  info <- attr(fit, "markov_path_fit")
+  expect_false(is.null(info))
+  reference <- ms_reference(hidden, K = 2, absorb = 2, previous_effect = FALSE)
+  expect_equal(info$loglik, reference(coef(fit)), tolerance = 1e-8)
+  ms_expect_maximum(fit, reference)
+  # A hidden visit that can only be state 1 is state 1: the fit is the one to
+  # the complete data (up to the two fits' convergence tolerances).
+  fit_complete <- fit_two(complete)
+  expect_equal(coef(fit), coef(fit_complete), tolerance = 1e-6)
+  expect_equal(info$loglik, ms_loglik(fit_complete), tolerance = 1e-10)
+})
+
+test_that("a stretch with a range and missing states after it matches the reference", {
+  skip_on_cran() # Slow: a fit and the reference.
+  data <- ms_fixture("complete")
+  data$lower <- data$upper <- as.integer(as.character(data$y))
+  # A patient with observed states, an unobserved visit, a range and then
+  # unobserved visits to the end.
+  patient <- attr(ms_fixture("gaps"), "special")$alive_long[7]
+  rows <- which(data$id == patient)
+  expect_length(rows, 6L)
+  data$lower[rows[3]] <- data$upper[rows[3]] <- NA
+  data$lower[rows[4]] <- 2
+  data$upper[rows[4]] <- 3
+  data$lower[rows[5:6]] <- data$upper[rows[5:6]] <- NA
+  data$yprev[rows[4:6]] <- NA
+  fit <- ms_fit(data, formula = Ocens(lower, upper) ~ yprev + time + tx)
+  info <- attr(fit, "markov_path_fit")
+  # One stretch: the unobserved visit (states 1 to 3, because a range
+  # follows) and the range; the visits after it are trimmed.
+  expect_identical(info$n_stretches, 1L)
+  expect_identical(info$n_unobserved_visits, 2L)
+  reference <- ms_reference(
+    data,
+    ranges = ms_row_ranges(data, lower = data$lower, upper = data$upper)
+  )
+  expect_equal(info$loglik, reference(coef(fit)), tolerance = 1e-8)
+  ms_expect_maximum(fit, reference)
 })

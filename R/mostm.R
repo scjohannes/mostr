@@ -180,20 +180,27 @@
 #' state are both observed contribute as usual. `"orm"` maximises this
 #' likelihood and `"blrm"` samples from the posterior distribution it gives.
 #'
-#' Absorbing states are treated as always recorded: a death has a date. A
-#' missing state therefore means "one of the states that are not absorbing".
-#' A patient who is not observed for some days and then dies was alive on
-#' those days, and so was a patient who is not observed up to their last row.
-#' If you do not know whether a patient was still alive at a visit, for
-#' example after loss to follow-up, remove the patient's rows from that visit
-#' on instead of giving them missing states.
+#' What a missing state means depends on where it is:
+#'
+#' * Between two visits with a recorded state, it means "one of the states
+#'   that are not absorbing". A patient who is seen again later was not in an
+#'   absorbing state in between, and a patient whose death is recorded later
+#'   was alive until then, because the death has its own visit.
+#' * After a patient's last recorded state, it means nothing is known, not
+#'   even whether the patient was still alive: the patient may have been lost
+#'   to follow-up. These rows don't enter the fit, so leaving them in `data`
+#'   gives the same fit as removing them. If you do know that the patient was
+#'   alive at such a visit, say so with a range of states (next paragraph).
+#'   Treating a patient as alive without knowing it would make the model
+#'   underestimate the absorbing state.
 #'
 #' When more is known about a visit than nothing, give the possible states as
 #' a range with `Ocens(lower, upper)` as the response, where `lower` and
 #' `upper` are columns of `data` that hold the lowest and the highest state
 #' the patient can have been in. For example, with states 1 and 2 at home,
 #' 3 to 9 in hospital and 10 dead, a patient known to be in hospital on a day
-#' without a recorded state has `lower = 3` and `upper = 9`. An observed
+#' without a recorded state has `lower = 3` and `upper = 9`, and a patient
+#' known only to be alive has `lower = 1` and `upper = 9`. An observed
 #' state has `lower` equal to `upper`, `-Inf` and `Inf` stand for the lowest
 #' and the highest state, and `NA` in both means that nothing is known, as
 #' above. The likelihood then adds up only the sequences of states inside the
@@ -206,8 +213,9 @@
 #' sicker patients are less likely to be assessed on the very day they are
 #' sicker, no method that uses only the recorded states is free of bias.
 #' `missing_states = "drop"` is biased even when states are missing at
-#' random if some states are always recorded: with deaths always known and
-#' other states sometimes missing, the fitted rows contain too many deaths.
+#' random if some states are recorded more reliably than others: with deaths
+#' always known and other states sometimes missing, the fitted rows contain
+#' too many deaths.
 #'
 #' Every visit in a run of unobserved visits needs all predictors of the
 #' model, because the model predicts the transitions into and out of it. The

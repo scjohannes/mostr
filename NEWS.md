@@ -8,13 +8,15 @@
   `"blrm"`, the likelihood then adds up the probabilities of every sequence
   of states the patient can have passed through at those visits, so a
   patient who is seen, missed for some days, and seen again or dies later
-  contributes everything that is known. Absorbing states (`absorb`) count as
-  always recorded: a visit with a missing state is in one of the other
-  states. The fit is valid when states are missing at random.
+  contributes everything that is known. A missing state between two
+  recorded visits is one of the states that are not absorbing (`absorb`).
+  Missing states after a patient's last recorded state carry no information,
+  so rows left in the data after a patient was lost to follow-up don't
+  change the fit. The fit is valid when states are missing at random.
 
   When part of the state is known, give the possible states as a range with
   the response `Ocens(lower, upper)`, for example "in hospital, states 3 to
-  9". `mostm()` reads the ranges itself, so `Ocens(-Inf, 2)` and
+  9", or "alive" at a visit after the last recorded state. `mostm()` reads the ranges itself, so `Ocens(-Inf, 2)` and
   `Ocens(1, 2)` give the same fit (in `rms::orm()` 8.2-1 they do not).
 
   The new argument `missing_states` chooses between `"average"` (this

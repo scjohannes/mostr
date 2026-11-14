@@ -66,8 +66,10 @@ struct CutPoints {
       } else {
         e = std::exp(-std::fabs(z));
       }
+      // One division per cut-point: e / (1 + e) = e * big, equal to within
+      // an ulp.
       const double big = 1.0 / (1.0 + e);
-      const double small = e / (1.0 + e);
+      const double small = e * big;
       upper[k] = z >= 0.0 ? big : small;
       lower[k] = z >= 0.0 ? small : big;
     }
@@ -433,8 +435,14 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
     std::vector<double> diff(thresholds);
     std::vector<double> da_in(order >= 2 ? static_cast<size_t>(states) * q : 0);
     std::vector<double> da_out(da_in.size());
-    std::vector<double> cross(order >= 2 ? static_cast<size_t>(q) * q : 0);
+    // cross sums weight * Da_{t-1}(j) v' / c_t over all stretches; the
+    // Hessian gets cross + cross' once at the end instead of once per
+    // stretch, which saved a q x q pass per stretch.
+    std::vector<double> cross(order >= 2 ? static_cast<size_t>(q) * q : 0, 0.0);
     std::vector<double> v(q);
+    // The stretch's score is summed in a contiguous vector and copied to
+    // stretch_scores (stride m) once.
+    std::vector<double> score_local(q);
 
     for (int s = 0; s < m; ++s) {
       const int first = first_step_ptr[s] - 1;
@@ -533,9 +541,8 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
       }
 
       // Pass 3: score by the adjoint form and, for order 2, the Hessian.
-      for (int b = 0; b < q; ++b) score[score_stride * b] = 0.0;
+      std::fill(score_local.begin(), score_local.end(), 0.0);
       const bool hess = order >= 2 && weight != 0.0;
-      if (hess) std::fill(cross.begin(), cross.end(), 0.0);
       for (int t = 1; t <= steps; ++t) {
         const int u = first + t - 1;
         const int out_lo = lo_ptr[u];
@@ -583,17 +590,18 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
             m_sum += v[k];
           }
           for (int l = 0; l < p; ++l) v[thresholds + l] = m_sum * x[l];
-          for (int b = 0; b < q; ++b) score[score_stride * b] += coef * v[b];
+          for (int b = 0; b < q; ++b) score_local[b] += coef * v[b];
           if (!hess) continue;
           // Curvature: a_j u_jk (b(k+1) - b(k)) / c_t on g_jk g_jk'.
           const double* u_row = gap_u.data() + static_cast<size_t>(row) * thresholds;
           double* curv = gap_curv.data() + static_cast<size_t>(row) * thresholds;
           const double curv_coef = weight * coef;
           for (int k = 0; k < thresholds; ++k) curv[k] += curv_coef * u_row[k] * diff[k];
-          // Cross term: Da_{t-1}(j) v' / c_t (symmetrised per stretch).
+          // Cross term: weight * Da_{t-1}(j) v' / c_t (symmetrised at the
+          // end).
           if (t > 1) {
             for (int b2 = 0; b2 < q; ++b2) {
-              const double scaled = v[b2] * inv_scale;
+              const double scaled = weight * v[b2] * inv_scale;
               if (scaled == 0.0) continue;
               double* col = cross.data() + static_cast<size_t>(q) * b2;
               for (int b1 = 0; b1 < q; ++b1) col[b1] += da_j[b1] * scaled;
@@ -619,17 +627,17 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
         }
         if (propagate) std::swap(da_in, da_out);
       }
+      for (int b = 0; b < q; ++b) score[score_stride * b] = score_local[b];
       if (!hess) continue;
-      // Hessian of log f: cross + cross' - score score' (curvature terms are
-      // added at the end); upper triangle, mirrored below.
+      // Hessian of log f: cross + cross' - score score' (cross and the
+      // curvature terms are added at the end); upper triangle, mirrored so
+      // that the Hessian stays exactly symmetric.
       for (int b2 = 0; b2 < q; ++b2) {
-        const double score_b2 = score[score_stride * b2];
+        const double score_b2 = weight * score_local[b2];
         for (int b1 = 0; b1 <= b2; ++b1) {
-          const double value = weight * (cross[b1 + static_cast<size_t>(q) * b2] +
-                                         cross[b2 + static_cast<size_t>(q) * b1] -
-                                         score[score_stride * b1] * score_b2);
-          hessian[b1 + static_cast<size_t>(q) * b2] += value;
-          if (b1 != b2) hessian[b2 + static_cast<size_t>(q) * b1] += value;
+          const double value = score_local[b1] * score_b2;
+          hessian[b1 + static_cast<size_t>(q) * b2] -= value;
+          if (b1 != b2) hessian[b2 + static_cast<size_t>(q) * b1] -= value;
         }
       }
     }
@@ -638,7 +646,18 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
       // Expand the curvature weights W_rk on g_rk g_rk' = (e_k, x_r)(e_k, x_r)':
       // W_rk on the intercept diagonal, W_rk x_r in the cross block and
       // (sum_k W_rk) x_r x_r' in the slope block.
+      for (int b2 = 0; b2 < q; ++b2) {
+        for (int b1 = 0; b1 < q; ++b1) {
+          hessian[b1 + static_cast<size_t>(q) * b2] +=
+              cross[b1 + static_cast<size_t>(q) * b2] +
+              cross[b2 + static_cast<size_t>(q) * b1];
+        }
+      }
       std::vector<double> xx(static_cast<size_t>(p) * p, 0.0);
+      // ax[k * p + l]: the intercept-by-slope block, summed in one
+      // contiguous row per cut-point and written to both halves of the
+      // Hessian once (writing column-wise per row was strided).
+      std::vector<double> ax(static_cast<size_t>(thresholds) * p, 0.0);
       for (int r = 0; r < n_gap; ++r) {
         const double* curv = gap_curv.data() + static_cast<size_t>(r) * thresholds;
         const double* x = gap_rows.data() + static_cast<size_t>(r) * p;
@@ -648,15 +667,20 @@ writable::doubles_matrix<> to_matrix(const std::vector<double>& values,
           if (w_rk == 0.0) continue;
           total += w_rk;
           hessian[k + static_cast<size_t>(q) * k] += w_rk;
-          for (int l = 0; l < p; ++l) {
-            hessian[k + static_cast<size_t>(q) * (thresholds + l)] += w_rk * x[l];
-            hessian[(thresholds + l) + static_cast<size_t>(q) * k] += w_rk * x[l];
-          }
+          double* ax_k = ax.data() + static_cast<size_t>(k) * p;
+          for (int l = 0; l < p; ++l) ax_k[l] += w_rk * x[l];
         }
         if (total == 0.0) continue;
         for (int l2 = 0; l2 < p; ++l2) {
           const double scaled = total * x[l2];
           for (int l1 = 0; l1 <= l2; ++l1) xx[l1 + static_cast<size_t>(p) * l2] += scaled * x[l1];
+        }
+      }
+      for (int k = 0; k < thresholds; ++k) {
+        for (int l = 0; l < p; ++l) {
+          const double value = ax[static_cast<size_t>(k) * p + l];
+          hessian[k + static_cast<size_t>(q) * (thresholds + l)] += value;
+          hessian[(thresholds + l) + static_cast<size_t>(q) * k] += value;
         }
       }
       for (int l2 = 0; l2 < p; ++l2) {

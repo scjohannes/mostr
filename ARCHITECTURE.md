@@ -536,20 +536,29 @@ each *stretch*, the sum over all state sequences inside the allowed ranges:
 
 A stretch is a run of consecutive rows of a patient without an exactly
 observed state, together with the first exactly observed row after it, if
-any. `NA` means the range of non-absorbing states: absorbing states are
-taken as always recorded, so a patient is alive during a gap whether they are
-seen alive or die afterwards, and a gap up to the patient's last row
-contributes the probability of not being absorbed. From an absorbing state
-inside a range the transition is the identity. Trailing steps whose range is
-every state are removed, because they contribute a factor of 1. The sum is
+any. A row without any record of the state (`NA`, or `NA` in both bounds of
+`Ocens()`) means, between recorded visits (a later row of the patient has a
+state or a range), the range of non-absorbing states: absorbing states are
+taken as recorded when they happen, so a patient is alive during a gap
+whether they are seen alive or die afterwards. After the patient's last
+recorded visit it means every state, because the patient may have been lost
+to follow-up with the rows left in the data; such rows are trimmed and the
+fit is the one without them. An explicit range, such as `Ocens()` over the
+non-absorbing states, at the end of follow-up contributes the probability of
+not being absorbed. From an absorbing state inside a range the transition is
+the identity. Trailing steps whose range is every state are removed, because
+they contribute a factor of 1. An unrecorded visit is never an exactly
+observed state, even when only one state is possible for it. The sum is
 valid for inference when states are missing at random.
 
 ```mermaid
 flowchart TD
     A[mostm: markov_state_ranges] --> B{unobserved states and missing_states = average?}
     B -->|no| C[engine fit as before]
-    B -->|yes| D[engine fit to fully observed transitions: structure and starting values]
-    D --> E[markov_path_plan: stretches, design rows per step and previous state, de-duplicated]
+    B -->|yes| L[markov_path_layout: which rows form stretches]
+    L -->|no stretch| C
+    L -->|stretches| D[engine fit to fully observed transitions: structure and starting values]
+    D --> E[markov_path_plan_design: design rows per step and previous state, de-duplicated]
     E --> F{engine}
     F -->|orm| G[markov_path_maximise: Newton-Raphson on cpp_path_loglik]
     F -->|blrm| H[markov_path_stan_model: sample inst/stan/po_paths.stan]
@@ -558,10 +567,19 @@ flowchart TD
     I --> K[robcov_orm_paths: sandwich from patient scores]
 ```
 
-- `markov_path_plan()` sorts rows by patient and time and requires the rows
+- `markov_path_layout()` sorts rows by patient and time and requires the rows
   of a patient to be consecutive visits: the previous state must be `NA`
   exactly on rows that follow a row without an exactly observed state.
   Leading rows of a patient before any known previous state are not used.
+  It runs once per fit, before the engine's fit; `markov_path_plan_design()`
+  adds the design rows after it, from the fitted model
+  (`markov_path_plan()` does both, for tests).
+- The fully observed transitions are the rows with an exactly observed state
+  and a recorded previous state (`markov_observed_transition_rows()`); when
+  there are stretches the engine is fitted to exactly these rows (through
+  `subset`), also when the formula does not contain `p_var`, so that a row
+  that ends a stretch is never counted twice. Without stretches the engine's
+  fit is used as without unobserved states.
   A first step of a stretch has one design row; a later step has one design
   row for each non-absorbing state in the range of the step before it, built
   by setting `p_var` to that state. Design rows that are equal are stored
@@ -578,8 +596,15 @@ flowchart TD
 - orm: the model structure (design columns, knots, factor levels, state
   labels) and the starting values come from `rms::orm()` on the fully
   observed transitions, so every state must occur there
-  (`markov_check_observed_states()`). `markov_path_maximise()` iterates
-  Newton-Raphson with step halving. The result is that `orm` object with new
+  (`markov_check_observed_states()`). `markov_path_maximise()` runs
+  `markov_newton_maximise()`: Newton-Raphson with a line search, where an
+  information matrix that is not positive definite (the likelihood need not
+  be concave away from its maximum) is replaced by one with the absolute
+  values of its eigenvalues (`markov_ascent_direction()`). It stops at a
+  concave point where the Newton decrement is below 1e-10 or 1e-13 of the
+  log-likelihood, whichever is larger, or where a step no longer changes the
+  log-likelihood beyond rounding. Stretches of weight 0 add nothing to the
+  scores. The result is that `orm` object with new
   `coefficients`, `info.matrix` (rms's list form), `deviance` and
   `linear.predictors`; statistics rms computed for the other fit are set to
   `NA`. `fit$x` and `fit$y`, and the stored `markov_data`, hold the fully
@@ -595,10 +620,16 @@ flowchart TD
   transitions to build the object; `po_paths.stan` then samples the same
   parameters with rmsb's priors (Dirichlet on the state probabilities at the
   mean predictors, optional contrast priors) and its centred QR
-  parametrisation, and the draws replace those of the object. The program is
-  compiled on first use by `markov_path_stan_model()` and cached in
+  parametrisation, with the orthogonalised columns scaled to SD 1 (and
+  `Rinv` by the same factor) so that the sampler adapts faster; the draws
+  replace those of the object. The program is compiled on first use by
+  `markov_path_stan_model()` and cached in
   `tools::R_user_dir("mostr", "cache")` (`options(mostr.stan_cache = )`),
-  keyed by the program, the rstan version and the R version.
+  keyed by the program, R and the versions of rstan, StanHeaders, Rcpp,
+  RcppEigen and RcppParallel (`markov_stan_cache_key()`).
+  `markov_cached_stan_model()` writes through a temporary file and a rename
+  and then deletes the cached programs of other keys; an unwritable
+  directory keeps the program for the session only.
 - The fitted cohort is every patient with an observed transition or a
   stretch (`fitted_ids` passed to `markov_prepare_stored_data()`).
   Bootstrap and fractional weighted refits call `mostm()` again and so use

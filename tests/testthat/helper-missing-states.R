@@ -54,6 +54,50 @@ ms_simulate <- function(n = 60, n_visits = 6, seed = 20261114) {
   data
 }
 
+# Simulated visits with K states (K absorbing), three continuous covariates
+# (age, bmi, sofa) and a fraction `miss` of the non-absorbing states set to
+# `NA`, with the previous state of the next row set to `NA` as well. With
+# many states and much missing, the starting values (the fit to the fully
+# observed transitions) can lie where the log-likelihood with unobserved
+# states is not concave.
+ms_simulate_many_states <- function(n, n_visits, K, miss, seed) {
+  withr::with_seed(seed, {
+    alpha <- seq(3, -5, length.out = K - 1)
+    b_prev <- seq(0, 4.5, length.out = K - 1)
+    rows <- vector("list", n)
+    for (i in seq_len(n)) {
+      tx <- i %% 2
+      age <- stats::rnorm(1)
+      bmi <- stats::rnorm(1)
+      sofa <- stats::rnorm(1)
+      state <- sample(2:min(5, K - 1), 1)
+      out <- vector("list", n_visits)
+      for (t in seq_len(n_visits)) {
+        eta <- b_prev[state] - 0.03 * t - 0.4 * tx + 0.3 * age - 0.2 * bmi +
+          0.25 * sofa
+        cumulative <- c(1, stats::plogis(alpha + eta), 0)
+        new <- sample.int(K, 1, prob = cumulative[1:K] - cumulative[2:(K + 1)])
+        out[[t]] <- data.frame(
+          id = i, time = t, tx = tx, age = age, bmi = bmi, sofa = sofa,
+          yprev = state, y = new
+        )
+        state <- new
+        if (state == K) break
+      }
+      rows[[i]] <- do.call(rbind, out)
+    }
+    data <- do.call(rbind, rows)
+    hide <- data$y != K & stats::runif(nrow(data)) < miss
+  })
+  data$y[hide] <- NA
+  after <- c(FALSE, hide[-nrow(data)]) &
+    c(FALSE, data$id[-1] == data$id[-nrow(data)])
+  data$yprev[after] <- NA
+  data$yprev <- factor(data$yprev, levels = 1:(K - 1))
+  rownames(data) <- NULL
+  data
+}
+
 # Set the state of the visits (ids[k], times[k]) to `NA` and the previous
 # state of the visit after each to `NA`.
 ms_hide <- function(data, ids, times) {
@@ -137,39 +181,53 @@ ms_fixture <- function(name) {
   ms_fixtures[[name]]
 }
 
-# Ranges lo..hi per row from `y` (NA = every non-absorbing state) or from two
-# columns `lower`, `upper` (with -Inf, Inf and NA as in `Ocens()`).
+# Ranges lo..hi per row from `y` or from two columns `lower`, `upper` (with
+# -Inf, Inf and NA as in `Ocens()`), and whether the row's state is recorded
+# at all. A row without a record (`NA`, or `NA` in both bounds) is any state
+# that is not absorbing when a later row of the patient is recorded, and any
+# state at all after the patient's last recorded row.
 ms_row_ranges <- function(data, K = 4, absorb = 4, lower = NULL, upper = NULL) {
   top <- if (length(absorb)) K - 1 else K
   if (is.null(lower)) {
     y <- as.integer(as.character(data$y))
-    lo <- ifelse(is.na(y), 1, y)
-    hi <- ifelse(is.na(y), top, y)
+    recorded <- !is.na(y)
+    lo <- ifelse(recorded, y, NA)
+    hi <- lo
   } else {
-    lo <- ifelse(is.na(lower), 1, ifelse(lower == -Inf, 1, lower))
-    hi <- ifelse(is.na(upper), top, ifelse(upper == Inf, K, upper))
+    recorded <- !(is.na(lower) & is.na(upper))
+    lo <- ifelse(lower == -Inf, 1, lower)
+    hi <- ifelse(upper == Inf, K, upper)
   }
-  list(lo = as.integer(lo), hi = as.integer(hi))
+  recorded_later <- vapply(seq_len(nrow(data)), function(i) {
+    any(recorded & data$id == data$id[i] & data$time > data$time[i])
+  }, logical(1))
+  lo[!recorded] <- 1
+  hi[!recorded] <- ifelse(recorded_later[!recorded], top, K)
+  list(lo = as.integer(lo), hi = as.integer(hi), recorded = recorded)
 }
 
 # The reference log-likelihood for a data frame, as a function of `theta`
 # (named like `coef(fit)`: intercepts "y>=2", ..., "y>=K", then "yprev=2", ...,
-# "yprev=K-1", "time", "tx"). The paths are listed once, here; the returned
-# function `f(theta, per_patient = FALSE)` evaluates every transition of every
-# path, multiplies along each path, adds the paths of each patient and takes
-# the log. `per_patient = TRUE` returns one value per patient (named by id).
+# "yprev=K-1", "time", "tx"; without the "yprev" terms when
+# `previous_effect = FALSE`, for the formula `ordered(y) ~ time + tx`). The
+# paths are listed once, here; the returned function
+# `f(theta, per_patient = FALSE)` evaluates every transition of every path,
+# multiplies along each path, adds the paths of each patient and takes the
+# log. `per_patient = TRUE` returns one value per patient (named by id).
 # `weights`: one weight per row, the same on all rows of a patient.
 ms_reference <- function(
   data,
   K = 4,
   absorb = 4,
   ranges = ms_row_ranges(data, K, absorb),
-  weights = NULL
+  weights = NULL,
+  previous_effect = TRUE
 ) {
   ids <- unique(data$id)
   steps <- list()
   path_count <- 0L
   patient_weight <- rep(1, length(ids))
+  recorded <- ranges$recorded %||% rep(TRUE, nrow(data))
   for (i in seq_along(ids)) {
     rows <- which(data$id == ids[[i]])
     rows <- rows[order(data$time[rows])]
@@ -178,7 +236,9 @@ ms_reference <- function(
     s0 <- as.integer(as.character(data$yprev[rows[1]]))
     lo <- c(s0, ranges$lo[rows])
     hi <- c(s0, ranges$hi[rows])
-    known <- which(!is.na(lo) & lo == hi)
+    # A state is known exactly only on a recorded row (or as `yprev`); an
+    # unrecorded row with a single possible state is still summed over.
+    known <- which(!is.na(lo) & lo == hi & c(TRUE, recorded[rows]))
     # Nothing to condition on, or nothing after the first known state.
     if (!length(known) || known[1] > n) next
     positions <- known[1]:(n + 1) # 1 is s_0, t + 1 is row t
@@ -200,7 +260,10 @@ ms_reference <- function(
   path_patient <- integer(path_count)
   path_patient[steps$path] <- steps$patient
   # Design rows: previous-state dummies for states 2..K-1, time, tx.
-  x <- cbind(outer(steps$previous, 2:(K - 1), "==") * 1, steps$time, steps$tx)
+  dummies <- if (previous_effect && K > 2) {
+    outer(steps$previous, 2:(K - 1), "==") * 1
+  }
+  x <- cbind(dummies, steps$time, steps$tx)
   from_absorbing <- steps$previous %in% absorb
 
   function(theta, per_patient = FALSE) {
@@ -231,7 +294,11 @@ ms_reference_loglik <- function(theta, data, ...) {
 # that the reference distinguishes the two).
 ms_reference_loglik_death_allowed <- function(theta, data) {
   y <- as.integer(as.character(data$y))
-  ranges <- list(lo = ifelse(is.na(y), 1L, y), hi = ifelse(is.na(y), 4L, y))
+  ranges <- list(
+    lo = ifelse(is.na(y), 1L, y),
+    hi = ifelse(is.na(y), 4L, y),
+    recorded = !is.na(y)
+  )
   ms_reference_loglik(theta, data, ranges = ranges)
 }
 

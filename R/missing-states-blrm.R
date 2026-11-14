@@ -11,13 +11,14 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   backend <- args$backend %||% getOption("rmsb.backend", "rstan")
   backend <- match.arg(backend, c("rstan", "cmdstan"))
   labels <- ranges$labels
-  observed_setup <- markov_observed_transition_setup(setup, ranges)
+  layout <- mostm_path_layout(setup, ranges, path)
   # No stretch: rmsb's own fit to the observed transitions is the fit (see
   # `mostm_fit_orm_paths()`), and nothing needs to be compiled.
-  if (!mostm_path_plan(setup, ranges, path)$n_steps_total) {
-    return(mostm_fit_blrm(observed_setup, ...))
+  if (!layout$n_steps_total) {
+    return(mostm_fit_blrm(markov_observed_transition_setup(setup, ranges), ...))
   }
   mostm_check_observed_states(setup, ranges, path)
+  observed_setup <- markov_observed_transition_setup(setup, ranges, path$p_var)
 
   # The model structure comes from `rmsb::blrm()` itself, fitted to the fully
   # observed transitions: design matrix, state labels and every field the
@@ -47,9 +48,7 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     ),
     structure_args
   )
-  if (!is.null(setup$subset_rows)) {
-    structure_call$subset <- setup$subset_rows
-  }
+  structure_call$subset <- observed_setup$subset_rows
   # Ten warm-up iterations always draw sampler warnings (R-hat, effective
   # sample size); they describe draws that are thrown away.
   fit <- suppressWarnings(do.call(rmsb::blrm, structure_call))
@@ -58,16 +57,14 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     observed_setup$formula,
     observed_setup$data,
     setup$dots,
-    subset = setup$subset_rows,
+    subset = observed_setup$subset_rows,
     eval_env = setup$eval_env
   )
   fit_data <- markov_align_model_data(setup$data, fit_frame)
 
-  plan <- mostm_path_plan(
-    setup,
-    ranges,
-    path,
-    design = function(rows) blrm_design_matrix(fit, rows)
+  plan <- markov_path_plan_design(
+    layout,
+    function(rows) blrm_design_matrix(fit, rows)
   )
 
   # Stan samples coefficients of centred, orthogonalised predictors, as rmsb
@@ -76,10 +73,32 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   x <- as.matrix(fit$x)
   n_predictors <- ncol(x)
   transform <- rmsb::selectedQr(x, center = TRUE)
+  # `selectedQr()` returns orthonormal columns (length 1, so SD
+  # 1 / sqrt(n - 1)), whose coefficients have posterior SDs of order 1 to 10
+  # while the intercepts' unconstrained parameters have SDs of order
+  # n^-1/2. Stan starts from a unit metric and needed trajectories of 100 or
+  # more leapfrog steps until it had adapted: on 300 patients x 14 visits,
+  # 6 states, 4 chains x 1000 iterations, warm-up took about 15,900 leapfrog
+  # steps and 56 s per chain with these columns, and about 4,300 steps and
+  # 16 s with columns of SD 1 (Nov 2026).
+  # So the columns are multiplied by sqrt(n - 1), and `Rinv` by the same
+  # factor: with Q the orthonormal columns and R^-1 their `Rinv`, the linear
+  # predictor (x - xbar)' beta = Q beta_q with beta = R^-1 beta_q equals
+  # (c Q) (beta_q / c), and beta = (c R^-1) (beta_q / c). The sampled
+  # coefficients are beta_q / c; the scaled `Rinv` turns them, the
+  # stretches' design rows and the contrasts of the contrast prior into the
+  # original scale. The model has no prior on these coefficients other than
+  # the contrast prior, which is written in the original coefficients
+  # (`C beta`) and so is unchanged, and the Dirichlet prior on the
+  # intercepts is defined at the mean predictors, which the scaling does not
+  # move: the posterior of the original coefficients is the same, only the
+  # sampler's parametrisation differs.
+  column_scale <- sqrt(max(nrow(x) - 1, 1))
+  rinv <- transform$Rinv * column_scale
   x_gap <- if (is.null(plan$x_gap)) {
     matrix(0, 0L, n_predictors)
   } else {
-    sweep(unname(plan$x_gap), 2L, transform$xbar) %*% transform$Rinv
+    sweep(unname(plan$x_gap), 2L, transform$xbar) %*% rinv
   }
   n_states <- length(labels)
   contrast <- fit$Contrast
@@ -104,7 +123,7 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
       !duplicated(observed_row),
       ,
       drop = FALSE
-    ],
+    ] * column_scale,
     n_cells = length(cells),
     cell = as.array(cells),
     cell_count = as.array(as.numeric(cell_count[cells])),
@@ -123,7 +142,7 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     conc = args$conc %||% fit$conc %||% (1 / (0.8 + 0.35 * max(n_states, 3))),
     cn = n_contrasts,
     C = if (n_contrasts) {
-      contrast %*% transform$Rinv
+      contrast %*% rinv
     } else {
       matrix(0, 0L, n_predictors)
     },
@@ -188,7 +207,7 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   }
   alpha_names <- parameter_names[grepl("^alpha\\[", parameter_names)]
   beta_names <- parameter_names[grepl("^beta\\[", parameter_names)]
-  betas <- raw[, beta_names, drop = FALSE] %*% t(transform$Rinv)
+  betas <- raw[, beta_names, drop = FALSE] %*% t(rinv)
   # The intercepts were sampled for centred predictors.
   alphas <- raw[, alpha_names, drop = FALSE] -
     as.numeric(betas %*% transform$xbar)
@@ -278,25 +297,8 @@ markov_path_stan_model <- function(backend) {
   if (!is.null(cached)) {
     return(cached)
   }
-  cache <- getOption("mostr.stan_cache", NULL)
-  if (is.null(cache)) {
-    cache <- tools::R_user_dir("mostr", "cache")
-  }
-  use_cache <- is.character(cache) && length(cache) == 1L && !is.na(cache)
-  if (use_cache) {
-    dir.create(cache, recursive = TRUE, showWarnings = FALSE)
-    use_cache <- dir.exists(cache)
-  }
-  code <- markov_path_stan_code()
-  announce <- function() {
-    message(
-      "Compiling the Stan program for models with unobserved states. This ",
-      "takes a minute or more and is done once",
-      if (use_cache) paste0("; the result is kept in ", cache) else
-        " per session",
-      "."
-    )
-  }
+  cache <- markov_stan_cache_dir(getOption("mostr.stan_cache", NULL))
+  announce <- function() message(markov_stan_compile_message(cache))
 
   if (backend == "cmdstan") {
     if (!requireNamespace("cmdstanr", quietly = TRUE)) {
@@ -304,7 +306,7 @@ markov_path_stan_model <- function(backend) {
         "`backend = \"cmdstan\"` needs the cmdstanr package."
       )
     }
-    directory <- if (use_cache) cache else tempdir()
+    directory <- if (cache$use) cache$dir else tempdir()
     announce()
     model <- suppressMessages(cmdstanr::cmdstan_model(
       system.file("stan", "po_paths.stan", package = "mostr"),
@@ -314,30 +316,131 @@ markov_path_stan_model <- function(backend) {
     if (!requireNamespace("rstan", quietly = TRUE)) {
       mostr_abort("`engine = \"blrm\"` needs the rstan package.")
     }
-    # The key changes with the program, rstan and R, so an outdated compiled
-    # program is never loaded.
-    key <- rlang::hash(list(
-      code,
-      as.character(utils::packageVersion("rstan")),
-      R.version$version.string,
-      R.version$platform
-    ))
-    file <- if (use_cache) file.path(cache, paste0("po_paths_", key, ".rds"))
-    model <- if (use_cache && file.exists(file)) {
-      tryCatch(readRDS(file), error = function(e) NULL)
-    }
-    if (!inherits(model, "stanmodel")) {
-      announce()
-      model <- rstan::stan_model(
-        model_code = code,
-        model_name = "mostr_po_paths",
-        auto_write = FALSE
-      )
-      if (use_cache) {
-        tryCatch(saveRDS(model, file), error = function(e) NULL)
+    code <- markov_path_stan_code()
+    model <- markov_cached_stan_model(
+      cache,
+      key = markov_stan_cache_key(code),
+      compile = function() {
+        announce()
+        rstan::stan_model(
+          model_code = code,
+          model_name = "mostr_po_paths",
+          auto_write = FALSE
+        )
       }
-    }
+    )
   }
   markov_stan_models[[backend]] <- model
+  model
+}
+
+# The cache directory from `options(mostr.stan_cache = )`: `NULL` is the
+# user's cache directory, a path is that directory, anything else (`FALSE`)
+# turns the cache off. `use` says whether compiled programs are written there:
+# not when it is off or can't be written to.
+markov_stan_cache_dir <- function(option) {
+  dir <- if (is.null(option)) tools::R_user_dir("mostr", "cache") else option
+  if (!is.character(dir) || length(dir) != 1L || is.na(dir)) {
+    return(list(dir = NULL, use = FALSE, status = "off"))
+  }
+  dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  if (!dir.exists(dir) || !markov_dir_writable(dir)) {
+    return(list(dir = dir, use = FALSE, status = "unwritable"))
+  }
+  list(dir = dir, use = TRUE, status = "ok")
+}
+
+# Whether a file can be created in `dir`. `file.access(dir, 2)` is not used:
+# on Windows it reports only whether the directory exists, and in a
+# read-only directory `saveRDS()` then fails after the compile.
+markov_dir_writable <- function(dir) {
+  probe <- tempfile("write_test_", tmpdir = dir)
+  on.exit(unlink(probe), add = TRUE)
+  isTRUE(suppressWarnings(file.create(probe, showWarnings = FALSE)))
+}
+
+markov_stan_compile_message <- function(cache) {
+  paste0(
+    "Compiling the Stan program for models with unobserved states. This ",
+    "takes a minute or more and is done once",
+    switch(
+      cache$status,
+      ok = paste0("; the result is kept in ", cache$dir),
+      off = " per session",
+      unwritable = paste0(
+        " per session, because the cache directory ",
+        cache$dir,
+        " can't be written to (set `options(mostr.stan_cache = )` to another ",
+        "directory)"
+      )
+    ),
+    "."
+  )
+}
+
+# The name of the cached program. It changes with the program, with R, and
+# with the versions of rstan and of the packages whose code the compiled
+# program links (StanHeaders, Rcpp, RcppEigen, RcppParallel; rstan's own
+# version does not change when they are updated), so an outdated compiled
+# program is never loaded.
+markov_stan_cache_key <- function(code, versions = markov_stan_toolchain_versions()) {
+  rlang::hash(list(
+    code,
+    versions,
+    R.version$version.string,
+    R.version$platform
+  ))
+}
+
+markov_stan_toolchain_versions <- function() {
+  packages <- c("rstan", "StanHeaders", "Rcpp", "RcppEigen", "RcppParallel")
+  installed <- packages[nzchar(vapply(
+    packages,
+    function(package) system.file(package = package),
+    character(1)
+  ))]
+  vapply(
+    installed,
+    function(package) as.character(utils::packageVersion(package)),
+    character(1)
+  )
+}
+
+# Load the program compiled under `key` from the cache, or compile it with
+# `compile()` and save it there. The file is written under a temporary name
+# in the same directory and then renamed, so another R session never reads a
+# half-written file. After a successful save the files of other keys
+# (earlier programs or toolchains) are deleted: CRAN allows a package to keep
+# files in the user's cache directory only if it removes outdated ones, and
+# each is about 1.6 MB.
+markov_cached_stan_model <- function(cache, key, compile) {
+  if (!cache$use) {
+    return(compile())
+  }
+  file <- file.path(cache$dir, paste0("po_paths_", key, ".rds"))
+  if (file.exists(file)) {
+    model <- tryCatch(readRDS(file), error = function(e) NULL)
+    if (inherits(model, "stanmodel")) {
+      return(model)
+    }
+  }
+  model <- compile()
+  temporary <- tempfile("po_paths_", tmpdir = cache$dir, fileext = ".tmp")
+  saved <- tryCatch(
+    {
+      saveRDS(model, temporary)
+      file.rename(temporary, file)
+    },
+    error = function(e) FALSE,
+    warning = function(w) FALSE
+  )
+  unlink(temporary)
+  if (isTRUE(saved)) {
+    outdated <- setdiff(
+      list.files(cache$dir, "^po_paths_.*[.]rds$"),
+      basename(file)
+    )
+    unlink(file.path(cache$dir, outdated))
+  }
   model
 }

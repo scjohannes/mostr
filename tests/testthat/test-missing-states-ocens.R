@@ -30,10 +30,12 @@ test_that("the full non-absorbing range equals a missing state", {
       tolerance = 1e-10
     )
   }
-  # Every unknown visit coded as states 1 to 3.
+  # Every unknown visit before a later observed one coded as states 1 to 3;
+  # those after the patient's last observed visit stay unknown.
   ranged <- data
-  ranged$lower[is.na(ranged$y)] <- 1
-  ranged$upper[is.na(ranged$y)] <- 3
+  between <- !ms_row_ranges(data)$recorded & ms_row_ranges(data)$hi == 3
+  ranged$lower[between] <- 1
+  ranged$upper[between] <- 3
   expect_same_fit(ms_ocens_fit(ranged))
   skip_on_cran() # Slow: one more fit.
   # Both bounds missing.

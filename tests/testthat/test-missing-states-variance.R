@@ -3,6 +3,7 @@
 # patient-clustered sandwich built from them.
 
 test_that("patient scores are the gradients of each patient's log-likelihood", {
+  skip_on_cran() # Slow: numerical gradients of the reference.
   data <- ms_fixture("gaps")
   fit <- ms_fixture("gap_fit")
   info <- attr(fit, "markov_path_fit")

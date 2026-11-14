@@ -132,11 +132,13 @@ markov_has_unobserved_states <- function(ranges, previous, rows) {
   anyNA(lo) || any(lo != hi, na.rm = TRUE) || anyNA(previous[rows])
 }
 
-# Lay out the stretches of `data` (the rows `subset` keeps).
+# Lay out the stretches of `data` and build their design rows.
 #
 # `ranges` comes from `markov_state_ranges()` for the same rows, `absorb` holds
 # positions of the absorbing states, `weights` the row weights or NULL.
-# `design` turns rows of `data` into design-matrix rows of the model.
+# `design` turns rows of `data` into design-matrix rows of the model; without
+# it only the layout is returned (`markov_path_layout()`), which tells whether
+# any stretch is left.
 #
 # The result holds what `cpp_path_loglik()` needs. Design rows and whole
 # stretches that occur more than once are kept once: two patients with the
@@ -153,35 +155,40 @@ markov_path_plan <- function(
   weights,
   design = NULL
 ) {
+  layout <- markov_path_layout(
+    data = data,
+    ranges = ranges,
+    absorb = absorb,
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    weights = weights
+  )
+  if (is.null(design)) {
+    return(layout)
+  }
+  markov_path_plan_design(layout, design)
+}
+
+# Which rows form stretches, without any design rows. The fit needs this
+# before the engine's fit (to know whether there is a stretch at all) and the
+# design rows only after it (they come from the fitted model), so the two
+# halves are separate and the layout is computed once per fit.
+markov_path_layout <- function(
+  data,
+  ranges,
+  absorb,
+  id_var,
+  time_var,
+  p_var,
+  weights
+) {
   n <- nrow(data)
   labels <- ranges$labels
   n_states <- length(labels)
   lo <- ranges$lo
   hi <- ranges$hi
 
-  # An unrecorded visit is known not to be in an absorbing state: these are
-  # recorded when they happen (a death has a date), and the data hold no rows
-  # after them. So `NA` means "one of the other states".
-  unrecorded <- is.na(lo)
-  if (any(unrecorded)) {
-    possible <- setdiff(seq_len(n_states), absorb)
-    if (!identical(possible, seq.int(possible[[1L]], possible[[length(possible)]]))) {
-      mostr_abort(
-        "A visit with a missing state can be in any state that is not ",
-        "absorbing, and here those states are not next to each other in the ",
-        "order of the states (",
-        paste(labels[possible], collapse = ", "),
-        "). Give the possible states of each such visit as a range with ",
-        "`Ocens(lower, upper)`."
-      )
-    }
-    lo[unrecorded] <- possible[[1L]]
-    hi[unrecorded] <- possible[[length(possible)]]
-  }
-  exact <- lo == hi
-
-  previous <- match(as.character(data[[p_var]]), labels)
-  unknown_previous_label <- is.na(previous) & !is.na(data[[p_var]])
   previous_known <- !is.na(data[[p_var]])
 
   # Visits in time order within patient. Other time types keep the order of
@@ -194,9 +201,55 @@ markov_path_plan <- function(
     order(match(id, unique(id)))
   }
   s_id <- id[ord]
+  same_patient <- c(FALSE, s_id[-1L] == s_id[-n])
+
+  # A visit without any record of the state (`NA`, or `NA` in both bounds of
+  # `Ocens()`) means one of two things. Between recorded visits (a later row
+  # of the patient has a state or a range) it is one of the states that are
+  # not absorbing: the patient is seen alive later, or the absorbing state is
+  # recorded later on its own visit, so they were not absorbed during the
+  # gap. After the patient's last recorded visit it says nothing, every state
+  # is possible: the patient may have been lost to follow-up with the rows
+  # left in the data, and taking them as "alive" would bias the fit towards
+  # survival. Such rows are trimmed below as steps that allow every state, so
+  # the fit is the same as without them. A user who knows that the patient
+  # was alive at those visits gives the range with `Ocens()`.
+  unrecorded <- is.na(lo)
+  if (any(unrecorded)) {
+    s_recorded <- !unrecorded[ord]
+    patient_start <- !same_patient
+    recorded_so_far <- cumsum(s_recorded)
+    patient_total <- recorded_so_far[c(which(patient_start)[-1L] - 1L, n)]
+    recorded_later <- patient_total[cumsum(patient_start)] - recorded_so_far > 0L
+    between <- logical(n)
+    between[ord] <- recorded_later
+    between <- between & unrecorded
+    lo[unrecorded] <- 1L
+    hi[unrecorded] <- n_states
+    if (any(between)) {
+      possible <- setdiff(seq_len(n_states), absorb)
+      if (!identical(possible, seq.int(possible[[1L]], possible[[length(possible)]]))) {
+        mostr_abort(
+          "A visit with a missing state between recorded visits can be in any ",
+          "state that is not absorbing, and here those states are not next to ",
+          "each other in the order of the states (",
+          paste(labels[possible], collapse = ", "),
+          "). Give the possible states of each such visit as a range with ",
+          "`Ocens(lower, upper)`."
+        )
+      }
+      lo[between] <- possible[[1L]]
+      hi[between] <- possible[[length(possible)]]
+    }
+  }
+  # An unrecorded visit is never "observed exactly", even when only one state
+  # is left for it (two states, one absorbing): its row has no response for
+  # the engine's fit and the next row's previous state is missing, so it
+  # must be a step of a stretch.
+  exact <- !unrecorded & lo == hi
+
   s_exact <- exact[ord]
   s_prev_known <- previous_known[ord]
-  same_patient <- c(FALSE, s_id[-1L] == s_id[-n])
   # A row continues a stretch when the visit before it, of the same patient,
   # has no exactly observed state.
   continues <- same_patient & c(FALSE, !s_exact[-n])
@@ -273,10 +326,10 @@ markov_path_plan <- function(
   step_data_row <- ord[step_position]
   n_steps <- length(step_position)
   step_run <- match(run[step_position], unique(run[step_position]))
-  n_instances <- if (n_steps) max(step_run) else 0L
   is_first <- !duplicated(step_run)
 
-  if (any(unknown_previous_label[step_data_row[is_first]])) {
+  if (any(!is.na(data[[p_var]][step_data_row[is_first]]) &
+    is.na(match(as.character(data[[p_var]][step_data_row[is_first]]), labels)))) {
     mostr_abort(
       "`",
       p_var,
@@ -284,25 +337,51 @@ markov_path_plan <- function(
     )
   }
 
-  # Without `design`, only report whether any stretch is left: the caller
-  # then knows whether the path likelihood is needed at all.
-  if (is.null(design)) {
-    return(list(n_steps_total = n_steps))
+  step_weight <- if (is.null(weights)) rep(1, n_steps) else weights[step_data_row]
+  # Compared with the weight of the run's first step: one vectorised
+  # comparison instead of a function call per run, which took 0.13 s for
+  # 7,500 runs.
+  if (n_steps && any(step_weight != step_weight[is_first][step_run])) {
+    mostr_abort(
+      "Row weights must be the same on all rows of a run of visits with ",
+      "unobserved states, because the model has one likelihood term for ",
+      "the whole run. Use one weight per patient."
+    )
   }
 
-  step_lo <- lo[step_data_row]
-  step_hi <- hi[step_data_row]
-  step_weight <- if (is.null(weights)) rep(1, n_steps) else weights[step_data_row]
-  if (n_steps) {
-    weight_range <- tapply(step_weight, step_run, function(w) diff(range(w)))
-    if (any(weight_range != 0)) {
-      mostr_abort(
-        "Row weights must be the same on all rows of a run of visits with ",
-        "unobserved states, because the model has one likelihood term for ",
-        "the whole run. Use one weight per patient."
-      )
-    }
-  }
+  list(
+    data = data,
+    labels = labels,
+    absorb = as.integer(absorb),
+    id_var = id_var,
+    p_var = p_var,
+    id = id,
+    exact = exact,
+    step_lo = lo[step_data_row],
+    step_hi = hi[step_data_row],
+    step_weight = step_weight,
+    step_run = step_run,
+    is_first = is_first,
+    step_data_rows = step_data_row,
+    n_steps_total = n_steps
+  )
+}
+
+# The design rows of the stretches laid out by `markov_path_layout()`, and
+# the plan for `cpp_path_loglik()`.
+markov_path_plan_design <- function(layout, design) {
+  data <- layout$data
+  labels <- layout$labels
+  absorb <- layout$absorb
+  n_states <- length(labels)
+  p_var <- layout$p_var
+  id <- layout$id
+  step_lo <- layout$step_lo
+  step_hi <- layout$step_hi
+  step_run <- layout$step_run
+  is_first <- layout$is_first
+  step_data_row <- layout$step_data_rows
+  n_steps <- layout$n_steps_total
 
   # Design rows: a first step uses its own row; a later step needs one row
   # for every state the patient can have been in at the step before, except
@@ -321,11 +400,14 @@ markov_path_plan <- function(
     candidate_state <- candidate_state[keep]
   }
   first_steps <- which(is_first)
-  expanded <- data[
-    c(step_data_row[first_steps], step_data_row[candidate_step]),
-    ,
-    drop = FALSE
-  ]
+  # Rows are taken column by column: `[.data.frame` makes the row names of
+  # repeated rows unique, which took 0.17 s for 150,000 rows.
+  take <- c(step_data_row[first_steps], step_data_row[candidate_step])
+  expanded <- lapply(data, function(column) {
+    if (is.null(dim(column))) column[take] else column[take, , drop = FALSE]
+  })
+  attr(expanded, "row.names") <- .set_row_names(length(take))
+  class(expanded) <- "data.frame"
   if (length(candidate_step)) {
     rows <- length(first_steps) + seq_along(candidate_step)
     expanded[[p_var]][rows] <- markov_previous_state_values(
@@ -333,11 +415,9 @@ markov_path_plan <- function(
       data[[p_var]]
     )
   }
-  x_all <- if (nrow(expanded)) design(expanded) else NULL
+  x_all <- if (length(take)) design(expanded) else NULL
   if (!is.null(x_all) && anyNA(x_all)) {
-    bad <- unique(c(step_data_row[first_steps], step_data_row[candidate_step])[
-      rowSums(is.na(x_all)) > 0
-    ])
+    bad <- unique(take[rowSums(is.na(x_all)) > 0])
     mostr_abort(
       "A visit with an unobserved state needs every predictor of the model, ",
       "because the model predicts the transitions into and out of it. ",
@@ -345,7 +425,7 @@ markov_path_plan <- function(
       " such row",
       if (length(bad) > 1L) "s have" else " has",
       " a missing predictor (first: `",
-      id_var,
+      layout$id_var,
       "` = ",
       id[bad[[1L]]],
       "). Fill in the predictors, or remove the patient's rows from that ",
@@ -401,7 +481,7 @@ markov_path_plan <- function(
   instance_steps <- split(seq_len(n_steps), step_run)
   kept_steps <- unlist(instance_steps[representative], use.names = FALSE)
   n_per <- lengths(instance_steps[representative])
-  instance_weight <- step_weight[first_steps]
+  instance_weight <- layout$step_weight[first_steps]
 
   list(
     labels = labels,
@@ -482,10 +562,16 @@ markov_previous_state_values <- function(labels, prototype) {
 # the rows on all columns (0.3 s of a 2 s fit with 158,000 rows and 12
 # columns, Nov 2026). Two different rows could give the same sum, so the
 # result is checked against `x` and the rows are ordered on all columns if
-# it is ever wrong.
+# it is ever wrong. The sum is formed column by column in R, not with
+# `x %*% weights`: an optimised BLAS may add the columns of different rows in
+# different orders (SIMD blocks and remainders), and equal rows would then
+# get keys that differ in the last bit and silently stop being merged.
 markov_distinct_rows <- function(x) {
   weights <- sqrt(seq_len(ncol(x)) + 0.5)
-  key <- as.numeric(x %*% weights)
+  key <- numeric(nrow(x))
+  for (j in seq_len(ncol(x))) {
+    key <- key + x[, j] * weights[[j]]
+  }
   group <- match(key, unique(key))
   first <- which(!duplicated(group))
   if (!identical(unname(x[first[group], , drop = FALSE]), unname(x))) {
