@@ -364,7 +364,8 @@ mostm <- function(
   weights = NULL,
   subset = NULL,
   type = c("HC0", "HC1"),
-  cadjust = NULL
+  cadjust = NULL,
+  missing_states = NULL
 ) {
   model_call <- match.call()
   refit_args <- markov_capture_refit_args(
@@ -480,6 +481,22 @@ mostm <- function(
     }
   }
 
+  # Which visits have an unobserved state: a missing state, a missing
+  # previous state, or a range of states given with `Ocens()`.
+  fitted_rows <- mostm_subset_row_index(subset_rows, nrow(data))
+  ranges <- mostm_state_ranges(formula, data, engine)
+  unobserved <- !is.null(ranges) &&
+    markov_has_unobserved_states(ranges, data[[p_var]], fitted_rows)
+  missing_states <- mostm_missing_states_method(
+    missing_states,
+    engine,
+    unobserved
+  )
+  use_paths <- unobserved && identical(missing_states, "average")
+  if (use_paths) {
+    mostm_check_path_fit_args(engine, refit_args, p2_var, formula)
+  }
+
   # Bootstrap refits reuse the checked absorbing states and gap column; a
   # resample without a death would otherwise fail the check that `absorb`
   # names states of the response.
@@ -488,9 +505,10 @@ mostm <- function(
       absorb,
       formula = formula,
       data = data,
-      rows = mostm_subset_row_index(subset_rows, nrow(data)),
+      rows = fitted_rows,
       p_var = p_var,
-      p2_var = p2_var
+      p2_var = p2_var,
+      response = if (isTRUE(ranges$ocens)) markov_exact_states(ranges)
     )
     validate_mostm_gap_var(gap_var, data, id_var, time_var)
   }
@@ -508,12 +526,32 @@ mostm <- function(
       character()
     }
   )
-  fitted <- switch(
-    engine,
-    orm = mostm_fit_orm(setup, ...),
-    vglm = mostm_fit_vglm(setup, ...),
-    blrm = mostm_fit_blrm(setup, ...)
+  # The engines never see a range of states: mostr reads `Ocens()` itself
+  # (see `markov_state_ranges()`), and without the path likelihood only the
+  # exactly observed states are fitted.
+  if (isTRUE(ranges$ocens) && !use_paths) {
+    setup <- markov_observed_transition_setup(setup, ranges)
+  }
+  path <- list(
+    id_var = id_var,
+    time_var = time_var,
+    p_var = p_var,
+    absorb = absorb
   )
+  fitted <- if (use_paths) {
+    switch(
+      engine,
+      orm = mostm_fit_orm_paths(setup, ranges, path, ...),
+      blrm = mostm_fit_blrm_paths(setup, ranges, path, ...)
+    )
+  } else {
+    switch(
+      engine,
+      orm = mostm_fit_orm(setup, ...),
+      vglm = mostm_fit_vglm(setup, ...),
+      blrm = mostm_fit_blrm(setup, ...)
+    )
+  }
 
   fit_data <- fitted$fit_data
   stored <- markov_prepare_stored_data(
@@ -524,7 +562,8 @@ mostm <- function(
     id_var = id_var,
     time_var = time_var,
     first_followup_time = first_followup_time,
-    starting_profiles = !coefficients_only
+    starting_profiles = !coefficients_only,
+    fitted_ids = fitted$fitted_ids
   )
   # Bootstrap refits store no starting profiles, so they find no dropped
   # patients and stay silent.
@@ -576,12 +615,21 @@ mostm <- function(
 
   robust <- switch(
     engine,
-    orm = robcov_orm(
-      fit,
-      cluster = fit_data[[id_var]],
-      type = type,
-      cadjust = cadjust
-    ),
+    orm = if (markov_is_path_fit(fit)) {
+      robcov_orm_paths(
+        fit,
+        cluster = fit_data[[id_var]],
+        type = type,
+        cadjust = cadjust
+      )
+    } else {
+      robcov_orm(
+        fit,
+        cluster = fit_data[[id_var]],
+        type = type,
+        cadjust = cadjust
+      )
+    },
     vglm = robcov_vglm(
       fit,
       cluster = fit_data[[id_var]],
@@ -590,6 +638,76 @@ mostm <- function(
     )
   )
   attach_data(robust)
+}
+
+# The response as a range of states per row (`markov_state_ranges()`), or NULL
+# when it can't be read here; the engine then reports the problem itself.
+# `engine = "vglm"` has no `Ocens()` responses.
+mostm_state_ranges <- function(formula, data, engine) {
+  if (length(formula) != 3L) {
+    return(NULL)
+  }
+  ocens <- markov_is_ocens_call(formula[[2L]])
+  if (ocens && engine == "vglm") {
+    mostr_abort(
+      "A range of states, `Ocens(lower, upper)`, is available only for ",
+      "`engine = \"orm\"` and `engine = \"blrm\"`."
+    )
+  }
+  if (ocens) {
+    return(markov_state_ranges(formula, data, environment(formula)))
+  }
+  tryCatch(
+    markov_state_ranges(formula, data, environment(formula)),
+    error = function(e) NULL
+  )
+}
+
+# The exactly observed states of each row, `NA` elsewhere.
+markov_exact_states <- function(ranges) {
+  exact <- !is.na(ranges$lo) & ranges$lo == ranges$hi
+  state <- rep(NA_character_, length(ranges$lo))
+  state[exact] <- ranges$labels[ranges$lo[exact]]
+  state
+}
+
+# How unobserved states are handled. `engine = "vglm"` can only leave out the
+# rows, which biases the fit when some states, such as death, are always
+# recorded, so it must be asked for.
+mostm_missing_states_method <- function(missing_states, engine, unobserved) {
+  if (!is.null(missing_states)) {
+    if (
+      !is.character(missing_states) ||
+        length(missing_states) != 1L ||
+        !missing_states %in% c("average", "drop")
+    ) {
+      mostr_abort(
+        "`missing_states` must be \"average\" or \"drop\"."
+      )
+    }
+  }
+  if (engine == "vglm") {
+    if (identical(missing_states, "average")) {
+      mostr_abort(
+        "`missing_states = \"average\"` is available only for ",
+        "`engine = \"orm\"` and `engine = \"blrm\"`."
+      )
+    }
+    if (unobserved && is.null(missing_states)) {
+      mostr_abort(
+        "Some visits have a missing state or a missing previous state. ",
+        "`engine = \"vglm\"` can only leave these rows out, which biases ",
+        "the fit when some states are always recorded: if a death is always ",
+        "known but other states are sometimes missing, deaths are ",
+        "over-represented among the fitted rows. Use `engine = \"orm\"` or ",
+        "`engine = \"blrm\"`, which sum over the states the patient can ",
+        "have been in, or set `missing_states = \"drop\"` to leave the ",
+        "rows out."
+      )
+    }
+    return("drop")
+  }
+  missing_states %||% "average"
 }
 
 # Patients with no row left in the fit are silently absent from every result

@@ -358,7 +358,8 @@ validate_mostm_absorb <- function(
   data,
   rows,
   p_var,
-  p2_var
+  p2_var,
+  response = NULL
 ) {
   if (!is.null(absorb) && !length(absorb)) {
     absorb <- NULL
@@ -371,10 +372,12 @@ validate_mostm_absorb <- function(
   }
   # A response that can't be evaluated here also fails the fit, which then
   # gives the engine's own error.
-  response <- tryCatch(
-    eval(formula[[2L]], data, environment(formula)),
-    error = function(e) NULL
-  )
+  # With `Ocens()` the caller supplies the exactly observed states.
+  response <- response %||%
+    tryCatch(
+      eval(formula[[2L]], data, environment(formula)),
+      error = function(e) NULL
+    )
   if (length(formula) != 3L || NROW(response) != nrow(data)) {
     return(absorb)
   }

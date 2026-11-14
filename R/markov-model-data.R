@@ -554,7 +554,8 @@ markov_prepare_stored_data <- function(
   id_var,
   time_var,
   first_followup_time,
-  starting_profiles = TRUE
+  starting_profiles = TRUE,
+  fitted_ids = NULL
 ) {
   source <- markov_subset_source_data(data, subset)
   refit_data <- source$data
@@ -570,7 +571,10 @@ markov_prepare_stored_data <- function(
     first_followup_time
   )
 
-  fitted_ids <- unique(as.character(fit_data[[id_var]]))
+  # A fit with unobserved states names its patients itself: a patient may
+  # contribute only visits with unobserved states, which are not rows of
+  # `fit_data`.
+  fitted_ids <- fitted_ids %||% unique(as.character(fit_data[[id_var]]))
   if (anyNA(fitted_ids) || any(fitted_ids == "")) {
     mostr_abort("Fitted patient IDs must be non-missing and non-empty.")
   }

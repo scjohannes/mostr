@@ -508,6 +508,9 @@ get_delta_cluster_vcov <- function(model, cluster = NULL, vcov = NULL) {
     stored_metadata <- orm_robust_metadata(model)
     use_stored <- is.null(cluster) &&
       orm_stored_covariance_valid(model, cluster_info$cluster)
+    if (!use_stored && markov_is_path_fit(fit)) {
+      stop_path_fit_cluster()
+    }
     robust <- if (use_stored) {
       model
     } else {
@@ -597,6 +600,9 @@ get_delta_score_components <- function(model, cluster = NULL) {
   if (inherits(fit, "orm")) {
     delta_reject_penalized_orm_unconditional(fit)
   }
+  if (markov_is_path_fit(fit)) {
+    return(delta_path_fit_score_components(fit, names(beta), cluster))
+  }
   cluster_info <- resolve_delta_cluster(model, cluster = cluster)
   n_rows <- cluster_info$metadata$n_rows
 
@@ -657,6 +663,49 @@ get_delta_score_components <- function(model, cluster = NULL) {
     Ainv = Ainv,
     n = n,
     metadata = component_metadata
+  )
+}
+
+# A fit with unobserved states has one score per patient, stored by
+# `mostm()`: the rows of a run of unobserved visits share one likelihood
+# term, so scores can't be rebuilt row by row or regrouped by another ID.
+delta_path_fit_score_components <- function(fit, coefficient_names, cluster) {
+  if (!is.null(cluster)) {
+    stop_path_fit_cluster()
+  }
+  info <- markov_path_fit_info(fit)
+  scores <- info$scores[, coefficient_names, drop = FALSE]
+  bread <- delta_validate_named_matrix(
+    solve(info$information),
+    coefficient_names,
+    "model-based bread",
+    positive_definite = TRUE
+  )
+  n <- nrow(scores)
+  Ainv <- n * bread
+  dimnames(Ainv) <- list(coefficient_names, coefficient_names)
+  list(
+    ids = info$ids,
+    scores = scores,
+    Ainv = Ainv,
+    n = n,
+    metadata = list(
+      bread_source = "path_likelihood_observed_information",
+      backend_hc_type_ignored = NA_character_,
+      backend_cadjust_ignored = NA,
+      cluster_source = "stored_id_var",
+      n_patients = n
+    )
+  )
+}
+
+stop_path_fit_cluster <- function() {
+  mostr_abort(
+    "This model was fitted with unobserved states, so its standard errors ",
+    "use the patients of the fit (`id_var` in `mostm()`); another `cluster` ",
+    "can't be supplied. A run of visits with unobserved states has one ",
+    "likelihood term for all its rows, which can't be split between ",
+    "clusters."
   )
 }
 
