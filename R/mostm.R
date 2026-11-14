@@ -191,8 +191,13 @@
 #'   to follow-up. These rows don't enter the fit, so leaving them in `data`
 #'   gives the same fit as removing them. If you do know that the patient was
 #'   alive at such a visit, say so with a range of states (next paragraph).
-#'   Treating a patient as alive without knowing it would make the model
-#'   underestimate the absorbing state.
+#'   This matters most when every death is recorded, for example from a
+#'   registry: a patient without a recorded death was then alive at each of
+#'   these visits, and only patients who survive can have them. Leaving that
+#'   out makes the model overestimate death slightly (by about 2 per 1000
+#'   patients at day 28 in a simulated trial with a quarter of the states
+#'   missing). Treating a patient as alive without knowing it is the larger
+#'   error: it makes the model underestimate death.
 #'
 #' When more is known about a visit than nothing, give the possible states as
 #' a range with `Ocens(lower, upper)` as the response, where `lower` and
@@ -219,9 +224,18 @@
 #'
 #' Every visit in a run of unobserved visits needs all predictors of the
 #' model, because the model predicts the transitions into and out of it. The
-#' model is set up, with its spline knots and factor levels, from the visits
-#' whose state and previous state are both observed, so every state must
-#' occur at least once at such a visit. Unobserved states can't be combined
+#' model is set up, with its spline knots, factor levels and starting values,
+#' from every visit with an exactly observed state after the patient's first
+#' known state; where the previous state of such a visit is unknown, the
+#' patient's last observed state stands in for it during the set-up only,
+#' never in the likelihood. So every state must be observed exactly at least
+#' once at such a visit (a range given with `Ocens()` does not count), and,
+#' when the previous state enters the model as a factor, every state that a
+#' visit with an unobserved state can follow must be the last observed state
+#' before at least one such visit. A death that is only ever recorded after a
+#' missed visit is enough. Spline knots are placed using those visits, so they can
+#' differ slightly from those of a fit that leaves out the unobserved visits.
+#' Unobserved states can't be combined
 #' with a second-order model (`p2_var`), with a penalty, with partial
 #' proportional odds or random effects for `"blrm"`, or with row weights
 #' that differ within a patient's run of unobserved visits. For `"orm"`,

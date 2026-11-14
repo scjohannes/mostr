@@ -125,7 +125,8 @@ stop_failed_orm_fit <- function() {
     "algorithm with more iterations, `opt_method = \"LM\", maxit = 100`, ",
     "scale the covariates with `scale = TRUE`, or simplify the model, for ",
     "example by removing covariates that are nearly collinear or by merging ",
-    "states that are rarely observed."
+    "states that are rarely observed.",
+    class = "mostr_error_orm_failed"
   )
 }
 

@@ -78,10 +78,11 @@ test_that("the Stan program's density and gradient are the path likelihood's", {
   )))
   stanfit <- fit$rstan
   reference <- ms_reference(data)
-  x <- as.matrix(fit$x)
   # The sampler's coefficients are those of the centred, orthogonalised
-  # predictors scaled to SD 1 (see `mostm_fit_blrm_paths()`).
-  rinv <- rmsb::selectedQr(x, center = TRUE)$Rinv * sqrt(nrow(x) - 1)
+  # predictors scaled to SD 1 (see `mostm_fit_blrm_paths()`), computed from
+  # the set-up rows, which the fit does not store.
+  rinv <- attr(fit, "markov_path_fit")$rinv
+  expect_identical(dim(rinv), c(4L, 4L))
   k <- 4L
   conc <- fit$conc %||% (1 / (0.8 + 0.35 * k))
   log_posterior <- function(u) {
@@ -110,4 +111,35 @@ test_that("the Stan program's density and gradient are the path likelihood's", {
       tolerance = 1e-6
     )
   }
+})
+
+test_that("blrm fits a state recorded only after unobserved visits", {
+  skip_on_cran() # The pass depends on the seed.
+  skip_if_not_installed("rmsb")
+  skip_if_not_installed("rstan")
+  skip_if_not(
+    identical(Sys.getenv("MOSTR_RUN_SLOW"), "true"),
+    "Set MOSTR_RUN_SLOW=true to fit blrm models."
+  )
+  withr::local_options(mc.cores = 2)
+  # No transition with both states observed ends in death; the orm fit to
+  # the same data is the reference (see the first test).
+  data <- ms_deaths_after_gaps()
+  fit_orm <- ms_fit(data)
+  fit <- suppressMessages(suppressWarnings(ms_fit(
+    data,
+    engine = "blrm",
+    iter = 2000,
+    warmup = 1000,
+    chains = 2,
+    refresh = 0,
+    sampling.args = list(seed = 2026)
+  )))
+  expect_identical(colnames(fit$draws), names(coef(fit_orm)))
+  observed <- !is.na(data$y) & !is.na(data$yprev)
+  expect_identical(nrow(fit$x), sum(observed))
+  expect_identical(fit$ylevels, c("1", "2", "3", "4"))
+  posterior_mean <- colMeans(fit$draws)
+  posterior_sd <- apply(fit$draws, 2, stats::sd)
+  expect_lt(max(abs(posterior_mean - coef(fit_orm)) / posterior_sd), 0.5)
 })

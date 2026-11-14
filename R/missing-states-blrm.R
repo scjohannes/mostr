@@ -17,14 +17,16 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   if (!layout$n_steps_total) {
     return(mostm_fit_blrm(markov_observed_transition_setup(setup, ranges), ...))
   }
-  mostm_check_observed_states(setup, ranges, path)
-  observed_setup <- markov_observed_transition_setup(setup, ranges, path$p_var)
+  set_up <- markov_path_setup(setup, ranges, path)
+  mostm_check_setup_states(ranges, set_up, layout, path$p_var)
+  observed_setup <- set_up$setup
 
-  # The model structure comes from `rmsb::blrm()` itself, fitted to the fully
-  # observed transitions: design matrix, state labels and every field the
-  # prediction code reads. Its draws are replaced below, so a few iterations
-  # of one chain are enough; they take about a second with rmsb's compiled
-  # program, which is why the backend is rstan here whatever the user chose.
+  # The model structure comes from `rmsb::blrm()` itself, fitted to the
+  # set-up rows (`markov_setup_rows()`): design matrix, state labels and
+  # every field the prediction code reads. Its draws are replaced below, so a
+  # few iterations of one chain are enough; they take about a second with
+  # rmsb's compiled program, which is why the backend is rstan here whatever
+  # the user chose.
   structure_args <- utils::modifyList(
     args,
     list(
@@ -61,6 +63,13 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     eval_env = setup$eval_env
   )
   fit_data <- markov_align_model_data(setup$data, fit_frame)
+  keep <- markov_setup_recorded_rows(
+    fit_data,
+    setup$data,
+    set_up$recorded,
+    nrow(fit$x)
+  )
+  fit_data <- fit_data[keep, , drop = FALSE]
 
   plan <- markov_path_plan_design(
     layout,
@@ -69,10 +78,17 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
 
   # Stan samples coefficients of centred, orthogonalised predictors, as rmsb
   # does (`rmsb::selectedQr()`); the stretches' design rows go through the
-  # same transformation, and the draws are transformed back below.
-  x <- as.matrix(fit$x)
+  # same transformation, and the draws are transformed back below. The
+  # transformation is computed from all set-up rows, which have a full-rank
+  # design whenever the set-up fit worked; the fully observed transitions
+  # alone need not (a previous state that is always followed by an
+  # unobserved visit has a column of zeros there). The Dirichlet prior on
+  # the intercepts is therefore placed at the mean predictors of the set-up
+  # rows.
+  x_setup <- as.matrix(fit$x)
+  x <- x_setup[keep, , drop = FALSE]
   n_predictors <- ncol(x)
-  transform <- rmsb::selectedQr(x, center = TRUE)
+  transform <- rmsb::selectedQr(x_setup, center = TRUE)
   # `selectedQr()` returns orthonormal columns (length 1, so SD
   # 1 / sqrt(n - 1)), whose coefficients have posterior SDs of order 1 to 10
   # while the intercepts' unconstrained parameters have SDs of order
@@ -93,7 +109,7 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   # intercepts is defined at the mean predictors, which the scaling does not
   # move: the posterior of the original coefficients is the same, only the
   # sampler's parametrisation differs.
-  column_scale <- sqrt(max(nrow(x) - 1, 1))
+  column_scale <- sqrt(max(nrow(x_setup) - 1, 1))
   rinv <- transform$Rinv * column_scale
   # The design row for previous state j is x_gap + x_prev[j] (additive
   # layout) or x_gap alone; the transformation is linear, so the centring
@@ -113,9 +129,9 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   n_contrasts <- if (is.null(contrast)) 0L else nrow(contrast)
   # Observed transitions with the same predictors and state are counted.
   observed_row <- markov_distinct_rows(x)
-  n_observed_rows <- max(observed_row)
+  n_observed_rows <- if (length(observed_row)) max(observed_row) else 0L
   observed_state <- match(
-    as.character(markov_blrm_observed_states(fit)),
+    as.character(markov_blrm_observed_states(fit))[keep],
     labels
   )
   cell_count <- table(
@@ -123,7 +139,7 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     factor(observed_state, levels = seq_len(n_states))
   )
   cells <- which(cell_count > 0)
-  x_observed <- unname(unclass(transform$X))[
+  x_observed <- unname(unclass(transform$X))[keep, , drop = FALSE][
     !duplicated(observed_row),
     ,
     drop = FALSE
@@ -234,6 +250,18 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   draws <- cbind(alphas, betas)
 
   fit$draws <- draws
+  # Downstream code reads `x` and `y` as the fully observed transitions, as
+  # for the orm fit (`markov_orm_keep_rows()`).
+  fit$x <- x
+  fit$y <- markov_keep_response_rows(fit$y, keep)
+  fit$freq <- stats::setNames(
+    as.integer(table(factor(
+      markov_blrm_observed_states(fit),
+      levels = fit$ylevels
+    ))),
+    fit$ylevels
+  )
+  fit$N <- nrow(x)
   fit$param <- rbind(
     mean = colMeans(draws),
     median = apply(draws, 2L, stats::median)
@@ -277,7 +305,12 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     n_observed_transitions = nrow(x),
     n_stretches = nrow(plan$instances),
     n_distinct_stretches = length(plan$stretch_n_steps),
-    n_unobserved_visits = plan$n_steps_total
+    n_unobserved_visits = plan$n_steps_total,
+    # The sampler's parametrisation: coefficients beta_s of the centred,
+    # transformed predictors, beta = rinv %*% beta_s, intercepts for
+    # predictors centred at `fit$xbar`. It comes from the set-up rows, which
+    # are not stored, so it is kept for checking the sampled density.
+    rinv = rinv
   )
   list(fit = fit, fit_data = fit_data, fitted_ids = patient_ids)
 }

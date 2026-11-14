@@ -12,7 +12,10 @@
   recorded visits is one of the states that are not absorbing (`absorb`).
   Missing states after a patient's last recorded state carry no information,
   so rows left in the data after a patient was lost to follow-up don't
-  change the fit. The fit is valid when states are missing at random.
+  change the fit. The fit is valid when states are missing at random. Every
+  state has to be observed exactly at some visit, but not at a visit whose
+  previous state is also observed: a death that is only ever recorded after
+  a missed visit is fitted.
 
   When part of the state is known, give the possible states as a range with
   the response `Ocens(lower, upper)`, for example "in hospital, states 3 to

@@ -557,7 +557,7 @@ flowchart TD
     B -->|no| C[engine fit as before]
     B -->|yes| L[markov_path_layout: which rows form stretches]
     L -->|no stretch| C
-    L -->|stretches| D[engine fit to fully observed transitions: structure and starting values]
+    L -->|stretches| D[engine fit to the set-up rows: structure and starting values]
     D --> E[markov_path_plan_design: design rows per step and previous state, additive or general layout]
     E --> F{engine}
     F -->|orm| G[markov_path_maximise: Newton-Raphson on cpp_path_loglik]
@@ -577,11 +577,29 @@ flowchart TD
   adds the design rows after it, from the fitted model
   (`markov_path_plan()` does both, for tests).
 - The fully observed transitions are the rows with an exactly observed state
-  and a recorded previous state (`markov_observed_transition_rows()`); when
-  there are stretches the engine is fitted to exactly these rows (through
-  `subset`), also when the formula does not contain `p_var`, so that a row
-  that ends a stretch is never counted twice. Without stretches the engine's
-  fit is used as without unobserved states.
+  and a recorded previous state. Without stretches the engine's fit is used
+  as without unobserved states. With stretches the engine is fitted, through
+  `subset`, to the *set-up rows* (`markov_setup_rows()`,
+  `markov_path_setup()`): every row with an exactly observed state whose
+  previous state is recorded or can be filled in with the patient's last
+  recorded previous state (that is, the last exactly observed state; rows
+  before the patient's first known state get none and are left out, as in
+  the likelihood). This fit gives the design, knots, factor levels, states
+  and starting values, so a state needs to be observed exactly somewhere,
+  not at a fully observed transition: with heavy missingness every death
+  can follow an unobserved visit, and a previous state can always be
+  followed by one. `mostm_check_setup_states()` refuses, before the engine
+  runs, a state never observed exactly in the set-up rows and, when `p_var`
+  is a factor in the formula, a previous state the stretches need that no
+  set-up row has. The fitted rows whose previous state was filled in end
+  stretches; `markov_setup_recorded_rows()` finds them by row name and
+  `markov_orm_keep_rows()` removes them (with `x`, `y`, `weights`,
+  `linear.predictors`, `freq` and the counts in `stats`), so the
+  observed-transition part of the likelihood and everything stored on the
+  fit hold the fully observed transitions only, and a row that ends a
+  stretch is never counted twice. When rms's default optimiser fails on the
+  set-up fit, it is repeated once with `opt_method = "LM", maxit = 100`
+  unless the user chose an optimiser (`markov_setup_fit_with_retry()`).
   A first step of a stretch has one design row; a later step has one design
   row for each non-absorbing state in the range of the step before it, built
   by setting `p_var` to that state. The design row for step `u` and previous
@@ -622,9 +640,8 @@ flowchart TD
   threads with per-thread score and Hessian accumulators. Indices are
   1-based.
 - orm: the model structure (design columns, knots, factor levels, state
-  labels) and the starting values come from `rms::orm()` on the fully
-  observed transitions, so every state must occur there
-  (`markov_check_observed_states()`). `markov_path_maximise()` runs
+  labels) and the starting values come from `rms::orm()` on the set-up
+  rows. `markov_path_maximise()` runs
   `markov_newton_maximise()`: Newton-Raphson with a line search, where an
   information matrix that is not positive definite (the likelihood need not
   be concave away from its maximum) is replaced by one with the absolute
@@ -634,8 +651,9 @@ flowchart TD
   log-likelihood beyond rounding. Stretches of weight 0 add nothing to the
   scores. The result is that `orm` object with new
   `coefficients`, `info.matrix` (rms's list form), `deviance` and
-  `linear.predictors`; statistics rms computed for the other fit are set to
-  `NA`. `fit$x` and `fit$y`, and the stored `markov_data`, hold the fully
+  `linear.predictors`; statistics rms computed for the set-up fit are set to
+  `NA` (`Obs` and `Distinct Y` count the fully observed transitions).
+  `fit$x` and `fit$y`, and the stored `markov_data`, hold the fully
   observed transitions only. `attr(fit, "markov_path_fit")` holds the patient
   IDs, one score row per patient, the information matrix and counts.
 - Covariance: a stretch has one likelihood term for all its rows, so scores
@@ -644,11 +662,14 @@ flowchart TD
   the form `robcov_orm()` uses; `get_delta_score_components()` returns the
   stored scores for unconditional variance. A `cluster` other than the fit's
   patients is refused (`stop_path_fit_cluster()`).
-- blrm: `rmsb::blrm()` runs a few iterations on the fully observed
-  transitions to build the object; `po_paths.stan` then samples the same
-  parameters with rmsb's priors (Dirichlet on the state probabilities at the
-  mean predictors, optional contrast priors) and its centred QR
-  parametrisation, with the orthogonalised columns scaled to SD 1 (and
+- blrm: `rmsb::blrm()` runs a few iterations on the set-up rows to build
+  the object; `po_paths.stan` then samples the same parameters with rmsb's
+  priors (Dirichlet on the state probabilities at the mean predictors of the
+  set-up rows, optional contrast priors) and its centred QR
+  parametrisation, computed from the set-up rows (stored as
+  `attr(fit, "markov_path_fit")$rinv`) because the fully observed
+  transitions alone can have a column of zeros, with the orthogonalised
+  columns scaled to SD 1 (and
   `Rinv` by the same factor) so that the sampler adapts faster; the draws
   replace those of the object. The likelihood is not written in Stan: the
   program declares `path_loglik()` without a body, and its C++ definition
@@ -686,7 +707,9 @@ flowchart TD
   path, in the general, the additive and an interaction layout, and the two
   layouts of one model with each other; the `test-missing-states-*.R` files
   compare whole fits with a reference that works from the data frame
-  (including `yprev * time`). `test-slow-missing-states-blrm.R` compares the
+  (including `yprev * time`); `test-missing-states-setup.R` covers states and
+  previous states that occur only next to unobserved visits.
+  `test-slow-missing-states-blrm.R` compares the
   compiled Stan program's log density with that reference and its gradient
   with numerical derivatives.
 

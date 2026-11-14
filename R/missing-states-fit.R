@@ -3,10 +3,13 @@
 #
 # The model structure (design matrix columns, spline knots, factor levels,
 # state labels) and the starting values come from the engine's own fit to the
-# transitions whose state and previous state are both observed. mostr then
-# maximises the likelihood that also includes the stretches of unobserved
-# visits (`markov_path_plan()`), and puts its estimates into that fit, so that
-# everything downstream reads an ordinary `orm` object.
+# set-up rows: every visit with an exactly observed state, with an unknown
+# previous state filled in by the patient's last known state
+# (`markov_setup_rows()`). mostr then maximises the likelihood of the fully
+# observed transitions and the stretches of unobserved visits
+# (`markov_path_plan()`), in which no filled-in state appears, and puts its
+# estimates into the engine's fit, restricted to the fully observed
+# transitions, so that everything downstream reads an ordinary `orm` object.
 
 # Arguments of `mostm()` that the path likelihood has not been worked out for.
 mostm_check_path_fit_args <- function(engine, dots, p2_var, formula) {
@@ -66,28 +69,10 @@ mostm_check_path_fit_args <- function(engine, dots, p2_var, formula) {
   invisible(NULL)
 }
 
-# The fully observed transitions: rows whose state is observed exactly and
-# whose previous state is recorded. These, and only these, are fitted as
-# ordinary transitions; every other row with a state is a step of a stretch
-# (or comes before the patient's first known state and is not used), so a
-# row counted here must never also end a stretch.
-markov_observed_transition_rows <- function(ranges, previous) {
-  !is.na(ranges$lo) & ranges$lo == ranges$hi & !is.na(previous)
-}
-
-# The formula and data for the engine's fit to the fully observed transitions.
-# With `Ocens()` the engine must not see the ranges, so the response becomes a
+# The formula and data for an engine fit to exactly observed states. With
+# `Ocens()` the engine must not see the ranges, so the response becomes a
 # column that holds the exactly observed states and `NA` elsewhere.
-#
-# With `p_var`, the fit is also restricted (through `subset`) to rows whose
-# previous state is recorded. The engine drops a row with a missing `p_var`
-# by itself only when `p_var` is in the formula; with a formula without it
-# (or with the previous state only in a column derived from it), a row with
-# an observed state after an unobserved visit was fitted by the engine and
-# was also the last step of a stretch, so it entered the likelihood twice.
-# Without stretches the engine's own fit is used and `p_var` is not given:
-# such rows are then fitted as before.
-markov_observed_transition_setup <- function(setup, ranges, p_var = NULL) {
+markov_observed_transition_setup <- function(setup, ranges) {
   if (ranges$ocens) {
     exact <- !is.na(ranges$lo) & ranges$lo == ranges$hi
     state <- rep(NA_character_, nrow(setup$data))
@@ -101,42 +86,244 @@ markov_observed_transition_setup <- function(setup, ranges, p_var = NULL) {
     )
     setup$formula[[2L]] <- quote(.markov_state)
   }
-  if (!is.null(p_var)) {
-    n <- nrow(setup$data)
-    keep <- logical(n)
-    keep[mostm_subset_row_index(setup$subset_rows, n)] <- TRUE
-    setup$subset_rows <- keep &
-      markov_observed_transition_rows(ranges, setup$data[[p_var]])
-  }
   setup
 }
 
-# Stop before the engine's fit when a state never occurs at a visit whose
-# state and previous state are both observed: `rms::orm()` would stop first,
-# with "missing value where TRUE/FALSE needed", on the empty factor level.
-mostm_check_observed_states <- function(setup, ranges, path) {
-  rows <- mostm_subset_row_index(setup$subset_rows, nrow(setup$data))
-  observed <- markov_observed_transition_rows(
-    list(lo = ranges$lo[rows], hi = ranges$hi[rows]),
-    setup$data[[path$p_var]][rows]
+# The rows the engine's set-up fit uses when there are stretches, and the
+# previous states it reads.
+#
+# The engine's fit gives the model structure (design columns, spline knots,
+# factor levels, state labels) and the starting values. Fitted to the fully
+# observed transitions alone, it fails when a state, or a previous state,
+# occurs only next to unobserved visits: with deaths always recorded and
+# other states often missing, every death can follow an unobserved visit, so
+# no fully observed transition ends in death (1 of 500 simulated trials with
+# 25% of the states missing, not at random), and the factor level of a
+# previous state that is always followed by an unobserved visit has no rows,
+# so `rms::orm()` finds a singular information matrix. Few rows also make
+# that fit fail to converge more often.
+#
+# So the set-up fit uses every row of `rows` (the rows `subset` keeps) whose
+# state is observed exactly and whose previous state is recorded or can be
+# filled in with the patient's last exactly observed state. That is the last
+# recorded previous state of the patient up to this row (the rows of a
+# patient are consecutive visits, which `markov_path_layout()` checks): a
+# visit after an unobserved one has no recorded previous state, and the
+# visit before it carries the last known state as its own previous state, or
+# carries it forward in turn. Rows before the patient's first known state
+# get none and are not used; they are not in the likelihood either. The
+# filled-in states are a device for the set-up only: they shift the starting
+# values (a transition over several visits is fitted as one), which the
+# maximisation then corrects, and they never enter the likelihood
+# (`recorded` says which fitted rows are fully observed transitions).
+#
+# Returns `previous` (the previous-state column, filled in), `recorded`
+# (whether the previous state is recorded) and `use` (whether the row is
+# fitted), each with one entry per row of `data`.
+markov_setup_rows <- function(data, ranges, rows, id_var, time_var, p_var) {
+  n <- nrow(data)
+  previous <- data[[p_var]]
+  recorded <- !is.na(previous)
+  if (length(rows)) {
+    # Visits in time order within patient, as in `markov_path_layout()`.
+    time <- data[[time_var]][rows]
+    id <- as.character(data[[id_var]][rows])
+    ord <- if (is.numeric(time) || is.factor(time)) {
+      order(match(id, unique(id)), time)
+    } else {
+      order(match(id, unique(id)))
+    }
+    sorted <- rows[ord]
+    m <- length(sorted)
+    s_id <- id[ord]
+    patient_start <- c(TRUE, s_id[-1L] != s_id[-m])
+    # Position of the last row with a recorded previous state up to each
+    # row, and of the patient's first row: the previous state is carried
+    # forward only within the patient.
+    last_known <- cummax(ifelse(recorded[sorted], seq_len(m), 0L))
+    first_of_patient <- cummax(ifelse(patient_start, seq_len(m), 0L))
+    fill <- !recorded[sorted] & last_known >= first_of_patient & last_known > 0L
+    previous[sorted[fill]] <- previous[sorted[last_known[fill]]]
+  }
+  in_rows <- logical(n)
+  in_rows[rows] <- TRUE
+  exact <- !is.na(ranges$lo) & ranges$lo == ranges$hi
+  list(
+    previous = previous,
+    recorded = recorded,
+    use = in_rows & exact & !is.na(previous)
   )
-  present <- ranges$labels[sort(unique(ranges$lo[rows][observed]))]
+}
+
+# The setup of the engine's set-up fit (`markov_setup_rows()`), and for each
+# row of `data` whether its previous state is recorded, whether the set-up
+# fit uses it and its previous state as the set-up fit reads it.
+# `subset_index` maps the rows of the layout (the rows `subset` keeps) to
+# rows of `data`.
+markov_path_setup <- function(setup, ranges, path) {
+  subset_index <- mostm_subset_row_index(setup$subset_rows, nrow(setup$data))
+  rows <- markov_setup_rows(
+    setup$data,
+    ranges,
+    subset_index,
+    path$id_var,
+    path$time_var,
+    path$p_var
+  )
+  out <- markov_observed_transition_setup(setup, ranges)
+  out$data[[path$p_var]] <- rows$previous
+  out$subset_rows <- rows$use
+  list(
+    setup = out,
+    recorded = rows$recorded,
+    use = rows$use,
+    previous = rows$previous,
+    subset_index = subset_index
+  )
+}
+
+# Stop before the engine's fit when a state is never observed exactly in the
+# set-up rows: `rms::orm()` would stop first, with an obscure error, on the
+# empty factor level. Such a state has no observation in the likelihood
+# either, other than as part of a range.
+#
+# A previous state given as a factor needs set-up rows too: a level without
+# rows makes `rms::orm()` stop with a singular information matrix, and its
+# effect would be determined by ranges or stretches alone. That happens when
+# a state is observed only at a patient's last recorded visit and the
+# likelihood still needs it as a previous state (a range after it, or a
+# state inside a stretch).
+mostm_check_setup_states <- function(ranges, set_up, layout, p_var) {
+  use <- set_up$use
+  present <- ranges$labels[sort(unique(ranges$lo[use]))]
   markov_check_observed_states(present, ranges$labels)
+  in_formula <- p_var %in% all.vars(set_up$setup$formula[[3L]])
+  if (!in_formula || (!is.factor(set_up$previous) && !is.character(set_up$previous))) {
+    return(invisible(NULL))
+  }
+  later <- which(!layout$is_first)
+  candidates <- sequence(
+    layout$step_hi[later - 1L] - layout$step_lo[later - 1L] + 1L,
+    from = layout$step_lo[later - 1L]
+  )
+  needed <- union(
+    as.character(set_up$previous[
+      set_up$subset_index[layout$step_data_rows[layout$is_first]]
+    ]),
+    layout$labels[setdiff(candidates, layout$absorb)]
+  )
+  absent <- setdiff(needed, as.character(set_up$previous[use]))
+  if (length(absent)) {
+    mostr_abort(
+      "The state",
+      if (length(absent) > 1L) "s " else " ",
+      paste(absent, collapse = ", "),
+      if (length(absent) > 1L) " are" else " is",
+      " never the previous state (`",
+      p_var,
+      "`) of a visit with an exactly observed state, although the model ",
+      "needs ",
+      if (length(absent) > 1L) "their effects" else "its effect",
+      " for visits with unobserved states, so the model can't be set up. ",
+      "Merge rarely observed states."
+    )
+  }
+  invisible(NULL)
 }
 
 markov_check_observed_states <- function(fitted_labels, labels) {
   if (identical(as.character(fitted_labels), labels)) {
     return(invisible(NULL))
   }
+  absent <- setdiff(labels, fitted_labels)
   mostr_abort(
     "The state",
-    if (length(setdiff(labels, fitted_labels)) > 1L) "s " else " ",
-    paste(setdiff(labels, fitted_labels), collapse = ", "),
-    " never occur",
-    if (length(setdiff(labels, fitted_labels)) == 1L) "s",
-    " at a visit whose state and previous state are both observed, so the ",
-    "model can't be set up. Merge rarely observed states, or check the ",
-    "bounds given to `Ocens()`."
+    if (length(absent) > 1L) "s " else " ",
+    paste(absent, collapse = ", "),
+    if (length(absent) > 1L) " are" else " is",
+    " never observed exactly at a visit after the patient's first known ",
+    "state, so the model can't be set up. Every state must be observed ",
+    "exactly at least once; a range given with `Ocens()` does not count. ",
+    "Merge rarely observed states, or check the bounds given to `Ocens()`."
+  )
+}
+
+# The rows of the engine's set-up fit that are fully observed transitions.
+# `fit_data` holds the fitted rows of the set-up data (as returned by
+# `mostm_fit_orm()`); their row names identify the rows of `data`. A fitted
+# row whose previous state was filled in ends a stretch and enters the
+# likelihood there, so it must not be counted as a transition as well.
+markov_setup_recorded_rows <- function(fit_data, data, recorded, n_fitted) {
+  row <- match(rownames(fit_data), rownames(data))
+  if (anyNA(row) || length(row) != n_fitted) {
+    mostr_abort(
+      "Internal error: the rows of the set-up fit for unobserved states ",
+      "can't be matched to the rows of `data`."
+    )
+  }
+  recorded[row]
+}
+
+# The engine's fit restricted to the fully observed transitions `keep`: the
+# fields that hold one entry per fitted row, and the counts rms computes from
+# them. The design, the states and the coefficients stay; downstream code
+# reads `x`, `y` and `weights` as the fully observed transitions.
+markov_orm_keep_rows <- function(fit, keep) {
+  n <- length(keep)
+  fit$x <- fit$x[keep, , drop = FALSE]
+  fit$y <- markov_keep_response_rows(fit$y, keep)
+  if (length(fit$weights) == n) {
+    fit$weights <- fit$weights[keep]
+  }
+  if (length(fit$linear.predictors) == n) {
+    fit$linear.predictors <- fit$linear.predictors[keep]
+  }
+  states <- as.character(fit$yunique)
+  observed <- markov_blrm_observed_states(list(y = fit$y, ylevels = states))
+  fit$freq <- stats::setNames(
+    as.integer(table(factor(observed, levels = states))),
+    states
+  )
+  if (!is.null(fit$stats)) {
+    fit$stats[["Obs"]] <- sum(keep)
+    fit$stats[["Distinct Y"]] <- length(unique(observed))
+    # rms computes these from the fitted rows with formulas of its own; they
+    # are not recomputed for the fully observed transitions.
+    fit$stats[intersect(names(fit$stats), c("ESS", "Median Y"))] <- NA_real_
+  }
+  fit
+}
+
+# Rows `keep` of a response stored as a vector (orm) or as a two-column
+# matrix (`Ocens` in rmsb), keeping its class and attributes.
+markov_keep_response_rows <- function(y, keep) {
+  if (is.null(dim(y))) {
+    return(y[keep])
+  }
+  attributes_kept <- attributes(y)
+  attributes_kept[c("dim", "dimnames")] <- NULL
+  out <- unclass(y)[keep, , drop = FALSE]
+  for (name in names(attributes_kept)) {
+    attr(out, name) <- attributes_kept[[name]]
+  }
+  out
+}
+
+# The engine's set-up fit with `fit()`. When rms's default optimiser fails on
+# it, the fit is repeated once with `opt_method = "LM", maxit = 100`, which
+# the error message recommends to users: the set-up fit only gives the
+# structure and the starting values, so the user should not have to choose
+# its optimiser. In a simulation with 25% of the states missing not at
+# random, 22 of 500 fits to the fully observed transitions needed this.
+markov_setup_fit_with_retry <- function(fit, dots) {
+  tryCatch(
+    fit(list()),
+    mostr_error_orm_failed = function(e) {
+      if (any(c("opt_method", "maxit") %in% names(dots))) {
+        mostr_abort(e)
+      }
+      fit(list(opt_method = "LM", maxit = 100))
+    }
   )
 }
 
@@ -430,10 +617,14 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   if (!layout$n_steps_total) {
     return(mostm_fit_orm(markov_observed_transition_setup(setup, ranges), ...))
   }
-  mostm_check_observed_states(setup, ranges, path)
-  fitted <- mostm_fit_orm(
-    markov_observed_transition_setup(setup, ranges, path$p_var),
-    ...
+  set_up <- markov_path_setup(setup, ranges, path)
+  mostm_check_setup_states(ranges, set_up, layout, path$p_var)
+  dots <- list(...)
+  fitted <- markov_setup_fit_with_retry(
+    function(extra) {
+      do.call(mostm_fit_orm, c(list(set_up$setup), utils::modifyList(dots, extra)))
+    },
+    dots
   )
   start <- fitted$fit
   if (!identical(start$family, "logistic")) {
@@ -441,6 +632,13 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   }
   labels <- ranges$labels
   markov_check_observed_states(start$yunique, labels)
+  keep <- markov_setup_recorded_rows(
+    fitted$fit_data,
+    set_up$setup$data,
+    set_up$recorded,
+    nrow(start$x)
+  )
+  fit_data <- fitted$fit_data[keep, , drop = FALSE]
 
   plan <- markov_path_plan_design(
     layout,
@@ -455,17 +653,18 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
     storage.mode(plan$x_prev) <- "double"
   }
 
-  fit_ids <- as.character(fitted$fit_data[[path$id_var]])
+  theta <- stats::coef(start)
+  fit <- markov_orm_keep_rows(start, keep)
+  fit_ids <- as.character(fit_data[[path$id_var]])
   patient_ids <- unique(c(fit_ids, plan$instances$id))
   observed <- markov_path_observed(
-    start$x,
-    start$y,
+    fit$x,
+    fit$y,
     labels,
-    start$weights,
+    fit$weights,
     fit_ids,
     patient_ids
   )
-  theta <- stats::coef(start)
   maximum <- markov_path_maximise(unname(theta), observed, plan)
 
   names_theta <- names(theta)
@@ -474,7 +673,6 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   scores <- markov_path_patient_scores(maximum$result, plan, patient_ids)
   dimnames(scores) <- list(patient_ids, names_theta)
 
-  fit <- start
   fit$coefficients <- stats::setNames(maximum$theta, names_theta)
   fit$u <- stats::setNames(maximum$score, names_theta)
   fit$iter <- maximum$iterations
@@ -482,7 +680,7 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   fit$linear.predictors <- stats::setNames(
     fit$coefficients[[fit$interceptRef]] +
       as.numeric(observed$x %*% maximum$theta[-seq_len(n_intercepts)]),
-    names(start$linear.predictors)
+    names(fit$linear.predictors)
   )
   # rms reads `info.matrix` in `vcov()` and `print()`. Its list form holds the
   # intercept block, the slope block and the block between them; the
@@ -504,10 +702,10 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   fit$var <- NULL
   fit$deviance <- c(NA_real_, -2 * maximum$result$loglik)
   names(fit$deviance) <- names(start$deviance)
-  # These statistics of `rms::orm()` describe its fit to the fully observed
-  # transitions (likelihood ratio and score tests against the model without
-  # predictors, rank measures of the fitted rows). They are not computed for
-  # the likelihood with unobserved states, and stale values would mislead.
+  # These statistics of `rms::orm()` describe its set-up fit (likelihood
+  # ratio and score tests against the model without predictors, rank
+  # measures of the fitted rows). They are not computed for the likelihood
+  # with unobserved states, and stale values would mislead.
   stale <- setdiff(names(fit$stats), c("Obs", "ESS", "Distinct Y", "Median Y", "d.f."))
   fit$stats[stale] <- NA_real_
   fit$stats[["Max Deriv"]] <- max(abs(maximum$score))
@@ -527,7 +725,7 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   )
   list(
     fit = fit,
-    fit_data = fitted$fit_data,
+    fit_data = fit_data,
     fitted_ids = patient_ids
   )
 }

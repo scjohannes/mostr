@@ -154,6 +154,48 @@ ms_gap_data <- function(data = ms_simulate()) {
   out
 }
 
+# Every recorded death follows an unobserved visit, so no transition whose
+# state and previous state are both observed ends in death (state 4).
+# Patients who die on their first row are left out: the visit before it is
+# the starting state, which can't be hidden.
+ms_deaths_after_gaps <- function(data = ms_simulate()) {
+  died_first <- unique(data$id[data$y == 4 & data$time == 1])
+  data <- data[!data$id %in% died_first, ]
+  deaths <- data[data$y == 4, ]
+  out <- ms_hide(data, deaths$id, deaths$time - 1)
+  rownames(out) <- NULL
+  out
+}
+
+# The visit after every visit in state 3 is unobserved, so state 3 is never
+# the previous state of a transition whose state and previous state are both
+# observed, although it is observed often. A hidden death becomes a missing
+# state after the patient's last recorded one.
+ms_previous_state_before_gaps <- function(data = ms_simulate()) {
+  for (r in seq_len(nrow(data))) {
+    if (!is.na(data$yprev[r]) && data$yprev[r] == "3") {
+      data$y[r] <- NA
+      if (r < nrow(data) && data$id[r + 1] == data$id[r]) {
+        data$yprev[r + 1] <- NA
+      }
+    }
+  }
+  data
+}
+
+# State 1 occurs once, at the visit after a gap, whose previous state is
+# unknown; it is never the state of a fully observed transition.
+ms_state_only_after_gap <- function() {
+  data <- ms_fixture("gaps")
+  data$y[data$y == 1] <- 2L
+  data$yprev[!is.na(data$yprev) & data$yprev == "1"] <- "2"
+  hidden <- attr(data, "hidden")
+  after <- which(data$id == hidden$id[1] & data$time == hidden$time[1] + 1)
+  data$y[after] <- 1L
+  data$yprev[after + 1] <- "1"
+  data
+}
+
 ms_fit <- function(data, ..., formula = ordered(y) ~ yprev + time + tx) {
   mostm(formula, data = data, id_var = "id", absorb = 4, ...)
 }

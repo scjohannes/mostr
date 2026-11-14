@@ -12,6 +12,91 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-14: Set up models with unobserved states from every exactly observed visit
+
+**Decided.** With unobserved states, the engine fit that gives the model
+structure (design columns, spline knots, factor levels, states) and the
+starting values uses every visit with an exactly observed state after the
+patient's first known state. Where such a visit's previous state is not
+recorded (it follows an unobserved visit), the patient's last recorded
+previous state, which is the last exactly observed state, is filled in for
+this fit only. The filled-in rows are then removed from the engine's object
+(`x`, `y`, `weights`, `linear.predictors`, `freq`, `Obs`, `Distinct Y`;
+`ESS` and `Median Y` set to `NA`), so the observed-transition part of the
+likelihood and everything stored on the fit still hold the fully observed
+transitions only; the filled-in states never enter the likelihood, where
+those visits end stretches. A state must be observed exactly somewhere; with
+a factor previous state, every previous state the stretches need must occur
+as the (possibly filled-in) previous state of some set-up row, else
+`mostm()` stops with a message naming the state. When rms's default
+optimiser fails on the set-up fit, it is repeated once with
+`opt_method = "LM", maxit = 100`, unless the user chose an optimiser. For
+blrm, the QR transformation of the sampler and therefore the reference point
+of rmsb's Dirichlet prior (the mean predictors) come from the set-up rows.
+Without unobserved states nothing changes: the path code does not run.
+
+**Why.** Fitted to the fully observed transitions alone, the set-up failed
+whenever a state or a previous state occurred only next to unobserved
+visits: with 25% of the states missing not at random, 1 of 500 simulated
+trials had every death after an unobserved visit ("state never observed"),
+and 22 of 500 fits needed the `"LM"` retry; with more missingness this gets
+common, although the path likelihood identifies the model. Measured on the
+test data sets before and after (six fits: gaps, `yprev * time`, no
+`yprev`, `rcs(time, 3)`, `Ocens()`, 8 states with 40% missing): stored
+`x`, `y`, `weights`, stored data, patient IDs, counts and knots identical;
+coefficients within 8e-7 relative (the Newton stopping tolerance, reached
+from other starting values), log-likelihoods within 4e-13 relative. Rows
+before a patient's first known state get no filled-in previous state and
+are left out of the set-up, as they are of the likelihood.
+
+**Validation (simulation rerun on the final code).** The pre-registered
+simulation in `benchmarks/local/intermittent-missingness/` (README plan and
+dated amendment, RESULTS.md) was rerun with an installed build: 400
+patients, 28 days, 8 states, 25% of alive visits missing, 500 replicates per
+mechanism, delta-method unconditional SEs. Bands: paired bias against the
+full-data fit within 0.003 or 3 MC SEs; SE/SD 0.9-1.1 and coverage
+0.93-0.97 for death and state 1 at day 28; at most 1% failed fits.
+- Every band passed under MCAR and MAR, both with plain `NA` at visits after
+  the last recorded state and with `Ocens(1, 7)` there. `Ocens(1, 7)`
+  reproduces the first run (whose rule read those `NA` as alive): means
+  within 2.1e-8, identical coverage in all 96 cells.
+- Plain `NA` there is biased towards death although inside the bands:
+  paired bias of P(death) at day 28, control arm, +0.43 x 1000 (MCAR) and
+  +2.17 x 1000 (MAR), 7 and 30 MC SEs; day-28 difference -0.28 and -1.11
+  x 1000 (truth -35.3). In the simulated trials rows stop only at death, so
+  a trailing run of missed visits happens only to survivors and dropping it
+  is informative. This supports the documented rule: a user who knows a
+  patient was alive must say so with `Ocens()`. Empirical SDs differ by at
+  most 2% between the two encodings.
+- Under MNAR (25%), `average` had 0/500 failures and needed no retry (first
+  run on the old set-up: 1 failure, 22 retries with `opt_method = "LM"`);
+  the package's own LM retry was never triggered in 3000 path fits. `drop`
+  still fails on replicate 124 with rms's cryptic error and needs 22
+  retries.
+
+**Speed.** orm, 1,000 patients x 30 visits, 8 states, missing completely
+at random, installed build, warm median of 3 (AMD Ryzen AI 9 HX 370):
+complete data 0.53 s (`yprev + time + tx`) and 0.59 s (`+ age + lab`,
+continuous); 30/50/70% missing 0.56/0.58/0.81 s and 0.67/0.77/1.22 s,
+5/6/9-10 Newton iterations. At 70% missing only 2,855 transitions are fully
+observed.
+
+**Rejected.**
+- Knots from the fully observed transitions, with only the starting values
+  from more rows: knots must come from rms's own fit to keep its `Design`;
+  computing them elsewhere would mean editing rms's object. Knots from the
+  exactly observed visits are a modelling choice as good as any other
+  quantile rule, they are identical when nothing is missing, and they cover
+  the visits the likelihood uses better than the fully observed transitions,
+  which under missingness that depends on time or state are a skewed
+  subset.
+- Filling in the previous state from the range of an `Ocens()` visit: more
+  code for starting values only; the last exactly observed state is enough
+  for Newton's method to start from.
+- The fully observed transitions for blrm's QR transformation: a previous
+  state that is always followed by an unobserved visit gives a column of
+  zeros there.
+
 ## 2026-11-14: One C++ implementation of the path likelihood, with an analytic gradient in Stan and an additive layout of the design rows
 
 **Decided.** The likelihood with unobserved states lives in one header,
