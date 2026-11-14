@@ -308,6 +308,19 @@
 
 ## Bug fixes
 
+* Predictions from `engine = "orm"` fits with an ordered factor with numeric
+  levels among the predictors were wrong, without a message. This happens,
+  for example, when the previous state is made by lagging an ordered `y`.
+  rms codes such a factor with a column for the level's number plus
+  indicators from the third level on, but mostr built the prediction rows
+  with an indicator for every level after the first, so `sops()`,
+  `avg_sops()`, their standard errors and fits with unobserved states used
+  the wrong columns (state probabilities were off by up to 0.33 in a test).
+  `engine = "blrm"` was wrong in the same way whenever the prediction rows
+  did not contain every level of the factor. Both now use rms's own coding;
+  a plain factor and an ordered factor with the same levels give the same
+  predictions. Predictions from plain factors and numbers are unchanged.
+
 * Analytical standard errors with unconditional variance no longer depend on
   the data frame the model was fitted to. `inferences(method = "delta")` took
   the patient of each fitted row by evaluating the `data` of the `mostm()`

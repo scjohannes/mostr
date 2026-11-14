@@ -12,6 +12,65 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-14: Fewer cut-points and logs in the path-likelihood kernel
+
+**Decided.** `inst/include/mostr/path_likelihood.hpp` computes the
+cut-point tables of a stretch step only for the cut-points its range needs
+(`lo - 1 .. hi`), and takes one log per run of forward scales and of
+weight-1 observed probabilities instead of one per factor
+(`accumulate_probability()`), from an independent review's prototype. The
+review's version multiplied every factor into the running product and
+flushed it below 1e-200, which underflows to 0 (log-likelihood `-Inf`)
+when a factor below about 1e-108 follows; factors below 1e-100 now take
+their own log, so the product stays above 1e-300. A test with
+probabilities 1e-40, 1e-150, 1e-260 in a row and a 2,000-step stretch cover
+this. The Hessian expansion no longer skips the mixed terms
+`r x_prev[j]' + x_prev[j] r'` of a design row whose curvature weights sum
+to exactly 0, since its per-state weights need not be 0 then.
+
+**Results** (installed builds, R 4.6.1, Ryzen AI 9 HX 370; the review's
+workload of 1000 patients x 30 visits, 8 states, 50% missing, two
+continuous covariates). Kernel through the R wrapper, orders 0 / 1 / 2:
+9.2-10.0 / 12.8-13.2 / 36.0-36.4 ms before, 6 / 10 / 32 ms after. rstan
+gradient: 11.2 ms before, 7.6 ms after (one run each). Kernel scores and
+Hessian `identical()`; log-likelihood within 8.9e-16 relative. Three orm
+path fits (`ms_gap_data()`, the same with `yprev * time`, and 300 patients
+x 12 visits with 8 states and three covariates): coefficients, `vcov()`
+and scores `identical()`, log-likelihood within 1e-15 relative.
+
+**Rejected.** Threads (estimated 0.2 s of a 0.9 s orm fit at most, and an
+OpenMP dependency) and a branch-free cut-point table (estimated 0.5 to 1 ms,
+needs care at overflow): not worth the code now.
+
+## 2026-11-14: Build rms's "scored" columns for ordered-factor predictors
+
+**Decided.** For an ordered factor with numeric levels, which rms codes as
+"scored" (assume code 7: the level's number and indicators of levels 3 and
+up), `orm_model_matrix()` now coerces the column to an ordered factor over
+all fitted levels and gives it a contrast matrix of that coding
+(`orm_scored_contrasts()`). `blrm_design_matrix()` appends rows holding every
+fitted level before `rms::predictrms()` and drops them afterwards
+(`pad_scored_levels()`).
+
+**Why.** `orm_model_matrix()` built treatment indicators and renamed them to
+rms's names, so the first coefficient met `yo == 2` instead of the level
+number. Measured on `ms_simulate()` (60 patients, K = 4): `avg_sops()` of an
+ordered and a plain-factor previous state differed by up to 0.33; the path
+fit with unobserved states reported a log-likelihood of -280.78 against
+-278.38 for the plain factor (the reference enumeration gives -278.38).
+After the fix both agree to 1e-10 and the design rows equal `fit$x` exactly.
+`rms::predictrms()` builds its contrast from the levels present in
+`newdata`; on rows of a single level its level-number column was off by up
+to 3, which reached `blrm` predictions and the blrm path fit's stretch rows.
+vglm uses its stored contrasts and agreed to 1e-15 before and after.
+
+**Rejected.** Refusing ordered factors for orm: the coding is simple and
+fully determined by `Design$parms`, so building it is safe; refusing would
+break a natural workflow (lagging an ordered `y`). Converting ordered factors
+to plain factors before the fit: changes the user's parametrisation and
+coefficient names. Calling `rms::predictrms()` for orm too: it has the
+missing-level problem above.
+
 ## 2026-11-14: Set up models with unobserved states from every exactly observed visit
 
 **Decided.** With unobserved states, the engine fit that gives the model

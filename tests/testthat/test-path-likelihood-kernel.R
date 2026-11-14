@@ -21,6 +21,7 @@ test_that("the kernel log-likelihood equals the path enumeration", {
 })
 
 test_that("scores equal numerical gradients of the enumeration", {
+  skip_on_cran() # Slow (about 2 s); the long-stretch test below compares scores with numerical gradients on CRAN.
   # The interaction layout runs the same code as the general one; its
   # log-likelihood is checked above, and numerical gradients are slow.
   plans <- path_plans(c("general", "additive"))
@@ -100,6 +101,63 @@ test_that("long stretches with tiny probabilities keep exact derivatives", {
     )
     expect_equal(kernel$hessian, unname(numeric_hessian), tolerance = 1e-6)
   }
+})
+
+test_that("a 2000-step stretch keeps its log-likelihood", {
+  # The kernel takes one log per run of forward scales instead of one per
+  # step; the run's product must not underflow however long the stretch.
+  # Exact states alternate between 4 and 1, so f is the product of
+  # P(4 | 1) = plogis(-10) and P(1 | 4) = plogis(-18), 1000 of each
+  # (log f about -28000).
+  # The plan is written out directly: build_path_plan() makes one design row
+  # per step and took about 2 s for 2000 steps. The time and z columns have
+  # coefficient 0, so two rows serve every step: x_gap row 1 for previous
+  # state 1, row 2 for previous state 4.
+  K <- 4L
+  T_s <- 2000L
+  states <- as.integer(rep(c(4, 1), length.out = T_s))
+  step_rows <- matrix(0L, T_s, K)
+  step_rows[, 1] <- 1L
+  step_rows[, 4] <- 2L
+  plan <- list(
+    x_obs = matrix(0, 0, 5), y_obs = integer(0), w_obs = numeric(0),
+    group_obs = integer(0), n_groups = 1L,
+    x_gap = rbind(c(0, 0, 0, 0, 0), c(0, 0, 1, 0, 0)),
+    absorb = integer(0),
+    stretch_first_row = 1L, stretch_first_prev = 1L,
+    stretch_first_step = 1L, stretch_n_steps = T_s, stretch_weight = 1,
+    step_lo = states, step_hi = states, step_rows = step_rows
+  )
+  theta <- c(10, 0, -10, 0, 0, 8, 0, 0)
+  kernel <- path_kernel(theta, K, plan)
+  expected <- 1000 * (stats::plogis(-10, log.p = TRUE) +
+                        stats::plogis(-18, log.p = TRUE))
+  expect_equal(kernel$stretch_loglik, expected, tolerance = 1e-13)
+  expect_true(all(is.finite(kernel$stretch_scores)))
+  expect_true(all(is.finite(kernel$hessian)))
+})
+
+test_that("tiny probabilities in a row keep the log-likelihood finite", {
+  # The kernel multiplies the probabilities of weight-1 observed rows, and
+  # the forward scales of a stretch, and takes one log per run. Here they
+  # are about 1e-40, 1e-150 and 1e-260: multiplied naively the product
+  # underflows to 0 (1e-450) and the log-likelihood becomes -Inf.
+  # Design row (1(prev == 2), time / 4, z) with beta = (0, 1012, -161) and
+  # z = 1: eta = 253 time - 161 = 92, 345, 598 at times 1, 2, 3.
+  K <- 2L
+  theta <- c(0, 0, 1012, -161)
+  eta <- 253 * (1:3) - 161
+  expected <- sum(stats::plogis(-eta, log.p = TRUE))
+  obs <- data.frame(prev = 1, time = 1:3, z = 1, y = 1, w = 1, group = 1)
+  as_rows <- path_kernel(theta, K, build_path_plan(K, integer(0), obs, list(), 1L))
+  stretch <- list(prev = 1, time = 1, z = 1, lo = c(1, 1, 1), hi = c(1, 1, 1),
+                  weight = 1)
+  as_stretch <- path_kernel(
+    theta, K, build_path_plan(K, integer(0), obs[0, ], list(stretch), 1L)
+  )
+  expect_equal(as_rows$loglik, expected, tolerance = 1e-14)
+  expect_equal(as_stretch$loglik, expected, tolerance = 1e-14)
+  expect_equal(as_stretch$stretch_scores, as_rows$obs_group_scores, tolerance = 1e-12)
 })
 
 test_that("orders 0, 1 and 2 agree on what they share", {

@@ -118,6 +118,16 @@ test_that("CmdStan programs get one directory per version of the program", {
   header <- readLines(compiled[[1L]][[2L]])
   expect_true("namespace po_paths_model_namespace {" %in% header)
   expect_true(any(grepl(headers[["functions"]], header, fixed = TRUE)))
+  # A header left behind with paths to another library (an interrupted
+  # compile from a library that is gone) is rewritten; an up-to-date one is
+  # left alone, so that its time stamp does not change.
+  header_file <- compiled[[1L]][[2L]]
+  writeLines(sub(headers[["functions"]], "C:/gone/library/functions.hpp", header, fixed = TRUE), header_file)
+  markov_cmdstan_model(cache, source, headers, announce = function() NULL)
+  expect_identical(readLines(header_file), header)
+  Sys.setFileTime(header_file, as.POSIXct("2020-01-01", tz = "UTC"))
+  markov_cmdstan_model(cache, source, headers, announce = function() NULL)
+  expect_lt(as.numeric(file.mtime(header_file)), as.numeric(as.POSIXct("2021-01-01", tz = "UTC")))
   # Another version of the headers goes to another directory.
   changed <- source
   changed[[2L]] <- paste(changed[[2L]], "// changed")

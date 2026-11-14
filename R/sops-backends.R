@@ -283,8 +283,43 @@ blrm_design_matrix <- function(model, newdata, second = FALSE) {
   if (!requireNamespace("rms", quietly = TRUE)) {
     mostr_abort("Package 'rms' is required for `blrm` prediction.")
   }
-  X <- rms::predictrms(model, newdata = newdata, type = "x", second = second)
+  n <- nrow(newdata)
+  padded <- pad_scored_levels(model$Design, newdata)
+  X <- rms::predictrms(model, newdata = padded, type = "x", second = second)
+  if (nrow(padded) > n) {
+    X <- X[seq_len(n), , drop = FALSE]
+  }
   normalize_blrm_design_names(model, X, second = second)
+}
+
+# rms::predictrms() codes an ordered factor with numeric levels ("scored",
+# assume code 7; see orm_scored_contrasts()) with a contrast matrix built from
+# the levels present in `newdata` but applies it to a factor over all fitted
+# levels. When a level is absent the rows come out wrong without an error
+# (measured: the level-number column off by up to 3 when rows of one level
+# were predicted), and one row triggers rms's own warning. Appending rows
+# that hold every fitted level makes the two agree; the caller drops them.
+# Without scored terms in `newdata` the data are returned unchanged.
+pad_scored_levels <- function(design, newdata) {
+  scored <- intersect(
+    design$name[design$assume.code %in% 7L],
+    names(newdata)
+  )
+  if (!length(scored) || !nrow(newdata)) {
+    return(newdata)
+  }
+  levels_list <- lapply(scored, function(nm) as.numeric(design$parms[[nm]]))
+  n_pad <- max(lengths(levels_list))
+  pad <- newdata[rep(1L, n_pad), , drop = FALSE]
+  for (k in seq_along(scored)) {
+    nm <- scored[[k]]
+    levels_nm <- levels_list[[k]]
+    # Numbers, which predictrms() matches against the fitted levels whatever
+    # the column's type or factor levels in `newdata`.
+    newdata[[nm]] <- suppressWarnings(as.numeric(as.character(newdata[[nm]])))
+    pad[[nm]] <- levels_nm[(seq_len(n_pad) - 1L) %% length(levels_nm) + 1L]
+  }
+  rbind(newdata, pad)
 }
 
 normalize_blrm_design_names <- function(model, X, second = FALSE) {
@@ -611,6 +646,7 @@ orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
   }
 
   mf <- stats::model.frame(Terms, newdata, na.action = stats::na.pass)
+  mf <- orm_scored_contrasts(design, mf)
   X <- stats::model.matrix(Terms_ns, mf)[, -1L, drop = FALSE]
 
   expected_cols <- design$colnames
@@ -632,8 +668,69 @@ orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
   X
 }
 
+# rms codes an ordered factor with numeric levels as "scored" (assume code 7):
+# one column holding the level's number and indicators of the levels from the
+# third on (`yo`, `yo=3`, `yo=4`). Under treatment contrasts model.matrix()
+# would build indicators of levels 2, 3, 4 instead, which orm_model_matrix()
+# then names like rms's columns: the first coefficient met `yo == 2` where it
+# belongs to the level number, so SOPs and the path likelihood used wrong
+# design rows. The contrast matrix is built from all fitted levels (`parms`),
+# so the rows do not depend on which levels `newdata` holds.
+# (rms::predictrms() builds it from the levels present in `newdata` and warns
+# that one row can come out wrong.) A term written as `scored(x)` makes its
+# own columns and carries an `assume.code`, so it is left alone, as in rms.
+orm_scored_contrasts <- function(design, mf) {
+  scored <- design$name[design$assume.code %in% 7L]
+  for (nm in intersect(scored, names(mf))) {
+    if (!is.null(attr(mf[[nm]], "assume.code"))) {
+      next
+    }
+    levels_nm <- as.numeric(design$parms[[nm]])
+    contrast <- matrix(0, nrow = length(levels_nm), ncol = length(levels_nm) - 1L)
+    contrast[, 1L] <- levels_nm
+    for (k in seq_len(length(levels_nm) - 2L)) {
+      contrast[, k + 1L] <- as.numeric(levels_nm == levels_nm[k + 2L])
+    }
+    dimnames(contrast) <- list(levels(mf[[nm]]), NULL)
+    attr(mf[[nm]], "contrasts") <- contrast
+  }
+  mf
+}
+
 normalize_orm_prediction_data <- function(model, newdata) {
   design <- model$Design
+
+  # Scored terms: an ordered factor over every fitted level, matched by the
+  # level's number, so that orm_scored_contrasts() finds one contrast row per
+  # fitted level whatever levels or type (factor, number, character) the
+  # column has in `newdata`.
+  scored <- design$name[design$assume.code %in% 7L]
+  for (nm in intersect(scored, names(newdata))) {
+    levels_nm <- as.numeric(design$parms[[nm]])
+    values <- newdata[[nm]]
+    number <- suppressWarnings(as.numeric(as.character(values)))
+    index <- match(number, levels_nm)
+    bad <- is.na(index) & !is.na(values)
+    if (any(bad)) {
+      mostr_abort(
+        "Values in `",
+        nm,
+        "` are not among fitted orm levels: ",
+        paste(
+          utils::head(unique(as.character(values[bad])), 5),
+          collapse = ", "
+        ),
+        if (length(unique(values[bad])) > 5) " ..." else ""
+      )
+    }
+    newdata[[nm]] <- factor(
+      index,
+      levels = seq_along(levels_nm),
+      labels = as.character(levels_nm),
+      ordered = TRUE
+    )
+  }
+
   categorical <- design$name[design$assume.code %in% c(5L, 8L)]
 
   for (nm in categorical) {

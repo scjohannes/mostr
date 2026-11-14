@@ -31,6 +31,7 @@ Depends:
 LazyData: true
 Suggests:
     callr,
+    cmdstanr,
     dplyr,
     knitr,
     Matrix,
@@ -38,10 +39,12 @@ Suggests:
     posterior,
     rmsb,
     rmarkdown,
+    rstan,
     tidyr,
     testthat (>= 3.0.0),
     Hmisc,
     withr
+Additional_repositories: https://stan-dev.r-universe.dev
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Config/Needs/website: patchwork

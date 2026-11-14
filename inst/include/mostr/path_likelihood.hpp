@@ -143,12 +143,21 @@ struct CutPoints {
   // as a product of cached factors (see evaluate_stretches()).
   void set(const double* alpha, const int thresholds, const double eta,
            const double exp_eta, const bool factorable) {
+    set(alpha, eta, exp_eta, factorable, 0, thresholds);
+  }
+
+  // Only the cut-points k_begin <= k < k_end (0-based); the others keep
+  // stale values and must not be read. A step whose range is lo..hi needs
+  // c_{lo-1} .. c_hi only, and the last step of a stretch is often a single
+  // state (2 of K - 1 cut-points), so the stretch tables skip the rest.
+  void set(const double* alpha, const double eta, const double exp_eta,
+           const bool factorable, const int k_begin, const int k_end) {
     // c_k = plogis(z) and 1 - c_k = plogis(-z), each from the form that
     // cannot overflow.
     const bool use_factor =
         factor && factorable && std::fabs(eta) < kFactorLimit;
     const double exp_neg_eta = use_factor ? 1.0 / exp_eta : 0.0;
-    for (int k = 0; k < thresholds; ++k) {
+    for (int k = k_begin; k < k_end; ++k) {
       const double z = alpha[k] + eta;
       double e;
       if (use_factor) {
@@ -194,6 +203,28 @@ inline double curvature_at(const double* upper, const double* lower,
   return upper[k - 1] * lower[k - 1] * (lower[k - 1] - upper[k - 1]);
 }
 
+// Adds log(factor) to `log_sum` through a running product, so that a log is
+// taken once per many factors instead of once per factor. Every factor here
+// is a probability or a forward scale c_t, so it lies in (0, 1] (c_t can
+// exceed 1 by rounding only, a few ulps per step): the product cannot
+// overflow. It is flushed into `log_sum` when it falls below 1e-200, and a
+// factor below 1e-100 takes its own log instead, so the product never
+// falls below 1e-300 and cannot underflow to a subnormal or 0, however long
+// the run and however extreme the linear predictors. The result differs
+// from the sum of logs only by rounding (about 1e-15 relative).
+inline void accumulate_probability(const double factor, double& product,
+                                   double& log_sum) {
+  if (factor < 1e-100) {
+    log_sum += std::log(factor);
+    return;
+  }
+  product *= factor;
+  if (product < 1e-200) {
+    log_sum += std::log(product);
+    product = 1.0;
+  }
+}
+
 inline double dot(const double* x, const double* beta, const int p) {
   double eta = 0.0;
   for (int l = 0; l < p; ++l) eta += x[l] * beta[l];
@@ -220,6 +251,11 @@ inline void evaluate_observed(const Problem& d, const double* alpha,
   std::vector<double> alpha_alpha(order >= 2 ? static_cast<size_t>(thresholds) * thresholds : 0, 0.0);
   double* total = out.total_score;
   const size_t stride = static_cast<size_t>(d.n_groups);
+  // std::log takes about 100 ns in this toolchain, a third of the cost of
+  // order 0 on observed rows, so the probabilities of rows with weight 1 are
+  // multiplied and the log is taken once per run (see
+  // accumulate_probability()).
+  double unit_product = 1.0;
   for (int i = 0; i < d.n_obs; ++i) {
     const double w = d.w_obs[i];
     if (w == 0.0) continue;
@@ -232,7 +268,11 @@ inline void evaluate_observed(const Problem& d, const double* alpha,
       impossible = true;
       continue;
     }
-    loglik += w * std::log(prob);
+    if (w == 1.0) {
+      accumulate_probability(prob, unit_product, loglik);
+    } else {
+      loglik += w * std::log(prob);
+    }
     if (order < 1) continue;
     const double* up = cuts.upper.data();
     const double* low = cuts.lower.data();
@@ -282,6 +322,8 @@ inline void evaluate_observed(const Problem& d, const double* alpha,
       }
     }
   }
+  // The rest of the run of weight-1 rows (log(1) = 0 when there was none).
+  loglik += std::log(unit_product);
   if (order < 2) return;
   double* hessian = out.hessian;
   for (int k2 = 0; k2 < thresholds; ++k2) {
@@ -439,6 +481,15 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
       const int u = first + t - 1;
       int in_lo, in_hi;
       in_range(t, in_lo, in_hi);
+      const int out_lo = d.lo[u];
+      const int out_hi = d.hi[u];
+      // P(y) = c_{y-1} - c_y for y in lo..hi uses cut-points lo - 1 .. hi
+      // (1-based, within 1..K-1), and so do the s_k and u_k that pass 3
+      // reads: there b(k + 1) - b(k) is 0 for every other k, because b is 0
+      // outside the range. Only these entries of the tables are written;
+      // every reader below stays within them.
+      const int k_lo = std::max(1, out_lo - 1);
+      const int k_hi = std::min(thresholds, out_hi);
       for (int j = in_lo; j <= in_hi; ++j) {
         if (t > 1 && d.absorbing[j - 1]) continue;
         const int row = t == 1
@@ -449,21 +500,21 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
         const double eta = eta_gap[row] + eta_prev[j - 1];
         const bool factorable = std::fabs(eta_gap[row]) < limit &&
                                 std::fabs(eta_prev[j - 1]) < limit;
-        cuts.set(alpha, thresholds, eta, exp_gap[row] * exp_prev[j - 1],
-                 factorable);
+        cuts.set(alpha, eta, exp_gap[row] * exp_prev[j - 1], factorable,
+                 k_lo - 1, k_hi);
         const double* up = cuts.upper.data();
         const double* low = cuts.lower.data();
         double* prob = prob_tab.data() + at * states;
-        for (int y = 1; y <= states; ++y) {
+        for (int y = out_lo; y <= out_hi; ++y) {
           prob[y - 1] = cell_probability(up, low, thresholds, y);
         }
         double* s_row = s_tab.data() + at * thresholds;
-        for (int k = 1; k <= thresholds; ++k) {
+        for (int k = k_lo; k <= k_hi; ++k) {
           s_row[k - 1] = slope_at(up, low, thresholds, k);
         }
         if (hess_wanted) {
           double* u_row = u_tab.data() + at * thresholds;
-          for (int k = 1; k <= thresholds; ++k) {
+          for (int k = k_lo; k <= k_hi; ++k) {
             u_row[k - 1] = curvature_at(up, low, thresholds, k);
           }
         }
@@ -474,6 +525,7 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
     bool negative_cell = false;
     bool possible = true;
     double log_f = 0.0;
+    double scale_product = 1.0;
     for (int t = 1; t <= steps && possible; ++t) {
       const int u = first + t - 1;
       const int out_lo = d.lo[u];
@@ -508,9 +560,13 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
         break;
       }
       scale[t] = total;
-      log_f += std::log(total);
+      // log f = sum_t log c_t, with one log per stretch instead of one per
+      // step (the forward pass cost seven times the backward pass because
+      // of these logs).
+      accumulate_probability(total, scale_product, log_f);
       for (int y = out_lo; y <= out_hi; ++y) a_t[y - 1] /= total;
     }
+    if (possible) log_f += std::log(scale_product);
     if (out.stretch_loglik != nullptr) {
       out.stretch_loglik[s] = possible ? log_f : neg_inf;
     }
@@ -602,6 +658,11 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
       }
       // Da_t is needed only as input to a later step.
       const bool propagate = hess && t < steps;
+      // The cut-points of the step's tables, 0-based kb <= k < ke: diff is 0
+      // outside them, so the loops over k below skip terms that are 0 (and
+      // table entries that were not written). v is read only in this range.
+      const int kb = std::max(1, out_lo - 1) - 1;
+      const int ke = std::min(thresholds, out_hi);
       if (propagate) {
         std::fill(da_out.begin() + static_cast<size_t>(out_lo - 1) * q,
                   da_out.begin() + static_cast<size_t>(out_hi) * q, 0.0);
@@ -628,7 +689,7 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
         // sum_y dP(y | j) b(y) = (m_1..m_{K-1}, (sum_k m_k) x_j) with
         // m_k = s_jk (b(k+1) - b(k)).
         double m_sum = 0.0;
-        for (int k = 0; k < thresholds; ++k) {
+        for (int k = kb; k < ke; ++k) {
           v[k] = s_row[k] * diff[k];
           m_sum += v[k];
           score_local[k] += coef * v[k];
@@ -646,7 +707,7 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
         double* curv = gap_curv.data() + static_cast<size_t>(row) * thresholds;
         const double curv_coef = weight * coef;
         double curv_total = 0.0;
-        for (int k = 0; k < thresholds; ++k) {
+        for (int k = kb; k < ke; ++k) {
           const double value = curv_coef * u_row[k] * diff[k];
           curv[k] += value;
           if (has_prev) {
@@ -658,7 +719,7 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
         // Cross term: weight * Da_{t-1}(j) v' / c_t (symmetrised at the
         // end); its slope columns go through run_vec and prev_vec.
         if (t > 1) {
-          for (int k = 0; k < thresholds; ++k) {
+          for (int k = kb; k < ke; ++k) {
             const double scaled = weight * v[k] * inv_scale;
             if (scaled == 0.0) continue;
             double* col = cross.data() + static_cast<size_t>(q) * k;
@@ -771,11 +832,15 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
       double* ax_k = ax.data() + static_cast<size_t>(k) * p;
       for (int l = 0; l < p; ++l) ax_k[l] += w_rk * x[l];
     }
-    if (total == 0.0) continue;
-    for (int l2 = 0; l2 < p; ++l2) {
-      const double scaled = total * x[l2];
-      for (int l1 = 0; l1 <= l2; ++l1) xx[l1 + static_cast<size_t>(p) * l2] += scaled * x[l1];
+    if (total != 0.0) {
+      for (int l2 = 0; l2 < p; ++l2) {
+        const double scaled = total * x[l2];
+        for (int l1 = 0; l1 <= l2; ++l1) xx[l1 + static_cast<size_t>(p) * l2] += scaled * x[l1];
+      }
     }
+    // Not skipped when total is 0: the weights W_rj of the previous states
+    // sum to total but can be non-zero and cancel (u_k (b(k+1) - b(k)) takes
+    // either sign), and then r mixed' + mixed r' is still non-zero.
     if (!has_prev) continue;
     // mixed = sum_j W_rj x_prev[j]; adds r mixed' + mixed r'.
     std::fill(mixed.begin(), mixed.end(), 0.0);

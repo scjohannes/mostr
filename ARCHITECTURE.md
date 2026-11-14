@@ -633,7 +633,11 @@ flowchart TD
   derivatives of the forward vector. Paths are never listed. The cell
   probabilities of each (step, previous state) pair are computed per
   stretch into small tables, because without tied covariates a pair occurs
-  in no other stretch; the slope part of the score and of the cross terms
+  in no other stretch, and only for the cut-points the step's range of
+  states needs. The log-likelihood takes one log per run of forward scales
+  and of weight-1 observed probabilities (`accumulate_probability()`, which
+  keeps the running product above 1e-300 so that it cannot underflow);
+  the slope part of the score and of the cross terms
   is summed per x_gap row (per step in the additive layout) and per
   previous state before it is multiplied by the design row. The loops are
   serial; stretches are independent, so they could be split between
@@ -677,13 +681,17 @@ flowchart TD
   at order 1 and hands Stan the value with its analytic gradient
   (`stan::math::precomputed_gradients()`), so automatic differentiation
   never records the recursion (152 ms per gradient by autodiff against
-  16 ms, 1,000 patients x 30 visits without tied covariates; Nov 2026).
+  16 ms, 1,000 patients x 30 visits without tied covariates; Nov 2026;
+  about 7.6 ms since the kernel computes fewer cut-points and logs).
   The design rows reach Stan transformed (`(x_gap - xbar) Rinv`,
   `x_prev Rinv`) and as arrays stored by row. The program is compiled on
   first use by `markov_path_stan_model()` with `allow_undefined`: rstan
   inserts `includes` into the model's namespace; for CmdStan
   (`markov_cmdstan_model()`) a user header opens
-  `po_paths_model_namespace` itself. Compiled programs are cached in
+  `po_paths_model_namespace` itself; it names the installed headers by
+  absolute path and is rewritten whenever its text differs, because the
+  key covers the headers' contents, not their location. Compiled programs
+  are cached in
   `tools::R_user_dir("mostr", "cache")` (`options(mostr.stan_cache = )`),
   keyed by the Stan code, the three headers (`markov_path_stan_source()`),
   R and the versions of rstan, StanHeaders, Rcpp, RcppEigen and
@@ -926,6 +934,21 @@ into results keep the user's types. vglm designs are built by
 missing value in the design, because `stats::model.matrix()` on a data frame
 drops such rows and the remaining probabilities would be matched to the
 wrong profiles.
+
+orm designs are built by `orm_model_matrix()` (`R/sops-backends.R`), which
+every orm consumer uses: `predict_orm_response_markov()`, the fast path, the
+linear-predictor plots and the stretch rows of path fits with unobserved
+states. It evaluates the stored `sformula` under treatment contrasts with
+`Design.attr` set and names the columns `Design$colnames`. Two codings need
+help: categorical terms (assume codes 5 and 8) get their fitted levels
+(`normalize_orm_prediction_data()`), and an ordered factor with numeric
+levels, which rms codes as "scored" (code 7: the level's number and
+indicators of levels 3 and up), becomes an ordered factor over all fitted
+levels with that contrast matrix (`orm_scored_contrasts()`). blrm designs
+come from `rms::predictrms()` via `blrm_design_matrix()`; predictrms builds
+the scored contrast from the levels present in its rows, so
+`pad_scored_levels()` appends rows with every fitted level and the caller
+drops them.
 
 ### Crossed thresholds
 

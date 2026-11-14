@@ -458,17 +458,25 @@ markov_cmdstan_model <- function(cache, source, headers, announce) {
   if (!file.exists(stan_file)) {
     writeLines(source[[1L]], stan_file)
   }
-  if (!file.exists(header_file)) {
-    writeLines(
-      c(
-        "#include <stan/model/model_header.hpp>",
-        paste0("#include \"", headers[["interface"]], "\""),
-        "namespace po_paths_model_namespace {",
-        paste0("#include \"", headers[["functions"]], "\""),
-        "}"
-      ),
-      header_file
-    )
+  # The header names mostr's installed headers by absolute path, but the key
+  # covers their contents, not their location. Written only when absent, a
+  # header left by a failed or interrupted first compile would keep pointing
+  # to a library that may be gone (a `devtools::load_all()` tree, an
+  # `R CMD check` library) and every later compile would fail until the
+  # cache was deleted. It is rewritten whenever its text differs, and left
+  # untouched otherwise so that its time stamp does not trigger a recompile.
+  header_text <- c(
+    "#include <stan/model/model_header.hpp>",
+    paste0("#include \"", headers[["interface"]], "\""),
+    "namespace po_paths_model_namespace {",
+    paste0("#include \"", headers[["functions"]], "\""),
+    "}"
+  )
+  current <- if (file.exists(header_file)) {
+    tryCatch(readLines(header_file, warn = FALSE), error = function(e) NULL)
+  }
+  if (!identical(current, header_text)) {
+    writeLines(header_text, header_file)
   }
   executable <- file.path(
     dir,
