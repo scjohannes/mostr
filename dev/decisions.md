@@ -12,6 +12,55 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-14: One C++ implementation of the path likelihood, with an analytic gradient in Stan and an additive layout of the design rows
+
+**Decided.** The likelihood with unobserved states lives in one header,
+`inst/include/mostr/path_likelihood.hpp`, used by `cpp_path_loglik()` (orm)
+and, through `allow_undefined` and a C++ definition of `path_loglik()`, by
+the Stan program of blrm, which gets the log-likelihood with its analytic
+gradient as precomputed partial derivatives. When the previous state enters
+the design only through columns of its own (checked exactly on every design
+row), the design rows are stored as one row per step plus one row per
+previous state (additive layout); otherwise as before (general layout).
+
+**Why.** Speed without tied covariates, with unchanged results. Workload:
+1,000 patients x 30 visits, 8 states (8 absorbing), 50% of the other states
+missing, `ordered(y) ~ yprev + time + tx + age + lab` with continuous `age`
+and `lab`; installed builds; AMD Ryzen AI 9 HX 370.
+- Stan gradient (`rstan::grad_log_prob`): 152 ms by autodiff, 15.7 ms
+  analytic; with `ordered(y) ~ yprev + time + tx` (tied covariates) 19.7 ms
+  and 6.3 ms. Log density and gradient equal the autodiff program's within
+  2.4e-16 and 1.7e-14 (relative to the largest gradient entry) on six data
+  sets (no ties, ties, `Ocens()` ranges with the absorbing state inside,
+  `yprev * time`, no `yprev`, two states).
+- 4 chains x 1000 iterations, `mc.cores = 4`: no ties 531 s (25 leapfrog
+  steps per iteration; the autodiff program was not run, at 152 ms per
+  gradient it would take about an hour); ties 633 s before, 213 s after,
+  with posterior means within 1.2 Monte Carlo SEs and SDs within 6%.
+  CmdStan (2.39) compiles and samples the same program; its posterior means
+  agreed with rstan's within 1.75 SEs on a small data set.
+- `cpp_path_loglik()` on the no-ties plan (6,970 stretches, 20,417 steps):
+  order 0/1/2 took 20/25/58 ms, now 10/14/38 ms. `x_gap` has 20,417 rows
+  instead of 101,099. A whole orm fit took 0.98 s, now 0.80 s (plan
+  0.38 s to 0.12 s, kernel calls 0.31 s to 0.19 s). Coefficients,
+  log-likelihood, information and patient scores agree within 2e-15 of
+  their largest entry on five fits (no ties, ties, `yprev * time`, weights,
+  `Ocens()`); iteration counts are identical.
+
+**Rejected.**
+- Keeping autodiff and only speeding up the Stan code: the recursion has to
+  be recorded on the tape whatever its form; the analytic gradient was
+  already implemented and tested for the orm fit.
+- A separate Stan-only C++ implementation: two implementations of the score
+  to keep equal. The header depends on the standard library only, so the
+  package and the Stan program compile the same code.
+- Checking the additive structure from the formula's terms instead of the
+  design rows: cheaper, but it would rely on how each engine builds its
+  design matrix; the exact check on the rows costs about 45 ms here.
+- Threads (OpenMP) in the kernel: not attempted in this change. Stretches are
+  independent and the per-stretch tables are local, so the new layout keeps
+  that option open (per-thread score and Hessian accumulators).
+
 ## 2026-11-13: Patients without a fitted row are named at the fit and left out of resamples
 
 **Decided.** `mostm()` warns when a patient loses every row to missing values

@@ -72,3 +72,59 @@ test_that("the write check finds a writable directory", {
     "the result is kept in"
   )
 })
+
+test_that("the cache key covers the C++ code compiled with the program", {
+  headers <- markov_path_stan_headers()
+  expect_named(headers, c("likelihood", "interface", "functions"))
+  expect_true(all(file.exists(headers)))
+  source <- markov_path_stan_source(headers)
+  expect_length(source, 4L)
+  expect_match(source[[1L]], "path_loglik", fixed = TRUE)
+  expect_match(source[[4L]], "precomputed_gradients", fixed = TRUE)
+  # A change to a header alone gives another key.
+  changed <- source
+  changed[[2L]] <- paste(changed[[2L]], "// changed")
+  versions <- c(rstan = "2.32.7")
+  expect_false(identical(
+    markov_stan_cache_key(source, versions),
+    markov_stan_cache_key(changed, versions)
+  ))
+})
+
+test_that("CmdStan programs get one directory per version of the program", {
+  skip_if_not_installed("cmdstanr")
+  dir <- withr::local_tempdir()
+  dir.create(file.path(dir, "po_paths_cmdstan_old"))
+  file.create(file.path(dir, "markov_ml_other.rds"))
+  cache <- markov_stan_cache_dir(dir)
+  compiled <- list()
+  local_mocked_bindings(
+    cmdstan_model = function(stan_file, user_header, ...) {
+      compiled[[length(compiled) + 1L]] <<- list(stan_file, user_header)
+      structure(list(stan_file = stan_file), class = "fake_cmdstan_model")
+    },
+    cmdstan_version = function(...) "2.39.0",
+    .package = "cmdstanr"
+  )
+  headers <- markov_path_stan_headers()
+  source <- markov_path_stan_source(headers)
+  model <- markov_cmdstan_model(cache, source, headers, announce = function() NULL)
+  directory <- dirname(model$stan_file)
+  expect_match(basename(directory), "^po_paths_cmdstan_")
+  expect_setequal(list.files(dir), c(basename(directory), "markov_ml_other.rds"))
+  # The model is named after the file, which fixes its C++ namespace.
+  expect_identical(basename(model$stan_file), "po_paths.stan")
+  expect_identical(paste(readLines(model$stan_file), collapse = "\n"), source[[1L]])
+  header <- readLines(compiled[[1L]][[2L]])
+  expect_true("namespace po_paths_model_namespace {" %in% header)
+  expect_true(any(grepl(headers[["functions"]], header, fixed = TRUE)))
+  # Another version of the headers goes to another directory.
+  changed <- source
+  changed[[2L]] <- paste(changed[[2L]], "// changed")
+  other <- markov_cmdstan_model(cache, changed, headers, announce = function() NULL)
+  expect_false(identical(dirname(other$stan_file), directory))
+  expect_setequal(
+    list.files(dir),
+    c(basename(dirname(other$stan_file)), "markov_ml_other.rds")
+  )
+})

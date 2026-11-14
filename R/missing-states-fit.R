@@ -144,17 +144,20 @@ markov_check_observed_states <- function(fitted_labels, labels) {
 # then slopes). `observed` holds the fully observed transitions.
 markov_path_loglik <- function(theta, observed, plan, order = 2L) {
   n_intercepts <- length(plan$labels) - 1L
+  beta <- theta[-seq_len(n_intercepts)]
   cpp_path_loglik(
     alpha = theta[seq_len(n_intercepts)],
-    beta = theta[-seq_len(n_intercepts)],
+    beta = beta,
     x_obs = observed$x,
     y_obs = observed$y,
     w_obs = observed$weight,
     group_obs = observed$group,
     n_groups = as.integer(observed$n_groups),
     x_gap = plan$x_gap,
+    x_prev = plan$x_prev %||% matrix(0, 0L, length(beta)),
     absorb = plan$absorb,
     stretch_first_row = plan$stretch_first_row,
+    stretch_first_prev = plan$stretch_first_prev %||% integer(),
     stretch_first_step = plan$stretch_first_step,
     stretch_n_steps = plan$stretch_n_steps,
     stretch_weight = plan$stretch_weight,
@@ -448,6 +451,9 @@ mostm_fit_orm_paths <- function(setup, ranges, path, ...) {
   }
   plan$x_gap <- unname(plan$x_gap)
   storage.mode(plan$x_gap) <- "double"
+  if (!is.null(plan$x_prev)) {
+    storage.mode(plan$x_prev) <- "double"
+  }
 
   fit_ids <- as.character(fitted$fit_data[[path$id_var]])
   patient_ids <- unique(c(fit_ids, plan$instances$id))

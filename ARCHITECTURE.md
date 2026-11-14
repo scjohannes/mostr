@@ -558,10 +558,12 @@ flowchart TD
     B -->|yes| L[markov_path_layout: which rows form stretches]
     L -->|no stretch| C
     L -->|stretches| D[engine fit to fully observed transitions: structure and starting values]
-    D --> E[markov_path_plan_design: design rows per step and previous state, de-duplicated]
+    D --> E[markov_path_plan_design: design rows per step and previous state, additive or general layout]
     E --> F{engine}
     F -->|orm| G[markov_path_maximise: Newton-Raphson on cpp_path_loglik]
     F -->|blrm| H[markov_path_stan_model: sample inst/stan/po_paths.stan]
+    G --> P[inst/include/mostr/path_likelihood.hpp]
+    H --> P
     G --> I[orm object with new coefficients, information, patient scores]
     H --> J[blrm object with new draws]
     I --> K[robcov_orm_paths: sandwich from patient scores]
@@ -582,17 +584,43 @@ flowchart TD
   fit is used as without unobserved states.
   A first step of a stretch has one design row; a later step has one design
   row for each non-absorbing state in the range of the step before it, built
-  by setting `p_var` to that state. Design rows that are equal are stored
-  once (`x_gap`), and stretches with the same design rows and ranges are
-  stored once with the summed weight of their patients, so the cost grows
-  with the number of distinct stretches.
-- `cpp_path_loglik()` (`src/paths.cpp`) returns the log-likelihood, the score
-  of the observed transitions summed by patient, the score of each distinct
-  stretch, and the exact Hessian. Observed transitions use the closed-form
-  proportional-odds derivatives. A stretch carries the vector of state
-  probabilities forward one visit at a time together with its first and
-  second derivatives with respect to the coefficients; paths are never
-  listed. Indices are 1-based.
+  by setting `p_var` to that state. The design row for step `u` and previous
+  state `j` is `x_gap[step_rows[u, j], ] + x_prev[j, ]`, in one of two
+  layouts (`plan$layout`):
+  - additive: when the previous state's columns depend on the previous
+    state alone (`y ~ yprev + time + age`; checked exactly on every design
+    row by `markov_additive_design()`), `x_gap` holds one row per step with
+    those columns set to 0 and `x_prev` their K rows; step 1 adds
+    `x_prev[stretch_first_prev, ]`. With continuous covariates this stores a
+    fifth as many rows (20,417 instead of 101,099 for 1,000 patients x 30
+    visits, 8 states) and the kernel computes one linear predictor per step;
+  - general: `x_prev` is `NULL` and `x_gap` holds every distinct design row.
+    Used when the previous state interacts with another predictor
+    (`yprev * time`) or does not enter the model.
+
+  Equal `x_gap` rows are stored once, and stretches with the same rows,
+  previous state and ranges are stored once with the summed weight of their
+  patients, so with tied covariates the cost grows with the number of
+  distinct stretches.
+- The likelihood is implemented once, in
+  `inst/include/mostr/path_likelihood.hpp` (standard C++ only; installed
+  with the package so that the Stan program can be compiled with it).
+  `cpp_path_loglik()` (`src/paths.cpp`, which includes it through
+  `src/Makevars`) converts R objects and returns the log-likelihood, the
+  score of the observed transitions summed by patient, the score of each
+  distinct stretch, and the exact Hessian. Observed transitions use the
+  closed-form proportional-odds derivatives. A stretch carries the vector
+  of state probabilities forward one visit at a time, then backward, and
+  forms the score from both; for the Hessian it also carries the first
+  derivatives of the forward vector. Paths are never listed. The cell
+  probabilities of each (step, previous state) pair are computed per
+  stretch into small tables, because without tied covariates a pair occurs
+  in no other stretch; the slope part of the score and of the cross terms
+  is summed per x_gap row (per step in the additive layout) and per
+  previous state before it is multiplied by the design row. The loops are
+  serial; stretches are independent, so they could be split between
+  threads with per-thread score and Hessian accumulators. Indices are
+  1-based.
 - orm: the model structure (design columns, knots, factor levels, state
   labels) and the starting values come from `rms::orm()` on the fully
   observed transitions, so every state must occur there
@@ -622,14 +650,30 @@ flowchart TD
   mean predictors, optional contrast priors) and its centred QR
   parametrisation, with the orthogonalised columns scaled to SD 1 (and
   `Rinv` by the same factor) so that the sampler adapts faster; the draws
-  replace those of the object. The program is compiled on first use by
-  `markov_path_stan_model()` and cached in
+  replace those of the object. The likelihood is not written in Stan: the
+  program declares `path_loglik()` without a body, and its C++ definition
+  (`inst/include/mostr/stan_path_loglik*.hpp`) calls `path_likelihood.hpp`
+  at order 1 and hands Stan the value with its analytic gradient
+  (`stan::math::precomputed_gradients()`), so automatic differentiation
+  never records the recursion (152 ms per gradient by autodiff against
+  16 ms, 1,000 patients x 30 visits without tied covariates; Nov 2026).
+  The design rows reach Stan transformed (`(x_gap - xbar) Rinv`,
+  `x_prev Rinv`) and as arrays stored by row. The program is compiled on
+  first use by `markov_path_stan_model()` with `allow_undefined`: rstan
+  inserts `includes` into the model's namespace; for CmdStan
+  (`markov_cmdstan_model()`) a user header opens
+  `po_paths_model_namespace` itself. Compiled programs are cached in
   `tools::R_user_dir("mostr", "cache")` (`options(mostr.stan_cache = )`),
-  keyed by the program, R and the versions of rstan, StanHeaders, Rcpp,
-  RcppEigen and RcppParallel (`markov_stan_cache_key()`).
+  keyed by the Stan code, the three headers (`markov_path_stan_source()`),
+  R and the versions of rstan, StanHeaders, Rcpp, RcppEigen and
+  RcppParallel, or of CmdStan (`markov_stan_cache_key()`).
   `markov_cached_stan_model()` writes through a temporary file and a rename
-  and then deletes the cached programs of other keys; an unwritable
-  directory keeps the program for the session only.
+  and then deletes the cached programs of other keys; CmdStan programs live
+  in one directory per key, and the directories of other keys are deleted
+  after a compile. An unwritable directory keeps the program for the
+  session only. As in `rmsb::blrm()`, the number of chains run in parallel
+  is the backend's default, `getOption("mc.cores", 1)`, unless
+  `sampling.args` sets `cores` or `parallel_chains`.
 - The fitted cohort is every patient with an observed transition or a
   stretch (`fitted_ids` passed to `markov_prepare_stored_data()`).
   Bootstrap and fractional weighted refits call `mostm()` again and so use
@@ -639,8 +683,12 @@ flowchart TD
   `cluster()` and `iprior`.
 - Tests: `test-path-likelihood-kernel.R` compares the kernel with
   `path_loglik_bruteforce()` (`helper-path-likelihood.R`), which lists every
-  path; the `test-missing-states-*.R` files compare whole fits with a
-  reference that works from the data frame.
+  path, in the general, the additive and an interaction layout, and the two
+  layouts of one model with each other; the `test-missing-states-*.R` files
+  compare whole fits with a reference that works from the data frame
+  (including `yprev * time`). `test-slow-missing-states-blrm.R` compares the
+  compiled Stan program's log density with that reference and its gradient
+  with numerical derivatives.
 
 ### Settings
 

@@ -95,10 +95,18 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   # sampler's parametrisation differs.
   column_scale <- sqrt(max(nrow(x) - 1, 1))
   rinv <- transform$Rinv * column_scale
+  # The design row for previous state j is x_gap + x_prev[j] (additive
+  # layout) or x_gap alone; the transformation is linear, so the centring
+  # goes with x_gap and x_prev only gets `rinv`.
   x_gap <- if (is.null(plan$x_gap)) {
     matrix(0, 0L, n_predictors)
   } else {
     sweep(unname(plan$x_gap), 2L, transform$xbar) %*% rinv
+  }
+  x_prev <- if (is.null(plan$x_prev)) {
+    matrix(0, 0L, n_predictors)
+  } else {
+    unname(plan$x_prev) %*% rinv
   }
   n_states <- length(labels)
   contrast <- fit$Contrast
@@ -115,29 +123,34 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     factor(observed_state, levels = seq_len(n_states))
   )
   cells <- which(cell_count > 0)
+  x_observed <- unname(unclass(transform$X))[
+    !duplicated(observed_row),
+    ,
+    drop = FALSE
+  ] * column_scale
+  # The Stan program reads matrices as arrays stored by row.
+  by_row <- function(m) as.array(as.numeric(t(m)))
   stan_data <- list(
     p = n_predictors,
     k = n_states,
-    Go = n_observed_rows,
-    Xo = unname(unclass(transform$X))[
-      !duplicated(observed_row),
-      ,
-      drop = FALSE
-    ] * column_scale,
-    n_cells = length(cells),
-    cell = as.array(cells),
-    cell_count = as.array(as.numeric(cell_count[cells])),
+    n_obs = length(cells),
+    x_obs = by_row(x_observed[(cells - 1L) %% n_observed_rows + 1L, , drop = FALSE]),
+    y_obs = as.array((cells - 1L) %/% n_observed_rows + 1L),
+    w_obs = as.array(as.numeric(cell_count[cells])),
     G = nrow(x_gap),
-    Xg = x_gap,
+    x_gap = by_row(x_gap),
+    has_prev = as.integer(nrow(x_prev) > 0L),
+    x_prev = by_row(x_prev),
     S = length(plan$stretch_n_steps),
     T = length(plan$step_lo),
     first_row = as.array(plan$stretch_first_row),
+    first_prev = as.array(plan$stretch_first_prev),
     first_step = as.array(plan$stretch_first_step),
     n_steps = as.array(plan$stretch_n_steps),
     weight = as.array(plan$stretch_weight),
     lo = as.array(plan$step_lo),
     hi = as.array(plan$step_hi),
-    step_rows = plan$step_rows,
+    step_rows = as.array(as.integer(t(plan$step_rows))),
     absorbing = as.array(as.integer(seq_len(n_states) %in% plan$absorb)),
     conc = args$conc %||% fit$conc %||% (1 / (0.8 + 0.35 * max(n_states, 3))),
     cn = n_contrasts,
@@ -155,6 +168,11 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   chains <- args$chains %||% 4
   refresh <- args$refresh %||% 0
   model <- markov_path_stan_model(backend)
+  # The number of chains run in parallel is left to the backend, as
+  # `rmsb::blrm()` leaves it: `rstan::sampling()` uses
+  # `getOption("mc.cores", 1)` cores and cmdstanr's `$sample()` as many
+  # parallel chains, and `sampling.args` (`cores`, `parallel_chains`)
+  # overrides either.
   elapsed <- system.time(
     sampled <- if (backend == "rstan") {
       do.call(
@@ -280,7 +298,45 @@ markov_blrm_observed_states <- function(fit) {
 
 markov_path_stan_code <- function() {
   file <- system.file("stan", "po_paths.stan", package = "mostr")
-  paste(readLines(file, warn = FALSE), collapse = "\n")
+  paste(readLines(file, warn = FALSE), collapse = "
+")
+}
+
+# The C++ headers compiled with the Stan program: the likelihood shared with
+# the orm fit, its Stan interface, and the definition of the program's
+# `path_loglik()`, which must be included inside the model's namespace.
+markov_path_stan_headers <- function() {
+  files <- system.file(
+    "include",
+    "mostr",
+    c("path_likelihood.hpp", "stan_path_loglik.hpp", "stan_path_loglik_functions.hpp"),
+    package = "mostr"
+  )
+  if (length(files) != 3L || !all(nzchar(files))) {
+    mostr_abort(
+      "The C++ files of mostr's Stan program are missing from the ",
+      "installation; reinstall mostr."
+    )
+  }
+  stats::setNames(
+    normalizePath(files, winslash = "/"),
+    c("likelihood", "interface", "functions")
+  )
+}
+
+# Everything the compiled program is made from, for the cache key: a change
+# to the likelihood's C++ code must compile the program again just as a
+# change to the Stan code does.
+markov_path_stan_source <- function(headers = markov_path_stan_headers()) {
+  c(
+    markov_path_stan_code(),
+    vapply(
+      headers,
+      function(file) paste(readLines(file, warn = FALSE), collapse = "
+"),
+      character(1)
+    )
+  )
 }
 
 # Compiled Stan programs of this session, by backend.
@@ -292,6 +348,12 @@ markov_stan_models <- new.env(parent = emptyenv())
 # more, and kept in the user's cache directory so that later sessions load it
 # in well under a second. `options(mostr.stan_cache = )` names another
 # directory, and `FALSE` keeps the compiled program for this session only.
+#
+# The program declares `path_loglik()` without a body (`allow_undefined`);
+# the C++ definition comes from mostr's headers (`markov_path_stan_headers()`),
+# which are included inside the model's namespace: by rstan, which inserts
+# `includes` there, and for CmdStan through a user header that opens the
+# namespace itself.
 markov_path_stan_model <- function(backend) {
   cached <- markov_stan_models[[backend]]
   if (!is.null(cached)) {
@@ -299,6 +361,8 @@ markov_path_stan_model <- function(backend) {
   }
   cache <- markov_stan_cache_dir(getOption("mostr.stan_cache", NULL))
   announce <- function() message(markov_stan_compile_message(cache))
+  headers <- markov_path_stan_headers()
+  source <- markov_path_stan_source(headers)
 
   if (backend == "cmdstan") {
     if (!requireNamespace("cmdstanr", quietly = TRUE)) {
@@ -306,31 +370,93 @@ markov_path_stan_model <- function(backend) {
         "`backend = \"cmdstan\"` needs the cmdstanr package."
       )
     }
-    directory <- if (cache$use) cache$dir else tempdir()
-    announce()
-    model <- suppressMessages(cmdstanr::cmdstan_model(
-      system.file("stan", "po_paths.stan", package = "mostr"),
-      dir = directory
-    ))
+    model <- markov_cmdstan_model(cache, source, headers, announce)
   } else {
     if (!requireNamespace("rstan", quietly = TRUE)) {
       mostr_abort("`engine = \"blrm\"` needs the rstan package.")
     }
-    code <- markov_path_stan_code()
     model <- markov_cached_stan_model(
       cache,
-      key = markov_stan_cache_key(code),
+      key = markov_stan_cache_key(source),
       compile = function() {
         announce()
         rstan::stan_model(
-          model_code = code,
+          model_code = source[[1L]],
           model_name = "mostr_po_paths",
+          allow_undefined = TRUE,
+          includes = paste0(
+            "
+#include \"",
+            headers[["interface"]],
+            "\"
+#include \"",
+            headers[["functions"]],
+            "\"
+"
+          ),
           auto_write = FALSE
         )
       }
     )
   }
   markov_stan_models[[backend]] <- model
+  model
+}
+
+# The program compiled by CmdStan. cmdstanr compiles a `.stan` file into an
+# executable next to it and recompiles only when the file is newer than the
+# executable, so a change to the C++ headers alone would not be picked up:
+# each version of the program (Stan code, headers, CmdStan version) gets its
+# own directory, named by its key, and the directories of other versions are
+# deleted after a successful compile, as for rstan
+# (`markov_cached_stan_model()`). The model's C++ namespace is named after
+# the file, `po_paths_model_namespace`. Without a usable cache directory the
+# program is compiled in a temporary directory for this session.
+markov_cmdstan_model <- function(cache, source, headers, announce) {
+  key <- markov_stan_cache_key(
+    source,
+    versions = c(cmdstan = as.character(cmdstanr::cmdstan_version()))
+  )
+  root <- if (cache$use) cache$dir else tempdir()
+  dir <- file.path(root, paste0("po_paths_cmdstan_", key))
+  dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  stan_file <- file.path(dir, "po_paths.stan")
+  header_file <- file.path(dir, "po_paths_functions.hpp")
+  if (!file.exists(stan_file)) {
+    writeLines(source[[1L]], stan_file)
+  }
+  if (!file.exists(header_file)) {
+    writeLines(
+      c(
+        "#include <stan/model/model_header.hpp>",
+        paste0("#include \"", headers[["interface"]], "\""),
+        "namespace po_paths_model_namespace {",
+        paste0("#include \"", headers[["functions"]], "\""),
+        "}"
+      ),
+      header_file
+    )
+  }
+  executable <- file.path(
+    dir,
+    paste0("po_paths", if (.Platform$OS.type == "windows") ".exe")
+  )
+  if (!file.exists(executable)) {
+    announce()
+  }
+  # cmdstanr names the model after the file (stanc's `--name=po_paths_model`),
+  # which gives the namespace the header opens.
+  model <- suppressMessages(cmdstanr::cmdstan_model(
+    stan_file,
+    user_header = header_file
+  ))
+  if (cache$use) {
+    outdated <- setdiff(
+      list.files(cache$dir, "^po_paths_cmdstan_"),
+      basename(dir)
+    )
+    unlink(file.path(cache$dir, outdated), recursive = TRUE)
+  }
   model
 }
 

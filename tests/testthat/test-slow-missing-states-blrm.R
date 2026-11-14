@@ -55,3 +55,59 @@ test_that("blrm with unobserved states agrees with the orm path fit", {
     tolerance = 0.05
   )
 })
+
+test_that("the Stan program's density and gradient are the path likelihood's", {
+  skip_on_cran() # Compiles a Stan program.
+  skip_if_not_installed("rmsb")
+  skip_if_not_installed("rstan")
+  skip_if_not(
+    identical(Sys.getenv("MOSTR_RUN_SLOW"), "true"),
+    "Set MOSTR_RUN_SLOW=true to fit blrm models."
+  )
+  # The program computes the likelihood and its gradient in C++
+  # (inst/include/mostr). Its log density is compared with the reference in
+  # helper-missing-states.R, which lists every path of the data frame, plus
+  # the Dirichlet prior; differences between two points cancel the constants
+  # that `log_prob()` leaves out. The gradient is compared with central
+  # differences of the log density. The points are fixed, not draws.
+  data <- ms_fixture("gaps")
+  data <- data[data$id != attr(data, "special")$unknown_start, ]
+  fit <- suppressMessages(suppressWarnings(ms_fit(
+    data, engine = "blrm", iter = 10, warmup = 5, chains = 1, refresh = 0,
+    sampling.args = list(seed = 1)
+  )))
+  stanfit <- fit$rstan
+  reference <- ms_reference(data)
+  x <- as.matrix(fit$x)
+  # The sampler's coefficients are those of the centred, orthogonalised
+  # predictors scaled to SD 1 (see `mostm_fit_blrm_paths()`).
+  rinv <- rmsb::selectedQr(x, center = TRUE)$Rinv * sqrt(nrow(x) - 1)
+  k <- 4L
+  conc <- fit$conc %||% (1 / (0.8 + 0.35 * k))
+  log_posterior <- function(u) {
+    par <- rstan::constrain_pars(stanfit, u)
+    beta <- as.numeric(rinv %*% par$beta)
+    alpha <- par$alpha - sum(beta * fit$xbar)
+    reference(c(alpha, beta)) + sum((conc - 1) * log(par$pi))
+  }
+  points <- list(
+    rstan::unconstrain_pars(stanfit, list(beta = c(0.1, -0.2, 0.05, 0.3), pi = c(0.4, 0.3, 0.2, 0.1))),
+    rstan::unconstrain_pars(stanfit, list(beta = c(-0.3, 0.1, 0.2, -0.1), pi = c(0.25, 0.25, 0.3, 0.2))),
+    rstan::unconstrain_pars(stanfit, list(beta = c(0, 0, 0, 0), pi = c(0.1, 0.2, 0.3, 0.4)))
+  )
+  density <- vapply(points, function(u) {
+    rstan::log_prob(stanfit, u, adjust_transform = FALSE)
+  }, numeric(1))
+  expected <- vapply(points, log_posterior, numeric(1))
+  expect_equal(diff(density), diff(expected), tolerance = 1e-10)
+  for (u in points) {
+    numeric_gradient <- central_difference_jacobian(
+      function(v) rstan::log_prob(stanfit, v), u
+    )[1, ]
+    expect_equal(
+      as.numeric(rstan::grad_log_prob(stanfit, u)),
+      unname(numeric_gradient),
+      tolerance = 1e-6
+    )
+  }
+})

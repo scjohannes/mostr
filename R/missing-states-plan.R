@@ -153,7 +153,8 @@ markov_path_plan <- function(
   time_var,
   p_var,
   weights,
-  design = NULL
+  design = NULL,
+  additive = TRUE
 ) {
   layout <- markov_path_layout(
     data = data,
@@ -167,7 +168,7 @@ markov_path_plan <- function(
   if (is.null(design)) {
     return(layout)
   }
-  markov_path_plan_design(layout, design)
+  markov_path_plan_design(layout, design, additive = additive)
 }
 
 # Which rows form stretches, without any design rows. The fit needs this
@@ -369,7 +370,20 @@ markov_path_layout <- function(
 
 # The design rows of the stretches laid out by `markov_path_layout()`, and
 # the plan for `cpp_path_loglik()`.
-markov_path_plan_design <- function(layout, design) {
+#
+# The design rows come in one of two layouts (see
+# `inst/include/mostr/path_likelihood.hpp`). When the previous state enters
+# the design only through columns that depend on nothing else
+# (`markov_additive_design()`), as in `y ~ yprev + time + age`, `x_gap` holds
+# one row per step with those columns set to 0 and `x_prev` the K rows of
+# those columns, so that the design row for previous state j is
+# `x_gap[step_rows[u, j], ] + x_prev[j, ]`: with continuous covariates,
+# where no two rows are equal, this stores a fifth as many rows and lets the
+# likelihood code compute one linear predictor per step. Otherwise (`yprev`
+# interacting with another predictor, or `additive = FALSE`) `x_gap` holds
+# every distinct design row and `x_prev` is NULL. Both layouts give the same
+# likelihood up to rounding.
+markov_path_plan_design <- function(layout, design, additive = TRUE) {
   data <- layout$data
   labels <- layout$labels
   absorb <- layout$absorb
@@ -437,25 +451,58 @@ markov_path_plan_design <- function(layout, design) {
     return(markov_empty_path_plan(labels, absorb))
   }
 
-  # Keep each distinct design row once.
-  design_row <- markov_distinct_rows(x_all)
-  x_gap <- x_all[!duplicated(design_row), , drop = FALSE]
-  rownames(x_gap) <- NULL
-
-  first_row <- design_row[seq_along(first_steps)]
-  step_rows <- matrix(0L, n_steps, n_states)
-  if (length(candidate_step)) {
-    step_rows[cbind(candidate_step, candidate_state)] <-
-      design_row[length(first_steps) + seq_along(candidate_step)]
+  # The previous state of every row of `x_all`: the known one for a first
+  # step, the candidate for a later step.
+  first_prev <- match(
+    as.character(data[[p_var]][step_data_row[first_steps]]),
+    labels
+  )
+  row_step <- c(first_steps, candidate_step)
+  row_prev <- c(first_prev, candidate_state)
+  split_design <- if (additive) {
+    markov_additive_design(x_all, row_step, row_prev, n_states)
   }
+
+  first_row <- integer(length(first_steps))
+  step_rows <- matrix(0L, n_steps, n_states)
+  if (is.null(split_design)) {
+    # General layout: keep each distinct design row once.
+    x_prev <- NULL
+    design_row <- markov_distinct_rows(x_all)
+    x_gap <- x_all[!duplicated(design_row), , drop = FALSE]
+    first_row <- design_row[seq_along(first_steps)]
+    if (length(candidate_step)) {
+      step_rows[cbind(candidate_step, candidate_state)] <-
+        design_row[length(first_steps) + seq_along(candidate_step)]
+    }
+    start_key <- first_row
+  } else {
+    # Additive layout: one row per step without the previous state's
+    # columns, kept once if equal, and those columns by previous state.
+    x_prev <- split_design$prev
+    base_row <- markov_distinct_rows(split_design$base)
+    x_gap <- split_design$base[!duplicated(base_row), , drop = FALSE]
+    step_base <- integer(n_steps)
+    step_base[split_design$base_step] <- base_row
+    first_row <- step_base[first_steps]
+    if (length(candidate_step)) {
+      step_rows[cbind(candidate_step, candidate_state)] <-
+        step_base[candidate_step]
+    }
+    # The first step's row no longer says which state came before it. The
+    # key is an integer: `as.character()` of a double took 26 ms for 7,440
+    # stretches, against under 1 ms for an integer.
+    start_key <- (first_row - 1L) * n_states + first_prev
+  }
+  rownames(x_gap) <- NULL
 
   # Keep each distinct stretch once: same design rows, same ranges. Two
   # stretches can only be equal if they share the design row of their first
   # step, so the text keys that compare whole stretches are built for those
   # alone. With a continuous covariate hardly any stretch is shared, and
   # building a key for every step would cost more than the rest of the plan.
-  instance_key <- as.character(first_row)
-  shared <- first_row %in% first_row[duplicated(first_row)]
+  instance_key <- as.character(start_key)
+  shared <- start_key %in% start_key[duplicated(start_key)]
   if (any(shared)) {
     in_shared <- shared[step_run]
     step_key <- do.call(
@@ -467,7 +514,7 @@ markov_path_plan_design <- function(layout, design) {
       )
     )
     instance_key[shared] <- paste(
-      first_row[shared],
+      start_key[shared],
       vapply(
         split(step_key, step_run[in_shared]),
         paste,
@@ -486,8 +533,11 @@ markov_path_plan_design <- function(layout, design) {
   list(
     labels = labels,
     absorb = as.integer(absorb),
+    layout = if (is.null(x_prev)) "general" else "additive",
     x_gap = x_gap,
+    x_prev = x_prev,
     stretch_first_row = as.integer(first_row[representative]),
+    stretch_first_prev = as.integer(first_prev[representative]),
     stretch_first_step = as.integer(cumsum(c(1L, n_per[-length(n_per)]))),
     stretch_n_steps = as.integer(n_per),
     stretch_weight = as.numeric(rowsum(instance_weight, stretch)[, 1L]),
@@ -505,12 +555,54 @@ markov_path_plan_design <- function(layout, design) {
   )
 }
 
+# Whether the design rows `x` split exactly into a part that depends on the
+# step only and a part that depends on the previous state only. `row_step`
+# and `row_prev` give the step and the previous state of each row.
+#
+# The previous state's columns are those that differ between the rows of one
+# step. The split holds when each of these columns has the same value in
+# every row with the same previous state, at every step; then
+#   x[i, ] = base[row_step[i], ] + prev[row_prev[i], ]
+# exactly, because in every column one of the two terms is 0. An
+# interaction of the previous state with time or a covariate puts a column
+# into the first set that fails the second test, and NULL is returned.
+# Comparisons are exact: a column computed from the previous state alone
+# (dummy variables, a spline of a numeric previous state) has identical
+# values for identical states.
+#
+# Returns NULL, or `base` (one row per step that has rows, previous-state
+# columns 0), `base_step` (the step of each row of `base`) and `prev` (K
+# rows, other columns 0; rows of states without rows are 0).
+markov_additive_design <- function(x, row_step, row_prev, n_states) {
+  first_of_step <- match(row_step, row_step)
+  varies <- colSums(x != x[first_of_step, , drop = FALSE]) > 0
+  # Nothing depends on the previous state: all rows of a step are equal and
+  # the general layout stores them once.
+  if (!any(varies)) {
+    return(NULL)
+  }
+  first_of_prev <- match(row_prev, row_prev)
+  if (any(x[, varies, drop = FALSE] != x[first_of_prev, varies, drop = FALSE])) {
+    return(NULL)
+  }
+  base_rows <- which(!duplicated(row_step))
+  base <- x[base_rows, , drop = FALSE]
+  base[, varies] <- 0
+  prev <- matrix(0, n_states, ncol(x))
+  prev_rows <- which(!duplicated(row_prev))
+  prev[row_prev[prev_rows], varies] <- x[prev_rows, varies, drop = FALSE]
+  list(base = unname(base), base_step = row_step[base_rows], prev = prev)
+}
+
 markov_empty_path_plan <- function(labels, absorb) {
   list(
     labels = labels,
     absorb = as.integer(absorb),
+    layout = "general",
     x_gap = NULL,
+    x_prev = NULL,
     stretch_first_row = integer(),
+    stretch_first_prev = integer(),
     stretch_first_step = integer(),
     stretch_n_steps = integer(),
     stretch_weight = numeric(),

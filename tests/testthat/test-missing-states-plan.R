@@ -3,7 +3,13 @@
 
 # A plan for a small data frame with states 1..4 (4 absorbing unless
 # `absorb` says otherwise) and the design (yprev = 2, yprev = 3, time, tx).
-ms_plan <- function(data, absorb = 4L, lower = NULL, upper = NULL, weights = NULL) {
+ms_design <- function(rows) {
+  previous <- as.integer(as.character(rows$yprev))
+  cbind(previous == 2, previous == 3, rows$time, rows$tx) * 1
+}
+
+ms_plan <- function(data, absorb = 4L, lower = NULL, upper = NULL, weights = NULL,
+                    design = ms_design, additive = TRUE) {
   ranges <- ms_row_ranges(data, absorb = absorb, lower = lower, upper = upper)
   # Rows without any record of the state are `NA` for the plan.
   y_missing <- if (is.null(lower)) is.na(data$y) else is.na(lower) & is.na(upper)
@@ -17,10 +23,8 @@ ms_plan <- function(data, absorb = 4L, lower = NULL, upper = NULL, weights = NUL
     time_var = "time",
     p_var = "yprev",
     weights = weights,
-    design = function(rows) {
-      previous <- as.integer(as.character(rows$yprev))
-      cbind(previous == 2, previous == 3, rows$time, rows$tx) * 1
-    }
+    design = design,
+    additive = additive
   )
 }
 
@@ -48,9 +52,16 @@ test_that("identical stretches of two patients are stored once", {
   expect_identical(plan$step_rows[1, ], c(0L, 0L, 0L, 0L))
   expect_true(all(plan$step_rows[2:3, 1:3] > 0))
   expect_identical(plan$step_rows[2:3, 4], c(0L, 0L))
+  # The previous state enters additively, so the design row for previous
+  # state j is x_gap[row, ] + x_prev[j, ].
+  expect_identical(plan$layout, "additive")
+  expect_identical(plan$stretch_first_prev, 2L)
   x <- plan$x_gap
-  expect_equal(x[plan$stretch_first_row, ], c(1, 0, 2, 0))
-  expect_equal(x[plan$step_rows[3, 3], ], c(0, 1, 4, 0))
+  expect_equal(x[plan$stretch_first_row, ] + plan$x_prev[2, ], c(1, 0, 2, 0))
+  expect_equal(x[plan$step_rows[3, 3], ] + plan$x_prev[3, ], c(0, 1, 4, 0))
+  # One row per step, whatever the previous state.
+  expect_identical(nrow(x), 3L)
+  expect_true(all(plan$step_rows[3, 1:3] == plan$step_rows[3, 1]))
   # Different covariates make different stretches.
   different <- ms_two_patients()
   different$tx[different$id == 2] <- 1
@@ -184,4 +195,43 @@ test_that("the fit does not depend on the order of rows or patients", {
   scores <- attr(fit, "markov_path_fit")$scores
   scores_reversed <- attr(fit_reversed, "markov_path_fit")$scores
   expect_equal(scores_reversed[rownames(scores), ], scores, tolerance = 1e-8)
+})
+
+test_that("the additive layout is used only when it represents the design", {
+  data <- ms_fixture("gaps")
+  additive <- ms_plan(data)
+  expect_identical(additive$layout, "additive")
+  # The previous state's columns, by state; absorbing state 4 has no row.
+  expect_equal(additive$x_prev, rbind(0, c(1, 0, 0, 0), c(0, 1, 0, 0), 0))
+  expect_true(all(additive$x_gap[, 1:2] == 0))
+  general <- ms_plan(data, additive = FALSE)
+  expect_identical(general$layout, "general")
+  expect_null(general$x_prev)
+  expect_identical(general$stretch_n_steps, additive$stretch_n_steps)
+  expect_identical(general$stretch_weight, additive$stretch_weight)
+
+  # An interaction of the previous state with time can't be split.
+  interaction <- ms_plan(data, design = function(rows) {
+    previous <- as.integer(as.character(rows$yprev))
+    cbind(ms_design(rows), (previous == 2) * rows$time)
+  })
+  expect_identical(interaction$layout, "general")
+  # Without the previous state every row of a step is the same.
+  no_previous <- ms_plan(data, design = function(rows) cbind(rows$time, rows$tx))
+  expect_identical(no_previous$layout, "general")
+  expect_true(all(apply(no_previous$step_rows, 1L, function(r) {
+    length(unique(r[r > 0])) <= 1L
+  })))
+
+  # Both layouts give the same likelihood and derivatives.
+  observed <- list(
+    x = matrix(0, 0L, 4L), y = integer(), weight = numeric(),
+    group = integer(), n_groups = 0L
+  )
+  theta <- c(1.5, 0.2, -1.8, 0.7, 1.4, -0.1, 0.3)
+  a <- mostr:::markov_path_loglik(theta, observed, general)
+  b <- mostr:::markov_path_loglik(theta, observed, additive)
+  for (part in names(a)) {
+    expect_equal(b[[part]], a[[part]], tolerance = 1e-13, info = part)
+  }
 })

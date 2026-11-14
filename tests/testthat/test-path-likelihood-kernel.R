@@ -10,7 +10,7 @@ test_that("the kernel log-likelihood equals the path enumeration", {
   plans <- path_plans()
   for (name in names(plans)) {
     case <- plans[[name]]
-    theta <- path_theta(case$K)
+    theta <- case$theta
     kernel <- path_kernel(theta, case$K, case$plan)
     reference <- path_loglik_bruteforce(theta, case$K, case$plan)
     expect_true(is.finite(kernel$loglik), info = name)
@@ -21,12 +21,14 @@ test_that("the kernel log-likelihood equals the path enumeration", {
 })
 
 test_that("scores equal numerical gradients of the enumeration", {
-  plans <- path_plans()
+  # The interaction layout runs the same code as the general one; its
+  # log-likelihood is checked above, and numerical gradients are slow.
+  plans <- path_plans(c("general", "additive"))
   for (name in names(plans)) {
     case <- plans[[name]]
     K <- case$K
     plan <- case$plan
-    theta <- path_theta(K)
+    theta <- case$theta
     kernel <- path_kernel(theta, K, plan)
     q <- length(theta)
     expect_equal(dim(kernel$obs_group_scores), c(plan$n_groups, q))
@@ -47,12 +49,12 @@ test_that("scores equal numerical gradients of the enumeration", {
 })
 
 test_that("the Hessian is the derivative of the analytical score", {
-  plans <- path_plans()
+  plans <- path_plans(c("general", "additive"))
   for (name in names(plans)) {
     case <- plans[[name]]
     K <- case$K
     plan <- case$plan
-    theta <- path_theta(K)
+    theta <- case$theta
     kernel <- path_kernel(theta, K, plan)
     numeric_hessian <- central_difference_jacobian(
       function(th) total_score(path_kernel(th, K, plan, order = 1L), plan), theta
@@ -101,8 +103,8 @@ test_that("long stretches with tiny probabilities keep exact derivatives", {
 })
 
 test_that("orders 0, 1 and 2 agree on what they share", {
-  case <- path_plans()[["K = 5, absorbing K"]]
-  theta <- path_theta(case$K)
+  case <- path_plans()[["K = 5, absorbing K, additive layout"]]
+  theta <- case$theta
   r0 <- path_kernel(theta, case$K, case$plan, order = 0L)
   r1 <- path_kernel(theta, case$K, case$plan, order = 1L)
   r2 <- path_kernel(theta, case$K, case$plan, order = 2L)
@@ -231,7 +233,7 @@ test_that("an impossible observation gives -Inf, not NaN", {
 
 test_that("malformed plans are refused", {
   K <- 5L
-  plan <- path_plans()[["K = 5, absorbing K"]]$plan
+  plan <- path_plans()[["K = 5, absorbing K, general layout"]]$plan
   theta <- path_theta(K)
   bad <- plan
   bad$step_rows[2, 1] <- 0L # needed: step 2 of stretch 1 starts in 1..4
@@ -242,4 +244,31 @@ test_that("malformed plans are refused", {
   bad <- plan
   bad$group_obs[1] <- 4L
   expect_error(path_kernel(theta, K, bad), "group_obs")
+})
+
+test_that("the additive and the general layout give the same likelihood", {
+  # The same model and data, with the previous state's columns either in
+  # every design row (general) or added from x_prev (additive). The two
+  # differ only in the order of floating-point operations.
+  plans <- path_plans(c("general", "additive"))
+  for (K in c(3L, 5L)) {
+    for (absorbing in c("absorbing K", "no absorbing state")) {
+      general <- plans[[sprintf("K = %d, %s, general layout", K, absorbing)]]
+      additive <- plans[[sprintf("K = %d, %s, additive layout", K, absorbing)]]
+      expect_lt(nrow(additive$plan$x_gap), nrow(general$plan$x_gap))
+      theta <- general$theta
+      a <- path_kernel(theta, K, general$plan)
+      b <- path_kernel(theta, K, additive$plan)
+      for (part in names(a)) {
+        expect_equal(b[[part]], a[[part]], tolerance = 1e-13, info = part)
+      }
+    }
+  }
+})
+
+test_that("an additive plan needs a valid previous state for each stretch", {
+  K <- 5L
+  plan <- path_plans("additive")[["K = 5, absorbing K, additive layout"]]$plan
+  plan$stretch_first_prev[2] <- 0L
+  expect_error(path_kernel(path_theta(K), K, plan), "stretch_first_prev")
 })

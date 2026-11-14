@@ -6,10 +6,10 @@
 #include <R_ext/Visibility.h>
 
 // paths.cpp
-list cpp_path_loglik(doubles alpha, doubles beta, doubles_matrix<> x_obs, integers y_obs, doubles w_obs, integers group_obs, int n_groups, doubles_matrix<> x_gap, integers absorb, integers stretch_first_row, integers stretch_first_step, integers stretch_n_steps, doubles stretch_weight, integers step_lo, integers step_hi, integers_matrix<> step_rows, int order);
-extern "C" SEXP _mostr_cpp_path_loglik(SEXP alpha, SEXP beta, SEXP x_obs, SEXP y_obs, SEXP w_obs, SEXP group_obs, SEXP n_groups, SEXP x_gap, SEXP absorb, SEXP stretch_first_row, SEXP stretch_first_step, SEXP stretch_n_steps, SEXP stretch_weight, SEXP step_lo, SEXP step_hi, SEXP step_rows, SEXP order) {
+list cpp_path_loglik(doubles alpha, doubles beta, doubles_matrix<> x_obs, integers y_obs, doubles w_obs, integers group_obs, int n_groups, doubles_matrix<> x_gap, doubles_matrix<> x_prev, integers absorb, integers stretch_first_row, integers stretch_first_prev, integers stretch_first_step, integers stretch_n_steps, doubles stretch_weight, integers step_lo, integers step_hi, integers_matrix<> step_rows, int order);
+extern "C" SEXP _mostr_cpp_path_loglik(SEXP alpha, SEXP beta, SEXP x_obs, SEXP y_obs, SEXP w_obs, SEXP group_obs, SEXP n_groups, SEXP x_gap, SEXP x_prev, SEXP absorb, SEXP stretch_first_row, SEXP stretch_first_prev, SEXP stretch_first_step, SEXP stretch_n_steps, SEXP stretch_weight, SEXP step_lo, SEXP step_hi, SEXP step_rows, SEXP order) {
   BEGIN_CPP11
-    return cpp11::as_sexp(cpp_path_loglik(cpp11::as_cpp<cpp11::decay_t<doubles>>(alpha), cpp11::as_cpp<cpp11::decay_t<doubles>>(beta), cpp11::as_cpp<cpp11::decay_t<doubles_matrix<>>>(x_obs), cpp11::as_cpp<cpp11::decay_t<integers>>(y_obs), cpp11::as_cpp<cpp11::decay_t<doubles>>(w_obs), cpp11::as_cpp<cpp11::decay_t<integers>>(group_obs), cpp11::as_cpp<cpp11::decay_t<int>>(n_groups), cpp11::as_cpp<cpp11::decay_t<doubles_matrix<>>>(x_gap), cpp11::as_cpp<cpp11::decay_t<integers>>(absorb), cpp11::as_cpp<cpp11::decay_t<integers>>(stretch_first_row), cpp11::as_cpp<cpp11::decay_t<integers>>(stretch_first_step), cpp11::as_cpp<cpp11::decay_t<integers>>(stretch_n_steps), cpp11::as_cpp<cpp11::decay_t<doubles>>(stretch_weight), cpp11::as_cpp<cpp11::decay_t<integers>>(step_lo), cpp11::as_cpp<cpp11::decay_t<integers>>(step_hi), cpp11::as_cpp<cpp11::decay_t<integers_matrix<>>>(step_rows), cpp11::as_cpp<cpp11::decay_t<int>>(order)));
+    return cpp11::as_sexp(cpp_path_loglik(cpp11::as_cpp<cpp11::decay_t<doubles>>(alpha), cpp11::as_cpp<cpp11::decay_t<doubles>>(beta), cpp11::as_cpp<cpp11::decay_t<doubles_matrix<>>>(x_obs), cpp11::as_cpp<cpp11::decay_t<integers>>(y_obs), cpp11::as_cpp<cpp11::decay_t<doubles>>(w_obs), cpp11::as_cpp<cpp11::decay_t<integers>>(group_obs), cpp11::as_cpp<cpp11::decay_t<int>>(n_groups), cpp11::as_cpp<cpp11::decay_t<doubles_matrix<>>>(x_gap), cpp11::as_cpp<cpp11::decay_t<doubles_matrix<>>>(x_prev), cpp11::as_cpp<cpp11::decay_t<integers>>(absorb), cpp11::as_cpp<cpp11::decay_t<integers>>(stretch_first_row), cpp11::as_cpp<cpp11::decay_t<integers>>(stretch_first_prev), cpp11::as_cpp<cpp11::decay_t<integers>>(stretch_first_step), cpp11::as_cpp<cpp11::decay_t<integers>>(stretch_n_steps), cpp11::as_cpp<cpp11::decay_t<doubles>>(stretch_weight), cpp11::as_cpp<cpp11::decay_t<integers>>(step_lo), cpp11::as_cpp<cpp11::decay_t<integers>>(step_hi), cpp11::as_cpp<cpp11::decay_t<integers_matrix<>>>(step_rows), cpp11::as_cpp<cpp11::decay_t<int>>(order)));
   END_CPP11
 }
 // sops.cpp
@@ -84,7 +84,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_mostr_cpp_markov_update_po",              (DL_FUNC) &_mostr_cpp_markov_update_po,               5},
     {"_mostr_cpp_markov_update_second_order",    (DL_FUNC) &_mostr_cpp_markov_update_second_order,     7},
     {"_mostr_cpp_markov_update_second_order_po", (DL_FUNC) &_mostr_cpp_markov_update_second_order_po,  8},
-    {"_mostr_cpp_path_loglik",                   (DL_FUNC) &_mostr_cpp_path_loglik,                   17},
+    {"_mostr_cpp_path_loglik",                   (DL_FUNC) &_mostr_cpp_path_loglik,                   19},
     {"_mostr_cpp_reduce_sops_draws",             (DL_FUNC) &_mostr_cpp_reduce_sops_draws,              7},
     {"_mostr_cpp_run_sop_delta",                 (DL_FUNC) &_mostr_cpp_run_sop_delta,                 10},
     {"_mostr_cpp_sample_categorical_rows",       (DL_FUNC) &_mostr_cpp_sample_categorical_rows,        1},

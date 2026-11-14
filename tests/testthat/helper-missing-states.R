@@ -221,7 +221,8 @@ ms_reference <- function(
   absorb = 4,
   ranges = ms_row_ranges(data, K, absorb),
   weights = NULL,
-  previous_effect = TRUE
+  previous_effect = TRUE,
+  interaction = FALSE
 ) {
   ids <- unique(data$id)
   steps <- list()
@@ -264,6 +265,9 @@ ms_reference <- function(
     outer(steps$previous, 2:(K - 1), "==") * 1
   }
   x <- cbind(dummies, steps$time, steps$tx)
+  # `interaction = TRUE`: the formula `ordered(y) ~ yprev * time + tx`,
+  # whose last columns are the dummies times time.
+  if (interaction) x <- cbind(x, dummies * steps$time)
   from_absorbing <- steps$previous %in% absorb
 
   function(theta, per_patient = FALSE) {

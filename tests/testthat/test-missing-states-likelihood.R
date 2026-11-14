@@ -292,6 +292,19 @@ test_that("a formula without the previous state counts each row once", {
   expect_identical(info$n_observed_transitions, sum(observed))
 })
 
+test_that("a previous state that interacts with time is fitted exactly", {
+  skip_on_cran() # Slow: a fit; the kernel tests cover the general layout on CRAN.
+  # The design rows then can't be split into a part for the step and a part
+  # for the previous state, and the general layout of the design rows is
+  # used.
+  data <- ms_fixture("gaps")
+  fit <- ms_fit(data, formula = ordered(y) ~ yprev * time + tx)
+  info <- attr(fit, "markov_path_fit")
+  reference <- ms_reference(data, interaction = TRUE)
+  expect_equal(info$loglik, reference(coef(fit)), tolerance = 1e-8)
+  ms_expect_maximum(fit, reference)
+})
+
 # Two states, the second absorbing: an unobserved visit before a later
 # recorded one can only have been in state 1. 40 patients over 5 days, death
 # on a fixed day for some of them.

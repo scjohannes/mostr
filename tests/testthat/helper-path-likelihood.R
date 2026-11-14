@@ -16,8 +16,12 @@
 #   f_s = sum over paths (z_1, ..., z_T), z_t in lo_t..hi_t, of
 #         P(z_1 | first row) * prod_{t >= 2} P(z_t | z_{t-1}),
 # with P(z_t | z_{t-1}) = 1(z_t == z_{t-1}) when z_{t-1} is absorbing, and
-# otherwise the cell probability for the design row step_rows[u, z_{t-1}] of
-# step u (the step's position in the step arrays).
+# otherwise the cell probability for the design row
+#   x_gap[step_rows[u, z_{t-1}], ] + x_prev[z_{t-1}, ]
+# of step u (the step's position in the step arrays); step 1 uses
+#   x_gap[stretch_first_row[s], ] + x_prev[stretch_first_prev[s], ].
+# x_prev is NULL in the general layout (every design row in x_gap) and holds
+# the previous state's columns in the additive layout.
 
 path_cell_probability <- function(alpha, beta, x, y) {
   K <- length(alpha) + 1
@@ -37,13 +41,11 @@ path_loglik_bruteforce <- function(theta, K, plan) {
     obs_group_loglik[g] <- obs_group_loglik[g] + plan$w_obs[i] * log(prob)
   }
 
-  # gap_prob[r, y] = P(Y = y | x_gap[r, ]), computed once per row because
-  # many paths share a row.
-  gap_prob <- matrix(0, nrow(plan$x_gap), K)
-  for (r in seq_len(nrow(plan$x_gap))) {
-    for (y in seq_len(K)) {
-      gap_prob[r, y] <- path_cell_probability(alpha, beta, plan$x_gap[r, ], y)
-    }
+  # P(Y = y | design row for x_gap row r and previous state j).
+  transition <- function(r, j, y) {
+    x <- plan$x_gap[r, ]
+    if (!is.null(plan$x_prev)) x <- x + plan$x_prev[j, ]
+    path_cell_probability(alpha, beta, x, y)
   }
 
   m <- length(plan$stretch_first_row)
@@ -55,14 +57,14 @@ path_loglik_bruteforce <- function(theta, K, plan) {
     f <- 0
     for (r in seq_len(nrow(paths))) {
       z <- paths[r, ]
-      prob <- gap_prob[plan$stretch_first_row[s], z[1]]
+      prob <- transition(plan$stretch_first_row[s], plan$stretch_first_prev[s], z[1])
       for (t in seq_along(steps)[-1]) {
         previous <- z[t - 1]
         if (previous %in% plan$absorb) {
           prob <- prob * (z[t] == previous)
         } else {
           row <- plan$step_rows[steps[t], previous]
-          prob <- prob * gap_prob[row, z[t]]
+          prob <- prob * transition(row, previous, z[t])
         }
       }
       f <- f + prob
@@ -88,8 +90,10 @@ path_kernel <- function(theta, K, plan, order = 2L) {
     group_obs = plan$group_obs,
     n_groups = plan$n_groups,
     x_gap = plan$x_gap,
+    x_prev = plan$x_prev %||% matrix(0, 0, ncol(plan$x_gap)),
     absorb = plan$absorb,
     stretch_first_row = plan$stretch_first_row,
+    stretch_first_prev = plan$stretch_first_prev,
     stretch_first_step = plan$stretch_first_step,
     stretch_n_steps = plan$stretch_n_steps,
     stretch_weight = plan$stretch_weight,
@@ -104,24 +108,46 @@ path_kernel <- function(theta, K, plan, order = 2L) {
 # `time` with covariate `z` is (1(prev == 2), ..., 1(prev == K), time / 4, z),
 # so p = K + 1. Rows depend only on (prev, time, z), so stretches with the
 # same start time and covariate share their later-step rows in x_gap.
-path_design_row <- function(K, prev, time, z) {
-  c(as.numeric(prev == 2:K), time / 4, z)
+#
+# `layout = "additive"` stores the same rows split as
+# (0, ..., 0, time / 4, z) in x_gap plus (1(prev == 2), ..., 0, 0) in
+# x_prev; `layout = "interaction"` adds the column 1(prev == 2) * time / 4,
+# which the additive layout can't represent (general layout only).
+path_design_row <- function(K, prev, time, z, layout = "general") {
+  row <- c(as.numeric(prev == 2:K), time / 4, z)
+  if (layout == "interaction") row <- c(row, (prev == 2) * time / 4)
+  row
 }
 
-path_theta <- function(K) {
+path_theta <- function(K, layout = "general") {
   alpha <- seq(1.2, -1.4, length.out = K - 1)
   beta <- c(seq(0.4, 1.1, length.out = K - 1), -0.3, 0.6)
+  if (layout == "interaction") beta <- c(beta, -0.45)
   c(alpha, beta)
 }
 
 # `obs`: data frame with columns prev, time, z, y, w, group (may have 0 rows).
 # `stretches`: list of list(prev, time, z, lo, hi, weight); step t of a
 # stretch is at time `time + t - 1`, and step 1's previous state is `prev`.
-build_path_plan <- function(K, absorb, obs, stretches, n_groups = 3L) {
-  p <- K + 1
+build_path_plan <- function(K, absorb, obs, stretches, n_groups = 3L,
+                            layout = "general") {
+  additive <- layout == "additive"
+  p <- length(path_design_row(K, 1, 1, 0, layout))
   x_obs <- matrix(0, nrow(obs), p)
   for (i in seq_len(nrow(obs))) {
-    x_obs[i, ] <- path_design_row(K, obs$prev[i], obs$time[i], obs$z[i])
+    x_obs[i, ] <- path_design_row(K, obs$prev[i], obs$time[i], obs$z[i], layout)
+  }
+  # Additive layout: the previous state's columns 1..K-1 go to x_prev.
+  prev_columns <- seq_len(K - 1)
+  base_of <- function(x) {
+    if (additive) x[prev_columns] <- 0
+    x
+  }
+  x_prev <- NULL
+  if (additive) {
+    x_prev <- t(vapply(seq_len(K), function(j) {
+      replace(numeric(p), prev_columns, as.numeric(j == 2:K))
+    }, numeric(p)))
   }
 
   rows <- list()
@@ -132,13 +158,17 @@ build_path_plan <- function(K, absorb, obs, stretches, n_groups = 3L) {
     }
     rows[[key]]$index
   }
-  first_row <- first_step <- n_steps <- integer(0)
+  first_row <- first_prev <- first_step <- n_steps <- integer(0)
   weight <- numeric(0)
   step_lo <- step_hi <- integer(0)
   step_rows <- matrix(0L, 0, K)
   for (st in stretches) {
     T_s <- length(st$lo)
-    first_row <- c(first_row, row_index(path_design_row(K, st$prev, st$time, st$z)))
+    first_row <- c(
+      first_row,
+      row_index(base_of(path_design_row(K, st$prev, st$time, st$z, layout)))
+    )
+    first_prev <- c(first_prev, as.integer(st$prev))
     first_step <- c(first_step, length(step_lo) + 1L)
     n_steps <- c(n_steps, T_s)
     weight <- c(weight, st$weight)
@@ -148,7 +178,9 @@ build_path_plan <- function(K, absorb, obs, stretches, n_groups = 3L) {
       used <- integer(K)
       if (t >= 2) {
         for (j in setdiff(seq_len(K), absorb)) {
-          used[j] <- row_index(path_design_row(K, j, st$time + t - 1, st$z))
+          used[j] <- row_index(
+            base_of(path_design_row(K, j, st$time + t - 1, st$z, layout))
+          )
         }
       }
       step_rows <- rbind(step_rows, used)
@@ -165,8 +197,10 @@ build_path_plan <- function(K, absorb, obs, stretches, n_groups = 3L) {
     group_obs = as.integer(obs$group),
     n_groups = as.integer(n_groups),
     x_gap = x_gap,
+    x_prev = x_prev,
     absorb = as.integer(absorb),
     stretch_first_row = first_row,
+    stretch_first_prev = first_prev,
     stretch_first_step = first_step,
     stretch_n_steps = n_steps,
     stretch_weight = weight,
@@ -215,17 +249,32 @@ path_stretches <- function(K, top) {
   )
 }
 
-path_plans <- function() {
+# Every combination of K, absorbing state and layout of the design rows:
+# "general" (every design row in x_gap), "additive" (the same model with the
+# previous state's columns in x_prev) and "interaction" (a model with a
+# previous state x time column, general layout).
+path_plans <- function(layouts = c("general", "additive", "interaction")) {
   plans <- list()
   for (K in c(3L, 5L)) {
     for (absorbing in c(TRUE, FALSE)) {
-      absorb <- if (absorbing) K else integer(0)
-      top <- if (absorbing) K - 1L else K
-      name <- sprintf("K = %d, %s", K, if (absorbing) "absorbing K" else "no absorbing state")
-      plans[[name]] <- list(
-        K = K,
-        plan = build_path_plan(K, absorb, path_observed_rows(K), path_stretches(K, top))
-      )
+      for (layout in layouts) {
+        absorb <- if (absorbing) K else integer(0)
+        top <- if (absorbing) K - 1L else K
+        name <- sprintf(
+          "K = %d, %s, %s layout",
+          K,
+          if (absorbing) "absorbing K" else "no absorbing state",
+          layout
+        )
+        plans[[name]] <- list(
+          K = K,
+          theta = path_theta(K, layout),
+          plan = build_path_plan(
+            K, absorb, path_observed_rows(K), path_stretches(K, top),
+            layout = layout
+          )
+        )
+      }
     }
   }
   plans

@@ -1,0 +1,4 @@
+# The likelihood with unobserved states is shared with the Stan program of
+# engine = "blrm", which is compiled on the user's machine from the installed
+# inst/include, so the header lives there.
+PKG_CPPFLAGS = -I../inst/include
