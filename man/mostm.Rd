@@ -294,9 +294,14 @@ missed visit is enough. Spline knots are placed using those visits, so they can
 differ slightly from those of a fit that leaves out the unobserved visits.
 Unobserved states can't be combined
 with a second-order model (\code{p2_var}), with a penalty or a link other
-than the logit for \code{"orm"}, with partial proportional odds, random
-effects or \code{iprior} for \code{"blrm"}, or with row weights that differ within
-a patient's run of unobserved visits. For \code{"orm"},
+than the logit for \code{"orm"}, with partial proportional odds or \code{iprior}
+for \code{"blrm"}, or with row weights that differ within
+a patient's run of unobserved visits. A random intercept, \code{cluster(id)}
+with \code{"blrm"} (see "Random effects"), works with unobserved states: the
+patient's random effect shifts the log-odds of every transition of the
+patient, also those into and out of the visits whose state was not
+observed. The cluster can also be coarser than the patient, such as a
+site, but it must be the same on all of a patient's rows. For \code{"orm"},
 the standard errors and \code{\link[=inferences]{inferences()}} work as for other fits. For
 \code{"blrm"}, mostr compiles its own Stan program the first time such a model
 is fitted, which takes a minute or more and needs a C++ toolchain; the
@@ -415,6 +420,11 @@ straight-line effect of the ID number, so \code{mostm()} stops with an error. To
 include each patient's estimated random effect in predictions, use
 \code{include_re = TRUE} in \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}}; see
 \href{https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html}{the Bayesian article}.
+The prior on the size of the random effects is that of \code{\link[rmsb:blrm]{rmsb::blrm()}},
+set with its arguments \code{psigma}, \code{rsdmean} and \code{rsdsd}. Random intercepts
+also work with unobserved states (see "Unobserved states"), with the same
+parameters and priors; a patient whose every transition touches an
+unobserved visit still gets a random effect.
 
 With \code{engine = "orm"} or \code{"vglm"}, \code{cluster()} and \code{mix_re()} terms are
 errors, although \code{\link[rms:orm]{rms::orm()}} can fit them from rms version 8.2 on. State

@@ -12,6 +12,78 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-15: Random intercepts with unobserved states (blrm `cluster()`)
+
+**Decided.** `mostm(engine = "blrm")` with unobserved states accepts a bare
+`cluster()` term. The model is rmsb's `lrmconppo` with clusters: the same
+parameters in rmsb's order (`beta`, `pi`, `gamma_raw`, `sigmag`), the
+non-centred form `gamma = sigmag * gamma_raw` with
+`gamma_raw ~ std_normal()`, and rmsb's prior on `sigmag` (`psigma`,
+`rsdmean`, `rsdsd`, read from the structure fit). A cluster's intercept is
+added to the linear predictor of each of its fully observed transitions and
+of every step of each of its stretches. The kernel
+(`path_likelihood.hpp`) takes the intercepts as data, a shift per cluster
+(`cluster_shift`, `obs_cluster`, `stretch_cluster`), and returns their
+scores (`cluster_scores`): because the shift enters every cut-point as
+`alpha_k` does, a term's derivative with respect to it is the sum of its
+intercept scores, which the kernel already has. Clusters are numbered as
+rmsb numbers them (`as.integer(as.factor())`), over the fully observed
+transitions and the stretches together, so a patient whose every transition
+touches an unobserved visit gets an intercept. Observed (design row, state)
+cells and stretches are merged only within a cluster; `x_gap` rows are
+still shared. Any cluster variable is accepted that is known and the same
+on all of a patient's rows (a site works; one that changes within a
+patient is refused). The fit carries rmsb's fields: `omega`, `gammas`,
+`clusterInfo` (with `cluster` a factor whose levels are in the order of
+`gamma`), and the `gamma` draws in `fit$rstan`. orm with `cluster()` and
+`mix_re()` with either engine stay refused, as before
+(`mostm_check_random_effects()`).
+
+**Why.** rmsb is the reference for the blrm engine, so its parametrisation
+and priors are kept; downstream code (`include_re`, `get_blrm_gamma_draws()`)
+reads rmsb's fields. Results (load_all build, R 4.6.1):
+
+- With no stretch (rmsb's own fit to `ms_simulate()` with `cluster(id)`, 60
+  clusters, and our Stan data built from it), our log density minus rmsb's
+  at three random points (alpha, beta, gamma_raw, sigmag): 0, -5.7e-14, 0.
+- With stretches (the gap fixture, 59 clusters, one patient whose every
+  transition touches an unobserved visit): ours minus rmsb's program on the
+  fully observed transitions (clusters numbered as ours, Dirichlet terms
+  removed because rmsb centres at its own rows) minus the stretches
+  computed in R (`ms_reference()` with each patient's gamma, less the
+  observed transitions): 1.7e-13, 0, 5.7e-14. Ours minus the full R
+  reference plus priors: constant -2.7337626034634 to within 1.1e-13.
+  Gradient against central differences of the log density: largest
+  difference 8.0e-9.
+- Without `cluster()`, the kernel results of the 12 test plans, and the
+  Stan log density and gradient at five fixed points on 300 patients x 14
+  visits and 1000 x 30 (8 states, 50% missing, two continuous covariates),
+  are `identical()` before and after (installed builds).
+- Timing (installed builds, Ryzen AI 9 HX 370, one run each, one chain):
+  gradient 1.2 ms before and 1.4 ms after without `cluster()`, 1.2 ms with
+  it (300 x 14, 945 stretches); 10.4 / 10.6 ms without and
+  11.2 ms with it (1000 x 30, 6,970 stretches). Leapfrog steps
+  per sampling iteration (400 iterations, 200 warm-up, 300 x 14): 18.5
+  without and 31.0 with `cluster()`, no divergences, no tree-depth hits;
+  for 1000 x 30 (200 iterations, 100 warm-up), 30.3 without and 255 with
+  `cluster()` (trees of depth 8; 61 s against 729 s for the fit), again
+  without divergences or tree-depth hits. The data were simulated without
+  random effects: the posterior median of `sigmag` was 0.27 (300 x 14) and
+  0.057 (1000 x 30), against the prior's scale of 1. Not measured: rmsb's
+  own program on complete data of this size, data with real heterogeneity
+  between patients, and a full-length warm-up. The parametrisation was
+  kept as rmsb's.
+
+**Rejected.** Per-row offsets in the kernel (one shift per design row):
+the shift belongs to the stretch, so per-stretch and per-observed-row
+cluster numbers keep `x_gap` shared and the kernel's tables unchanged.
+Folding the intercept into the design (a column per cluster): would break
+`x_gap` de-duplication and the additive layout. A centred parametrisation,
+which may sample better when `sigmag` is large: not rmsb's, and the
+sampling above showed no problem. Requiring the cluster to be `id_var`:
+general clusters cost one check (constant within a patient), and rmsb
+allows them.
+
 ## 2026-11-14: Fewer cut-points and logs in the path-likelihood kernel
 
 **Decided.** `inst/include/mostr/path_likelihood.hpp` computes the

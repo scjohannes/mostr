@@ -68,6 +68,10 @@ const int* integer_pointer(SEXP x) {
 //   stretch's step 1, used only with x_prev.
 // - The other stretch and step arguments are those of
 //   mostr::paths::Problem; step_rows is an n_steps x K matrix.
+// - cluster_shift: random intercepts, one per cluster, or empty for none;
+//   obs_cluster (one per observed row) and stretch_cluster (one per
+//   stretch) in 1..length(cluster_shift), read only when it is not empty.
+//   The result's cluster_scores are the derivatives with respect to them.
 [[cpp11::register]] list cpp_path_loglik(
     doubles alpha,
     doubles beta,
@@ -87,6 +91,9 @@ const int* integer_pointer(SEXP x) {
     integers step_lo,
     integers step_hi,
     integers_matrix<> step_rows,
+    doubles cluster_shift,
+    integers obs_cluster,
+    integers stretch_cluster,
     int order) {
   const int thresholds = alpha.size();
   const int states = thresholds + 1;
@@ -117,6 +124,10 @@ const int* integer_pointer(SEXP x) {
   if (step_hi.size() != n_steps || step_rows.nrow() != n_steps ||
       (n_steps > 0 && step_rows.ncol() != states)) {
     cpp11::stop("step_hi and step_rows must match step_lo; step_rows needs K columns.");
+  }
+  const int n_clusters = cluster_shift.size();
+  if (n_clusters > 0 && (obs_cluster.size() != n_obs || stretch_cluster.size() != m)) {
+    cpp11::stop("obs_cluster and stretch_cluster need one entry per observed row and per stretch.");
   }
   std::vector<int> is_absorbing(states, 0);
   for (R_xlen_t pos = 0; pos < absorb.size(); ++pos) {
@@ -155,6 +166,12 @@ const int* integer_pointer(SEXP x) {
   d.lo = integer_pointer(step_lo);
   d.hi = integer_pointer(step_hi);
   d.step_rows = step_rows_by_step.data();
+  if (n_clusters > 0) {
+    d.n_clusters = n_clusters;
+    d.cluster_shift = real_pointer(cluster_shift);
+    d.obs_cluster = integer_pointer(obs_cluster);
+    d.stretch_cluster = integer_pointer(stretch_cluster);
+  }
   // y_obs, group_obs, step_lo and step_hi may hold NA_INTEGER, the most
   // negative int, which the range checks refuse like any other bad index.
   try {
@@ -167,6 +184,7 @@ const int* integer_pointer(SEXP x) {
   writable::doubles_matrix<> group_scores(order >= 1 ? n_groups : 0, order >= 1 ? q : 0);
   writable::doubles_matrix<> stretch_scores(order >= 1 ? m : 0, order >= 1 ? q : 0);
   writable::doubles_matrix<> hessian(order >= 2 ? q : 0, order >= 2 ? q : 0);
+  writable::doubles cluster_scores(order >= 1 ? n_clusters : 0);
 
   mostr::paths::Output out;
   out.order = order;
@@ -174,6 +192,7 @@ const int* integer_pointer(SEXP x) {
   if (order >= 1) {
     out.group_scores = n_groups > 0 ? REAL(SEXP(group_scores)) : nullptr;
     out.stretch_scores = m > 0 ? REAL(SEXP(stretch_scores)) : nullptr;
+    out.cluster_scores = n_clusters > 0 ? REAL(SEXP(cluster_scores)) : nullptr;
   }
   if (order >= 2) out.hessian = REAL(SEXP(hessian));
   mostr::paths::evaluate(d, real_pointer(alpha), real_pointer(beta), out);
@@ -184,6 +203,11 @@ const int* integer_pointer(SEXP x) {
   if (order >= 1) {
     result.push_back(cpp11::named_arg("obs_group_scores") = group_scores);
     result.push_back(cpp11::named_arg("stretch_scores") = stretch_scores);
+    // Only with random intercepts, so that the result of a model without
+    // them is what it always was.
+    if (n_clusters > 0) {
+      result.push_back(cpp11::named_arg("cluster_scores") = cluster_scores);
+    }
   }
   if (order >= 2) {
     result.push_back(cpp11::named_arg("hessian") = hessian);

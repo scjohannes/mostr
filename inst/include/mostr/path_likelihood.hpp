@@ -23,6 +23,8 @@
 //   P(Y = y) = c_{y-1} - c_y with c_0 = 1 and c_K = 0.
 // With g_k = (e_k, x), the derivatives are dc_k = s_k g_k and
 // d2c_k = u_k g_k g_k', where s_k = c_k (1 - c_k) and u_k = s_k (1 - 2 c_k).
+// With random intercepts, a cluster's shift gamma_c is added to alpha_k +
+// x'beta in every row and step of the cluster (Problem::cluster_shift).
 
 #ifndef MOSTR_PATH_LIKELIHOOD_HPP
 #define MOSTR_PATH_LIKELIHOOD_HPP
@@ -88,6 +90,17 @@ struct Problem {
                                    // non-absorbing j in the previous step's
                                    // range; the entry of a first step is
                                    // ignored.
+
+  // Random intercepts (rmsb's `cluster()`): a shift gamma_c of the linear
+  // predictor, eta = alpha_k + x'beta + gamma_c, for every observed row of
+  // cluster c and every step of its stretches. The shifts are data here
+  // (the Hessian treats them as fixed); their scores are returned in
+  // Output::cluster_scores. With cluster_shift null there is no shift and
+  // obs_cluster and stretch_cluster are not read.
+  int n_clusters = 0;
+  const double* cluster_shift = nullptr;  // n_clusters
+  const int* obs_cluster = nullptr;       // n_obs, in 1..n_clusters
+  const int* stretch_cluster = nullptr;   // m, in 1..n_clusters
 };
 
 // What evaluate() writes. Pointers that are null are not computed. Matrices
@@ -102,6 +115,11 @@ struct Output {
   double* group_scores = nullptr;    // n_groups x q, needs order >= 1
   double* stretch_scores = nullptr;  // m x q, needs order >= 1
   double* hessian = nullptr;         // q x q, needs order 2
+  // Derivatives of loglik with respect to the cluster shifts (n_clusters),
+  // needs order >= 1 and Problem::cluster_shift. Because the shift enters
+  // every cut-point of a row as alpha_k does, the derivative of a term with
+  // respect to its cluster's shift is the sum of its intercept scores.
+  double* cluster_scores = nullptr;
 };
 
 namespace detail {
@@ -256,11 +274,18 @@ inline void evaluate_observed(const Problem& d, const double* alpha,
   // multiplied and the log is taken once per run (see
   // accumulate_probability()).
   double unit_product = 1.0;
+  const bool has_shift = d.cluster_shift != nullptr;
+  double* cluster_score = order >= 1 ? out.cluster_scores : nullptr;
   for (int i = 0; i < d.n_obs; ++i) {
     const double w = d.w_obs[i];
     if (w == 0.0) continue;
     const double* x_row = d.x_obs + static_cast<size_t>(i) * p;
-    cuts.set(alpha, thresholds, dot(x_row, beta, p));
+    // The shift is added only when there is one, so that a fit without
+    // random intercepts computes exactly what it computed before they
+    // existed.
+    double eta = dot(x_row, beta, p);
+    if (has_shift) eta += d.cluster_shift[d.obs_cluster[i] - 1];
+    cuts.set(alpha, thresholds, eta);
     const int y = d.y_obs[i];
     const double prob = cell_probability(cuts.upper.data(), cuts.lower.data(),
                                          thresholds, y);
@@ -281,6 +306,9 @@ inline void evaluate_observed(const Problem& d, const double* alpha,
     const double a_lo = slope_at(up, low, thresholds, lo) / prob;
     const double a_hi = -slope_at(up, low, thresholds, hi) / prob;
     const double slope_coef = w * (a_lo + a_hi);
+    // d log P / d eta, which is also the derivative with respect to the
+    // row's cluster shift.
+    if (cluster_score != nullptr) cluster_score[d.obs_cluster[i] - 1] += slope_coef;
     if (out.group_scores != nullptr) {
       double* score = out.group_scores + (d.group_obs[i] - 1);
       if (lo >= 1) score[stride * (lo - 1)] += w * a_lo;
@@ -461,10 +489,21 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
   std::vector<double> score_local(q);
   std::vector<double> prev_coef(states, 0.0);
 
+  // The stretch's cluster shift is added to the linear predictor of every
+  // (step, previous state) pair, and its exp to the product of cached
+  // factors (see CutPoints), only when there are shifts: without them the
+  // arithmetic is exactly that of a model without random intercepts.
+  const bool has_shift = d.cluster_shift != nullptr;
+  double* cluster_score = order >= 1 ? out.cluster_scores : nullptr;
+
   for (int s = 0; s < m; ++s) {
     const int first = d.first_step[s] - 1;
     const int steps = d.n_steps[s];
     const double weight = d.stretch_weight[s];
+    const int cluster = has_shift ? d.stretch_cluster[s] - 1 : 0;
+    const double shift = has_shift ? d.cluster_shift[cluster] : 0.0;
+    const bool shift_factorable = std::fabs(shift) < limit;
+    const double exp_shift = has_shift && shift_factorable ? std::exp(shift) : 1.0;
     // The previous state of step 1 matters only through x_prev.
     const int first_prev = has_prev ? d.first_prev[s] : 1;
     auto pair = [&](int t, int j) {
@@ -497,11 +536,16 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
             : d.step_rows[static_cast<size_t>(u) * states + (j - 1)] - 1;
         const size_t at = pair(t, j);
         row_tab[at] = row;
-        const double eta = eta_gap[row] + eta_prev[j - 1];
-        const bool factorable = std::fabs(eta_gap[row]) < limit &&
-                                std::fabs(eta_prev[j - 1]) < limit;
-        cuts.set(alpha, eta, exp_gap[row] * exp_prev[j - 1], factorable,
-                 k_lo - 1, k_hi);
+        double eta = eta_gap[row] + eta_prev[j - 1];
+        bool factorable = std::fabs(eta_gap[row]) < limit &&
+                          std::fabs(eta_prev[j - 1]) < limit;
+        double exp_eta = exp_gap[row] * exp_prev[j - 1];
+        if (has_shift) {
+          eta += shift;
+          exp_eta *= exp_shift;
+          factorable = factorable && shift_factorable;
+        }
+        cuts.set(alpha, eta, exp_eta, factorable, k_lo - 1, k_hi);
         const double* up = cuts.upper.data();
         const double* low = cuts.lower.data();
         double* prob = prob_tab.data() + at * states;
@@ -588,6 +632,7 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
         if (out.total_score != nullptr) {
           std::fill(out.total_score, out.total_score + q, nan);
         }
+        if (cluster_score != nullptr) cluster_score[cluster] = nan;
         if (hess_wanted) std::fill(hessian, hessian + static_cast<size_t>(q) * q, nan);
       }
       continue;
@@ -777,6 +822,13 @@ inline void evaluate_stretches(const Problem& d, const double* alpha,
     if (out.total_score != nullptr && weight != 0.0) {
       for (int b = 0; b < q; ++b) out.total_score[b] += weight * score_local[b];
     }
+    if (cluster_score != nullptr && weight != 0.0) {
+      // The shift enters every pair's cut-points as alpha_k does, so
+      // d log f / d shift is the sum of the intercept scores.
+      double shift_score = 0.0;
+      for (int k = 0; k < thresholds; ++k) shift_score += score_local[k];
+      cluster_score[cluster] += weight * shift_score;
+    }
     if (!hess) continue;
     // Hessian of log f: cross + cross' - score score' (cross and the
     // curvature terms are added at the end); upper triangle, mirrored so
@@ -905,6 +957,19 @@ inline void validate(const Problem& d, const bool need_groups) {
     throw std::invalid_argument("Sizes must be non-negative.");
   }
   if (d.n_groups < 0) throw std::invalid_argument("n_groups must be non-negative.");
+  if (d.cluster_shift != nullptr) {
+    if (d.n_clusters < 1) throw std::invalid_argument("cluster_shift needs at least one cluster.");
+    for (int i = 0; i < d.n_obs; ++i) {
+      if (d.obs_cluster[i] < 1 || d.obs_cluster[i] > d.n_clusters) {
+        throw std::invalid_argument("obs_cluster must lie in 1..length(cluster_shift).");
+      }
+    }
+    for (int s = 0; s < d.m; ++s) {
+      if (d.stretch_cluster[s] < 1 || d.stretch_cluster[s] > d.n_clusters) {
+        throw std::invalid_argument("stretch_cluster must lie in 1..length(cluster_shift).");
+      }
+    }
+  }
   for (int i = 0; i < d.n_obs; ++i) {
     if (d.y_obs[i] < 1 || d.y_obs[i] > states) {
       throw std::invalid_argument("y_obs must lie in 1..K.");
@@ -950,11 +1015,15 @@ inline void evaluate(const Problem& d, const double* alpha, const double* beta,
     throw std::invalid_argument("order must be 0, 1 or 2.");
   }
   const int q = d.thresholds + d.p;
+  if (out.order < 1 || d.cluster_shift == nullptr) out.cluster_scores = nullptr;
   if (out.order < 1) {
     out.total_score = out.group_scores = out.stretch_scores = nullptr;
   }
   if (out.order < 2) out.hessian = nullptr;
   if (out.total_score != nullptr) std::fill(out.total_score, out.total_score + q, 0.0);
+  if (out.cluster_scores != nullptr) {
+    std::fill(out.cluster_scores, out.cluster_scores + d.n_clusters, 0.0);
+  }
   if (out.group_scores != nullptr) {
     std::fill(out.group_scores, out.group_scores + static_cast<size_t>(d.n_groups) * q, 0.0);
   }

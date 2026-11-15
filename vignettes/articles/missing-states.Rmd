@@ -448,10 +448,17 @@ possible states of each missed visit with `Ocens()`.
 
 **Not available together with unrecorded states**: second-order models
 (`p2_var`), penalties and links other than the logit for `engine = "orm"`,
-partial proportional odds (`ppo`), random effects (`cluster()`) and
-`iprior` for `engine = "blrm"`, and row weights that differ within a run of
-missed visits (one weight per patient is fine). For these, the only option
-is `missing_states = "drop"`, with the bias described above.
+partial proportional odds (`ppo`) and `iprior` for `engine = "blrm"`, and
+row weights that differ within a run of missed visits (one weight per
+patient is fine). For these, the only option is `missing_states = "drop"`,
+with the bias described above.
+
+**A random intercept for each patient, `cluster(id)` with `engine = "blrm"`,
+is available.** The patient's random effect shifts the log-odds of every
+transition of the patient, also those into and out of the missed visits, so
+a patient whose every recorded transition borders a missed visit still has
+one. The cluster may be coarser than the patient, such as a hospital, but
+must be the same on all of a patient's rows.
 
 **`engine = "vglm"` can only drop the incomplete rows**, and you must ask for
 it:

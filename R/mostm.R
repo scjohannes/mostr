@@ -239,9 +239,14 @@
 #' differ slightly from those of a fit that leaves out the unobserved visits.
 #' Unobserved states can't be combined
 #' with a second-order model (`p2_var`), with a penalty or a link other
-#' than the logit for `"orm"`, with partial proportional odds, random
-#' effects or `iprior` for `"blrm"`, or with row weights that differ within
-#' a patient's run of unobserved visits. For `"orm"`,
+#' than the logit for `"orm"`, with partial proportional odds or `iprior`
+#' for `"blrm"`, or with row weights that differ within
+#' a patient's run of unobserved visits. A random intercept, `cluster(id)`
+#' with `"blrm"` (see "Random effects"), works with unobserved states: the
+#' patient's random effect shifts the log-odds of every transition of the
+#' patient, also those into and out of the visits whose state was not
+#' observed. The cluster can also be coarser than the patient, such as a
+#' site, but it must be the same on all of a patient's rows. For `"orm"`,
 #' the standard errors and [inferences()] work as for other fits. For
 #' `"blrm"`, mostr compiles its own Stan program the first time such a model
 #' is fitted, which takes a minute or more and needs a C++ toolchain; the
@@ -354,6 +359,11 @@
 #' include each patient's estimated random effect in predictions, use
 #' `include_re = TRUE` in [sops()] or [avg_sops()]; see
 #' [the Bayesian article](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html).
+#' The prior on the size of the random effects is that of [rmsb::blrm()],
+#' set with its arguments `psigma`, `rsdmean` and `rsdsd`. Random intercepts
+#' also work with unobserved states (see "Unobserved states"), with the same
+#' parameters and priors; a patient whose every transition touches an
+#' unobserved visit still gets a random effect.
 #'
 #' With `engine = "orm"` or `"vglm"`, `cluster()` and `mix_re()` terms are
 #' errors, although [rms::orm()] can fit them from rms version 8.2 on. State
@@ -594,7 +604,7 @@ mostm <- function(
   )
   use_paths <- unobserved && identical(missing_states, "average")
   if (use_paths) {
-    mostm_check_path_fit_args(engine, refit_args, p2_var, formula)
+    mostm_check_path_fit_args(engine, refit_args, p2_var)
   }
 
   # Bootstrap refits reuse the checked absorbing states and gap column; a

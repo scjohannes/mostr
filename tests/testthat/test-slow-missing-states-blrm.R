@@ -92,9 +92,9 @@ test_that("the Stan program's density and gradient are the path likelihood's", {
     reference(c(alpha, beta)) + sum((conc - 1) * log(par$pi))
   }
   points <- list(
-    rstan::unconstrain_pars(stanfit, list(beta = c(0.1, -0.2, 0.05, 0.3), pi = c(0.4, 0.3, 0.2, 0.1))),
-    rstan::unconstrain_pars(stanfit, list(beta = c(-0.3, 0.1, 0.2, -0.1), pi = c(0.25, 0.25, 0.3, 0.2))),
-    rstan::unconstrain_pars(stanfit, list(beta = c(0, 0, 0, 0), pi = c(0.1, 0.2, 0.3, 0.4)))
+    rstan::unconstrain_pars(stanfit, list(beta = c(0.1, -0.2, 0.05, 0.3), pi = c(0.4, 0.3, 0.2, 0.1), gamma_raw = numeric(), sigmag = numeric())),
+    rstan::unconstrain_pars(stanfit, list(beta = c(-0.3, 0.1, 0.2, -0.1), pi = c(0.25, 0.25, 0.3, 0.2), gamma_raw = numeric(), sigmag = numeric())),
+    rstan::unconstrain_pars(stanfit, list(beta = c(0, 0, 0, 0), pi = c(0.1, 0.2, 0.3, 0.4), gamma_raw = numeric(), sigmag = numeric()))
   )
   density <- vapply(points, function(u) {
     rstan::log_prob(stanfit, u, adjust_transform = FALSE)
@@ -142,4 +142,267 @@ test_that("blrm fits a state recorded only after unobserved visits", {
   posterior_mean <- colMeans(fit$draws)
   posterior_sd <- apply(fit$draws, 2, stats::sd)
   expect_lt(max(abs(posterior_mean - coef(fit_orm)) / posterior_sd), 0.5)
+})
+
+# Random intercepts (`cluster(id)`). The program's parameters are those of
+# rmsb's `lrmconppo`: beta, pi (the Dirichlet-distributed state
+# probabilities at the mean predictors), gamma_raw ~ N(0, 1) with
+# gamma = sigmag * gamma_raw, and sigmag ~ student_t(4, rsdmean, rsdsd)
+# (rmsb's default, psigma = 1, rsdmean = 0, rsdsd = 1). `re_unconstrain()`
+# gives the unconstrained point of a point on the original scale
+# (intercepts, coefficients of the design columns, gamma_raw, sigmag).
+re_state_probabilities <- function(alpha) -diff(c(1, stats::plogis(alpha), 0))
+re_unconstrain <- function(stanfit, point, rinv, xbar, tau = FALSE) {
+  centred <- point$alpha + sum(point$beta * xbar)
+  pars <- list(
+    beta = as.numeric(solve(rinv, point$beta)),
+    pi = re_state_probabilities(centred),
+    gamma_raw = point$gamma_raw,
+    sigmag = array(point$sigmag, 1)
+  )
+  # rmsb's program has partial proportional odds coefficients `tau`, empty
+  # here, between beta and pi.
+  if (tau) pars <- c(pars[1], list(tau = numeric()), pars[-1])
+  rstan::unconstrain_pars(stanfit, pars)
+}
+re_points <- function(n_clusters, seed) {
+  withr::with_seed(seed, lapply(1:3, function(i) list(
+    alpha = c(1.4, -0.9, -3.1) + stats::rnorm(3, 0, 0.2),
+    beta = c(1.1, 2.4, -0.12, -0.4) + stats::rnorm(4, 0, 0.2),
+    gamma_raw = stats::rnorm(n_clusters),
+    sigmag = stats::runif(1, 0.3, 1.5)
+  )))
+}
+re_dirichlet <- function(point, xbar, conc) {
+  sum((conc - 1) * log(re_state_probabilities(point$alpha + sum(point$beta * xbar))))
+}
+# The gap fixture without the patient whose first previous state is
+# unknown, and with one more patient (the first of `alive_long` without
+# gaps) whose visits 1, 3 and 5 are unobserved, so that every transition of
+# that patient touches an unobserved visit.
+re_data <- function() {
+  data <- ms_fixture("downstream")
+  special <- attr(data, "special")
+  hidden <- attr(data, "hidden")$id
+  only_gaps <- setdiff(special$alive_long, c(hidden, special$unknown_start))[1]
+  data <- ms_hide(data, rep(only_gaps, 3), c(1, 3, 5))
+  attr(data, "only_gaps") <- only_gaps
+  data
+}
+re_skip <- function() {
+  skip_if_not_installed("rmsb")
+  skip_if_not_installed("rstan")
+  skip_if_not(
+    identical(Sys.getenv("MOSTR_RUN_SLOW"), "true"),
+    "Set MOSTR_RUN_SLOW=true to fit blrm models."
+  )
+}
+
+test_that("with random intercepts the Stan density is the path likelihood's", {
+  skip_on_cran() # Compiles a Stan program.
+  re_skip()
+  # rms is attached so that `cluster()` is found; a warning that it was
+  # built under a newer R says nothing about the test.
+  suppressWarnings(withr::local_package("rms"))
+  data <- re_data()
+  fit <- suppressMessages(suppressWarnings(ms_fit(
+    data,
+    formula = ordered(y) ~ yprev + time + tx + cluster(id),
+    engine = "blrm", iter = 10, warmup = 5, chains = 1, refresh = 0,
+    sampling.args = list(seed = 1)
+  )))
+  stanfit <- fit$rstan
+  rinv <- attr(fit, "markov_path_fit")$rinv
+  clusters <- levels(fit$clusterInfo$cluster)
+  only_gaps <- as.character(attr(data, "only_gaps"))
+  # Every fitted patient has a random intercept, also the one whose every
+  # transition touches an unobserved visit and who has no row of `x`.
+  expect_true(only_gaps %in% clusters)
+  expect_false(only_gaps %in% as.character(fit$clusterInfo$cluster))
+  expect_setequal(clusters, attr(fit, "markov_path_fit")$ids)
+
+  # (1) Against the reference that lists every path of the data frame, with
+  # each patient's gamma added to every transition, plus the priors. The
+  # difference is a constant (about -2.73 here), which `log_prob()` leaves
+  # out of the priors.
+  reference <- ms_reference(data)
+  points <- re_points(length(clusters), seed = 11)
+  expected <- vapply(points, function(point) {
+    gamma <- stats::setNames(point$sigmag * point$gamma_raw, clusters)
+    reference(c(point$alpha, point$beta), gamma = gamma) +
+      re_dirichlet(point, fit$xbar, fit$conc) -
+      sum(point$gamma_raw^2) / 2 - 2.5 * log1p(point$sigmag^2 / 4)
+  }, numeric(1))
+  unconstrained <- lapply(points, re_unconstrain, stanfit = stanfit, rinv = rinv, xbar = fit$xbar)
+  density <- vapply(unconstrained, function(u) {
+    rstan::log_prob(stanfit, u, adjust_transform = FALSE)
+  }, numeric(1))
+  expect_equal(diff(density), diff(expected), tolerance = 1e-10)
+  # The gradient, including those of gamma_raw and sigmag, against central
+  # differences of the log density.
+  u <- unconstrained[[1]]
+  numeric_gradient <- central_difference_jacobian(
+    function(v) rstan::log_prob(stanfit, v), u
+  )[1, ]
+  expect_equal(
+    as.numeric(rstan::grad_log_prob(stanfit, u)),
+    unname(numeric_gradient),
+    tolerance = 1e-6
+  )
+
+  # (2) Against rmsb's own program on the fully observed transitions, with
+  # clusters numbered as in the fit, plus the stretches computed in R (the
+  # reference above less the observed transitions): the difference is the
+  # same at every point. rmsb's predictors are centred at the mean of its
+  # own rows, so the Dirichlet terms differ and are removed from both.
+  observed <- data[!is.na(data$y) & !is.na(data$yprev), ]
+  observed$cl <- factor(observed$id, levels = clusters)
+  rmsb_fit <- suppressWarnings(rmsb::blrm(
+    ordered(y) ~ yprev + time + tx + cluster(cl),
+    data = observed, iter = 10, warmup = 5, chains = 1, refresh = 0,
+    x = TRUE, y = TRUE
+  ))
+  # The last cluster has observed transitions, so rmsb has as many as the fit.
+  expect_identical(rmsb_fit$clusterInfo$n, length(clusters))
+  rmsb_transform <- rmsb::selectedQr(rmsb_fit$x, center = TRUE)
+  previous <- as.integer(as.character(observed$yprev))
+  observed_x <- cbind(previous == 2, previous == 3, observed$time, observed$tx)
+  difference <- vapply(points, function(point) {
+    gamma <- stats::setNames(point$sigmag * point$gamma_raw, clusters)
+    eta <- as.numeric(observed_x %*% point$beta) + gamma[as.character(observed$id)]
+    cumulative <- cbind(1, stats::plogis(outer(eta, point$alpha, "+")), 0)
+    rows <- seq_along(eta)
+    observed_loglik <- sum(log(
+      cumulative[cbind(rows, observed$y)] - cumulative[cbind(rows, observed$y + 1L)]
+    ))
+    stretches <- reference(c(point$alpha, point$beta), gamma = gamma) - observed_loglik
+    ours <- rstan::log_prob(
+      stanfit,
+      re_unconstrain(stanfit, point, rinv, fit$xbar),
+      adjust_transform = FALSE
+    ) - re_dirichlet(point, fit$xbar, fit$conc)
+    theirs <- rstan::log_prob(
+      rmsb_fit$rstan,
+      re_unconstrain(rmsb_fit$rstan, point, rmsb_transform$Rinv, rmsb_transform$xbar, tau = TRUE),
+      adjust_transform = FALSE
+    ) - re_dirichlet(point, rmsb_transform$xbar, rmsb_fit$conc)
+    ours - theirs - stretches
+  }, numeric(1))
+  expect_equal(diff(difference), c(0, 0), tolerance = 1e-8)
+})
+
+test_that("without unobserved visits the Stan density is rmsb's", {
+  skip_on_cran() # Compiles a Stan program.
+  re_skip()
+  # rms is attached so that `cluster()` is found; a warning that it was
+  # built under a newer R says nothing about the test.
+  suppressWarnings(withr::local_package("rms"))
+  # Only observed transitions enter: our program's data, built from rmsb's
+  # own fit, with no stretch. With the same design rows, centring and
+  # clusters, our log density minus rmsb's is the same at every point
+  # (gamma_raw and sigmag included); it was 0 within 6e-14 (Nov 2026).
+  complete <- ms_fixture("complete")
+  rmsb_fit <- suppressWarnings(rmsb::blrm(
+    ordered(y) ~ yprev + time + tx + cluster(id),
+    data = complete, iter = 10, warmup = 5, chains = 1, refresh = 0,
+    x = TRUE, y = TRUE
+  ))
+  codes <- as.integer(as.factor(rmsb_fit$clusterInfo$cluster))
+  plan <- mostr:::markov_empty_path_plan(rmsb_fit$ylevels, 4L)
+  plan$stretch_cluster <- integer()
+  assembled <- mostr:::markov_blrm_path_stan_data(
+    x_setup = rmsb_fit$x,
+    keep = rep(TRUE, nrow(rmsb_fit$x)),
+    observed_state = as.integer(rmsb_fit$y[, 1L]),
+    plan = plan,
+    n_states = 4L,
+    conc = rmsb_fit$conc,
+    clusters = list(n = max(codes), obs = codes)
+  )
+  expect_identical(assembled$data$Nc, rmsb_fit$clusterInfo$n)
+  ours <- suppressWarnings(rstan::sampling(
+    mostr:::markov_path_stan_model("rstan"),
+    data = assembled$data, chains = 1, iter = 2, warmup = 1, refresh = 0
+  ))
+  rmsb_transform <- rmsb::selectedQr(rmsb_fit$x, center = TRUE)
+  difference <- vapply(re_points(max(codes), seed = 12), function(point) {
+    rstan::log_prob(
+      ours,
+      re_unconstrain(ours, point, assembled$rinv, rmsb_transform$xbar),
+      adjust_transform = FALSE
+    ) - rstan::log_prob(
+      rmsb_fit$rstan,
+      re_unconstrain(rmsb_fit$rstan, point, rmsb_transform$Rinv, rmsb_transform$xbar, tau = TRUE),
+      adjust_transform = FALSE
+    )
+  }, numeric(1))
+  expect_equal(diff(difference), c(0, 0), tolerance = 1e-8)
+})
+
+test_that("a blrm fit with random intercepts and unobserved states is an rmsb fit", {
+  skip_on_cran() # The pass depends on the seed.
+  re_skip()
+  # rms is attached so that `cluster()` is found; a warning that it was
+  # built under a newer R says nothing about the test.
+  suppressWarnings(withr::local_package("rms"))
+  withr::local_options(mc.cores = 2)
+  data <- re_data()
+  fit <- suppressMessages(suppressWarnings(ms_fit(
+    data,
+    formula = ordered(y) ~ yprev + time + tx + cluster(id),
+    engine = "blrm", iter = 400, warmup = 200, chains = 2, refresh = 0,
+    sampling.args = list(seed = 2026)
+  )))
+  n_clusters <- fit$clusterInfo$n
+  expect_identical(n_clusters, length(attr(fit, "markov_path_fit")$ids))
+  # rmsb's fields for random effects.
+  expect_identical(dim(fit$omega), c(400L, 1L))
+  expect_identical(colnames(fit$omega), "sigmag")
+  expect_true(all(fit$omega[, 1] > 0))
+  expect_identical(names(fit$gammas), sprintf("gamma[%d]", seq_len(n_clusters)))
+  expect_identical(fit$clusterInfo$name, "id")
+  expect_length(fit$clusterInfo$cluster, nrow(fit$x))
+  expect_identical(
+    colnames(fit$draws),
+    c("y>=2", "y>=3", "y>=4", "yprev=2", "yprev=3", "time", "tx")
+  )
+  expect_true("sigmag[1]" %in% rownames(fit$diagnostics))
+  gamma <- mostr:::get_blrm_gamma_draws(fit, seq_len(400))
+  expect_identical(dim(gamma), c(400L, n_clusters))
+  expect_equal(unname(apply(gamma, 2, stats::median)), unname(fit$gammas))
+
+  # Predictions with and without each patient's random effect, including the
+  # patient seen only around unobserved visits.
+  average <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:3, n_draws = 40, seed = 1)
+  totals <- stats::aggregate(estimate ~ tx + time, average, sum)
+  expect_equal(totals$estimate, rep(1, nrow(totals)), tolerance = 1e-8)
+  with_re <- avg_sops(
+    fit, variables = list(tx = c(0, 1)), times = 1:3, n_draws = 40, seed = 1,
+    include_re = TRUE
+  )
+  expect_identical(dim(with_re), dim(average))
+  expect_false(isTRUE(all.equal(with_re$estimate, average$estimate)))
+  only_gaps <- sops(
+    fit,
+    newdata = data[data$id == attr(data, "only_gaps"), ][1, ],
+    times = 1:2, n_draws = 20, seed = 1, include_re = TRUE
+  )
+  expect_true(all(is.finite(only_gaps$estimate)))
+})
+
+test_that("without unobserved states a fit with random intercepts is rmsb's own", {
+  skip_on_cran() # Fits a blrm model.
+  re_skip()
+  # rms is attached so that `cluster()` is found; a warning that it was
+  # built under a newer R says nothing about the test.
+  suppressWarnings(withr::local_package("rms"))
+  fit <- suppressWarnings(ms_fit(
+    ms_fixture("complete"),
+    formula = ordered(y) ~ yprev + time + tx + cluster(id),
+    engine = "blrm", iter = 20, warmup = 10, chains = 1, refresh = 0
+  ))
+  expect_null(attr(fit, "markov_path_fit"))
+  expect_false(grepl("path_loglik", fit$stancode))
+  expect_identical(length(fit$gammas), fit$clusterInfo$n)
+  expect_identical(fit$clusterInfo$n, length(unique(ms_fixture("complete")$id)))
 })

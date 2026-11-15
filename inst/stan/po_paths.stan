@@ -15,22 +15,28 @@
 // faster than differentiating the recursion by automatic differentiation.
 //
 // Parameters and priors are those of rmsb's 'lrmconppo' without partial
-// proportional odds and without random effects: a Dirichlet prior on the
-// state probabilities of a patient with average predictors, which gives the
-// intercepts, and optional normal priors on contrasts of the coefficients.
-// P(Y >= j + 1 | x) = inv_logit(alpha[j] + x * beta).
+// proportional odds: a Dirichlet prior on the state probabilities of a
+// patient with average predictors, which gives the intercepts, optional
+// normal priors on contrasts of the coefficients and, with `cluster()`, a
+// random intercept gamma[c] for each cluster c, non-centred as in rmsb
+// (gamma = sigmag * gamma_raw, gamma_raw standard normal) with rmsb's prior
+// on sigmag. The parameters are declared in rmsb's order.
+// P(Y >= j + 1 | x) = inv_logit(alpha[j] + x * beta + gamma[cluster]).
 
 functions {
   // Matrices are passed stored by row. See the data block for the meaning
   // of each argument.
   real path_loglik(array[] real alpha, array[] real beta,
+                   array[] real gamma,
                    data array[] real x_obs, data array[] int y_obs,
                    data array[] real w_obs, data array[] real x_gap,
                    data array[] real x_prev, data array[] int absorbing,
                    data array[] int first_row, data array[] int first_prev,
                    data array[] int first_step, data array[] int n_steps,
                    data array[] real weight, data array[] int lo,
-                   data array[] int hi, data array[] int step_rows);
+                   data array[] int hi, data array[] int step_rows,
+                   data array[] int obs_cluster,
+                   data array[] int stretch_cluster);
 }
 
 data {
@@ -65,6 +71,17 @@ data {
   array[T * k] int<lower=0, upper=G> step_rows;
   array[k] int<lower=0, upper=1> absorbing;
 
+  // Random intercepts, as rmsb's data of the same names: Nc clusters (0 for
+  // none), the cluster of each observed (design row, state) pair and of each
+  // stretch, and the prior on their SD: psigma = 1 for
+  // student_t(4, rsdmean, rsdsd), 2 for exponential with mean rsdmean.
+  int<lower=0> Nc;
+  array[Nc == 0 ? 0 : n_obs] int<lower=1, upper=Nc> obs_cluster;
+  array[Nc == 0 ? 0 : S] int<lower=1, upper=Nc> stretch_cluster;
+  int<lower=1, upper=2> psigma;
+  array[Nc == 0 ? 0 : 1] real<lower=0> rsdmean;
+  array[Nc == 0 || psigma == 2 ? 0 : 1] real<lower=0> rsdsd;
+
   real<lower=0> conc;
   int<lower=0> cn;                      // contrasts with a prior
   matrix[cn, p] C;
@@ -75,18 +92,27 @@ data {
 parameters {
   vector[p] beta;
   simplex[k] pi;
+  vector[Nc] gamma_raw;                          // unscaled random effects
+  array[Nc == 0 ? 0 : 1] real<lower=0> sigmag;   // SD of random effects
 }
 
 transformed parameters {
   vector[k - 1] alpha;
+  vector[Nc] gamma = Nc == 0 ? gamma_raw : sigmag[1] * gamma_raw;
   for (j in 2:k) alpha[j - 1] = logit(sum(pi[j:k]));
 }
 
 model {
-  target += path_loglik(to_array_1d(alpha), to_array_1d(beta), x_obs, y_obs,
-                        w_obs, x_gap, x_prev, absorbing, first_row,
-                        first_prev, first_step, n_steps, weight, lo, hi,
-                        step_rows);
+  if (Nc > 0) {
+    gamma_raw ~ std_normal();  // implies gamma ~ normal(0, sigmag)
+    if (psigma == 1) sigmag ~ student_t(4, rsdmean[1], rsdsd[1]);
+    else sigmag ~ exponential(1. / rsdmean[1]);
+  }
+  target += path_loglik(to_array_1d(alpha), to_array_1d(beta),
+                        to_array_1d(gamma), x_obs, y_obs, w_obs, x_gap,
+                        x_prev, absorbing, first_row, first_prev, first_step,
+                        n_steps, weight, lo, hi, step_rows, obs_cluster,
+                        stretch_cluster);
   target += dirichlet_lpdf(pi | rep_vector(conc, k));
   if (cn > 0) target += normal_lpdf(C * beta | cmus, csds);
 }

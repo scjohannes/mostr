@@ -20,6 +20,17 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   set_up <- markov_path_setup(setup, ranges, path)
   mostm_check_setup_states(ranges, set_up, layout, path$p_var)
   observed_setup <- set_up$setup
+  # Rows of `setup$data` that hold the first step of each stretch.
+  stretch_data_rows <- set_up$subset_index[layout$step_data_rows[layout$is_first]]
+  cluster <- markov_path_cluster_values(setup)
+  if (!is.null(cluster)) {
+    markov_check_path_clusters(
+      cluster,
+      setup$data[[path$id_var]],
+      c(which(set_up$use), set_up$subset_index[layout$step_data_rows]),
+      path$id_var
+    )
+  }
 
   # The model structure comes from `rmsb::blrm()` itself, fitted to the
   # set-up rows (`markov_setup_rows()`): design matrix, state labels and
@@ -71,23 +82,250 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   )
   fit_data <- fit_data[keep, , drop = FALSE]
 
+  # Random intercepts: one cluster number per row, over the clusters of the
+  # fully observed transitions and of the stretches. The structure fit
+  # numbered only the clusters of its own rows, and a patient whose
+  # transitions all touch unobserved visits has none there.
+  clusters <- NULL
+  if (!is.null(cluster)) {
+    observed_data_rows <- match(rownames(fit_data), rownames(setup$data))
+    clusters <- markov_path_cluster_codes(
+      cluster$values,
+      c(observed_data_rows, stretch_data_rows)
+    )
+    clusters$obs <- clusters$code[observed_data_rows]
+  }
+
   plan <- markov_path_plan_design(
     layout,
-    function(rows) blrm_design_matrix(fit, rows)
+    function(rows) blrm_design_matrix(fit, rows),
+    cluster = if (!is.null(clusters)) clusters$code[set_up$subset_index]
   )
 
-  # Stan samples coefficients of centred, orthogonalised predictors, as rmsb
-  # does (`rmsb::selectedQr()`); the stretches' design rows go through the
-  # same transformation, and the draws are transformed back below. The
-  # transformation is computed from all set-up rows, which have a full-rank
-  # design whenever the set-up fit worked; the fully observed transitions
-  # alone need not (a previous state that is always followed by an
-  # unobserved visit has a column of zeros there). The Dirichlet prior on
-  # the intercepts is therefore placed at the mean predictors of the set-up
-  # rows.
   x_setup <- as.matrix(fit$x)
   x <- x_setup[keep, , drop = FALSE]
+  n_states <- length(labels)
+  observed_state <- match(
+    as.character(markov_blrm_observed_states(fit))[keep],
+    labels
+  )
+  assembled <- markov_blrm_path_stan_data(
+    x_setup = x_setup,
+    keep = keep,
+    observed_state = observed_state,
+    plan = plan,
+    n_states = n_states,
+    contrast = fit$Contrast,
+    conc = args$conc %||% fit$conc %||% (1 / (0.8 + 0.35 * max(n_states, 3))),
+    pcontrast = args$pcontrast,
+    clusters = clusters,
+    psigma = fit$psigma %||% 1,
+    rsdmean = fit$rsdmean %||% 0,
+    rsdsd = fit$rsdsd %||% 1
+  )
+  stan_data <- assembled$data
+  transform <- assembled$transform
+  rinv <- assembled$rinv
+
+  iter <- args$iter %||% 2000
+  warmup <- args$warmup %||% (iter / 2)
+  chains <- args$chains %||% 4
+  refresh <- args$refresh %||% 0
+  model <- markov_path_stan_model(backend)
+  pars <- c("alpha", "beta", if (!is.null(clusters)) c("gamma", "sigmag"))
+  # The number of chains run in parallel is left to the backend, as
+  # `rmsb::blrm()` leaves it: `rstan::sampling()` uses
+  # `getOption("mc.cores", 1)` cores and cmdstanr's `$sample()` as many
+  # parallel chains, and `sampling.args` (`cores`, `parallel_chains`)
+  # overrides either.
+  elapsed <- system.time(
+    sampled <- if (backend == "rstan") {
+      do.call(
+        rstan::sampling,
+        c(
+          list(
+            model,
+            data = stan_data,
+            pars = pars,
+            iter = iter,
+            warmup = warmup,
+            chains = chains,
+            refresh = refresh
+          ),
+          args$sampling.args
+        )
+      )
+    } else {
+      do.call(
+        model$sample,
+        c(
+          list(
+            data = stan_data,
+            iter_sampling = iter - warmup,
+            iter_warmup = warmup,
+            chains = chains,
+            refresh = refresh
+          ),
+          args$sampling.args
+        )
+      )
+    }
+  )
+  if (backend == "rstan" && sampled@mode == 2L) {
+    mostr_abort("The Stan sampler failed for the model with unobserved states.")
+  }
+
+  pattern <- paste0("^(", paste(pars, collapse = "|"), ")\\[")
+  if (backend == "rstan") {
+    raw <- as.matrix(sampled)
+    parameter_names <- colnames(raw)
+  } else {
+    all_draws <- sampled$draws()
+    parameter_names <- dimnames(all_draws)[[3L]]
+    parameter_names <- parameter_names[grepl(pattern, parameter_names)]
+    raw <- matrix(
+      all_draws[, , parameter_names],
+      ncol = length(parameter_names),
+      dimnames = list(NULL, parameter_names)
+    )
+  }
+  alpha_names <- parameter_names[grepl("^alpha\\[", parameter_names)]
+  beta_names <- parameter_names[grepl("^beta\\[", parameter_names)]
+  betas <- raw[, beta_names, drop = FALSE] %*% t(rinv)
+  # The intercepts were sampled for centred predictors.
+  alphas <- raw[, alpha_names, drop = FALSE] -
+    as.numeric(betas %*% transform$xbar)
+  colnames(alphas) <- colnames(fit$draws)[seq_len(n_states - 1L)]
+  colnames(betas) <- colnames(x)
+  draws <- cbind(alphas, betas)
+
+  fit$draws <- draws
+  # Downstream code reads `x` and `y` as the fully observed transitions, as
+  # for the orm fit (`markov_orm_keep_rows()`).
+  fit$x <- x
+  fit$y <- markov_keep_response_rows(fit$y, keep)
+  fit$freq <- stats::setNames(
+    as.integer(table(factor(
+      markov_blrm_observed_states(fit),
+      levels = fit$ylevels
+    ))),
+    fit$ylevels
+  )
+  fit$N <- nrow(x)
+  fit$param <- rbind(
+    mean = colMeans(draws),
+    median = apply(draws, 2L, stats::median)
+  )
+  cluster_parameters <- character()
+  if (!is.null(clusters)) {
+    # As `rmsb::blrm()` stores them: the posterior draws of the SD of the
+    # random intercepts as `omega`, the posterior medians of the intercepts
+    # as `gammas` (named "gamma[c]"), and the clusters. `clusterInfo$cluster`
+    # holds the cluster of each fully observed transition (the rows of `x`)
+    # as a factor whose levels are the clusters in the order of `gamma`, so
+    # that a cluster seen only in stretches, which has no row of `x`, keeps
+    # its place: `include_re = TRUE` matches clusters to `gamma` by these
+    # levels.
+    gamma_names <- parameter_names[grepl("^gamma\\[", parameter_names)]
+    fit$omega <- cbind(sigmag = raw[, "sigmag[1]"])
+    fit$gammas <- apply(raw[, gamma_names, drop = FALSE], 2L, stats::median)
+    fit$clusterInfo <- list(
+      cluster = factor(clusters$levels[clusters$obs], levels = clusters$levels),
+      n = clusters$n,
+      name = fit$clusterInfo$name %||% cluster$name
+    )
+    cluster_parameters <- "sigmag[1]"
+  }
+  fit$diagnostics <- if (backend == "rstan") {
+    tryCatch(
+      rstan::summary(
+        sampled,
+        pars = c(alpha_names, beta_names, cluster_parameters),
+        probs = NULL
+      )$summary[, c("n_eff", "Rhat")],
+      error = function(e) NULL
+    )
+  } else {
+    list(
+      diagnostic_summary = sampled$diagnostic_summary(),
+      summary = as.data.frame(sampled$summary(
+        variables = setdiff(pars, "gamma")
+      ))
+    )
+  }
+  fit$alphas <- alpha_names
+  fit$betas <- beta_names
+  fit$xbar <- transform$xbar
+  fit$iter <- iter
+  fit$chains <- chains
+  fit$backend <- backend
+  fit$sampling_time <- unname(elapsed[["elapsed"]])
+  fit$stancode <- markov_path_stan_code()
+  fit$rstan <- sampled
+  # Leave-one-out and posterior-mode results of the structure fit describe
+  # other draws; none are computed for this model.
+  fit["loo"] <- list(NULL)
+  fit["opt"] <- list(NULL)
+  fit["datahash"] <- list(NULL)
+
+  patient_ids <- unique(c(
+    as.character(fit_data[[path$id_var]]),
+    plan$instances$id
+  ))
+  attr(fit, "markov_path_fit") <- list(
+    ids = patient_ids,
+    n_observed_transitions = nrow(x),
+    n_stretches = nrow(plan$instances),
+    n_distinct_stretches = length(plan$stretch_n_steps),
+    n_unobserved_visits = plan$n_steps_total,
+    # The sampler's parametrisation: coefficients beta_s of the centred,
+    # transformed predictors, beta = rinv %*% beta_s, intercepts for
+    # predictors centred at `fit$xbar`. It comes from the set-up rows, which
+    # are not stored, so it is kept for checking the sampled density.
+    rinv = rinv
+  )
+  list(fit = fit, fit_data = fit_data, fitted_ids = patient_ids)
+}
+
+# The data of `inst/stan/po_paths.stan`, with the transformation of the
+# predictors it is sampled in.
+#
+# `x_setup` is the design matrix of the set-up rows (`fit$x` of the structure
+# fit), `keep` marks its fully observed transitions and `observed_state`
+# gives their states as positions in the labels. `plan` comes from
+# `markov_path_plan_design()`. `clusters`, for a model with random
+# intercepts, holds `n` (the number of clusters) and `obs` (the cluster of
+# each fully observed transition); the stretches' clusters are
+# `plan$stretch_cluster`. `psigma`, `rsdmean` and `rsdsd` are rmsb's prior on
+# the SD of the random intercepts.
+#
+# Returns `data` (the Stan data), `transform` (`rmsb::selectedQr()` of the
+# set-up rows) and `rinv` (its `Rinv`, scaled as below).
+markov_blrm_path_stan_data <- function(
+  x_setup,
+  keep,
+  observed_state,
+  plan,
+  n_states,
+  contrast = NULL,
+  conc,
+  pcontrast = NULL,
+  clusters = NULL,
+  psigma = 1,
+  rsdmean = 0,
+  rsdsd = 1
+) {
+  x <- x_setup[keep, , drop = FALSE]
   n_predictors <- ncol(x)
+  # Stan samples coefficients of centred, orthogonalised predictors, as rmsb
+  # does (`rmsb::selectedQr()`); the stretches' design rows go through the
+  # same transformation, and the draws are transformed back by the caller.
+  # The transformation is computed from all set-up rows, which have a
+  # full-rank design whenever the set-up fit worked; the fully observed
+  # transitions alone need not (a previous state that is always followed by
+  # an unobserved visit has a column of zeros there). The Dirichlet prior on
+  # the intercepts is therefore placed at the mean predictors of the set-up
+  # rows.
   transform <- rmsb::selectedQr(x_setup, center = TRUE)
   # `selectedQr()` returns orthonormal columns (length 1, so SD
   # 1 / sqrt(n - 1)), whose coefficients have posterior SDs of order 1 to 10
@@ -124,33 +362,34 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   } else {
     unname(plan$x_prev) %*% rinv
   }
-  n_states <- length(labels)
-  contrast <- fit$Contrast
   n_contrasts <- if (is.null(contrast)) 0L else nrow(contrast)
   # Observed transitions with the same predictors and state are counted.
-  observed_row <- markov_distinct_rows(x)
-  n_observed_rows <- if (length(observed_row)) max(observed_row) else 0L
-  observed_state <- match(
-    as.character(markov_blrm_observed_states(fit))[keep],
-    labels
+  # With random intercepts, transitions of different clusters have different
+  # linear predictors, so the cluster is part of what must be equal.
+  observed_row <- markov_distinct_rows(
+    if (is.null(clusters)) x else cbind(x, clusters$obs)
   )
+  n_observed_rows <- if (length(observed_row)) max(observed_row) else 0L
   cell_count <- table(
     factor(observed_row, levels = seq_len(n_observed_rows)),
     factor(observed_state, levels = seq_len(n_states))
   )
   cells <- which(cell_count > 0)
+  cell_row <- (cells - 1L) %% n_observed_rows + 1L
+  first_of_row <- !duplicated(observed_row)
   x_observed <- unname(unclass(transform$X))[keep, , drop = FALSE][
-    !duplicated(observed_row),
+    first_of_row,
     ,
     drop = FALSE
   ] * column_scale
   # The Stan program reads matrices as arrays stored by row.
   by_row <- function(m) as.array(as.numeric(t(m)))
-  stan_data <- list(
+  n_clusters <- if (is.null(clusters)) 0L else as.integer(clusters$n)
+  data <- list(
     p = n_predictors,
     k = n_states,
     n_obs = length(cells),
-    x_obs = by_row(x_observed[(cells - 1L) %% n_observed_rows + 1L, , drop = FALSE]),
+    x_obs = by_row(x_observed[cell_row, , drop = FALSE]),
     y_obs = as.array((cells - 1L) %/% n_observed_rows + 1L),
     w_obs = as.array(as.numeric(cell_count[cells])),
     G = nrow(x_gap),
@@ -168,151 +407,106 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     hi = as.array(plan$step_hi),
     step_rows = as.array(as.integer(t(plan$step_rows))),
     absorbing = as.array(as.integer(seq_len(n_states) %in% plan$absorb)),
-    conc = args$conc %||% fit$conc %||% (1 / (0.8 + 0.35 * max(n_states, 3))),
+    Nc = n_clusters,
+    obs_cluster = if (n_clusters) {
+      as.array(as.integer(clusters$obs[first_of_row][cell_row]))
+    } else {
+      integer()
+    },
+    stretch_cluster = if (n_clusters) {
+      as.array(as.integer(plan$stretch_cluster))
+    } else {
+      integer()
+    },
+    psigma = as.integer(psigma),
+    rsdmean = if (n_clusters) as.array(rsdmean) else numeric(),
+    rsdsd = if (n_clusters && psigma == 1) as.array(rsdsd) else numeric(),
+    conc = conc,
     cn = n_contrasts,
     C = if (n_contrasts) {
       contrast %*% rinv
     } else {
       matrix(0, 0L, n_predictors)
     },
-    cmus = as.array(rep_len(args$pcontrast$mu %||% 0, n_contrasts)),
-    csds = as.array(rep_len(args$pcontrast$sd %||% 100, n_contrasts))
+    cmus = as.array(rep_len(pcontrast$mu %||% 0, n_contrasts)),
+    csds = as.array(rep_len(pcontrast$sd %||% 100, n_contrasts))
   )
+  list(data = data, transform = transform, rinv = rinv)
+}
 
-  iter <- args$iter %||% 2000
-  warmup <- args$warmup %||% (iter / 2)
-  chains <- args$chains %||% 4
-  refresh <- args$refresh %||% 0
-  model <- markov_path_stan_model(backend)
-  # The number of chains run in parallel is left to the backend, as
-  # `rmsb::blrm()` leaves it: `rstan::sampling()` uses
-  # `getOption("mc.cores", 1)` cores and cmdstanr's `$sample()` as many
-  # parallel chains, and `sampling.args` (`cores`, `parallel_chains`)
-  # overrides either.
-  elapsed <- system.time(
-    sampled <- if (backend == "rstan") {
-      do.call(
-        rstan::sampling,
-        c(
-          list(
-            model,
-            data = stan_data,
-            pars = c("alpha", "beta"),
-            iter = iter,
-            warmup = warmup,
-            chains = chains,
-            refresh = refresh
-          ),
-          args$sampling.args
-        )
-      )
-    } else {
-      do.call(
-        model$sample,
-        c(
-          list(
-            data = stan_data,
-            iter_sampling = iter - warmup,
-            iter_warmup = warmup,
-            chains = chains,
-            refresh = refresh
-          ),
-          args$sampling.args
-        )
-      )
-    }
-  )
-  if (backend == "rstan" && sampled@mode == 2L) {
-    mostr_abort("The Stan sampler failed for the model with unobserved states.")
+# The cluster variable of a `cluster()` term in the formula, evaluated on
+# every row of `setup$data`, or NULL without one. `mostm()` passes only a
+# bare `cluster()` to rmsb (`mostm_check_random_effects()`).
+markov_path_cluster_values <- function(setup) {
+  calls <- formula_rhs_calls(setup$formula, "cluster")
+  if (!length(calls)) {
+    return(NULL)
   }
-
-  if (backend == "rstan") {
-    raw <- as.matrix(sampled)
-    parameter_names <- colnames(raw)
-  } else {
-    all_draws <- sampled$draws()
-    parameter_names <- dimnames(all_draws)[[3L]]
-    parameter_names <- parameter_names[grepl("^(alpha|beta)\\[", parameter_names)]
-    raw <- matrix(
-      all_draws[, , parameter_names],
-      ncol = length(parameter_names),
-      dimnames = list(NULL, parameter_names)
+  expr <- calls[[1L]][[2L]]
+  values <- eval(expr, setup$data, setup$eval_env)
+  if (length(values) != nrow(setup$data)) {
+    mostr_abort(
+      "The variable in `cluster()` must have one value per row of `data`."
     )
   }
-  alpha_names <- parameter_names[grepl("^alpha\\[", parameter_names)]
-  beta_names <- parameter_names[grepl("^beta\\[", parameter_names)]
-  betas <- raw[, beta_names, drop = FALSE] %*% t(rinv)
-  # The intercepts were sampled for centred predictors.
-  alphas <- raw[, alpha_names, drop = FALSE] -
-    as.numeric(betas %*% transform$xbar)
-  colnames(alphas) <- colnames(fit$draws)[seq_len(n_states - 1L)]
-  colnames(betas) <- colnames(x)
-  draws <- cbind(alphas, betas)
+  list(name = deparse1(expr), values = values)
+}
 
-  fit$draws <- draws
-  # Downstream code reads `x` and `y` as the fully observed transitions, as
-  # for the orm fit (`markov_orm_keep_rows()`).
-  fit$x <- x
-  fit$y <- markov_keep_response_rows(fit$y, keep)
-  fit$freq <- stats::setNames(
-    as.integer(table(factor(
-      markov_blrm_observed_states(fit),
-      levels = fit$ylevels
-    ))),
-    fit$ylevels
-  )
-  fit$N <- nrow(x)
-  fit$param <- rbind(
-    mean = colMeans(draws),
-    median = apply(draws, 2L, stats::median)
-  )
-  fit$diagnostics <- if (backend == "rstan") {
-    tryCatch(
-      rstan::summary(
-        sampled,
-        pars = c(alpha_names, beta_names),
-        probs = NULL
-      )$summary[, c("n_eff", "Rhat")],
-      error = function(e) NULL
-    )
-  } else {
-    list(
-      diagnostic_summary = sampled$diagnostic_summary(),
-      summary = as.data.frame(sampled$summary(variables = c("alpha", "beta")))
+# A run of unobserved visits is one likelihood term with one random
+# intercept, and the stretches and the fully observed transitions of a
+# patient are laid out per patient, so the cluster must be known and the same
+# on every row of a patient that the fit uses (`rows`). A cluster coarser
+# than the patient, such as a site, satisfies this; a cluster that changes
+# within a patient's follow-up does not.
+markov_check_path_clusters <- function(cluster, id, rows, id_var) {
+  values <- cluster$values[rows]
+  if (anyNA(values)) {
+    mostr_abort(
+      "The variable in `cluster(",
+      cluster$name,
+      ")` is missing on ",
+      sum(is.na(values)),
+      " row",
+      if (sum(is.na(values)) > 1L) "s",
+      " used by the model with unobserved states. Every visit needs its ",
+      "cluster, because the random intercept enters the probabilities of ",
+      "the unobserved visits too."
     )
   }
-  fit$alphas <- alpha_names
-  fit$betas <- beta_names
-  fit$xbar <- transform$xbar
-  fit$iter <- iter
-  fit$chains <- chains
-  fit$backend <- backend
-  fit$sampling_time <- unname(elapsed[["elapsed"]])
-  fit$stancode <- markov_path_stan_code()
-  fit$rstan <- sampled
-  # Leave-one-out and posterior-mode results of the structure fit describe
-  # other draws; none are computed for this model.
-  fit["loo"] <- list(NULL)
-  fit["opt"] <- list(NULL)
-  fit["datahash"] <- list(NULL)
+  patient <- as.character(id[rows])
+  pairs <- unique(data.frame(patient = patient, value = as.character(values)))
+  varying <- unique(pairs$patient[duplicated(pairs$patient)])
+  if (length(varying)) {
+    mostr_abort(
+      "The variable in `cluster(",
+      cluster$name,
+      ")` changes within a patient (first: `",
+      id_var,
+      "` = ",
+      varying[[1L]],
+      "). With unobserved states, a patient's visits must all belong to one ",
+      "cluster, because a run of unobserved visits has one likelihood term ",
+      "and so one random intercept."
+    )
+  }
+  invisible(NULL)
+}
 
-  patient_ids <- unique(c(
-    as.character(fit_data[[path$id_var]]),
-    plan$instances$id
-  ))
-  attr(fit, "markov_path_fit") <- list(
-    ids = patient_ids,
-    n_observed_transitions = nrow(x),
-    n_stretches = nrow(plan$instances),
-    n_distinct_stretches = length(plan$stretch_n_steps),
-    n_unobserved_visits = plan$n_steps_total,
-    # The sampler's parametrisation: coefficients beta_s of the centred,
-    # transformed predictors, beta = rinv %*% beta_s, intercepts for
-    # predictors centred at `fit$xbar`. It comes from the set-up rows, which
-    # are not stored, so it is kept for checking the sampled density.
-    rinv = rinv
+# Cluster numbers as `rmsb::blrm()` assigns them,
+# `as.integer(as.factor(cluster))` over the fitted rows, here the rows `used`
+# (the fully observed transitions and the stretches): clusters are numbered
+# in the order of `as.factor()` (sorted values, or the factor's levels), and
+# there are as many as the largest number. Returns `code` (the number of
+# every element of `values`, `NA` for clusters not used), `levels` and `n`.
+markov_path_cluster_codes <- function(values, used) {
+  used_factor <- as.factor(values[used])
+  n <- max(as.integer(used_factor))
+  cluster_levels <- levels(used_factor)[seq_len(n)]
+  list(
+    code = match(as.character(values), cluster_levels),
+    levels = cluster_levels,
+    n = n
   )
-  list(fit = fit, fit_data = fit_data, fitted_ids = patient_ids)
 }
 
 # The observed state of each fitted row of a blrm fit. rmsb stores the

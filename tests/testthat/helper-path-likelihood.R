@@ -22,10 +22,14 @@
 #   x_gap[stretch_first_row[s], ] + x_prev[stretch_first_prev[s], ].
 # x_prev is NULL in the general layout (every design row in x_gap) and holds
 # the previous state's columns in the additive layout.
+#
+# Random intercepts: with `plan$cluster_shift` (gamma, one per cluster), the
+# linear predictor of observed row i is x'beta + gamma[obs_cluster[i]], and
+# that of every step of stretch s is x'beta + gamma[stretch_cluster[s]].
 
-path_cell_probability <- function(alpha, beta, x, y) {
+path_cell_probability <- function(alpha, beta, x, y, shift = 0) {
   K <- length(alpha) + 1
-  eta <- sum(x * beta)
+  eta <- sum(x * beta) + shift
   cumulative <- c(1, stats::plogis(alpha + eta), 0) # c_0, c_1..c_{K-1}, c_K
   cumulative[y] - cumulative[y + 1]
 }
@@ -34,18 +38,23 @@ path_loglik_bruteforce <- function(theta, K, plan) {
   alpha <- theta[seq_len(K - 1)]
   beta <- theta[-seq_len(K - 1)]
 
+  gamma <- plan$cluster_shift
+  obs_shift <- function(i) if (is.null(gamma)) 0 else gamma[plan$obs_cluster[i]]
+  stretch_shift <- function(s) if (is.null(gamma)) 0 else gamma[plan$stretch_cluster[s]]
+
   obs_group_loglik <- numeric(plan$n_groups)
   for (i in seq_len(nrow(plan$x_obs))) {
-    prob <- path_cell_probability(alpha, beta, plan$x_obs[i, ], plan$y_obs[i])
+    prob <- path_cell_probability(alpha, beta, plan$x_obs[i, ], plan$y_obs[i], obs_shift(i))
     g <- plan$group_obs[i]
     obs_group_loglik[g] <- obs_group_loglik[g] + plan$w_obs[i] * log(prob)
   }
 
-  # P(Y = y | design row for x_gap row r and previous state j).
-  transition <- function(r, j, y) {
+  # P(Y = y | design row for x_gap row r and previous state j), in a
+  # stretch whose linear predictor is shifted by `shift`.
+  transition <- function(r, j, y, shift) {
     x <- plan$x_gap[r, ]
     if (!is.null(plan$x_prev)) x <- x + plan$x_prev[j, ]
-    path_cell_probability(alpha, beta, x, y)
+    path_cell_probability(alpha, beta, x, y, shift)
   }
 
   m <- length(plan$stretch_first_row)
@@ -54,17 +63,18 @@ path_loglik_bruteforce <- function(theta, K, plan) {
     steps <- plan$stretch_first_step[s] + seq_len(plan$stretch_n_steps[s]) - 1
     ranges <- lapply(steps, function(u) plan$step_lo[u]:plan$step_hi[u])
     paths <- as.matrix(expand.grid(ranges))
+    shift <- stretch_shift(s)
     f <- 0
     for (r in seq_len(nrow(paths))) {
       z <- paths[r, ]
-      prob <- transition(plan$stretch_first_row[s], plan$stretch_first_prev[s], z[1])
+      prob <- transition(plan$stretch_first_row[s], plan$stretch_first_prev[s], z[1], shift)
       for (t in seq_along(steps)[-1]) {
         previous <- z[t - 1]
         if (previous %in% plan$absorb) {
           prob <- prob * (z[t] == previous)
         } else {
           row <- plan$step_rows[steps[t], previous]
-          prob <- prob * transition(row, previous, z[t])
+          prob <- prob * transition(row, previous, z[t], shift)
         }
       }
       f <- f + prob
@@ -100,8 +110,24 @@ path_kernel <- function(theta, K, plan, order = 2L) {
     step_lo = plan$step_lo,
     step_hi = plan$step_hi,
     step_rows = plan$step_rows,
+    cluster_shift = plan$cluster_shift %||% double(),
+    obs_cluster = plan$obs_cluster %||% integer(),
+    stretch_cluster = plan$stretch_cluster %||% integer(),
     order = order
   )
+}
+
+# The plan with random intercepts `shift` for length(shift) clusters: the
+# observed rows of group g and the stretches s = 1, 2, ... are assigned to
+# clusters in turn, so that every cluster has observed rows and stretches
+# (with three clusters), and two stretches that share x_gap rows belong to
+# different clusters.
+with_path_clusters <- function(plan, shift = c(0.4, -0.7, 0.25)) {
+  n <- length(shift)
+  plan$cluster_shift <- shift
+  plan$obs_cluster <- as.integer((plan$group_obs - 1L) %% n + 1L)
+  plan$stretch_cluster <- as.integer((seq_along(plan$stretch_first_row) - 1L) %% n + 1L)
+  plan
 }
 
 # Deterministic test plans. The design row for previous state `prev` at time

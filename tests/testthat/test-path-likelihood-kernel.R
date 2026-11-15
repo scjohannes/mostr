@@ -330,3 +330,130 @@ test_that("an additive plan needs a valid previous state for each stretch", {
   plan$stretch_first_prev[2] <- 0L
   expect_error(path_kernel(path_theta(K), K, plan), "stretch_first_prev")
 })
+
+# Random intercepts (`cluster()` with engine = "blrm"): a cluster's shift
+# gamma_c is added to the linear predictor of its observed rows and of every
+# step of its stretches (`with_path_clusters()` in helper-path-likelihood.R).
+
+test_that("with random intercepts the kernel equals the path enumeration", {
+  plans <- path_plans()
+  for (name in names(plans)) {
+    case <- plans[[name]]
+    plan <- with_path_clusters(case$plan)
+    kernel <- path_kernel(case$theta, case$K, plan)
+    reference <- path_loglik_bruteforce(case$theta, case$K, plan)
+    expect_true(is.finite(kernel$loglik), info = name)
+    expect_equal(kernel$loglik, reference$loglik, tolerance = 1e-12, info = name)
+    expect_equal(kernel$stretch_loglik, reference$stretch_loglik,
+                 tolerance = 1e-12, info = name)
+    # The shifts change the likelihood: the check above is not vacuous.
+    expect_gt(abs(kernel$loglik - path_kernel(case$theta, case$K, case$plan)$loglik), 0.1)
+  }
+})
+
+test_that("the scores of the random intercepts are numerical derivatives", {
+  skip_on_cran() # Slow (about 0.6 s); the identity with shifted intercepts below runs on CRAN.
+  # Both layouts compute the shifted linear predictor in their own code
+  # (one dot product per step and previous state, or per step plus x_prev).
+  plans <- path_plans(c("general", "additive"))
+  for (name in grep("K = 5", names(plans), value = TRUE)) {
+    case <- plans[[name]]
+    plan <- with_path_clusters(case$plan)
+    kernel <- path_kernel(case$theta, case$K, plan, order = 1L)
+    numeric <- central_difference_jacobian(
+      function(shift) {
+        plan$cluster_shift <- shift
+        path_loglik_bruteforce(case$theta, case$K, plan)$loglik
+      },
+      plan$cluster_shift
+    )[1, ]
+    expect_length(kernel$cluster_scores, 3L)
+    expect_equal(kernel$cluster_scores, unname(numeric), tolerance = 1e-7, info = name)
+  }
+})
+
+test_that("with random intercepts the scores and the Hessian of theta are exact", {
+  skip_on_cran() # Slow (about 1 s); the enumeration and cluster-score tests above run on CRAN.
+  plans <- path_plans(c("general", "additive"))
+  for (name in names(plans)) {
+    case <- plans[[name]]
+    K <- case$K
+    theta <- case$theta
+    plan <- with_path_clusters(case$plan)
+    kernel <- path_kernel(theta, K, plan)
+    m <- length(plan$stretch_weight)
+    numeric <- unname(central_difference_jacobian(
+      function(th) {
+        reference <- path_loglik_bruteforce(th, K, plan)
+        c(reference$stretch_loglik, reference$obs_group_loglik)
+      },
+      theta
+    ))
+    expect_equal(kernel$stretch_scores, numeric[seq_len(m), , drop = FALSE],
+                 tolerance = 1e-7, info = name)
+    expect_equal(kernel$obs_group_scores, numeric[-seq_len(m), , drop = FALSE],
+                 tolerance = 1e-7, info = name)
+    numeric_hessian <- central_difference_jacobian(
+      function(th) total_score(path_kernel(th, K, plan, order = 1L), plan), theta
+    )
+    expect_equal(kernel$hessian, unname(numeric_hessian), tolerance = 1e-6, info = name)
+  }
+})
+
+test_that("a random intercept's score is the sum of its terms' intercept scores", {
+  # eta = alpha_k + x'beta + gamma_c, so a shift common to all clusters is a
+  # shift of every intercept, and a cluster's score is the sum over its
+  # terms of their intercept scores.
+  case <- path_plans()[["K = 5, absorbing K, additive layout"]]
+  K <- case$K
+  theta <- case$theta
+  plan <- with_path_clusters(case$plan, shift = rep(0.35, 3))
+  shifted <- path_kernel(theta, K, plan)
+  moved <- theta
+  moved[seq_len(K - 1)] <- moved[seq_len(K - 1)] + 0.35
+  plain <- path_kernel(moved, K, case$plan)
+  expect_equal(shifted$loglik, plain$loglik, tolerance = 1e-13)
+  expect_equal(shifted$stretch_scores, plain$stretch_scores, tolerance = 1e-12)
+  expect_equal(shifted$hessian, plain$hessian, tolerance = 1e-12)
+  intercepts <- seq_len(K - 1)
+  # Observed rows: the group scores sum rows by group, and each group is one
+  # cluster here (`with_path_clusters()`), so they are added by group.
+  observed <- rowsum(
+    rowSums(plain$obs_group_scores[, intercepts, drop = FALSE]),
+    (seq_len(plan$n_groups) - 1L) %% 3L + 1L
+  )
+  stretches <- rowsum(
+    plan$stretch_weight * rowSums(plain$stretch_scores[, intercepts, drop = FALSE]),
+    plan$stretch_cluster
+  )
+  expect_equal(shifted$cluster_scores, as.numeric(observed + stretches), tolerance = 1e-12)
+})
+
+test_that("zero random intercepts give exactly the fit without them", {
+  # Without shifts the kernel must compute what it computed before random
+  # intercepts existed; with all shifts 0 the arithmetic is the same
+  # (eta + 0 and exp(0) = 1 are exact).
+  for (case in path_plans(c("general", "additive"))) {
+    plain <- path_kernel(case$theta, case$K, case$plan)
+    zero <- path_kernel(case$theta, case$K, with_path_clusters(case$plan, c(0, 0, 0)))
+    for (part in names(plain)) {
+      expect_identical(zero[[part]], plain[[part]], info = part)
+    }
+    expect_named(plain, c("loglik", "stretch_loglik", "obs_group_scores", "stretch_scores", "hessian"))
+  }
+})
+
+test_that("malformed cluster numbers are refused", {
+  K <- 5L
+  case <- path_plans()[["K = 5, absorbing K, general layout"]]
+  plan <- with_path_clusters(case$plan)
+  bad <- plan
+  bad$obs_cluster[1] <- 4L
+  expect_error(path_kernel(case$theta, K, bad), "obs_cluster")
+  bad <- plan
+  bad$stretch_cluster[2] <- 0L
+  expect_error(path_kernel(case$theta, K, bad), "stretch_cluster")
+  bad <- plan
+  bad$stretch_cluster <- bad$stretch_cluster[-1]
+  expect_error(path_kernel(case$theta, K, bad), "stretch_cluster")
+})

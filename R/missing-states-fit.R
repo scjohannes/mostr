@@ -12,7 +12,7 @@
 # transitions, so that everything downstream reads an ordinary `orm` object.
 
 # Arguments of `mostm()` that the path likelihood has not been worked out for.
-mostm_check_path_fit_args <- function(engine, dots, p2_var, formula) {
+mostm_check_path_fit_args <- function(engine, dots, p2_var) {
   refuse <- function(what, ...) {
     mostr_abort(
       what,
@@ -50,12 +50,6 @@ mostm_check_path_fit_args <- function(engine, dots, p2_var, formula) {
       refuse(
         paste0("A partial proportional odds model (`", arg, "`)"),
         "the Stan program for them fits the proportional odds model only."
-      )
-    }
-    if (length(formula_rhs_calls(formula, "cluster"))) {
-      refuse(
-        "A random intercept (`cluster()`)",
-        "the Stan program for them has no random effects."
       )
     }
     if (isTRUE(dots$iprior != 0) && !is.null(dots$iprior)) {
@@ -351,6 +345,10 @@ markov_path_loglik <- function(theta, observed, plan, order = 2L) {
     step_lo = plan$step_lo,
     step_hi = plan$step_hi,
     step_rows = plan$step_rows,
+    # The orm fit has no random intercepts (`cluster()` is refused for orm).
+    cluster_shift = double(),
+    obs_cluster = integer(),
+    stretch_cluster = integer(),
     order = as.integer(order)
   )
 }

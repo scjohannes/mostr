@@ -29,8 +29,17 @@
   compiles its own Stan program the first time such a model is fitted and
   keeps it in the user's cache directory. Not available together with
   unobserved states: second-order models, penalties, links other than the
-  logit, partial proportional odds, random effects, `iprior`, and row
-  weights that differ within a run of unobserved visits. See "Unobserved states" in `?mostm`.
+  logit, partial proportional odds, `iprior`, and row weights that differ
+  within a run of unobserved visits. See "Unobserved states" in `?mostm`.
+
+  A random intercept, `cluster(id)` with `engine = "blrm"`, works with
+  unobserved states: each patient's random effect shifts the log-odds of all
+  the patient's transitions, including those into and out of unobserved
+  visits, with the parameters and priors of `rmsb::blrm()` (`psigma`,
+  `rsdmean`, `rsdsd`). A patient whose every transition touches an
+  unobserved visit still gets a random effect, and `include_re = TRUE`
+  works as for complete data. The cluster can be coarser than the patient,
+  such as a site, but must be the same on all of a patient's rows.
 
 ## Breaking changes
 

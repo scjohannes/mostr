@@ -253,9 +253,11 @@ ms_row_ranges <- function(data, K = 4, absorb = 4, lower = NULL, upper = NULL) {
 # "yprev=K-1", "time", "tx"; without the "yprev" terms when
 # `previous_effect = FALSE`, for the formula `ordered(y) ~ time + tx`). The
 # paths are listed once, here; the returned function
-# `f(theta, per_patient = FALSE)` evaluates every transition of every path,
-# multiplies along each path, adds the paths of each patient and takes the
-# log. `per_patient = TRUE` returns one value per patient (named by id).
+# `f(theta, per_patient = FALSE, gamma = NULL)` evaluates every transition of
+# every path, multiplies along each path, adds the paths of each patient and
+# takes the log. `per_patient = TRUE` returns one value per patient (named by
+# id). `gamma`, named by id, is a random intercept per patient: it is added
+# to the linear predictor of every transition of the patient's paths.
 # `weights`: one weight per row, the same on all rows of a patient.
 ms_reference <- function(
   data,
@@ -312,10 +314,13 @@ ms_reference <- function(
   if (interaction) x <- cbind(x, dummies * steps$time)
   from_absorbing <- steps$previous %in% absorb
 
-  function(theta, per_patient = FALSE) {
+  function(theta, per_patient = FALSE, gamma = NULL) {
     alpha <- unname(theta[seq_len(K - 1)])
     beta <- unname(theta[-seq_len(K - 1)])
     eta <- as.numeric(x %*% beta)
+    if (!is.null(gamma)) {
+      eta <- eta + unname(gamma[as.character(ids)])[steps$patient]
+    }
     cumulative <- cbind(1, stats::plogis(outer(eta, alpha, "+")), 0)
     prob <- cumulative[cbind(seq_along(eta), steps$current)] -
       cumulative[cbind(seq_along(eta), steps$current + 1L)]

@@ -163,14 +163,48 @@ test_that("blrm refuses arguments without a path likelihood before fitting", {
     fixed = TRUE
   )
   expect_error(
-    ms_fit(data, engine = "blrm", formula = ordered(y) ~ yprev + time + tx + cluster(id)),
-    "A random intercept (`cluster()`) can't be combined with unobserved states",
+    ms_fit(data, engine = "blrm", iprior = 1),
+    "`iprior` can't be combined with unobserved states",
+    class = "mostr_error",
+    fixed = TRUE
+  )
+})
+
+test_that("random intercepts with unobserved states need one cluster per patient", {
+  skip_on_cran() # Slow: loads rmsb.
+  skip_if_not_installed("rmsb")
+  # The checks run before rmsb fits anything. A run of unobserved visits has
+  # one likelihood term and so one random intercept: the cluster must be
+  # known and the same on all of a patient's rows.
+  data <- ms_fixture("gaps")
+  formula <- ordered(y) ~ yprev + time + tx + cluster(site)
+  varying <- data
+  varying$site <- ifelse(varying$time <= 2, "a", "b")
+  expect_error(
+    ms_fit(varying, engine = "blrm", formula = formula),
+    "The variable in `cluster(site)` changes within a patient (first: `id` = ",
+    class = "mostr_error",
+    fixed = TRUE
+  )
+  unknown <- data
+  unknown$site <- "a"
+  unknown$site[unknown$id == attr(data, "hidden")$id[1]] <- NA
+  expect_error(
+    ms_fit(unknown, engine = "blrm", formula = formula),
+    "The variable in `cluster(site)` is missing on",
+    class = "mostr_error",
+    fixed = TRUE
+  )
+  # Other random-effect terms are refused as without unobserved states.
+  expect_error(
+    ms_fit(data, engine = "blrm", formula = ordered(y) ~ yprev + time + tx + mix_re(id)),
+    "Other random-effect terms, such as `mix_re()`, are not available.",
     class = "mostr_error",
     fixed = TRUE
   )
   expect_error(
-    ms_fit(data, engine = "blrm", iprior = 1),
-    "`iprior` can't be combined with unobserved states",
+    ms_fit(data, formula = ordered(y) ~ yprev + time + tx + cluster(id)),
+    "`engine = \"orm\"` does not support random effects",
     class = "mostr_error",
     fixed = TRUE
   )

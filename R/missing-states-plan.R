@@ -154,7 +154,8 @@ markov_path_plan <- function(
   p_var,
   weights,
   design = NULL,
-  additive = TRUE
+  additive = TRUE,
+  cluster = NULL
 ) {
   layout <- markov_path_layout(
     data = data,
@@ -168,7 +169,7 @@ markov_path_plan <- function(
   if (is.null(design)) {
     return(layout)
   }
-  markov_path_plan_design(layout, design, additive = additive)
+  markov_path_plan_design(layout, design, additive = additive, cluster = cluster)
 }
 
 # Which rows form stretches, without any design rows. The fit needs this
@@ -383,7 +384,14 @@ markov_path_layout <- function(
 # interacting with another predictor, or `additive = FALSE`) `x_gap` holds
 # every distinct design row and `x_prev` is NULL. Both layouts give the same
 # likelihood up to rounding.
-markov_path_plan_design <- function(layout, design, additive = TRUE) {
+#
+# `cluster`, for a model with random intercepts, holds the cluster number of
+# each row of `layout$data`. A stretch's likelihood term then depends on its
+# cluster's intercept, so two stretches are stored once only when they also
+# belong to the same cluster, and the plan gives each stored stretch its
+# cluster (`stretch_cluster`). Design rows (`x_gap`) are still shared between
+# clusters: the intercept is added per stretch, not per design row.
+markov_path_plan_design <- function(layout, design, additive = TRUE, cluster = NULL) {
   data <- layout$data
   labels <- layout$labels
   absorb <- layout$absorb
@@ -448,7 +456,11 @@ markov_path_plan_design <- function(layout, design, additive = TRUE) {
   }
 
   if (!n_steps) {
-    return(markov_empty_path_plan(labels, absorb))
+    plan <- markov_empty_path_plan(labels, absorb)
+    if (!is.null(cluster)) {
+      plan$stretch_cluster <- integer()
+    }
+    return(plan)
   }
 
   # The previous state of every row of `x_all`: the known one for a first
@@ -495,6 +507,17 @@ markov_path_plan_design <- function(layout, design, additive = TRUE) {
     start_key <- (first_row - 1L) * n_states + first_prev
   }
   rownames(x_gap) <- NULL
+  first_cluster <- NULL
+  if (!is.null(cluster)) {
+    # Stretches of different clusters have different likelihood terms, so
+    # the cluster becomes part of the key that decides which stretches are
+    # equal. Without `cluster` the key, and with it the plan, is unchanged.
+    first_cluster <- as.integer(cluster[step_data_row[first_steps]])
+    start_key <- data.table::frankv(
+      list(start_key, first_cluster),
+      ties.method = "dense"
+    )
+  }
 
   # Keep each distinct stretch once: same design rows, same ranges. Two
   # stretches can only be equal if they share the design row of their first
@@ -530,7 +553,7 @@ markov_path_plan_design <- function(layout, design, additive = TRUE) {
   n_per <- lengths(instance_steps[representative])
   instance_weight <- layout$step_weight[first_steps]
 
-  list(
+  plan <- list(
     labels = labels,
     absorb = as.integer(absorb),
     layout = if (is.null(x_prev)) "general" else "additive",
@@ -553,6 +576,10 @@ markov_path_plan_design <- function(layout, design, additive = TRUE) {
     step_data_rows = step_data_row,
     n_steps_total = n_steps
   )
+  if (!is.null(first_cluster)) {
+    plan$stretch_cluster <- first_cluster[representative]
+  }
+  plan
 }
 
 # Whether the design rows `x` split exactly into a part that depends on the

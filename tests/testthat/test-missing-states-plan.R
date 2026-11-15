@@ -9,7 +9,7 @@ ms_design <- function(rows) {
 }
 
 ms_plan <- function(data, absorb = 4L, lower = NULL, upper = NULL, weights = NULL,
-                    design = ms_design, additive = TRUE) {
+                    design = ms_design, additive = TRUE, cluster = NULL) {
   ranges <- ms_row_ranges(data, absorb = absorb, lower = lower, upper = upper)
   # Rows without any record of the state are `NA` for the plan.
   y_missing <- if (is.null(lower)) is.na(data$y) else is.na(lower) & is.na(upper)
@@ -24,7 +24,8 @@ ms_plan <- function(data, absorb = 4L, lower = NULL, upper = NULL, weights = NUL
     p_var = "yprev",
     weights = weights,
     design = design,
-    additive = additive
+    additive = additive,
+    cluster = cluster
   )
 }
 
@@ -71,6 +72,29 @@ test_that("identical stretches of two patients are stored once", {
   # Weights add up over identical stretches.
   plan <- ms_plan(ms_two_patients(), weights = rep(c(0.5, 2), each = 4))
   expect_identical(plan$stretch_weight, 2.5)
+})
+
+test_that("stretches of different clusters are not merged", {
+  # With random intercepts a stretch's likelihood term depends on its
+  # cluster's intercept, so identical stretches are stored once only within
+  # a cluster. Design rows are still shared: the intercept is added per
+  # stretch.
+  data <- ms_two_patients()
+  shared <- ms_plan(data)
+  separate <- ms_plan(data, cluster = c(1L, 1L, 1L, 1L, 2L, 2L, 2L, 2L))
+  expect_identical(separate$stretch_n_steps, c(3L, 3L))
+  expect_identical(separate$stretch_weight, c(1, 1))
+  expect_identical(separate$stretch_cluster, c(1L, 2L))
+  expect_identical(separate$instances$stretch, c(1L, 2L))
+  expect_identical(separate$x_gap, shared$x_gap)
+  expect_identical(separate$stretch_first_row, rep(shared$stretch_first_row, 2))
+  # Patients of one cluster (a site) still share the stretch.
+  same_site <- ms_plan(data, cluster = rep(7L, 8))
+  expect_identical(same_site$stretch_weight, 2)
+  expect_identical(same_site$stretch_cluster, 7L)
+  # Without `cluster` the plan has no cluster numbers and is unchanged.
+  expect_null(shared$stretch_cluster)
+  expect_identical(same_site[names(shared)], shared)
 })
 
 test_that("steps at the end of a stretch that allow every state are trimmed", {

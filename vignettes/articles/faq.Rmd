@@ -411,9 +411,12 @@ which adds up over the unrecorded states.
 ### Which models can't be fitted with unobserved states?
 
 Second-order models (`p2_var`), penalised `"orm"` fits and links other than
-the logit, partial proportional odds (`ppo`), random effects (`cluster()`)
-and `iprior` with `engine = "blrm"`, and row weights that differ between the
-visits of a run of missed visits (one weight per patient is fine).
+the logit, partial proportional odds (`ppo`) and `iprior` with
+`engine = "blrm"`, and row weights that differ between the visits of a run
+of missed visits (one weight per patient is fine). A random intercept,
+`cluster(id)` with `engine = "blrm"`, can be fitted; its cluster must be the
+same on all rows of a patient. Random effects with `"orm"` are not
+available, with or without unobserved states.
 `mostm()` stops with a message for each of these; `missing_states = "drop"`
 fits them by leaving out the incomplete rows. `mostm()` also stops if a
 state is never observed exactly (a range given with `Ocens()` does not

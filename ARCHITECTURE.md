@@ -703,13 +703,45 @@ flowchart TD
   session only. As in `rmsb::blrm()`, the number of chains run in parallel
   is the backend's default, `getOption("mc.cores", 1)`, unless
   `sampling.args` sets `cores` or `parallel_chains`.
+- blrm random intercepts (`cluster()`): the model is rmsb's `lrmconppo`
+  with clusters. `po_paths.stan` declares rmsb's parameters in rmsb's
+  order (`beta`, `pi`, `gamma_raw`, `sigmag`), non-centred
+  (`gamma = sigmag * gamma_raw`, `gamma_raw ~ std_normal()`), with rmsb's
+  prior on `sigmag` (`psigma`, `rsdmean`, `rsdsd`, read from the structure
+  fit). The kernel takes the intercepts as a shift per cluster
+  (`Problem::cluster_shift`, `obs_cluster`, `stretch_cluster`): the shift
+  is added to the linear predictor of every observed row of the cluster and
+  every (step, previous state) pair of its stretches, and
+  `Output::cluster_scores` returns its derivative, the sum of the term's
+  intercept scores (the shift enters each cut-point as `alpha_k` does). The
+  Stan adapter passes `c(alpha, beta, gamma)` and their gradient to
+  `precomputed_gradients()`; Stan's automatic differentiation carries the
+  gradient on to `sigmag` and `gamma_raw`. Without a shift the kernel's
+  arithmetic is unchanged (the shift is added only when present).
+  Clusters are numbered as rmsb numbers them, `as.integer(as.factor())`,
+  but over the fully observed transitions and the stretches together
+  (`markov_path_cluster_codes()`), so a patient whose every transition
+  touches an unobserved visit gets an intercept although the structure fit
+  never saw them. Observed (design row, state) cells and stretches are
+  merged only within a cluster (`markov_blrm_path_stan_data()`, the
+  `cluster` argument of `markov_path_plan_design()`); `x_gap` rows are
+  still shared, because the shift is added per stretch. Any cluster
+  variable works that is known and constant within each patient
+  (`markov_check_path_clusters()`): a patient's stretches are one
+  likelihood term each, so a cluster that changes within a patient is
+  refused. The fit stores `omega` (draws of `sigmag`), `gammas` (posterior
+  medians, named `gamma[c]`), the `gamma` draws in `fit$rstan`, and
+  `clusterInfo` (`cluster`: a factor over the rows of `x` whose levels are
+  the clusters in the order of `gamma`, so that `include_re` finds clusters
+  seen only in stretches; `n`; `name`).
 - The fitted cohort is every patient with an observed transition or a
   stretch (`fitted_ids` passed to `markov_prepare_stored_data()`).
   Bootstrap and fractional weighted refits call `mostm()` again and so use
   the same likelihood; weights must be constant within a stretch.
 - Refused with unobserved states (`mostm_check_path_fit_args()`): `p2_var`,
-  orm penalties and links other than the logit, blrm `ppo`, `cppo`,
-  `cluster()` and `iprior`.
+  orm penalties and links other than the logit, blrm `ppo`, `cppo` and
+  `iprior`. orm `cluster()` and every `mix_re()` are refused before this,
+  with or without unobserved states (`mostm_check_random_effects()`).
 - Tests: `test-path-likelihood-kernel.R` compares the kernel with
   `path_loglik_bruteforce()` (`helper-path-likelihood.R`), which lists every
   path, in the general, the additive and an interaction layout, and the two
@@ -719,7 +751,11 @@ flowchart TD
   previous states that occur only next to unobserved visits.
   `test-slow-missing-states-blrm.R` compares the
   compiled Stan program's log density with that reference and its gradient
-  with numerical derivatives.
+  with numerical derivatives, with and without random intercepts, and the
+  density with random intercepts with rmsb's own program on the fully
+  observed transitions plus the stretches computed in R.
+  `test-missing-states-clusters.R` covers the cluster numbers and the Stan
+  data without compiling anything.
 
 ### Settings
 
