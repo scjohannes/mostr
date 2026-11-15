@@ -1,0 +1,465 @@
+---
+title: "Visits with Unobserved States"
+---
+
+```{r vignette-options, include = FALSE}
+source("../_setup.R", local = TRUE)
+```
+
+In most trials some daily states are never recorded: an assessment is
+skipped, a patient at home cannot be reached, or a form is lost. The patient
+is then seen again later, or dies later, and the state on the days in
+between is unknown. This article shows how to give such data to `mostm()` so
+that every recorded state is used, why leaving out the incomplete visits
+biases the results, and what assumption the analysis rests on.
+
+The article covers
+
+1. why dropping the visits around a missing state overestimates death;
+2. how to lay out the data, with `NA` for an unknown state and
+   `Ocens(lower, upper)` for a state that is partly known;
+3. fitting with `engine = "orm"` and comparing the results with those from
+   the complete data and from dropping the incomplete visits;
+4. how the calculation works and when it is valid;
+5. Bayesian fits with `engine = "blrm"`; and
+6. restrictions and the error messages you may meet.
+
+## Why dropping incomplete visits is biased
+
+A transition model describes each visit's state given the state at the
+visit before. A row of the model data is therefore usable on its own only
+when both its state and its previous state are known. A missing state on one
+day removes two transitions: the one into that day and the one out of it.
+
+Deaths are usually recorded even when other assessments are missed, for
+example from hospital records or a death registry. Suppose a quarter of the
+states of living patients are missing, at random. A transition between two
+living states is kept only if both of its states were recorded, which
+happens for about 0.75 × 0.75 = 56% of them. A transition into death is kept
+whenever the visit before it was recorded, which happens for 75% of them.
+Among the rows that are kept, deaths are therefore over-represented by a
+factor of about 0.75 / 0.56 = 1.33, and a model fitted to those rows
+overestimates the risk of death.
+
+`mostm()` avoids this by keeping every visit. For a patient seen in state 5
+on day 4, not seen on days 5 and 6, and dead on day 7, the model adds up the
+probabilities of every sequence of states the patient can have been in on
+days 5 and 6 and uses the resulting probability of moving from state 5 on
+day 4 to death on day 7. Nothing that was recorded is thrown away, and
+nothing that was not recorded is made up.
+
+## Example data with missed visits
+
+We simulate 1,000 patients over 28 days with `sim_markov("actt2")`, which
+uses the eight-state NIAID scale described in
+[the proportional-odds article](full-po-sops.html): states 1 and 2 are
+outside hospital, 3 to 7 in hospital with increasing need for respiratory
+support, and 8 is death. `prepare_markov_data()` removes the rows after
+death. These are the complete data, which a real trial would not have; we
+keep them to see how close each analysis comes to them.
+
+```{r setup}
+library(mostr)
+
+N_PATIENTS <- 1000
+FOLLOW_UP <- 28
+SEED <- 20261115
+ABSORB <- "8"
+
+complete <- sim_markov(
+  "actt2",
+  n_patients = N_PATIENTS,
+  follow_up_time = FOLLOW_UP,
+  treatment_effect = log(0.8),
+  seed = SEED
+)
+complete <- prepare_markov_data(complete, absorbing_state = as.integer(ABSORB))
+complete <- complete[order(complete$id, complete$time), ]
+```
+
+Next we remove states the way a trial might lose them. Patients at home are
+harder to reach than patients in hospital: if the last state recorded for a
+patient was 1 or 2 (outside hospital), the next day's state is missing with
+probability 0.4, otherwise with probability 0.1. Deaths are always
+recorded. Because whether a state is missing depends only on states that
+were recorded, the states are *missing at random*, the assumption the
+method needs (see below).
+
+On the row after each missed visit the previous state is unknown as well, so
+`hide_states()` sets `yprev` to `NA` there too.
+
+```{r hide-states}
+hide_states <- function(data, seed) {
+  set.seed(seed)
+  data <- data[order(data$id, data$time), ]
+  y <- as.integer(as.character(data$y))
+  missed <- logical(nrow(data))
+  for (rows in split(seq_len(nrow(data)), data$id)) {
+    # The state before day 1 is the baseline state, which is always known.
+    last_recorded <- as.integer(as.character(data$yprev[rows[1]]))
+    for (row in rows) {
+      p_missed <- if (last_recorded <= 2) 0.4 else 0.1
+      if (y[row] != 8 && stats::runif(1) < p_missed) {
+        missed[row] <- TRUE
+      } else {
+        last_recorded <- y[row]
+      }
+    }
+  }
+  same_patient <- c(FALSE, data$id[-1] == data$id[-nrow(data)])
+  after_missed <- c(FALSE, missed[-nrow(data)]) & same_patient
+  data$y[missed] <- NA
+  data$yprev[after_missed] <- NA
+  data
+}
+
+observed <- hide_states(complete, seed = 1)
+mean(is.na(observed$y[complete$y != ABSORB]))
+```
+
+About a quarter of the states of living patients are now missing. Here are
+the first 12 days of one patient, with the complete state next to what was
+recorded:
+
+```{r one-patient}
+# The first patient with a missed visit in the first week.
+patient <- observed$id[which(is.na(observed$y) & observed$time <= 7)[1]]
+rows <- complete$id == patient & complete$time <= 12
+data.frame(
+  time = complete$time[rows],
+  y_complete = complete$y[rows],
+  y = observed$y[rows],
+  yprev = observed$yprev[rows]
+)
+```
+
+The data keep one row for every visit, in time order. Where the state was
+not recorded, `y` is `NA`, and on the following row `yprev` is `NA` as well.
+Do not carry the last recorded state forward into `yprev`: the model works
+out which states the patient can have been in, and a filled-in value would
+claim a state that was never seen. `mostm()` checks this and stops if
+`yprev` is filled in after a missing state (see the last section).
+
+What a missing state means depends on where it is:
+
+- **Between two recorded visits**, it is one of the states that are not
+  absorbing (here 1 to 7). A patient who is seen alive later, or whose death
+  is recorded later on its own visit, was alive in between.
+- **After the patient's last recorded state**, it says nothing, not even
+  whether the patient was alive: the patient may have been lost to
+  follow-up. These rows do not enter the fit, so keeping them gives the same
+  fit as removing them. If you know that the patient was alive, say so with
+  `Ocens()`, as shown below.
+
+## Fit and compare
+
+We fit the same model three times: to the complete data, to the observed
+data with the default `missing_states = "average"`, which adds up over the
+unknown states, and to the observed data with `missing_states = "drop"`,
+which leaves out every row with a missing state or previous state.
+
+```{r fits}
+formula <- y ~ yprev + time + tx
+
+fit_complete <- mostm(formula, data = complete, id_var = "id", absorb = ABSORB)
+fit_average <- mostm(formula, data = observed, id_var = "id", absorb = ABSORB)
+fit_drop <- mostm(
+  formula,
+  data = observed,
+  id_var = "id",
+  absorb = ABSORB,
+  missing_states = "drop"
+)
+```
+
+`missing_states = "average"` is the default for `engine = "orm"` and
+`engine = "blrm"`, so `fit_average` needs no extra argument. Each fit takes
+about a second here.
+
+The function below estimates the state occupancy probabilities (SOPs) in
+each arm with `avg_sops()`, adds 95% confidence intervals with
+`inferences(method = "delta")`, which calculates them from formulas without
+random draws, and keeps the probability of death and of state 1 (at home,
+without limitations) on day 28.
+
+```{r compare}
+day_28 <- function(fit, analysis) {
+  sops <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:FOLLOW_UP) |>
+    inferences(method = "delta")
+  sops <- as.data.frame(sops)
+  sops <- sops[sops$time == FOLLOW_UP & sops$state %in% c("1", ABSORB), ]
+  data.frame(
+    analysis = analysis,
+    state = sops$state,
+    tx = sops$tx,
+    estimate = round(sops$estimate, 3),
+    conf.low = round(sops$conf.low, 3),
+    conf.high = round(sops$conf.high, 3)
+  )
+}
+
+comparison <- rbind(
+  day_28(fit_complete, "complete data"),
+  day_28(fit_average, "average (default)"),
+  day_28(fit_drop, "drop")
+)
+comparison[order(comparison$state, comparison$tx), ]
+```
+
+```{r death-difference, include = FALSE}
+death <- function(analysis, arm) {
+  comparison$estimate[comparison$analysis == analysis &
+    comparison$state == ABSORB & comparison$tx == arm]
+}
+excess <- function(arm) {
+  round(1000 * (death("drop", arm) - death("complete data", arm)))
+}
+```
+
+With the default, the estimates are within 0.003 of those from the complete
+data, and the intervals are only slightly wider, because a quarter of the
+states are missing. Dropping the incomplete rows overestimates the
+probability of death on day 28 in both arms, by `r excess(0)` per 1,000
+patients in the control arm and `r excess(1)` per 1,000 in the treated arm,
+as the arithmetic at the start of this article suggests. It changes the
+probability of state 1 as well, by up to 0.011 here.
+
+This is one simulated trial. In a simulation of 500 trials with 400
+patients each, followed for 28 days, with about a quarter of the states of
+living patients missing and deaths always recorded, dropping the incomplete
+rows overestimated the day-28 probability of death in the control arm by on
+average 17.5 per 1,000 patients when states were missing completely at
+random, and by 34.9 per 1,000 when they were missing at random, with
+sicker patients missing more often (the true probability was about 71 per
+1,000). The default overestimated it by 0.4 and 2.2 per 1,000; the
+remaining bias comes from the visits after each patient's last recorded
+state, which the next section removes.
+
+## Partly known states with `Ocens()`
+
+Often more is known about a visit than nothing. Give the possible states of
+each visit as a range with the response `Ocens(lower, upper)`, where `lower`
+and `upper` are columns of the data holding the lowest and the highest state
+the patient can have been in:
+
+- an observed state has `lower` equal to `upper`;
+- `NA` in both means that nothing is known, as for `y = NA` above;
+- `-Inf` and `Inf` stand for the lowest and the highest state.
+
+`mostm()` reads the ranges itself, so you do not need to attach rms to use
+`Ocens()`. Two kinds of partial knowledge are common.
+
+**Known to be alive.** In this simulation every death is recorded, so a
+patient whose death is not recorded was alive at every visit, also after
+the last recorded state. Marking those visits as alive, states 1 to 7,
+tells the model that only patients who survive have such visits. Without
+it the model overestimates death slightly, as the simulation above showed.
+Only mark a visit as alive if you know it: treating patients who were lost
+to follow-up as alive makes the model underestimate death, which is the
+larger error.
+
+**Known to be in hospital.** Suppose hospital records show whether a patient
+was in hospital on a day without an assessment. Then a missed day in
+hospital has the range 3 to 7, and a missed day at home 1 to 2. In this
+simulation we take that information from the complete data.
+
+```{r ranges}
+y_observed <- as.integer(as.character(observed$y))
+y_true <- as.integer(as.character(complete$y))
+observed$lower <- y_observed
+observed$upper <- y_observed
+
+# Visits without a recorded state after the patient's last recorded state.
+recorded_later <- ave(
+  !is.na(y_observed),
+  observed$id,
+  FUN = function(recorded) rev(cumsum(rev(recorded))) > 0
+)
+after_last <- is.na(y_observed) & !recorded_later
+observed$lower[after_last] <- 1
+observed$upper[after_last] <- 7
+
+# Missed visits between recorded ones: in hospital (3 to 7) or at home (1 to 2).
+between <- is.na(y_observed) & recorded_later
+in_hospital <- y_true >= 3
+observed$lower[between] <- ifelse(in_hospital[between], 3, 1)
+observed$upper[between] <- ifelse(in_hospital[between], 7, 2)
+
+observed[observed$id == patient & observed$time <= 12,
+         c("time", "y", "yprev", "lower", "upper")]
+```
+
+The previous state stays `NA` after every visit whose state is not known
+exactly, a range included. The fit uses the same formula with
+`Ocens(lower, upper)` as the response:
+
+```{r fit-ranges}
+fit_ranges <- mostm(
+  Ocens(lower, upper) ~ yprev + time + tx,
+  data = observed,
+  id_var = "id",
+  absorb = ABSORB
+)
+
+comparison <- rbind(comparison, day_28(fit_ranges, "Ocens() ranges"))
+comparison[order(comparison$state, comparison$tx), ]
+```
+
+In this trial the ranges change the estimates and intervals by at most
+0.002, because the default already used every recorded state. In the
+simulation of
+500 trials, marking the visits after the last recorded state as alive
+reduced the remaining overestimate of death on day 28 from 0.4 to 0.03 per
+1,000 (missing completely at random) and from 2.2 to 0.04 per 1,000
+(missing at random).
+
+## How the calculation works
+
+For each visit the model gives the probability of each state given the
+state at the visit before, the time and the other predictors. Write
+$p_t(j, k)$ for the probability that a patient in state $j$ at visit
+$t - 1$ is in state $k$ at visit $t$. Take a patient whose state is known
+to be $a$ at visit $u$ and $b$ at a later visit $v$, with unrecorded visits
+in between, and let $R_t$ be the set of states the patient can have been in
+at visit $t$: the states that are not absorbing, or the range given with
+`Ocens()`. The probability of this part of the patient's history is
+
+$$
+P(Y_v = b \mid Y_u = a) =
+\sum_{s_{u+1} \in R_{u+1}} \cdots \sum_{s_{v-1} \in R_{v-1}}
+\; \prod_{t = u + 1}^{v} p_t(s_{t-1}, s_t),
+\qquad s_u = a,\; s_v = b,
+$$
+
+where $Y_t$ is the patient's state at visit $t$ and $s_{u+1}, \ldots,
+s_{v-1}$ run over the states the patient can have been in at the unrecorded
+visits. Each term of the sum is one possible sequence of states on those
+days, and its probability is the product of the probabilities of the
+transitions along it. When the state at visit $v$ is itself a range, the
+probability is added up over the states $b$ in that range too.
+
+The number of sequences grows quickly with the length of a gap: a gap of 5
+days with 7 possible states has $7^5 = 16{,}807$ of them. So mostr does not
+list them. It works through the gap one visit at a time instead: starting
+from state $a$ at visit $u$, it calculates the probability of being in each
+state of $R_{u+1}$ at the next visit, from these and $p_{u+2}$ the
+probabilities of each state of $R_{u+2}$, and so on, until visit $v$. This
+is the same visit-by-visit calculation that `avg_sops()` uses for state
+occupancy probabilities.
+
+Visits whose state and previous state are both recorded contribute
+$p_t(j, k)$ as in an ordinary fit. `engine = "orm"` finds the coefficients
+that maximise the product of all these probabilities (the likelihood);
+`engine = "blrm"` samples from the posterior distribution it gives.
+Standard errors, `inferences()` with every method, and the prediction and
+plotting functions work as for a fit to complete data.
+
+## When the method is valid
+
+The calculation is valid when states are **missing at random**: whether a
+state is recorded may depend on the predictors and on the patient's
+recorded states, before or after the missed visit, but not on the
+unrecorded state itself. The example above is missing at random, because
+the chance of a missed assessment depends on the last recorded state.
+
+If instead patients are less likely to be assessed on the very days they
+are sicker, the missingness depends on the unobserved state, and no method
+that uses only the recorded states is free of bias. In the simulation of
+500 trials with such missingness, the default overestimated the probability
+of being in state 1 on day 28 by about 6 per 1,000 patients, while dropping
+the incomplete rows overestimated it by 50 to 115 per 1,000.
+
+Dropping the incomplete rows is biased even when states are missing at
+random, as soon as some states, such as death, are recorded more reliably
+than others.
+
+## Bayesian fits with `engine = "blrm"`
+
+`engine = "blrm"` uses the same likelihood. rmsb's own Stan programs take
+one row per transition and cannot add up over unrecorded states, so mostr
+samples with a Stan program of its own. The first fit with unrecorded
+states compiles that program, which takes a minute or more and needs a C++
+toolchain and the rstan package (or cmdstanr, with `backend = "cmdstan"`).
+The compiled program is kept in the directory
+`tools::R_user_dir("mostr", "cache")` and reused in later sessions; set
+`options(mostr.stan_cache = )` to another directory, or to `FALSE` to keep
+it for the current session only.
+
+The chunk below is not run when this article is built.
+
+```{r blrm, eval = FALSE}
+# Run the four chains in parallel.
+options(mc.cores = 4)
+
+fit_bayes <- mostm(
+  Ocens(lower, upper) ~ yprev + time + tx,
+  data = observed,
+  id_var = "id",
+  absorb = ABSORB,
+  engine = "blrm",
+  iter = 2000,
+  chains = 4,
+  sampling.args = list(seed = 2026)
+)
+
+avg_sops(fit_bayes, variables = list(tx = c(0, 1)), times = 1:FOLLOW_UP)
+```
+
+`sampling.args = list(seed = 2026)` makes the posterior draws reproducible;
+a `seed` given directly to `mostm()` would not. Without `options(mc.cores)`,
+or `cores` in `sampling.args`, the chains run one after another. With data
+of this size, sampling takes a few minutes on four cores. The results carry posterior
+intervals, so no `inferences()` step is needed; see
+[the Bayesian article](bayesian-rmsb-sops.html).
+
+## Restrictions and error messages
+
+**The previous state must be `NA` exactly after a visit that is not known
+exactly.** Filling it in, for example with the last recorded state, is an
+error:
+
+```{r filled-in, error = TRUE}
+carried_forward <- observed
+# The first row after a missed visit, given a previous state.
+first_after <- which(is.na(carried_forward$yprev))[1]
+carried_forward$yprev[first_after] <- "4"
+mostm(formula, data = carried_forward, id_var = "id", absorb = ABSORB)
+```
+
+The reverse, a missing `yprev` on a row whose previous row has a recorded
+state, is an error too. It usually means that the rows of a missed visit
+were deleted instead of kept with `y = NA`: add a row for every visit.
+
+**Every state must be observed exactly at least once**, at a visit after the
+patient's first known state; a range given with `Ocens()` does not count.
+When the previous state is a factor, as here, every state that a missed
+visit can follow must also be the last recorded state before at least one
+such visit. Merge rarely observed states if `mostm()` reports that a state
+is never observed or never a previous state.
+
+**Every visit needs all predictors**, also when its state is missing,
+because the model predicts the transitions into and out of it.
+
+**The missing states between two recorded visits must be next to each other
+in the order of the states.** With two absorbing states at either end of the
+scale, such as discharge home (1) and death (8), the states a missed visit
+can be in are 2 to 7; with an absorbing state in the middle, give the
+possible states of each missed visit with `Ocens()`.
+
+**Not available together with unrecorded states**: second-order models
+(`p2_var`), penalties and links other than the logit for `engine = "orm"`,
+partial proportional odds (`ppo`), random effects (`cluster()`) and
+`iprior` for `engine = "blrm"`, and row weights that differ within a run of
+missed visits (one weight per patient is fine). For these, the only option
+is `missing_states = "drop"`, with the bias described above.
+
+**`engine = "vglm"` can only drop the incomplete rows**, and you must ask for
+it:
+
+```{r vglm, error = TRUE}
+mostm(ordered(y) ~ yprev + time + tx, data = observed, id_var = "id",
+      absorb = ABSORB, engine = "vglm")
+```
+
+Add `missing_states = "drop"` to accept the bias, or use `engine = "orm"`.
+For more on the arguments, see "Unobserved states" in `?mostm`.

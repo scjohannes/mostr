@@ -335,6 +335,91 @@ the model in several R processes at once. With `engine = "vglm"`,
 `use_coefstart = TRUE` starts each refit from the original coefficients,
 which can shorten the fitting.
 
+## Visits with unobserved states
+
+### What happens to visits whose state was not recorded?
+
+With `engine = "orm"` or `"blrm"`, they are used. Keep one row for every
+visit, with `y = NA` where the state is unknown and `yprev = NA` on the row
+after it. The default, `missing_states = "average"`, adds up the
+probabilities of every sequence of states the patient can have been in at
+those visits, so a patient who is missed for some days and seen again, or
+dies, later still contributes everything that was recorded. A missing state
+between two recorded visits means "one of the states that are not
+absorbing"; after the patient's last recorded state it means that nothing
+is known, and those rows give the same fit as removing them.
+
+`missing_states = "drop"` leaves out every row with a missing state or
+previous state, as earlier versions of mostr did. This overestimates death
+when deaths are recorded more reliably than other states, because a row
+that ends in death is lost only when the visit before it is missed, and
+other rows also when their own state is missed. The default is valid when
+states are missing at random: whether a state is recorded may depend on the
+predictors and the recorded states, but not on the unrecorded state
+itself. [The article on unobserved states](missing-states.html)
+works through an example.
+
+### How do I say that a state is partly known?
+
+Use the response `Ocens(lower, upper)`, where `lower` and `upper` are
+columns with the lowest and the highest state the patient can have been in:
+for example states 3 to 7 for a day known to be spent in hospital, or all
+states except death for a day on which the patient is known to be alive. An
+observed state has `lower` equal to `upper`, and `NA` in both means that
+nothing is known. If every death is recorded, for example from a registry,
+mark the visits after a patient's last recorded state as alive this way:
+left as `NA`, they make the model overestimate death slightly. Do not mark
+patients as alive without knowing it. `Ocens()` is available for the
+`"orm"` and `"blrm"` engines.
+
+### Why does `mostm()` say that `yprev` is recorded, or missing, on some rows?
+
+With unobserved states, the previous state must be `NA` exactly on the rows
+after a visit whose state is not known exactly:
+
+- "`yprev` is recorded on ... rows whose previous visit has no exactly
+  observed state" means that `yprev` was filled in after a missed visit,
+  for example with the last recorded state. Set it to `NA`: the model works
+  out the states the patient can have been in, and a filled-in value would
+  claim a state that was never seen.
+- "`yprev` is missing on ... rows although the patient's previous row has an
+  observed state" usually means that the rows of missed visits were deleted.
+  Add a row with `y = NA` for every visit that was not observed.
+
+`missing_states = "drop"` accepts both layouts, because it uses neither
+row.
+
+### Why does `engine = "vglm"` stop when some states are missing?
+
+`VGAM::vglm()` can only leave out the rows with a missing state or previous
+state, which is biased when some states are always recorded. mostr
+therefore asks you to choose it explicitly:
+
+```{r vglm-missing, error = TRUE}
+with_gaps <- model_data
+# Day 3 of the first patient alive then, and day 4 after it.
+missed <- which(with_gaps$time == 3 & with_gaps$y != "8")[1]
+with_gaps$y[missed] <- NA
+with_gaps$yprev[missed + 1] <- NA
+mostm(y ~ yprev + time + tx, data = with_gaps, id_var = "id", absorb = "8",
+      engine = "vglm")
+```
+
+Set `missing_states = "drop"` to accept this, or use `engine = "orm"`,
+which adds up over the unrecorded states.
+
+### Which models can't be fitted with unobserved states?
+
+Second-order models (`p2_var`), penalised `"orm"` fits and links other than
+the logit, partial proportional odds (`ppo`), random effects (`cluster()`)
+and `iprior` with `engine = "blrm"`, and row weights that differ between the
+visits of a run of missed visits (one weight per patient is fine).
+`mostm()` stops with a message for each of these; `missing_states = "drop"`
+fits them by leaving out the incomplete rows. `mostm()` also stops if a
+state is never observed exactly (a range given with `Ocens()` does not
+count), because the model can't be set up without it; merge rarely
+observed states.
+
 ## Fitting problems
 
 ### `mostm()` says the covariance of the coefficients cannot be computed
@@ -355,7 +440,8 @@ row's weight when it resamples patients, and the fractional weighted bootstrap
 multiplies each row's weight by its patient's random weight. `avg_sops()` and
 the other averaging functions give every patient the same weight, and
 `inferences(method = "delta")` offers only conditional variance for a weighted
-fit.
+fit. With unobserved states, the weights must be the same on all visits of
+a run of missed visits; one weight per patient always works.
 
 ### How do I check that the model describes the data?
 

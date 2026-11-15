@@ -28,9 +28,9 @@
   and the prediction functions work with these fits. For `"blrm"`, mostr
   compiles its own Stan program the first time such a model is fitted and
   keeps it in the user's cache directory. Not available together with
-  unobserved states: second-order models, penalties, partial proportional
-  odds, random effects, and row weights that differ within a run of
-  unobserved visits. See "Unobserved states" in `?mostm`.
+  unobserved states: second-order models, penalties, links other than the
+  logit, partial proportional odds, random effects, `iprior`, and row
+  weights that differ within a run of unobserved visits. See "Unobserved states" in `?mostm`.
 
 ## Breaking changes
 

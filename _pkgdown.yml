@@ -108,6 +108,14 @@ articles:
       results to a scale of elapsed days.
     contents:
       - articles/factor-time-orm-sops
+  - title: Visits with unobserved states
+    navbar: Unobserved states
+    desc: >
+      Use every recorded state when some visits are missed, give partly known
+      states as a range with `Ocens()`, and see why leaving out the
+      incomplete visits overestimates death.
+    contents:
+      - articles/missing-states
   - title: Confidence intervals and treatment comparisons
     navbar: Confidence intervals
     desc: >

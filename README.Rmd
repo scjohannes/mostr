@@ -103,6 +103,7 @@ get-started guide. The other articles are on the website:
 - [Second-Order SOPs with the orm Engine](https://scjohannes.github.io/mostr/articles/second-order-orm-sops.html)
 - [Many Outcome Levels with a Previous-State Spline](https://scjohannes.github.io/mostr/articles/many-levels-previous-state-spline.html)
 - [Time as a Factor with the orm Engine](https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html)
+- [Visits with Unobserved States](https://scjohannes.github.io/mostr/articles/missing-states.html)
 - [Bayesian SOPs with the blrm Engine](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html)
 - [MVN Simulation Versus Bootstrap with the orm Engine](https://scjohannes.github.io/mostr/articles/mvn-vs-bootstrap-orm-sops.html)
 - [Fractional Weighted Bootstrap for SOPs](https://scjohannes.github.io/mostr/articles/fractional-weighted-bootstrap-sops.html)

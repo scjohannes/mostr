@@ -313,7 +313,9 @@ request `vcov = "conditional"` explicitly.
 Without `newdata`, predictions start from each fitted patient's row at the
 first follow-up time, `first_followup_time`: that row supplies the patient's
 starting state (`yprev`) and covariates. The model stores these rows before
-dropping rows with missing outcomes. Therefore:
+any row with a missing outcome is left out of the fit or, by default, fitted
+by adding up over the states the patient can have been in (see
+[the article on unobserved states](missing-states.html)). Therefore:
 
 - each patient must have exactly one row at that time, with ID, predictors,
   time, and `yprev` all observed;

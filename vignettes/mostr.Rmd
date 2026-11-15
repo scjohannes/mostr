@@ -233,6 +233,11 @@ a spline and compares arms by time benefit.
 [The article on time as a factor](https://scjohannes.github.io/mostr/articles/factor-time-orm-sops.html) treats each visit as a category of time and
 converts the results to days with `interpolate_sops()`.
 
+**What if some states were not recorded?**
+[The article on unobserved states](https://scjohannes.github.io/mostr/articles/missing-states.html) shows how to keep visits with a
+missing state in the data, give partly known states with `Ocens()`, and why
+leaving those visits out overestimates death.
+
 **Which confidence intervals should I use, and how are they calculated?**
 [The analytical confidence intervals article](https://scjohannes.github.io/mostr/articles/analytical-confidence-intervals.html) explains conditional and
 unconditional variance, compares treatments for each patient with

@@ -220,7 +220,9 @@
 #' `missing_states = "drop"` is biased even when states are missing at
 #' random if some states are recorded more reliably than others: with deaths
 #' always known and other states sometimes missing, the fitted rows contain
-#' too many deaths.
+#' too many deaths. The article
+#' [Visits with unobserved states](https://scjohannes.github.io/mostr/articles/missing-states.html)
+#' works through an example and compares the fits.
 #'
 #' Every visit in a run of unobserved visits needs all predictors of the
 #' model, because the model predicts the transitions into and out of it. The
@@ -236,9 +238,10 @@
 #' missed visit is enough. Spline knots are placed using those visits, so they can
 #' differ slightly from those of a fit that leaves out the unobserved visits.
 #' Unobserved states can't be combined
-#' with a second-order model (`p2_var`), with a penalty, with partial
-#' proportional odds or random effects for `"blrm"`, or with row weights
-#' that differ within a patient's run of unobserved visits. For `"orm"`,
+#' with a second-order model (`p2_var`), with a penalty or a link other
+#' than the logit for `"orm"`, with partial proportional odds, random
+#' effects or `iprior` for `"blrm"`, or with row weights that differ within
+#' a patient's run of unobserved visits. For `"orm"`,
 #' the standard errors and [inferences()] work as for other fits. For
 #' `"blrm"`, mostr compiles its own Stan program the first time such a model
 #' is fitted, which takes a minute or more and needs a C++ toolchain; the

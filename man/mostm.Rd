@@ -275,7 +275,9 @@ sicker, no method that uses only the recorded states is free of bias.
 \code{missing_states = "drop"} is biased even when states are missing at
 random if some states are recorded more reliably than others: with deaths
 always known and other states sometimes missing, the fitted rows contain
-too many deaths.
+too many deaths. The article
+\href{https://scjohannes.github.io/mostr/articles/missing-states.html}{Visits with unobserved states}
+works through an example and compares the fits.
 
 Every visit in a run of unobserved visits needs all predictors of the
 model, because the model predicts the transitions into and out of it. The
@@ -291,9 +293,10 @@ before at least one such visit. A death that is only ever recorded after a
 missed visit is enough. Spline knots are placed using those visits, so they can
 differ slightly from those of a fit that leaves out the unobserved visits.
 Unobserved states can't be combined
-with a second-order model (\code{p2_var}), with a penalty, with partial
-proportional odds or random effects for \code{"blrm"}, or with row weights
-that differ within a patient's run of unobserved visits. For \code{"orm"},
+with a second-order model (\code{p2_var}), with a penalty or a link other
+than the logit for \code{"orm"}, with partial proportional odds, random
+effects or \code{iprior} for \code{"blrm"}, or with row weights that differ within
+a patient's run of unobserved visits. For \code{"orm"},
 the standard errors and \code{\link[=inferences]{inferences()}} work as for other fits. For
 \code{"blrm"}, mostr compiles its own Stan program the first time such a model
 is fitted, which takes a minute or more and needs a C++ toolchain; the
