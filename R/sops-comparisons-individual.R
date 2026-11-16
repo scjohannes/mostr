@@ -18,7 +18,9 @@
 #'   is predicted with the variable set to each value, and the first value is
 #'   the reference. See [avg_comparisons()] for the values a bare name selects
 #'   and for a variable that the model doesn't use, whose comparisons are 0
-#'   (1 for a ratio) with `NA` standard errors, tests and intervals.
+#'   (1 for a ratio) with `NA` standard errors, tests and intervals. The
+#'   model's time column and its `gap_var` column cannot be compared: they
+#'   are set at each visit from `times`.
 #' @param by `FALSE` (the default) or `NULL` returns one comparison per
 #'   profile. `TRUE` averages the comparisons over all profiles, and a
 #'   character vector of column names averages them within the groups those

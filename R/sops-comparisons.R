@@ -24,7 +24,9 @@
 #'   difference and 1 for a ratio, with no uncertainty to report: its standard
 #'   error, test and confidence interval from [inferences()], and the
 #'   posterior interval of a `blrm` fit, are `NA`, as in the marginaleffects
-#'   package. Check the spelling if this happens unexpectedly.
+#'   package. Check the spelling if this happens unexpectedly. The model's
+#'   time column and its `gap_var` column cannot be compared: they are set at
+#'   each visit from `times`.
 #' @param estimand Character scalar. One of `"sop"`, `"time_in_state"`, or
 #'   `"time_benefit"`.
 #' @param state_sets State selection for `"sop"` and `"time_in_state"`. `NULL`
