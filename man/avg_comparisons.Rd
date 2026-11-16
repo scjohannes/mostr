@@ -219,16 +219,47 @@ from \code{newdata} first.
 }
 
 \examples{
-\dontrun{
-avg_comparisons(
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+fit <- mostm(
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
+  id_var = "id",
+  absorb = "8"
+)
+
+# Average effect of treatment on the expected days outside hospital and in
+# hospital over days 1 to 14, with delta-method confidence intervals
+days_difference <- avg_comparisons(
   fit,
   variables = list(tx = c(0, 1)),
   estimand = "time_in_state",
-  state_sets = "1",
-  times = 1:30
-) |>
-  inferences(method = "mvn", n_draws = 500)
-}
+  state_sets = list(home = c("1", "2"), hospital = as.character(3:7)),
+  times = 1:14
+)
+inferences(days_difference, method = "delta")
+
+# Effect on the probability of death on each day
+death_difference <- avg_comparisons(
+  fit,
+  variables = list(tx = c(0, 1)),
+  state_sets = list(dead = "8"),
+  times = 1:14
+)
+inferences(death_difference, method = "delta")
+
+# Time benefit: for each day, the probability that a state drawn from the
+# treatment distribution is better than one drawn independently from the
+# control distribution, minus the probability that it is worse, summed
+# over days 1 to 14
+avg_comparisons(
+  fit,
+  variables = list(tx = c(0, 1)),
+  estimand = "time_benefit",
+  times = 1:14
+)
 
 }
 \seealso{

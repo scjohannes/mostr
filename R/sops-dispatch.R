@@ -25,6 +25,28 @@
 #'   `[draw, patient, time, state]`. The state dimension is named by the
 #'   fitted states.
 #' @inheritSection sops Settings taken from the fit
+#' @examples
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
+#'
+#' # The first visit of three patients, with different starting states
+#' patients <- model_data[model_data$time == 1, ][1:3, ]
+#'
+#' # An array of probabilities: patient by day by state
+#' probabilities <- soprob_markov(fit, newdata = patients, times = 1:14)
+#' dim(probabilities)
+#'
+#' # Probability of each state on day 14 for each patient; each row sums to 1
+#' round(probabilities[, "14", ], 3)
+#' rowSums(probabilities[, "14", ])
 #' @export
 soprob_markov <- function(
   model,

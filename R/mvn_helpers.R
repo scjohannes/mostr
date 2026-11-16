@@ -206,24 +206,25 @@ set_coef.vglm <- function(model, new_coefs) {
 #' [mostm()] is returned unchanged.
 #'
 #' @examples
-#' \dontrun{
-#' library(VGAM)
+#' # 200 simulated patients followed for 14 days; state 8, death, is
+#' # absorbing
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
 #'
-#' # Fit a model
-#' fit <- vglm(y ~ yprev + time + tx,
-#'             family = cumulative(parallel = TRUE, reverse = TRUE),
-#'             data = mydata)
+#' # The robust covariance stored by mostm(), clustered by patient. The
+#' # square roots of its diagonal entries are the robust standard errors.
+#' robust <- get_vcov_robust(fit)
+#' sqrt(diag(robust))[c("time", "tx")]
 #'
-#' # Robust (unclustered) vcov
-#' V1 <- get_vcov_robust(fit)
-#'
-#' # Cluster-robust vcov using formula (extracts 'id' from model's data)
-#' V2 <- get_vcov_robust(fit, cluster = ~id)
-#'
-#' # Pre-computed robust vcov
-#' fit_robust <- robcov_vglm(fit, cluster = mydata$id)
-#' V3 <- get_vcov_robust(fit_robust)  # Same as fit_robust$var
-#' }
+#' # Recomputed with the HC1 correction for the number of coefficients
+#' robust_hc1 <- get_vcov_robust(fit, cluster = ~id, type = "HC1")
+#' sqrt(diag(robust_hc1))[c("time", "tx")]
 #'
 #' @seealso [mostm()], [robcov_vglm()], [set_coef()]
 #'
