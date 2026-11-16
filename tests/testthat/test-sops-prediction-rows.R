@@ -11,7 +11,7 @@ prediction_rows_fits <- local({
   cache <- NULL
   function() {
     if (is.null(cache)) {
-      data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6101)
+      data <- make_test_data(n_patients = 40, times = 1:6, seed = 6101)
       data$bmi <- 20 + data$id %% 7
       data <- data[order(data$id, data$time), , drop = FALSE]
       data$ypprev <- stats::ave(
@@ -94,7 +94,7 @@ test_that("soprob_markov() and plot_lp_difference() refuse a missing predictor, 
     expect_error(
       plot_lp_difference(
         fits[[engine]],
-        profile = profiles[2, ],
+        newdata = profiles[2, ],
         variables = list(tx = c(0, 1)),
         times = 1:3
       ),
@@ -120,7 +120,7 @@ test_that("plot_lp_difference() plots a profile whose factor yprev has only its 
     plot_data <- function(profile) {
       plot_lp_difference(
         fits[[engine]],
-        profile = profile,
+        newdata = profile,
         variables = list(tx = c(0, 1)),
         times = 1:3
       )$data
@@ -190,7 +190,7 @@ known_bug_fits <- local({
   cache <- NULL
   function() {
     if (is.null(cache)) {
-      data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6101)
+      data <- make_test_data(n_patients = 40, times = 1:6, seed = 6101)
       data$bmi <- 20 + data$id %% 7
       formula <- ordered(y) ~ time + tx + yprev + bmi
       cache <<- list(

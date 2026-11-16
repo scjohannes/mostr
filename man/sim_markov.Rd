@@ -10,12 +10,12 @@ sim_markov(
   treatment_prob = 0.5,
   treatment_effect = NULL,
   treatment_effect_decay = 0,
-  follow_up_time = 28,
+  times = 1:28,
   baseline_data = NULL,
   intercepts = NULL,
   lp_function = NULL,
   extra_params = NULL,
-  absorbing_states = NULL,
+  absorb = NULL,
   covariate_names = NULL,
   seed = NULL
 )
@@ -43,7 +43,12 @@ mean that treatment helps. \code{NULL} (the default) uses the preset's value:
 treatment effect per day. The effect on day \code{t} is \code{treatment_effect * exp(-treatment_effect_decay * (t - 1))}, so \code{-log(0.01) / 14} shrinks it to
 1\% of its day-1 size by day 15. The default 0 gives a constant effect.}
 
-\item{follow_up_time}{Number of days to simulate (default: 28).}
+\item{times}{The days to simulate, in increasing order and each listed
+once (default: \code{1:28}, four weeks of daily states). Each value is one
+transition, from the state at the previous value (or, for the first, from
+\code{yprev} in \code{baseline_data}), and is passed to \code{lp_function} as \code{t}. As in
+\code{\link[=sops]{sops()}}, leaving out days does not skip time: \code{times = c(1, 7, 14)}
+simulates three transitions, not two weeks.}
 
 \item{baseline_data}{A data frame with one row per patient, replacing the
 patients that a preset would sample. It must contain \code{id}, \code{yprev} (the
@@ -82,7 +87,7 @@ values make worse states more likely. Required when \code{preset = NULL}.}
 coefficients, passed unchanged to \code{lp_function}. \code{NULL} uses the preset's
 coefficients.}
 
-\item{absorbing_states}{Integer vector of states that patients cannot leave
+\item{absorb}{Integer vector of states that patients cannot leave
 once they enter them. \code{NULL} (the default) means the worst state,
 \code{length(intercepts) + 1}, which is death in every preset. Use \code{integer()}
 when no state is absorbing.}
@@ -101,7 +106,7 @@ stream.}
 A data frame with one row per patient and day and columns:
 \itemize{
 \item \code{id}: patient identifier
-\item \code{time}: day, from 1 to \code{follow_up_time}
+\item \code{time}: day, the values of \code{times}
 \item \code{y}: state on this day
 \item \code{yprev}: state on the previous day
 \item all other columns of \code{baseline_data}, such as \code{tx}
@@ -166,7 +171,7 @@ decaying <- sim_markov(
 
 # Your own patients with the ACTT-1 model
 patients <- data.frame(id = 1:4, yprev = c(5, 5, 7, 7), tx = c(0, 1, 0, 1))
-sim_markov("actt1", baseline_data = patients, follow_up_time = 7, seed = 1)
+sim_markov("actt1", baseline_data = patients, times = 1:7, seed = 1)
 
 # Your own model with three states: 1 = home, 2 = in hospital, 3 = dead
 baseline <- data.frame(id = 1:20, yprev = 2, tx = rep(0:1, 10))
@@ -177,7 +182,7 @@ hospital_lp <- function(yprev, t, tx, treatment_effect, extra_params) {
 trajectories <- sim_markov(
   NULL,
   baseline_data = baseline,
-  follow_up_time = 10,
+  times = 1:10,
   intercepts = c(-9, -3),
   lp_function = hospital_lp,
   treatment_effect = log(0.8),
@@ -193,7 +198,7 @@ death_only_lp <- function(yprev, t, tx, treatment_effect, extra_params) {
 trajectories_ppo <- sim_markov(
   NULL,
   baseline_data = baseline,
-  follow_up_time = 10,
+  times = 1:10,
   intercepts = c(-9, -3),
   lp_function = death_only_lp,
   treatment_effect = log(0.8),

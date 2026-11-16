@@ -763,7 +763,7 @@ test_that("plot_lp_difference plots profile-based contrasts by previous state", 
     {
       plot <- plot_lp_difference(
         model,
-        profile = profile,
+        newdata = profile,
         variables = list(tx = c(0, 1)),
         times = 1:2,
         previous_states = 1:2
@@ -801,7 +801,7 @@ test_that("plot_lp_difference supports blrm posterior median linear predictors",
     {
       plot <- plot_lp_difference(
         model,
-        profile = profile,
+        newdata = profile,
         variables = list(tx = c(0, 1)),
         times = 1:2,
         previous_states = 1:2
@@ -935,7 +935,7 @@ test_that("plot_lp_difference() on a real fit leaves out the absorbing state, fo
       markov_settings_update(markov_model_settings(fit), absorb = NULL)
     )
     args <- list(
-      profile = grid_profiles(cell)[1, , drop = FALSE],
+      newdata = grid_profiles(cell)[1, , drop = FALSE],
       variables = list(tx = c(0, 1)),
       times = 1:4
     )

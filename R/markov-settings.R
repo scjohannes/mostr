@@ -424,7 +424,7 @@ validate_mostm_absorb <- function(
       column,
       " %in% ",
       deparse1(absorb_labels),
-      ", ]`; `prepare_markov_data(absorbing_state = )` does this for the ",
+      ", ]`; `prepare_markov_data(absorb = )` does this for the ",
       "previous state."
     )
   }

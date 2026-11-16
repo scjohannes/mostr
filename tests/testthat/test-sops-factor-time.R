@@ -96,7 +96,7 @@ make_absorbing_factor_visit_data <- function(n_patients = 80, seed = 20260531) {
   list(
     data = prepare_markov_data(
       visit_data,
-      absorbing_state = 8L,
+      absorb = 8L,
       factor_previous = TRUE
     ),
     visit_days = visit_days,
@@ -627,7 +627,7 @@ test_that("averaged bootstrap draws use draw-specific baseline distributions", {
 
   auc <- time_in_state(
     x,
-    target_states = "1",
+    state_sets = "1",
     time_map = c(v1 = 3, v2 = 7),
     target_times = 0:7
   )
@@ -675,7 +675,7 @@ test_that("time_in_state restricts stored draws to the requested time range", {
     target_times = 0:7
   )
 
-  result <- time_in_state(interpolated, target_states = "1", target_times = 3:5)
+  result <- time_in_state(interpolated, state_sets = "1", target_times = 3:5)
   result <- result[order(result$tx), , drop = FALSE]
   draws <- attr(result, "draws")
   draws <- draws[order(draws$tx, draws$draw_id), , drop = FALSE]
@@ -706,15 +706,15 @@ test_that("time_in_state() gives NA limits and one warning for SOPs with limits 
     x <- add_interpolation_intervals(point)
     attr(x, "method") <- method
     calls <- list(
-      visits = function(sops) time_in_state(sops, target_states = "1"),
+      visits = function(sops) time_in_state(sops, state_sets = "1"),
       real_time = function(sops) {
-        time_in_state(sops, target_states = "1", time_map = time_map)
+        time_in_state(sops, state_sets = "1", time_map = time_map)
       },
       interpolated = function(sops) {
         interpolated <- suppressWarnings(
           interpolate_sops(sops, time_map = time_map, target_times = 0:7)
         )
-        time_in_state(interpolated, target_states = "1")
+        time_in_state(interpolated, state_sets = "1")
       }
     )
     for (label in names(calls)) {
@@ -744,7 +744,7 @@ test_that("time_in_state() gives NA limits and one warning for SOPs with limits 
   }
 
   # SOPs without limits give totals without limits and no warning.
-  expect_no_warning(totals <- time_in_state(point, target_states = "1"))
+  expect_no_warning(totals <- time_in_state(point, state_sets = "1"))
   expect_false(any(c("conf.low", "conf.high", "std.error") %in% names(totals)))
 })
 
@@ -753,7 +753,7 @@ test_that("time_in_state uses trapezoidal AUC on mapped real time", {
 
   auc <- time_in_state(
     x,
-    target_states = "1",
+    state_sets = "1",
     time_map = c(v1 = 3, v2 = 7),
     baseline_time = NULL
   )
@@ -764,7 +764,7 @@ test_that("time_in_state uses trapezoidal AUC on mapped real time", {
 
   baseline_auc <- time_in_state(
     x,
-    target_states = "1",
+    state_sets = "1",
     time_map = c(v1 = 3, v2 = 7),
     baseline_time = 0,
     target_times = 0:7
@@ -783,7 +783,7 @@ test_that("time_in_state uses trapezoidal AUC on mapped real time", {
   )
   default_auc <- time_in_state(
     x,
-    target_states = "1",
+    state_sets = "1",
     time_map = c(v1 = 3, v2 = 7)
   )
   default_auc <- default_auc[order(default_auc$tx), , drop = FALSE]
@@ -791,7 +791,7 @@ test_that("time_in_state uses trapezoidal AUC on mapped real time", {
 
   day_1_auc <- time_in_state(
     x,
-    target_states = "1",
+    state_sets = "1",
     time_map = c(v1 = 3, v2 = 7),
     baseline_time = 0,
     target_times = 1:7
@@ -811,7 +811,7 @@ test_that("time_in_state uses trapezoidal AUC on mapped real time", {
     target_times = 1:7,
     baseline_time = 0
   )
-  interpolated_auc <- time_in_state(interpolated, target_states = "1")
+  interpolated_auc <- time_in_state(interpolated, state_sets = "1")
   interpolated_auc <- interpolated_auc[
     order(interpolated_auc$tx),
     ,

@@ -43,7 +43,7 @@ test_that("lsp time bases give the same SOPs through the compiled plan and the R
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 140, seed = 2471, follow_up_time = 12)
+  data <- make_test_data(n_patients = 140, seed = 2471, times = 1:12)
   baseline <- data[data$time == 1, , drop = FALSE][1:8, , drop = FALSE]
   vglm_fit <- suppressWarnings(
     mostr::mostm(

@@ -3,7 +3,7 @@ test_that("each engine stores its fitting data and the patient ID column", {
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1001)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1001)
   # `last_time` is the last visit kept by `subset`, or NULL for all visits.
   # `check` holds the checks of one engine.
   engines <- list(
@@ -84,7 +84,7 @@ test_that("the vglm engine forwards robust covariance corrections", {
   skip_on_cran()
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1019)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1019)
   fit <- mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
@@ -112,7 +112,7 @@ test_that("mostm() validates numeric first follow-up schedules", {
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1016)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1016)
   no_one <- data
   no_one$time <- no_one$time + 1
   expect_snapshot(
@@ -176,7 +176,7 @@ test_that("the vglm engine aligns stored fitting data after subset and NA drops"
   skip_on_cran()
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1007)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1007)
   data$time_lin[2] <- NA_real_
 
   fit <- mostm(
@@ -211,7 +211,7 @@ test_that("the vglm engine aligns stored fitting data after subset and NA drops"
 test_that("the orm engine stores fitting data and applies robust covariance", {
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1002)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1002)
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -247,7 +247,7 @@ test_that("the blrm engine stores fitting data without sampling when requested",
   skip_if_not_installed("rms")
   skip_if_not_installed("rmsb")
 
-  data <- make_test_data(n_patients = 12, follow_up_time = 6, seed = 1005)
+  data <- make_test_data(n_patients = 12, times = 1:6, seed = 1005)
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -280,7 +280,7 @@ test_that("automatic SOP prediction never substitutes a later profile row", {
   skip_on_cran()
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1003)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1003)
   data <- data[!(data$id == 1 & data$time == min(data$time)), , drop = FALSE]
   fit <- mostm(
     ordered(y) ~ time_lin + time_nlin_1 + tx + yprev,
@@ -306,7 +306,7 @@ test_that("missing values leave complete starting profiles of the fitted patient
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  base <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1010)
+  base <- make_test_data(n_patients = 35, times = 1:6, seed = 1010)
   first_time <- min(base$time)
   vglm_args <- list(
     ordered(y) ~ time_lin + tx + yprev,
@@ -416,7 +416,7 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
 
   incomplete <- make_test_data(
     n_patients = 35,
-    follow_up_time = 6,
+    times = 1:6,
     seed = 1012
   )
   incomplete$tx[incomplete$id == 1 & incomplete$time == min(incomplete$time)] <-
@@ -440,7 +440,7 @@ test_that("incomplete and duplicated starting profiles fail clearly", {
 
   duplicated <- make_test_data(
     n_patients = 35,
-    follow_up_time = 6,
+    times = 1:6,
     seed = 1013
   )
   duplicate_row <- which(
@@ -474,7 +474,7 @@ test_that("factor and character time require explicit first follow-up values", {
   skip_if_not_installed("VGAM")
   local_reproducible_output(width = 80)
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1015)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1015)
   complete_ids <- as.integer(names(which(table(data$id) == 6L)))
   data <- data[data$id %in% complete_ids, , drop = FALSE]
   visits <- paste0("v", seq_len(6L))
@@ -551,7 +551,7 @@ test_that("SOP functions keep the stored refit data and number supplied newdata 
   skip_on_cran()
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 1014)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 1014)
   fit <- mostm(
     ordered(y) ~ time_lin + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
@@ -668,7 +668,7 @@ test_that("FWB inference on SOPs for each profile works with every frequentist e
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 1006)
+  data <- make_test_data(n_patients = 45, times = 1:6, seed = 1006)
   ids <- unique(data$id)
   sex_by_id <- stats::setNames(
     rep(c("female", "male"), length.out = length(ids)),

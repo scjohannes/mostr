@@ -9,7 +9,7 @@
 #' @param model A model fitted with [mostm()] and the `"orm"` or `"vglm"`
 #'   engine. [mostm()] stores the data used for fitting, and the bootstrap
 #'   resamples patients from those stored data.
-#' @param n_boot Number of bootstrap samples.
+#' @param n_draws Number of bootstrap refits, as `n_draws` in [inferences()].
 #' @param workers Number of workers for parallel processing. If NULL (default)
 #'   or 1, sequential processing is used. If > 1, uses parallel processing.
 #' @param use_coefstart Logical. If `TRUE`, each refit starts from the
@@ -79,7 +79,7 @@
 #' )
 #'
 #' # Resample the patients stored on the fit.
-#' bs_coefs <- bootstrap_model_coefs(fit, n_boot = 1000)
+#' bs_coefs <- bootstrap_model_coefs(fit, n_draws = 1000)
 #'
 #' # 95% percentile confidence intervals
 #' apply(
@@ -94,7 +94,7 @@
 
 bootstrap_model_coefs <- function(
   model,
-  n_boot,
+  n_draws,
   workers = NULL,
   use_coefstart = FALSE
 ) {
@@ -136,7 +136,7 @@ bootstrap_model_coefs <- function(
   boot_ids <- fast_group_bootstrap(
     data = data,
     id_var = id_var,
-    n_boot = n_boot
+    n_boot = n_draws
   )
 
   # Define analysis function
@@ -182,7 +182,7 @@ bootstrap_model_coefs <- function(
   )
 
   # Convert to a data frame with boot_id and one column per coefficient.
-  result <- named_list_to_wide(bs_coefs_list, id = seq_len(n_boot))
+  result <- named_list_to_wide(bs_coefs_list, id = seq_len(n_draws))
 
   return(result)
 }

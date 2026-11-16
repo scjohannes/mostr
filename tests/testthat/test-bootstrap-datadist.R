@@ -50,7 +50,7 @@ test_that("bootstrap refits of an orm fit ignore and keep a user's datadist", {
     )
   }
   coefs <- function() {
-    withr::with_seed(7, bootstrap_model_coefs(fit, n_boot = 3))
+    withr::with_seed(7, bootstrap_model_coefs(fit, n_draws = 3))
   }
 
   # Reference results with no `datadist` set.

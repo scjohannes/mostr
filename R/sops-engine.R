@@ -74,8 +74,8 @@
 #' }
 #'
 #' @examplesIf rlang::is_installed("rms")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' fit <- rms::orm(y ~ time + tx + yprev, data = markov_data, x = TRUE, y = TRUE)
 #' baseline <- markov_data[!duplicated(markov_data$id), , drop = FALSE]
 #' probabilities <- soprob_markov(

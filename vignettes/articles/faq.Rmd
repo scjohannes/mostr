@@ -15,8 +15,8 @@ with `absorb = "8"`.
 ```{r setup}
 library(mostr)
 
-trial <- sim_markov("actt2", n_patients = 150, follow_up_time = 14, seed = 1)
-model_data <- prepare_markov_data(trial, absorbing_state = 8)
+trial <- sim_markov("actt2", n_patients = 150, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trial, absorb = 8)
 fit <- mostm(
   y ~ yprev + time + tx,
   data = model_data,

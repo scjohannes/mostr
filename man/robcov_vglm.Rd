@@ -5,7 +5,7 @@
 \title{Robust (Sandwich) Covariance Matrix Estimation for vglm Objects}
 \usage{
 robcov_vglm(
-  fit,
+  model,
   cluster = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
@@ -13,12 +13,12 @@ robcov_vglm(
 )
 }
 \arguments{
-\item{fit}{A fitted vglm object from the VGAM package.}
+\item{model}{A fitted vglm object from the VGAM package.}
 
 \item{cluster}{Optional vector of cluster identifiers. If provided, computes
 cluster-robust standard errors. Must have the same length as the fitted
 observations, or the same length as the original pre-NA data when the fitted
-model records omitted rows in \code{fit@na.action}.}
+model records omitted rows in \code{model@na.action}.}
 
 \item{bread}{Character string selecting the sandwich bread. \code{"observed"}
 (the default) numerically differentiates the summed analytic scores.
@@ -180,8 +180,4 @@ robust_vcov_noadj <- robcov_vglm(
 )
 }
 
-}
-\seealso{
-\code{\link{compare_se_orm_vglm}} for comparing standard errors
-between orm and vglm fits
 }

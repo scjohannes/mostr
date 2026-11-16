@@ -6,16 +6,16 @@ local_spline_delta_orm_case <- local({
       state_levels <- as.character(seq_len(8L))
       raw_data <- make_markov_trajectories(
         n_patients = 48,
-        follow_up_time = 6,
+        times = 1:6,
         n_states = length(state_levels),
         thresholds = stats::qnorm(seq(0.05, 0.95, length.out = 7L)),
         allowed_start_state = as.integer(2:7),
-        absorbing_state = NULL,
+        absorb = NULL,
         seed = 2701
       )
       data <- prepare_markov_data(
         raw_data,
-        absorbing_state = NULL,
+        absorb = NULL,
         factor_previous = FALSE
       )
       data$y <- ordered(data$y, levels = state_levels)

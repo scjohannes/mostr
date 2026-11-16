@@ -44,6 +44,6 @@ Suggests:
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Config/Needs/website: patchwork
-Config/roxygen2/version: 8.1.0
+Config/roxygen2/version: 8.1.1
 URL: https://scjohannes.github.io/mostr/, https://github.com/scjohannes/mostr
 BugReports: https://github.com/scjohannes/mostr/issues
