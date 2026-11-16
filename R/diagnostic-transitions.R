@@ -41,6 +41,13 @@ plot_transitions_model_data <- function(
   if (identical(comparison, "difference") && is.null(variables)) {
     mostr_abort("`variables` is required when `comparison = \"difference\"`.")
   }
+  # The recursion sets the time and `gap_var` columns at each visit, so a
+  # value given in `variables` had no effect and the plotted difference was
+  # 0. The previous-state column stays allowed: it sets the starting state,
+  # as in `sops()`.
+  if (!is.null(variables)) {
+    stop_visit_columns_in_variables(variables, settings, plot = TRUE)
+  }
   setup <- plot_transition_model_setup(
     model = model,
     newdata = newdata,

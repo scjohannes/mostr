@@ -647,7 +647,11 @@ visit, `variables` cannot set them. `stop_visit_columns_in_variables()` in
 `resolve_comparison_variables()` before bare names are turned into values,
 refuses both in the six SOP, time and comparison functions.
 `plot_lp_difference()` and `plot_transitions()` do not use these resolvers
-and do not refuse them yet.
+and call it directly, with wording for plots (`plot_transitions()` in
+`plot_transitions_model_data()`). `plot_lp_difference()` also refuses the
+`p_var` column, because `plot_lp_grid()` sets it to each panel's previous
+state; `plot_transitions()` accepts it, since there it is the starting
+state.
 
 `warn_skipped_sop_visits()` in `R/sops-times.R` compares the requested times
 with the fitted visit schedule: the fitted levels for factor time

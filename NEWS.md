@@ -300,6 +300,14 @@
   standard error 0, and `avg_sops()` returned a garbled `time` column. Choose
   the visits with `times`, and real time with `time_map`.
 
+* `plot_lp_difference()` and `plot_transitions()` refuse the model's time
+  column and its `gap_var` column in `variables` for the same reason (#29):
+  `plot_transitions(comparison = "difference")` plotted a difference of 0,
+  and `plot_lp_difference()` stopped with an unclear error.
+  `plot_lp_difference()` also refuses the previous-state column (`p_var`) in
+  `variables`, because each panel sets it to that panel's previous state;
+  choose the previous states with `previous_states`.
+
 * The robust variance of `mostm(engine = "vglm")` fits no longer depends on
   the units of a covariate. The observed information was computed by finite
   differences with a step that did not follow the coefficient's units, so a

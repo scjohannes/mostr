@@ -34,7 +34,11 @@ one prediction row per ID.}
 
 \item{variables}{Optional named list with one counterfactual variable. For
 \code{comparison = "difference"}, at least two values are required and the
-first value is the reference.}
+first value is the reference. The variable cannot be the model's time
+column or its \code{gap_var} column (the time since the previous visit): the
+plot sets both at each visit from \code{times}, so a value given here would
+have no effect. Choose the visits with \code{times} instead. The previous-state
+column is allowed; its values set the state each patient starts from.}
 
 \item{times}{Optional current-time values to plot. Required for model-based
 plots.}

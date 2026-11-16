@@ -66,9 +66,17 @@ returned a garbled `time` column. Visits are chosen with `times`, and real
 time with `time_map`. The `time_covariates` columns of the issue no longer
 exist (removed 2026-11-13).
 
-**Not yet covered.** `plot_lp_difference()` and `plot_transitions()` have the
-same problem but do not use the shared resolvers; left for after the renaming
-of their arguments (issue #12).
+**Plots (added 2026-11-16, after the renaming of issue #12).**
+`plot_lp_difference()` and `plot_transitions()` had the same problem without
+using the shared resolvers, and now call `stop_visit_columns_in_variables()`
+too, with wording for plots. `plot_transitions(comparison = "difference")`
+plotted a difference of 0; `plot_lp_difference()` stopped with the unclear
+error "replacement has 1 row, data has 0". `plot_lp_difference()` also refuses
+the previous-state column (`p_var`): its grid sets that column to each
+panel's state after applying `variables`, so the value was lost in the same
+way; the panels are chosen with `previous_states`. `plot_transitions()` keeps
+accepting `p_var` in `variables`, because there it sets the starting state,
+as in `sops()`.
 
 ## 2026-11-16: Exported argument names settled before the first CRAN release
 

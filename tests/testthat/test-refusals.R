@@ -913,6 +913,66 @@ test_that("SOP functions refuse the time and gap columns in `variables`", {
   check_refusals(visit_column_refusals)
 })
 
+# The two plots that run the recursion set the same columns at every visit
+# (`assign_sop_visit()`), so a value given in `variables` had no effect there
+# either: the plotted difference was 0. `plot_lp_difference()` also sets the
+# previous-state column to the state of each panel, which overwrote a
+# `variables` value for it.
+plot_lp_refusal <- function(cell, variables) {
+  plot_lp_difference(
+    grid_fit(cell),
+    newdata = grid_profiles(cell)[1, , drop = FALSE],
+    variables = variables,
+    times = grid_times(cell)
+  )
+}
+
+plot_visit_column_refusals <- list(
+  refusal(
+    "P70", "the time column in `variables` of `plot_lp_difference()`",
+    function() plot_lp_refusal(refusal_orm, list(time = c(1, 2))),
+    "set at each visit from `times`"
+  ),
+  refusal(
+    "P71", "the gap column in `variables` of `plot_lp_difference()`",
+    function() plot_lp_refusal(grid_cell("orm", visit = "gap"), list(gap = c(1, 2))),
+    "set at each visit from `times`"
+  ),
+  refusal(
+    "P72", "the previous-state column in `variables` of `plot_lp_difference()`",
+    function() plot_lp_refusal(refusal_orm, list(yprev = c(1, 2))),
+    "Choose the previous states with `previous_states`"
+  ),
+  refusal(
+    "P73", "the time column in `variables` of `plot_transitions()`",
+    function() {
+      refusal_call(
+        plot_transitions,
+        variables = list(time = c(1, 2)),
+        comparison = "difference"
+      )
+    },
+    "set at each visit from `times`"
+  ),
+  refusal(
+    "P74", "the gap column in `variables` of `plot_transitions()`",
+    function() {
+      refusal_call(
+        plot_transitions,
+        grid_cell("orm", visit = "gap"),
+        variables = list(gap = c(1, 2)),
+        comparison = "difference"
+      )
+    },
+    "set at each visit from `times`"
+  )
+)
+
+test_that("plots refuse the columns they set at each visit in `variables`", {
+  skip_on_cran()
+  check_refusals(plot_visit_column_refusals)
+})
+
 prediction_refusals_with_extra_fits <- list(
   refusal(
     "P50", "a second-order profile whose state two visits back is absorbing",
