@@ -12,6 +12,64 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-16: Help-page examples run, each with its own short set-up
+
+**Decided** (issue #26). Every exported function's help page has examples
+that `R CMD check` runs. Each example repeats a short set-up:
+`sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)`,
+`prepare_markov_data(absorb = 8)` and `mostm()` with the default orm engine
+and optimizer (entry of 2026-11-08), then calls the function. Sizes and
+draws:
+
+- **orm examples: 200 patients over 14 days.** With 100 patients over 10 days
+  state 3 occurs about 7 times, and 0.3% to 1.5% of multivariate normal draws
+  of the coefficients (3 seeds, 4000 draws each, model-based covariance) give
+  crossed cut-points, so `inferences(method = "mvn")` stops with an error for
+  some draws; at 200 patients over 14 days, none of 4000 draws crossed for any
+  of 3 seeds. The draws come from an eigen decomposition, whose eigenvector
+  signs can differ between BLAS libraries, so a seed does not make a fragile
+  data set safe on every platform.
+- **vglm examples: 100 patients over 10 days.** The vglm engine's robust
+  covariance dominates their time: 4.9 s to fit 200 patients over 14 days
+  with a factor previous state, against 1.8 s at 100 over 10. Over 5 seeds,
+  100 or 150 patients over 7 days gave VGAM warnings or a covariance that is
+  not positive definite for 1 or 2 seeds; 100 over 10 gave none. The four
+  `robcov_vglm` method examples moved from 40 patients over 6 days, which
+  printed VGAM warnings about intersecting predictors, to this size, and the
+  `?mostm` example from 200 patients over 14 days (6.6 s) to 100 over 10.
+- **20 coefficient draws, 10 refits.** The SOP recursion is repeated for
+  every draw (about 0.05 s for 200 patients and two arms), so `n_draws = 20`
+  for `method = "mvn"`, 10 refits in `bootstrap_model_coefs()`, and 10 in
+  the `\donttest{}` refit bootstraps. The comments say to use 1000 or more.
+- **`avg_comparisons()` shows no draws.** It is the first example that
+  fits a model in `R CMD check`'s alphabetical order, so it also pays about
+  2.5 s for loading rms and Hmisc.
+- **The `blrm` fit stays in `\donttest{}`.** Every `blrm` fit tried took 35 to
+  90 s of Stan sampling here. The previous example (ACTT-2, 60 patients over
+  14 days, `ppo = ~time`) took 72 s with 149 divergent transitions;
+  proportional-odds ACTT-2 fits warned about low effective sample sizes.
+  60 VIOLET patients over 10 days with `ppo = ~time` and `loo = FALSE` gave no
+  warnings in about 45 s; the VIOLET preset simulates a partial
+  proportional-odds time effect.
+
+**Timings** (AMD Ryzen AI 9 HX 370, R 4.6.1, rms 8.2.1, VGAM 1.1-14, installed
+build, all examples in one session as in `R CMD check`). Without
+`\donttest{}`: the slowest are `avg_comparisons` 4.1 s (including loading
+rms), `vcov.robcov_vglm` 2.7 s, `plot_sops` 2.5 s, `coef.robcov_vglm` 2.4 s,
+`plot_comparisons` and `mostm` 2.3 s; `R CMD check --as-cran` with
+`_R_CHECK_EXAMPLE_TIMING_THRESHOLD_=5` reported no example over 5 s, and all
+examples took 53 s. With `\donttest{}`: `mostm` 49 s, `inferences` 4.3 s,
+`avg_comparisons` 4.2 s, `avg_sops` 4.0 s; all examples took 105 s.
+`--as-cran` runs `\donttest{}` examples too.
+
+**Rejected.** A fitted orm or vglm object stored in `data/`: these objects
+change with rms and VGAM versions, and `mostm()` stores its data and settings
+on the fit, so a stored fit could break with any new version of either
+package. An internal helper that returns an example fit: the examples would
+no longer show how to fit a model, and they could not be copied and run
+outside the package. `\dontrun{}` for the `blrm` fit: it can run, it is only
+slow, which is what `\donttest{}` is for.
+
 ## 2026-11-16: Robust and unconditional variance do not depend on covariate units
 
 **Decided.** The vglm observed information (`compute_observed_bread_vglm()`)

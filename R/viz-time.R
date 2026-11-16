@@ -57,20 +57,29 @@
 #' `avg_comparisons(estimand = "time_in_state")` and [plot_comparisons()].
 #'
 #' @examples
-#' \dontrun{
-#' tis <- avg_state_time(
-#'   fit,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:28
-#' ) |>
-#'   inferences(method = "delta")
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
 #'
-#' # How the 28 days are divided between states in each arm
-#' plot_time(tis)
+#' # Expected days in each state over days 1 to 14, with all patients under
+#' # control and then all under treatment
+#' days <- inferences(
+#'   avg_state_time(fit, variables = list(tx = c(0, 1)), times = 1:14),
+#'   method = "delta"
+#' )
 #'
-#' # Average days in each state with 95% confidence intervals
-#' plot_time(tis, geom = "pointrange")
-#' }
+#' # How the 14 days are divided between the states in each arm
+#' plot_time(days)
+#'
+#' # Expected days in each state with 95% confidence intervals
+#' plot_time(days, geom = "pointrange")
 #'
 #' @export
 plot_time <- function(

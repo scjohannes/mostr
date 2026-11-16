@@ -55,6 +55,17 @@ rather than model type. Packages that only these articles use belong in
 messages are the package's current ones. `README.md` is rendered from `README.Rmd` with
 `devtools::build_readme()`, which writes its figures to `man/figures/README-*`.
 
+Every exported function's help page has examples that run in `R CMD check`
+(issue #26). Each example is self-contained: it simulates
+`sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)`, prepares it
+with `prepare_markov_data(absorb = 8)`, fits `mostm()` with the default orm
+engine, and then calls the function. There is no shared example fit in `data/`
+or in an internal helper. vglm examples use 100 patients over 10 days because
+the vglm robust covariance dominates their time. Simulation intervals use 20
+draws; refitting bootstraps and the `blrm` fit in `?mostm` are in
+`\donttest{}`, which `R CMD check --as-cran` also runs. `dev/decisions.md`
+(2026-11-16) gives the sizes, timings and rejected options.
+
 `man/figures/logo.png` supplies the README and pkgdown logo. The vignette and all
 articles source `vignettes/_setup.R`, which keeps code and figures visible and wraps text output
 longer than ten lines in native HTML `details` elements. Non-HTML output retains

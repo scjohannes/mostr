@@ -73,18 +73,6 @@
 #'   \item **Bayesian fit:** An array of dimension \code{[n_draws x n_patients x n_times x n_states]}.
 #' }
 #'
-#' @examplesIf rlang::is_installed("rms")
-#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorb = 8)
-#' fit <- rms::orm(y ~ time + tx + yprev, data = markov_data, x = TRUE, y = TRUE)
-#' baseline <- markov_data[!duplicated(markov_data$id), , drop = FALSE]
-#' probabilities <- soprob_markov(
-#'   fit,
-#'   newdata = baseline,
-#'   times = 1:3
-#' )
-#' dim(probabilities)
-#'
 #' @noRd
 soprob_markov_r_engine <- function(
   model,

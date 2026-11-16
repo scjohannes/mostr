@@ -169,47 +169,36 @@ compute_ci_from_draws <- function(
 #' weights when they are attached.
 #'
 #' @examples
-#' \dontrun{
-#' # Create object with bootstrap draws
-#' result <- avg_sops(
-#'   model = fit,
-#'   newdata = data,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:30
-#' ) |>
-#'   inferences(method = "bootstrap", n_draws = 1000, return_draws = TRUE)
+#' # 200 simulated patients followed for 14 days; state 8, death, is
+#' # absorbing
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
 #'
-#' # Extract draws
-#' draws <- get_draws(result)
+#' # Average SOPs under control and under treatment, with 20 draws of the
+#' # coefficients; use 1000 or more in an analysis
+#' sops_by_arm <- inferences(
+#'   avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:14),
+#'   method = "mvn",
+#'   n_draws = 20,
+#'   seed = 1
+#' )
 #'
-#' # Plot distribution for state 1 at time 10 under treatment
-#' library(ggplot2)
-#' draws |>
-#'   filter(time == 10, state == 1, tx == 1) |>
-#'   ggplot(aes(x = draw)) +
-#'   geom_histogram(bins = 30) +
-#'   labs(title = "Distribution: P(State 1 | Time 10, Treatment)")
+#' # One row per draw and result row; the column draw holds the draw's value
+#' draws <- get_draws(sops_by_arm)
+#' head(draws)
 #'
-#' # Compute mean time in state 1 with bootstrap CI
-#' library(dplyr)
-#' time_in_state_boot <- draws |>
-#'   filter(state == 1, tx == 1) |>
-#'   group_by(draw_id) |>
-#'   summarise(total_time = sum(draw))
+#' # The probability of death on day 14 in each draw, one column per arm
+#' dead <- draws[draws$time == 14 & draws$state == "8", ]
+#' dead <- tapply(dead$draw, list(dead$draw_id, dead$tx), sum)
 #'
-#' quantile(time_in_state_boot$total_time, c(0.025, 0.5, 0.975))
-#'
-#' # Compare treatment effect on time in state
-#' treatment_effect <- draws |>
-#'   filter(state == 1) |>
-#'   group_by(draw_id, tx) |>
-#'   summarise(total_time = sum(draw), .groups = "drop") |>
-#'   pivot_wider(names_from = tx, values_from = total_time,
-#'               names_prefix = "tx") |>
-#'   mutate(effect = tx1 - tx0)
-#'
-#' quantile(treatment_effect$effect, c(0.025, 0.5, 0.975))
-#' }
+#' # A 95% interval for the risk ratio of death on day 14, from the same draws
+#' stats::quantile(dead[, "1"] / dead[, "0"], c(0.025, 0.5, 0.975))
 #'
 #' @seealso [inferences()], [avg_sops()]
 #'

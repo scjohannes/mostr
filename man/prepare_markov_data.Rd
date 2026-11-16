@@ -71,32 +71,41 @@ states (e.g., discharge home and death), specify them as a vector. For example,
 (home) or state 6 (death).
 }
 \examples{
-\dontrun{
-# Prepare data with single absorbing state (death only)
-model_data <- prepare_markov_data(trajectories, absorb = 6)
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8 is death. sim_markov()
+# keeps the rows after death, with state 8 on every later day.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
 
-# Prepare data with multiple absorbing states (home and death)
-model_data <- prepare_markov_data(trajectories, absorb = c(1, 6))
+# Death is absorbing: remove the rows that start in state 8
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+c(before = nrow(trajectories), after = nrow(model_data))
+str(model_data)
 
-# Fit a proportional-odds transition model with the default orm engine
+# Fit a transition model to the prepared data
 fit <- mostm(
-  y ~ tx + rms::rcs(time, 4) + yprev,
-  data = model_data,
-  id_var = "id"
-)
-
-# Keep yprev numeric to use one linear or nonlinear previous-state effect
-model_data <- prepare_markov_data(
-  trajectories,
-  absorb = 6,
-  factor_previous = FALSE
-)
-fit <- mostm(
-  ordered(y) ~ tx + rms::rcs(time, 4) + rms::rcs(yprev, 6),
+  y ~ yprev + rms::rcs(time, 3) + tx,
   data = model_data,
   id_var = "id",
-  engine = "vglm"
+  absorb = "8"
 )
-}
+
+# Keep the previous state numeric, for one linear previous-state effect
+# instead of one coefficient per state
+numeric_data <- prepare_markov_data(
+  trajectories,
+  absorb = 8,
+  factor_previous = FALSE
+)
+fit_linear <- mostm(
+  y ~ yprev + rms::rcs(time, 3) + tx,
+  data = numeric_data,
+  id_var = "id",
+  absorb = "8"
+)
+
+# Several absorbing states: also treat leaving hospital (states 1 and 2)
+# as final, as in an analysis of time to discharge
+discharge_data <- prepare_markov_data(trajectories, absorb = c(1, 2, 8))
+nrow(discharge_data)
 
 }
