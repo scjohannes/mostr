@@ -306,7 +306,28 @@ the standard errors and \code{\link[=inferences]{inferences()}} work as for othe
 \code{"blrm"}, mostr compiles its own Stan program the first time such a model
 is fitted, which takes a minute or more and needs a C++ toolchain; the
 compiled program is kept in the directory \code{tools::R_user_dir("mostr", "cache")} for later sessions (set \code{options(mostr.stan_cache = )} to
-another directory, or to \code{FALSE} to keep it for the session only).
+another directory, or to \code{FALSE} to keep it for the session only). The
+model and priors are those of \code{\link[rmsb:blrm]{rmsb::blrm()}}, but the program samples the
+intercepts and coefficients on a scale taken from a maximum likelihood fit
+of the same model without random effects, which mostr computes first
+(usually in a second or less), so that the sampler starts with step sizes
+that suit them. This gives the same posterior with fewer sampler steps: on
+1,000 patients with 30 visits each and half the states unobserved, about
+a third of the steps without random effects, and with \code{cluster(id)} about
+half at the same target acceptance rate (\code{adapt_delta} 0.8). If that
+maximum likelihood fit fails, the program samples on a rough scale
+instead, which is slower but gives the same posterior.
+With \code{cluster()}, \code{adapt_delta} is 0.9 instead of Stan's 0.8, because with
+little variation between patients a few chains otherwise had divergent
+transitions, a sign that the draws may miss part of the posterior. This
+takes smaller steps (in the example above, about 80\% of the steps that
+sampling without the maximum likelihood scale needed at 0.8). Set it
+yourself with
+\code{sampling.args = list(control = list(adapt_delta = ))} (rstan) or
+\code{sampling.args = list(adapt_delta = )} (\code{backend = "cmdstan"}). Leave the
+sampler's initial values to Stan: the program's parameters are not
+rmsb's, so initial values written for \code{\link[rmsb:blrm]{rmsb::blrm()}} (\code{inits}) are not
+used.
 }
 
 \subsection{Patients left out of the fit}{
@@ -423,7 +444,7 @@ include each patient's estimated random effect in predictions, use
 The prior on the size of the random effects is that of \code{\link[rmsb:blrm]{rmsb::blrm()}},
 set with its arguments \code{psigma}, \code{rsdmean} and \code{rsdsd}. Random intercepts
 also work with unobserved states (see "Unobserved states"), with the same
-parameters and priors; a patient whose every transition touches an
+model and priors; a patient whose every transition touches an
 unobserved visit still gets a random effect.
 
 With \code{engine = "orm"} or \code{"vglm"}, \code{cluster()} and \code{mix_re()} terms are

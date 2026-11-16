@@ -667,15 +667,40 @@ flowchart TD
   stored scores for unconditional variance. A `cluster` other than the fit's
   patients is refused (`stop_path_fit_cluster()`).
 - blrm: `rmsb::blrm()` runs a few iterations on the set-up rows to build
-  the object; `po_paths.stan` then samples the same parameters with rmsb's
+  the object; `po_paths.stan` then samples the model with rmsb's
   priors (Dirichlet on the state probabilities at the mean predictors of the
   set-up rows, optional contrast priors) and its centred QR
-  parametrisation, computed from the set-up rows (stored as
+  transformation of the predictors, computed from the set-up rows (stored as
   `attr(fit, "markov_path_fit")$rinv`) because the fully observed
   transitions alone can have a column of zeros, with the orthogonalised
   columns scaled to SD 1 (and
   `Rinv` by the same factor) so that the sampler adapts faster; the draws
-  replace those of the object. The likelihood is not written in Stan: the
+  replace those of the object. The program does not declare rmsb's
+  parameters (`beta`, the simplex `pi`): it samples `z`, with
+  `theta = theta_hat + theta_L z`, `theta` = (`u`, `beta`) and
+  `u[j] = log(pi[j] / pi[k])`, and computes `pi = softmax(u, 0)`, `alpha`
+  (by `log_sum_exp()` of the log-odds, because `pi[k]` can be about 1e-7)
+  and `beta` as transformed parameters; it adds `sum(log(pi))`, the log
+  Jacobian of `u -> pi`, for the Dirichlet prior, and the posterior is the
+  same as in rmsb's parameters. `theta_hat` and `theta_L` (lower Cholesky
+  factor of the covariance) are data, from the maximum likelihood fit of the
+  model without random intercepts on the Stan data's own scale
+  (`markov_path_stan_scale()`): Newton's method
+  (`markov_newton_maximise()`, the kernel through
+  `markov_path_stan_loglik_function()`) from the medians of the structure
+  fit's draws moved to that scale (`markov_path_stan_start_from_draws()`),
+  then, if that fails, from the state frequencies with no effects
+  (`markov_path_stan_marginal_start()`); the inverse information is moved
+  from `alpha` to `u` with the analytic Jacobian of
+  `markov_path_log_odds()`. If no start converges, the information is not
+  positive definite or anything is not finite, `theta_hat` is the start and
+  `theta_L` the identity: the fit runs on that rough scale, more slowly,
+  without a warning. `attr(fit, "markov_path_fit")$stan_scale` records
+  `maximum_likelihood`, the start, the iterations, the time, `theta_hat` and
+  `theta_L`. Sampler arguments are built by `markov_path_sampler_args()`:
+  with random intercepts `adapt_delta` is 0.9 (rstan `control`, cmdstanr
+  `adapt_delta`) unless `sampling.args` sets it. Reasons and numbers:
+  `dev/decisions.md`, 2026-11-15 ("Sampling scale..."). The likelihood is not written in Stan: the
   program declares `path_loglik()` without a body, and its C++ definition
   (`inst/include/mostr/stan_path_loglik*.hpp`) calls `path_likelihood.hpp`
   at order 1 and hands Stan the value with its analytic gradient
@@ -704,8 +729,8 @@ flowchart TD
   is the backend's default, `getOption("mc.cores", 1)`, unless
   `sampling.args` sets `cores` or `parallel_chains`.
 - blrm random intercepts (`cluster()`): the model is rmsb's `lrmconppo`
-  with clusters. `po_paths.stan` declares rmsb's parameters in rmsb's
-  order (`beta`, `pi`, `gamma_raw`, `sigmag`), non-centred
+  with clusters. `po_paths.stan` declares `z`, `gamma_raw` and `sigmag`;
+  the random intercepts are non-centred as in rmsb
   (`gamma = sigmag * gamma_raw`, `gamma_raw ~ std_normal()`), with rmsb's
   prior on `sigmag` (`psigma`, `rsdmean`, `rsdsd`, read from the structure
   fit). The kernel takes the intercepts as a shift per cluster
@@ -753,9 +778,15 @@ flowchart TD
   compiled Stan program's log density with that reference and its gradient
   with numerical derivatives, with and without random intercepts, and the
   density with random intercepts with rmsb's own program on the fully
-  observed transitions plus the stretches computed in R.
+  observed transitions plus the stretches computed in R (the difference less
+  `sum(log(pi))` is a constant); it also samples once on the rough scale
+  (pre-fit forced to fail) and compares fits with and without random
+  intercepts with reference posteriors.
   `test-missing-states-clusters.R` covers the cluster numbers and the Stan
-  data without compiling anything.
+  data without compiling anything; `test-missing-states-stan-scale.R` the
+  sampling scale (equal to the orm path fit moved to the Stan scale, the
+  Jacobian against finite differences, the fallback) and the sampler
+  arguments.
 
 ### Settings
 

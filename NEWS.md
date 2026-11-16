@@ -35,11 +35,24 @@
   A random intercept, `cluster(id)` with `engine = "blrm"`, works with
   unobserved states: each patient's random effect shifts the log-odds of all
   the patient's transitions, including those into and out of unobserved
-  visits, with the parameters and priors of `rmsb::blrm()` (`psigma`,
+  visits, with the model and priors of `rmsb::blrm()` (`psigma`,
   `rsdmean`, `rsdsd`). A patient whose every transition touches an
   unobserved visit still gets a random effect, and `include_re = TRUE`
   works as for complete data. The cluster can be coarser than the patient,
   such as a site, but must be the same on all of a patient's rows.
+
+  With unobserved states, `engine = "blrm"` first fits the model by maximum
+  likelihood (without random effects) and samples the intercepts and
+  coefficients on a scale taken from that fit, so that the sampler starts
+  with step sizes that suit them. This changes how the posterior is
+  sampled, not the posterior, and takes fewer sampler steps than
+  sampling in rmsb's parameters: on 1,000 patients with 30 visits and half the
+  states unobserved, about a third without `cluster()` and about half with
+  `cluster(id)` at the same `adapt_delta`. With `cluster()`, `adapt_delta`
+  is 0.9 instead of 0.8 unless you set it in `sampling.args`, because a few
+  chains had divergent transitions at 0.8 when patients differed little;
+  this takes more steps (in the example, about 80% of those of rmsb's
+  parameters at 0.8).
 
 ## Breaking changes
 

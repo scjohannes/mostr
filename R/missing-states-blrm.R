@@ -2,9 +2,11 @@
 #
 # rmsb's Stan programs take one row per transition, so they can't sum over
 # the states of unobserved visits. mostr samples from its own Stan program
-# (`inst/stan/po_paths.stan`) with the same parameters and priors, and puts
-# the draws into a `blrm` object so that everything downstream reads an
-# ordinary rmsb fit.
+# (`inst/stan/po_paths.stan`) with the same priors, and puts the draws into
+# a `blrm` object so that everything downstream reads an ordinary rmsb fit.
+# The program samples the intercepts and coefficients on a scale taken from
+# the maximum likelihood fit of the model (`markov_path_stan_scale()`), not
+# in rmsb's parameters, because that needs far fewer gradient evaluations.
 
 mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   args <- list(...)
@@ -127,48 +129,49 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
   transform <- assembled$transform
   rinv <- assembled$rinv
 
+  # The scale the program samples the intercepts and coefficients on
+  # (`theta_hat`, `theta_L`), from the maximum likelihood fit of the model
+  # without random intercepts. Newton's method starts from the structure
+  # fit's draws and, if that fails, from the state frequencies.
+  scale_time <- system.time(
+    stan_scale <- markov_path_stan_scale(
+      stan_data,
+      starts = list(
+        structure_fit = markov_path_stan_start_from_draws(
+          fit$draws,
+          n_states,
+          rinv,
+          transform$xbar
+        ),
+        state_frequencies = markov_path_stan_marginal_start(stan_data)
+      )
+    )
+  )
+  stan_data$theta_hat <- stan_scale$theta_hat
+  stan_data$theta_L <- stan_scale$theta_L
+
   iter <- args$iter %||% 2000
   warmup <- args$warmup %||% (iter / 2)
   chains <- args$chains %||% 4
   refresh <- args$refresh %||% 0
   model <- markov_path_stan_model(backend)
   pars <- c("alpha", "beta", if (!is.null(clusters)) c("gamma", "sigmag"))
-  # The number of chains run in parallel is left to the backend, as
-  # `rmsb::blrm()` leaves it: `rstan::sampling()` uses
-  # `getOption("mc.cores", 1)` cores and cmdstanr's `$sample()` as many
-  # parallel chains, and `sampling.args` (`cores`, `parallel_chains`)
-  # overrides either.
+  sampler_args <- markov_path_sampler_args(
+    backend,
+    stan_data = stan_data,
+    pars = pars,
+    iter = iter,
+    warmup = warmup,
+    chains = chains,
+    refresh = refresh,
+    sampling_args = args$sampling.args,
+    random_intercepts = !is.null(clusters)
+  )
   elapsed <- system.time(
     sampled <- if (backend == "rstan") {
-      do.call(
-        rstan::sampling,
-        c(
-          list(
-            model,
-            data = stan_data,
-            pars = pars,
-            iter = iter,
-            warmup = warmup,
-            chains = chains,
-            refresh = refresh
-          ),
-          args$sampling.args
-        )
-      )
+      do.call(rstan::sampling, c(list(model), sampler_args))
     } else {
-      do.call(
-        model$sample,
-        c(
-          list(
-            data = stan_data,
-            iter_sampling = iter - warmup,
-            iter_warmup = warmup,
-            chains = chains,
-            refresh = refresh
-          ),
-          args$sampling.args
-        )
-      )
+      do.call(model$sample, sampler_args)
     }
   )
   if (backend == "rstan" && sampled@mode == 2L) {
@@ -282,7 +285,18 @@ mostm_fit_blrm_paths <- function(setup, ranges, path, ...) {
     # transformed predictors, beta = rinv %*% beta_s, intercepts for
     # predictors centred at `fit$xbar`. It comes from the set-up rows, which
     # are not stored, so it is kept for checking the sampled density.
-    rinv = rinv
+    rinv = rinv,
+    # The scale the intercepts and coefficients were sampled on
+    # (`markov_path_stan_scale()`): whether it came from the maximum
+    # likelihood fit (`maximum_likelihood`; if not, the sampler ran on a
+    # rough scale and was only slower), which start Newton's method
+    # converged from, its iterations and time, and `theta_hat` and
+    # `theta_L`, which the tests need to map points to the sampled
+    # parameters.
+    stan_scale = c(
+      stan_scale,
+      list(seconds = unname(scale_time[["elapsed"]]))
+    )
   )
   list(fit = fit, fit_data = fit_data, fitted_ids = patient_ids)
 }
@@ -432,6 +446,326 @@ markov_blrm_path_stan_data <- function(
     csds = as.array(rep_len(pcontrast$sd %||% 100, n_contrasts))
   )
   list(data = data, transform = transform, rinv = rinv)
+}
+
+# The scale on which `inst/stan/po_paths.stan` samples the intercepts and
+# coefficients: theta = theta_hat + theta_L z, z sampled. theta holds the
+# log-odds u[j] = log(pi[j] / pi[k]), j < k, of the state probabilities pi at
+# the centred predictors, then the coefficients beta of the Stan data's
+# transformed predictors. theta_hat is the maximum likelihood estimate of the
+# model without random intercepts, computed with the same C++ likelihood
+# from the Stan data's own design rows, and theta_L the lower Cholesky
+# factor of its covariance (the inverse of the observed information, moved
+# from the intercepts to u with `markov_path_log_odds()`).
+#
+# Why: in rmsb's parameters Stan starts from a unit metric while the
+# coefficients' posterior SDs are about 20 times smaller than those of the
+# random intercepts and strongly correlated with the intercepts, so early
+# warm-up runs with tiny steps, and a diagonal metric never learns the
+# correlations. On 1,000 patients x 30 visits, half the states unobserved,
+# 2 chains x (1000 + 1000), this scale cut the gradient evaluations from
+# 92,000 to 28,000 without `cluster()` and from 175,000 to 81,000 with
+# `cluster(id)`, both at adapt_delta 0.8 (dev/decisions.md, 2026-11-15).
+#
+# The posterior is unchanged, also with weights or with the contrast prior:
+# z -> theta is affine, so its Jacobian is a constant, and the program adds
+# the Jacobian of u -> pi for the Dirichlet prior. Weights enter the Stan
+# data's counts (`w_obs`, `weight`) as before, and the contrast prior is
+# written on beta, which the program computes from theta.
+#
+# Newton's method (`markov_newton_maximise()`) runs from each of `starts`
+# in turn (lists of `alpha`, intercepts at the centred predictors, and
+# `beta`; NULL entries are skipped) until it converges. If none converges,
+# the information at the maximum is not positive definite, or anything is
+# not finite, theta_hat is the first start that gives finite log-odds and
+# theta_L the identity: the program then samples the same posterior on a
+# rough scale, only more slowly, so the fit goes ahead without a warning.
+# Returns `theta_hat`, `theta_L`, `maximum_likelihood` (whether the scale
+# came from the maximum likelihood fit), `start` (the name of the start
+# used) and `iterations`.
+markov_path_stan_scale <- function(data, starts, maxit = 50L) {
+  n_intercepts <- data$k - 1L
+  n_theta <- n_intercepts + data$p
+  intercepts <- seq_len(n_intercepts)
+  evaluate <- markov_path_stan_loglik_function(data)
+  weights <- list(stretch_weight = as.numeric(data$weight))
+  score_of <- function(result) markov_path_total_score(result, weights)
+  if (is.null(names(starts))) {
+    names(starts) <- paste0("start_", seq_along(starts))
+  }
+  starts <- Filter(Negate(is.null), starts)
+  for (name in names(starts)) {
+    theta <- c(starts[[name]]$alpha, starts[[name]]$beta)
+    scale <- tryCatch(
+      markov_path_stan_ml_scale(theta, evaluate, score_of, n_intercepts, maxit),
+      error = function(e) NULL
+    )
+    if (!is.null(scale)) {
+      return(c(scale, list(maximum_likelihood = TRUE, start = name)))
+    }
+  }
+  for (name in names(starts)) {
+    log_odds <- markov_path_log_odds(starts[[name]]$alpha)
+    theta_hat <- c(log_odds$u, starts[[name]]$beta)
+    if (length(theta_hat) == n_theta && all(is.finite(theta_hat))) {
+      return(list(
+        theta_hat = theta_hat,
+        theta_L = diag(n_theta),
+        iterations = NA_integer_,
+        maximum_likelihood = FALSE,
+        start = name
+      ))
+    }
+  }
+  # No start gave finite log-odds: equal state probabilities and no effects.
+  list(
+    theta_hat = numeric(n_theta),
+    theta_L = diag(n_theta),
+    iterations = NA_integer_,
+    maximum_likelihood = FALSE,
+    start = "none"
+  )
+}
+
+# The maximum likelihood scale from one start, or NULL when it can't be
+# formed (see `markov_path_stan_scale()`).
+markov_path_stan_ml_scale <- function(theta, evaluate, score_of, n_intercepts, maxit) {
+  if (length(theta) == 0L || !all(is.finite(theta))) {
+    return(NULL)
+  }
+  current <- evaluate(theta, 2L)
+  if (!is.finite(current$loglik)) {
+    return(NULL)
+  }
+  maximum <- markov_newton_maximise(
+    theta,
+    evaluate,
+    score_of,
+    current = current,
+    maxit = maxit
+  )
+  if (!maximum$converged || !all(is.finite(maximum$theta))) {
+    return(NULL)
+  }
+  information <- -maximum$result$hessian
+  if (!all(is.finite(information))) {
+    return(NULL)
+  }
+  # A maximum must have a positive definite information; without one there
+  # is no covariance to take the scale from.
+  factor <- tryCatch(chol(information), error = function(e) NULL)
+  if (is.null(factor)) {
+    return(NULL)
+  }
+  covariance <- chol2inv(factor)
+  intercepts <- seq_len(n_intercepts)
+  log_odds <- markov_path_log_odds(maximum$theta[intercepts])
+  jacobian <- diag(length(theta))
+  jacobian[intercepts, intercepts] <- log_odds$jacobian
+  covariance <- jacobian %*% covariance %*% t(jacobian)
+  # Rounding leaves the product slightly asymmetric, and `chol()` reads only
+  # the upper triangle.
+  covariance <- (covariance + t(covariance)) / 2
+  theta_hat <- c(log_odds$u, maximum$theta[-intercepts])
+  upper <- tryCatch(chol(covariance), error = function(e) NULL)
+  if (is.null(upper) || !all(is.finite(upper)) || !all(is.finite(theta_hat))) {
+    return(NULL)
+  }
+  list(
+    theta_hat = theta_hat,
+    theta_L = t(upper),
+    iterations = maximum$iterations
+  )
+}
+
+# The log-likelihood of the model without random intercepts as a function
+# of theta = (alpha, beta) on the scale of the Stan data `data`, with its
+# derivatives (`cpp_path_loglik()`, the program's own C++ likelihood). The
+# observed rows of a model with random intercepts are split by cluster in
+# the Stan data, which changes nothing here.
+markov_path_stan_loglik_function <- function(data) {
+  p <- data$p
+  k <- data$k
+  by_row <- function(values, ncol) {
+    matrix(as.numeric(values), ncol = ncol, byrow = TRUE)
+  }
+  x_obs <- by_row(data$x_obs, p)
+  x_gap <- by_row(data$x_gap, p)
+  x_prev <- if (data$has_prev == 1L) by_row(data$x_prev, p) else matrix(0, 0L, p)
+  step_rows <- matrix(as.integer(data$step_rows), ncol = k, byrow = TRUE)
+  n_intercepts <- k - 1L
+  function(theta, order) {
+    cpp_path_loglik(
+      alpha = theta[seq_len(n_intercepts)],
+      beta = theta[-seq_len(n_intercepts)],
+      x_obs = x_obs,
+      y_obs = as.integer(data$y_obs),
+      w_obs = as.numeric(data$w_obs),
+      group_obs = rep(1L, data$n_obs),
+      n_groups = 1L,
+      x_gap = x_gap,
+      x_prev = x_prev,
+      absorb = which(as.integer(data$absorbing) == 1L),
+      stretch_first_row = as.integer(data$first_row),
+      stretch_first_prev = as.integer(data$first_prev),
+      stretch_first_step = as.integer(data$first_step),
+      stretch_n_steps = as.integer(data$n_steps),
+      stretch_weight = as.numeric(data$weight),
+      step_lo = as.integer(data$lo),
+      step_hi = as.integer(data$hi),
+      step_rows = step_rows,
+      cluster_shift = double(),
+      obs_cluster = integer(),
+      stretch_cluster = integer(),
+      order = as.integer(order)
+    )
+  }
+}
+
+# The log-odds u[j] = log(pi[j] / pi[k]), j < k, of the state probabilities
+# pi given by intercepts alpha[j] = logit(P(Y >= j + 1)), and the matrix of
+# their derivatives, jacobian[i, j] = du[i] / dalpha[j].
+#
+# pi[i] = plogis(a) - plogis(b), with a = alpha[i - 1] (Inf for i = 1) and
+# b = alpha[i] (-Inf for i = k), is computed on the log scale as
+# log(plogis(a)) + log(plogis(-b)) + log(1 - exp(b - a)), because at the
+# centred predictors a state can have pi of about 1e-7 and the difference of
+# two probabilities near 1 would lose most of its digits. With
+# c(a) = plogis(a) and c'(a) = c(a) (1 - c(a)), alpha[j] is the lower end of
+# pi[j] and the upper end of pi[j + 1]:
+#   dlog(pi[j]) / dalpha[j] = -c'(alpha[j]) / pi[j],
+#   dlog(pi[j + 1]) / dalpha[j] = c'(alpha[j]) / pi[j + 1],
+# and du[i] / dalpha[j] = dlog(pi[i]) / dalpha[j] - dlog(pi[k]) / dalpha[j].
+# Intercepts that do not decrease give a pi <= 0 and non-finite values.
+markov_path_log_odds <- function(alpha) {
+  alpha <- as.numeric(alpha)
+  m <- length(alpha)
+  k <- m + 1L
+  upper <- c(Inf, alpha)
+  lower <- c(alpha, -Inf)
+  log_pi <- suppressWarnings(
+    stats::plogis(upper, log.p = TRUE) +
+      stats::plogis(-lower, log.p = TRUE) +
+      log(-expm1(lower - upper))
+  )
+  log_slope <- stats::plogis(alpha, log.p = TRUE) +
+    stats::plogis(-alpha, log.p = TRUE)
+  d_log_pi <- matrix(0, k, m)
+  for (j in seq_len(m)) {
+    d_log_pi[j, j] <- -exp(log_slope[j] - log_pi[j])
+    d_log_pi[j + 1L, j] <- exp(log_slope[j] - log_pi[j + 1L])
+  }
+  list(
+    u = log_pi[-k] - log_pi[k],
+    jacobian = d_log_pi[-k, , drop = FALSE] -
+      matrix(d_log_pi[k, ], m, m, byrow = TRUE)
+  )
+}
+
+# A start for `markov_path_stan_scale()` from the structure fit's draws: their
+# medians, moved to the Stan data's scale (intercepts at the predictors
+# centred at `xbar`, coefficients of the transformed predictors, beta_s =
+# rinv^-1 beta). The structure fit has only a few short draws, but Newton's
+# method needs only a point near the maximum. NULL when the draws do not
+# have the expected columns.
+markov_path_stan_start_from_draws <- function(draws, n_states, rinv, xbar) {
+  n_intercepts <- n_states - 1L
+  if (is.null(draws) || ncol(draws) != n_intercepts + ncol(rinv) || !nrow(draws)) {
+    return(NULL)
+  }
+  center <- apply(draws, 2L, stats::median)
+  alpha <- unname(center[seq_len(n_intercepts)])
+  beta <- unname(center[-seq_len(n_intercepts)])
+  beta_scaled <- tryCatch(as.numeric(solve(rinv, beta)), error = function(e) NULL)
+  if (is.null(beta_scaled)) {
+    return(NULL)
+  }
+  list(alpha = alpha + sum(beta * xbar), beta = beta_scaled)
+}
+
+# A start that needs no fit: no effects, and intercepts from the frequencies
+# of the states of the fully observed transitions, with half a count added
+# to each state so that a state seen only after unobserved visits gets a
+# finite intercept. This is the usual start of an ordinal regression.
+markov_path_stan_marginal_start <- function(data) {
+  k <- data$k
+  counts <- vapply(
+    seq_len(k),
+    function(state) sum(as.numeric(data$w_obs)[as.integer(data$y_obs) == state]),
+    numeric(1)
+  ) + 0.5
+  share <- counts / sum(counts)
+  at_least <- rev(cumsum(rev(share)))[-1L]
+  list(alpha = stats::qlogis(at_least), beta = numeric(data$p))
+}
+
+# The arguments of `rstan::sampling()` (without the model) or of cmdstanr's
+# `$sample()`, with the user's `sampling.args` added.
+#
+# With random intercepts, `adapt_delta` (the target acceptance rate of the
+# step size adaptation) defaults to 0.9 instead of Stan's 0.8. With a true
+# SD of the random intercepts near 0, 300 patients and Stan's 0.8, three
+# seeds gave 0, 5 and 2 divergent transitions after warm-up, and one chain's
+# step size collapsed; with 0.9, 0, 1 and 0, at 40-60% more gradient
+# evaluations than with 0.8, still fewer than rmsb's parametrisation needed;
+# at 1,000 patients x 30 visits with SD 0.5, 136,000 against 82,000 at 0.8
+# and 175,000 for rmsb's parametrisation at 0.8 (dev/decisions.md,
+# 2026-11-15). Without random intercepts Stan's default
+# stays. A value the user gives (`sampling.args = list(control =
+# list(adapt_delta = ))` for rstan, `list(adapt_delta = )` for cmdstan) is
+# kept, and the rest of a user's `control` list too.
+#
+# The number of chains run in parallel is left to the backend, as
+# `rmsb::blrm()` leaves it: `rstan::sampling()` uses
+# `getOption("mc.cores", 1)` cores and cmdstanr's `$sample()` as many
+# parallel chains, and `sampling.args` (`cores`, `parallel_chains`)
+# overrides either.
+markov_path_sampler_args <- function(
+  backend,
+  stan_data,
+  pars,
+  iter,
+  warmup,
+  chains,
+  refresh,
+  sampling_args = NULL,
+  random_intercepts = FALSE
+) {
+  sampling_args <- as.list(sampling_args)
+  adapt_delta <- 0.9
+  if (backend == "rstan") {
+    if (random_intercepts) {
+      control <- as.list(sampling_args$control)
+      if (is.null(control$adapt_delta)) {
+        control$adapt_delta <- adapt_delta
+      }
+      sampling_args$control <- control
+    }
+    return(c(
+      list(
+        data = stan_data,
+        pars = pars,
+        iter = iter,
+        warmup = warmup,
+        chains = chains,
+        refresh = refresh
+      ),
+      sampling_args
+    ))
+  }
+  if (random_intercepts && is.null(sampling_args$adapt_delta)) {
+    sampling_args$adapt_delta <- adapt_delta
+  }
+  c(
+    list(
+      data = stan_data,
+      iter_sampling = iter - warmup,
+      iter_warmup = warmup,
+      chains = chains,
+      refresh = refresh
+    ),
+    sampling_args
+  )
 }
 
 # The cluster variable of a `cluster()` term in the formula, evaluated on

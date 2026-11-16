@@ -12,6 +12,117 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-15: Sampling scale of the Stan program for unobserved states
+
+**Decided.** `inst/stan/po_paths.stan` no longer declares rmsb's
+parameters (`beta`, the simplex `pi`). It samples `z`, with
+`theta = theta_hat + theta_L z`, `theta = (u, beta)`,
+`u[j] = log(pi[j] / pi[k])` and `pi = softmax(append_row(u, 0))`;
+`gamma_raw` and `sigmag` stay as they were. `theta_hat` and `theta_L` (lower
+Cholesky factor of the covariance) come from the maximum likelihood fit of
+the same path model without clusters, on the Stan data's own scale,
+computed before sampling (`markov_path_stan_scale()`): Newton's method
+(`markov_newton_maximise()`) from the medians of the structure fit's draws
+moved to the Stan scale, then from the state frequencies with no effects;
+the inverse information is moved from (alpha, beta) to (u, beta) with the
+analytic Jacobian of u(alpha) (`markov_path_log_odds()`). If no start
+converges, the information is not positive definite or anything is not
+finite, `theta_hat` is the start and `theta_L` the identity (same posterior,
+slower), without a warning; `attr(fit, "markov_path_fit")$stan_scale`
+records which. The program adds `sum(log(pi))`, the log Jacobian of
+u -> pi[1:(k-1)] (det(diag(q) - q q') = prod(pi)), and computes alpha from
+the log-odds with `log_sum_exp()` because pi[k] at the centred predictors
+can be about 1e-7. With `cluster()`, `adapt_delta` defaults to 0.9 for both
+backends unless `sampling.args` sets it (`markov_path_sampler_args()`);
+without `cluster()` Stan's default stays.
+
+**Why.** Experiments in
+`benchmarks/local/intermittent-missingness/random-intercepts/` (README with
+plan, dated changes and verdict; installed builds, rstan, 2 chains,
+1000 warm-up + 1000 sampling unless stated, 1000 patients x 30 visits,
+8 states, 50% of non-absorbing states missing, two N(0, 1) covariates):
+
+- In rmsb's parameters Stan starts from a unit metric while the
+  coefficients' posterior SDs (0.02-0.16 on the Stan scale) are about 20
+  times smaller than those of `gamma_raw` and strongly correlated with the
+  intercepts: early warm-up took 140-235 leapfrog steps per iteration at a
+  step size near 0.02, and sampling 31 steps (tree depth 5) with or without
+  `cluster()`.
+- With the new scale (harness): with `cluster(id)` (true SD 0.5) total
+  gradient evaluations fell from 175k to 81k (-54%), leapfrog steps per
+  sampling iteration from 31 to 15; without `cluster()` from 92k to 28k
+  (-70%; 102k to 28k at 300 patients), 23 to 7 steps, step size 0.18-0.20
+  to 0.59-0.66. Posteriors agreed within Monte Carlo error (sigmag
+  0.4634 +- 0.0029 against 0.4619 +- 0.0028). The model-block log densities
+  of the two programs differ by sum(log(pi)) plus a constant to 2.5e-12 at
+  six points near and far from the maximum.
+- Through `mostm()` itself (installed build, `confirm.R`, 2 chains in
+  parallel, same data as the harness, machine otherwise quiet): without
+  `cluster()`, 27,878 gradient evaluations, 7.0 leapfrog steps per
+  iteration in warm-up and in sampling, step sizes 0.68 / 0.64, 0
+  divergences, 217 s in all (200 s sampling, 2.5 s pre-fit, 9 Newton
+  iterations), one gradient 9.4 ms; tx bulk ESS 5496, R-hat 1.005; lp__
+  702, 1.002. With `cluster(id)` (true SD 0.5) at the package's default
+  adapt_delta 0.9: 135,655 gradient evaluations, 31.0 steps per sampling
+  iteration (36.8 in warm-up), step sizes 0.18, 0 divergences, 927 s in
+  all (889 s sampling, pre-fit 1.8 s, 8 iterations); sigmag
+  0.4616 +- 0.0028, bulk ESS 315, R-hat 1.002; tx 1842, 0.999; lp__ 252,
+  1.003. The same at adapt_delta 0.8 (`sampling.args`): 81,620 gradient
+  evaluations and 15.0 steps per sampling iteration, step sizes 0.24, as in
+  the harness (81k, 15), 0 divergences, 566 s (528 s sampling), one
+  gradient 12.0 ms; sigmag 0.4630 +- 0.0031, bulk ESS 259, R-hat 1.008;
+  tx 795; lp__ 232, 1.007. So adapt_delta 0.9 costs 66% more gradient
+  evaluations on these data (the step size falls below the point where
+  trajectories need tree depth 5 instead of 4) for slightly higher ESS, and
+  stays 22% below the old program's 175k at 0.8.
+- Small test data (`re_data()` of the slow tests, 4 chains x
+  (5000 + 5000)): every posterior mean of the old and the new program agrees
+  within 2 combined MCSEs, with and without `cluster(id)`. There the old
+  program had 29 sampling divergences with `cluster(id)`, the new one 0 (at
+  adapt_delta 0.9); its gradient evaluations were 1.07M against 0.78M, with
+  bulk ESS 1.1-1.8 times higher (sigmag 2705 against 2382) (the data are small and easy, so the gain
+  of the scale is small there; without `cluster()`: 212k against 239k).
+- Pre-fit (`markov_path_stan_scale()` from the structure fit's draws,
+  300 and 1000 patients, SD 0, 0.5, 1.5, with and without `cluster()`):
+  converged everywhere in 6-9 Newton iterations, 0.5-0.8 s at 300 and
+  1.4-2.8 s at 1000 patients (machine busy with other R processes). From
+  the state frequencies: 9-19 iterations, 0.8-3.8 s, same theta_hat
+  within 4e-6. Condition number of the covariance of theta 800-1350.
+
+adapt_delta 0.9 with `cluster()`: with a true SD near 0 at 300 patients the
+new program had 0, 5 and 2 sampling divergences in three seeds at 0.8, and
+one chain's step size collapsed (0.2 to 0.037, 127 steps per iteration);
+at 0.9, 0, 1 and 0, at 40-60% more gradient evaluations than at 0.8 but
+still fewer than the old program (59k and 68k against 84k and 91k). The
+old program had none in those runs. At 1000 patients and SD 0.5 the price
+of 0.9 is larger (136k against 82k gradient evaluations, above), but
+divergences near sigmag = 0 can bias the posterior of sigmag without being
+noticed by a user who does not read Stan's warnings, so the safer default
+was kept and users who want speed can set 0.8 in `sampling.args`.
+Rejected: 0.8 everywhere (the divergences above); 0.95 (not measured).
+
+Correction to the entry below (2026-11-15, random intercepts): its "255
+leapfrog steps per iteration ... 61 s against 729 s for the fit" with
+`cluster(id)` at 1000 x 30 came from 200 iterations with a 100-iteration
+warm-up, so most iterations were in early warm-up. After a full warm-up the
+old program took 31 steps per sampling iteration with or without
+`cluster()`.
+
+**Rejected.** Centred random intercepts: did not mix at SD 0 and 0.5
+(R-hat 1.9 and 1.2). Starting values at the maximum likelihood fit alone,
+in rmsb's parameters: no gain (the cost is the scale, not the start).
+Scaling the coefficients by their standard errors only: 15-20% less wall
+time. The diagonal of the covariance only (theta_L diagonal): 182k and
+162k gradient evaluations without `cluster()`, 1.6-2 times the old
+program's 92k and 102k, because the correlations are what helps. Sampling
+log(sigmag) on a scaled log scale as well: beat the chosen program only at
+SD 1.5 and mixed worse elsewhere (min bulk ESS 167 against 257). Stan's
+dense metric: one run at 300 patients had not finished after 41 minutes
+against about 3 minutes with the diagonal metric. Keeping rmsb's
+parameters for the sake of matching its program: the posterior is the
+same, the log density differs only by the Jacobian term, which the slow
+tests check, and no downstream code reads `pi` or the raw `beta`.
+
 ## 2026-11-15: Random intercepts with unobserved states (blrm `cluster()`)
 
 **Decided.** `mostm(engine = "blrm")` with unobserved states accepts a bare

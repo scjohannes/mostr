@@ -385,6 +385,18 @@ The compiled program is kept in the directory
 `options(mostr.stan_cache = )` to another directory, or to `FALSE` to keep
 it for the current session only.
 
+The model and the priors are those of `rmsb::blrm()`. Before sampling,
+mostr fits the same model by maximum likelihood, without random effects,
+which takes a second or two for 1,000 patients. The program then samples
+the intercepts and coefficients on a scale taken from that fit, so the
+sampler starts with step sizes that suit them instead of having to find
+them during warm-up. The posterior is the same; only the work differs. On
+1,000 patients with 30 visits each and half the states unobserved, two
+chains of 1,000 warm-up and 1,000 sampling iterations needed about a third
+of the steps without a random effect, and about half with `cluster(id)` at
+the same target acceptance rate (see below for the rate mostr uses with
+`cluster()`).
+
 The chunk below is not run when this article is built.
 
 ```{r blrm, eval = FALSE}
@@ -458,7 +470,15 @@ is available.** The patient's random effect shifts the log-odds of every
 transition of the patient, also those into and out of the missed visits, so
 a patient whose every recorded transition borders a missed visit still has
 one. The cluster may be coarser than the patient, such as a hospital, but
-must be the same on all of a patient's rows.
+must be the same on all of a patient's rows. With `cluster()`, the sampler
+aims at an acceptance rate of 0.9 (`adapt_delta`) instead of Stan's 0.8:
+when patients differ little, a few chains otherwise had divergent
+transitions, a sign that the sampler may miss part of the posterior. The
+higher rate means smaller steps: in the example above, sampling took about
+1.7 times as many steps as at 0.8, still fewer than without mostr's scale.
+Set
+your own value with `sampling.args = list(control = list(adapt_delta = ))`,
+or `sampling.args = list(adapt_delta = )` with `backend = "cmdstan"`.
 
 **`engine = "vglm"` can only drop the incomplete rows**, and you must ask for
 it:
