@@ -311,7 +311,9 @@ plot_blrm_lp_median_matrix <- function(model, newdata) {
     },
     numeric(nrow(newdata))
   )
-  out <- as.matrix(out)
+  # With one row of `newdata`, vapply() returns a vector, which as.matrix()
+  # would turn into one column instead of one row (issue #22).
+  out <- matrix(out, nrow = nrow(newdata), ncol = n_thresholds)
   colnames(out) <- paste0("eta", seq_len(ncol(out)))
   rownames(out) <- rownames(newdata)
   out
