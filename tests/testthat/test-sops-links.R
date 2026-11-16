@@ -13,7 +13,7 @@ test_that("Markov workflows reject links other than the logit", {
       ),
       error = function() {
         data <- suppressWarnings(
-          make_test_data(n_patients = 80, seed = 841, follow_up_time = 5)
+          make_test_data(n_patients = 80, seed = 841, times = 1:5)
         )
         fit <- suppressWarnings(
           mostm(
@@ -37,7 +37,7 @@ test_that("Markov workflows reject links other than the logit", {
       link = "probit",
       error = function() {
         data <- suppressWarnings(
-          make_test_data(n_patients = 80, seed = 842, follow_up_time = 5)
+          make_test_data(n_patients = 80, seed = 842, times = 1:5)
         )
         # `mostm()` stops before computing the patient-clustered covariance.
         tryCatch(
@@ -72,7 +72,7 @@ test_that("Markov workflows reject raw and manually robust backend fits", {
   skip_if_not_installed("rms")
 
   data <- suppressWarnings(
-    make_test_data(n_patients = 40, seed = 844, follow_up_time = 5)
+    make_test_data(n_patients = 40, seed = 844, times = 1:5)
   )
   raw_fit <- VGAM::vglm(
     ordered(y) ~ time + tx + yprev,

@@ -9,7 +9,7 @@
 #'
 #' @details
 #' `plot_lp_difference()` is model-based only. At minimum, supply `model`, a
-#' one-row `profile`, `variables`, and `times`. The profile should contain the
+#' one-row `newdata`, `variables`, and `times`. `newdata` should contain the
 #' model covariates for the patient or scenario being plotted; `times` and
 #' `previous_states` define the plotting grid.
 #'
@@ -17,9 +17,9 @@
 #' fitted model: the `time_var` and `p_var` given to [mostm()], and the states
 #' of the response in fitted order.
 #'
-#' @param x A fitted `orm`, `blrm`, `vglm`, or `robcov_vglm` Markov
+#' @param model A fitted `orm`, `blrm`, `vglm`, or `robcov_vglm` Markov
 #'   model.
-#' @param profile One-row data frame containing the covariate profile.
+#' @param newdata One-row data frame containing the covariate profile.
 #' @param variables Named list with one variable and at least two values. The
 #'   first value is the reference.
 #' @param times Time values at which to evaluate the linear predictor.
@@ -36,21 +36,20 @@
 #' \dontrun{
 #' plot_lp_difference(
 #'   fit,
-#'   profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
+#'   newdata = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
 #'   variables = list(tx = c(0, 1)),
 #'   times = 1:28
 #' )
 #' }
 #' @export
 plot_lp_difference <- function(
-  x,
-  profile,
+  model,
+  newdata,
   variables,
   times,
   previous_states = NULL,
   line_width = 0.7
 ) {
-  model <- x
   if (!inherits(model, c("orm", "blrm", "vglm", "robcov_vglm"))) {
     mostr_abort(
       "`model` must be an `orm`, `blrm`, `vglm`, or ",
@@ -58,16 +57,16 @@ plot_lp_difference <- function(
     )
   }
   validate_markov_model(model)
-  if (!is.data.frame(profile) || nrow(profile) != 1L) {
-    mostr_abort("`profile` must be a one-row data frame.")
+  if (!is.data.frame(newdata) || nrow(newdata) != 1L) {
+    mostr_abort("`newdata` must be a one-row data frame.")
   }
   if (missing(times) || is.null(times)) {
     mostr_abort("`times` must be supplied.")
   }
   variables <- validate_avg_comparison_variables(variables)
   variable <- names(variables)[1]
-  if (!variable %in% names(profile)) {
-    mostr_abort("Variables not in profile: ", variable)
+  if (!variable %in% names(newdata)) {
+    mostr_abort("Variables not in newdata: ", variable)
   }
   plot_validate_scalar(line_width, "line_width", lower = 0)
   settings <- resolve_markov_settings(model)
@@ -85,14 +84,14 @@ plot_lp_difference <- function(
   # the profile's other predictors need values.
   stop_missing_predictors(
     model,
-    profile,
+    newdata,
     settings,
     set_columns = c(variable, settings$p_var),
-    data_arg = "profile"
+    data_arg = "newdata"
   )
   data <- plot_lp_grid(
     model = model,
-    profile = profile,
+    profile = newdata,
     variables = variables,
     times = times,
     previous_states = previous_states,

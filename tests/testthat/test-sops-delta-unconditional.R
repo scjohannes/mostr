@@ -5,7 +5,7 @@ local_delta_vglm_fit <- local({
     if (is.null(fit)) {
       data <- make_test_data(
         n_patients = 35,
-        follow_up_time = 6,
+        times = 1:6,
         seed = 2401
       )
       fit <<- mostm(
@@ -28,7 +28,7 @@ local_delta_orm_fit <- local({
     if (is.null(fit)) {
       data <- make_test_data(
         n_patients = 35,
-        follow_up_time = 6,
+        times = 1:6,
         seed = 2402
       )
       fit <<- mostm(
@@ -45,7 +45,7 @@ local_delta_orm_fit <- local({
 test_that("explicit zero ORM penalties preserve unpenalized inference", {
   skip_on_cran()
   skip_if_not_installed("rms")
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 2402)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 2402)
   reference <- local_delta_orm_fit()
   infer <- function(model, covariance) {
     avg <- avg_sops(
@@ -555,7 +555,7 @@ test_that("unconditional score machinery rejects partial proportional odds", {
   skip_if_not_installed("VGAM")
   data <- make_test_data(
     n_patients = 35,
-    follow_up_time = 6,
+    times = 1:6,
     seed = 2403
   )
   fit <- mostm(
@@ -709,7 +709,7 @@ test_that("stacked influence rejects patients missing from profiles or scores", 
 test_that("unconditional delta standard errors ignore later changes to the user's data frame", {
   skip_on_cran()
   skip_if_not_installed("rms")
-  d <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 2402)
+  d <- make_test_data(n_patients = 35, times = 1:6, seed = 2402)
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = d,

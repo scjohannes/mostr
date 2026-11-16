@@ -101,7 +101,7 @@ flowchart TD
 | Component | Source | Main symbols and role |
 |---|---|---|
 | Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`, `violet_baseline`; previous-state conditional categorical sampling |
-| Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data`; store fitted patient profiles and refit data |
+| Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data` (drops rows after the required `absorb` states; state columns named by `y_var`, `p_var`); store fitted patient profiles and refit data |
 | Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
 | Settings | `R/markov-settings.R` | `markov_settings` (validating constructor), `markov_model_settings` (a fit's settings), `resolve_markov_settings` (a public call's settings), `markov_result_settings` (a result's settings); see "Settings" below |
 | Prediction API | `R/sops-api.R`, `R/sops-avg-time.R`, `R/sops-state-time.R`, `R/sops-comparisons.R`, `R/sops-comparisons-individual.R`, `R/sops-times.R` | `sops`/`avg_sops`, `state_time`/`avg_state_time`, `comparisons`/`avg_comparisons`; probabilities, total time in states, and treatment contrasts for each profile, or averaged; `warn_skipped_sop_visits` checks requested `times` against the fitted visits |
@@ -119,6 +119,15 @@ The `markov_sops`, `markov_avg_sops`, `markov_state_time`,
 `markov_avg_state_time`, `markov_comparisons`, and `markov_avg_comparisons` S3
 classes describe result semantics. Package-qualified
 calls, native registration symbols, and package options use `mostr`.
+
+Exported functions give one concept one argument name (#12): `model` for a
+fitted model (`x` only where a function also takes results or observed data),
+`newdata` for prediction profiles, `absorb` for absorbing states (required in
+`prepare_markov_data()`, which has no data-independent default), `times` for
+the times to predict or simulate, one transition per value, `state_sets` for
+the states to total, `n_draws` for draws or bootstrap refits, `geom` for the
+kind of chart, and `id_var`, `time_var`, `y_var`, `p_var`, `p2_var` for column
+names. New arguments should reuse these names.
 
 ### Model fitting
 
@@ -1201,13 +1210,16 @@ random-number order is seed, patient sampling, treatment assignment, then
 trajectories; the removed per-trial wrappers used the same order, so their
 outputs are reproduced exactly.
 
-The unexported engine `simulate_markov_trajectories()` runs the daily
-transitions. It passes `lp_function` the previous state, the day, the
+The unexported engine `simulate_markov_trajectories()` runs the transitions,
+one for each value of `times`, as one prediction step per requested time in
+`sops()`; the state matrix is indexed by position in `times`, and the values
+themselves go only to `lp_function` and the `time` column, so leaving out days
+does not skip time. It passes `lp_function` the previous state, the time, the
 requested covariates (always `tx` when present), `extra_params`, and
 `treatment_effect` already multiplied by `exp(-treatment_effect_decay * (t - 1))`,
 so decay works for user models as well as presets and the preset linear
 predictors only multiply that value by `tx`. The worst state is absorbing by
-default.
+default (`absorb = NULL`).
 
 The package linear predictors, `actt2_markov_lp()` (used by `"actt1"` and
 `"actt2"`) and `violet_markov_lp()`, carry the internal attribute
@@ -1222,7 +1234,7 @@ compares the ACTT presets with a per-patient wrapper of `actt2_markov_lp()`.
 
 The `"actt2"` preset uses coefficients from a fit with states 1 and 2 merged;
 an added lowest threshold splits them again, with `yprev = 1` and `yprev = 2`
-sharing the reference coefficient. `follow_up_time = 60` extrapolates its
+sharing the reference coefficient. `times = 1:60` extrapolates its
 fitted time spline beyond 28 days; no alternate 60-day calibration is kept.
 The `"actt1"` preset (`actt1_markov_parameters()`) is the ACTT-2 model with
 two changes: starting states follow ACTT-1's reported counts (Beigel et al.,

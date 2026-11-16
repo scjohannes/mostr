@@ -43,7 +43,7 @@ expect_refits_succeed <- function(fit, method) {
 
 test_that("vglm bootstrap refits use the fit-time argument values", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5101)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5101)
   fit <- fit_vglm_in_closure(data, parallel_flag = TRUE, first_time = 1)
 
   withr::local_seed(5102)
@@ -56,7 +56,7 @@ test_that("orm bootstrap refits use the fit-time argument values", {
   skip_on_cran()
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5201)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5201)
   fit <- fit_orm_in_closure(data, use_logistic = TRUE, first_time = 1)
 
   withr::local_seed(5202)
@@ -67,7 +67,7 @@ test_that("orm bootstrap refits use the fit-time argument values", {
 
 test_that("refits ignore later changes to variables used by the original call", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5301)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5301)
   parallel_flag <- TRUE
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
@@ -118,7 +118,7 @@ fit_weighted_in_closure <- function(data, backend) {
 }
 
 make_weighted_refit_data <- function(seed) {
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = seed)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = seed)
   withr::with_seed(seed, data$w_copy <- stats::runif(nrow(data), 0.5, 1.5))
   data
 }
@@ -271,7 +271,7 @@ test_that("refits of mostm() fits with an outside subset vector succeed", {
   skip_on_cran()
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5901)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5901)
   for (backend in c("vglm", "orm")) {
     fit <- fit_subset_in_closure(data, backend)
     refit_data <- mostr:::markov_model_refit_data(fit)
@@ -287,7 +287,7 @@ test_that("refits of mostm() fits with an outside subset vector succeed", {
 
 test_that("refits reuse a fit-time coefstart given as a local variable", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5801)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5801)
   fit_with_local_coefstart <- function(data) {
     pilot <- mostm(
       ordered(y) ~ time + tx + yprev,
@@ -346,7 +346,7 @@ fit_vglm_with_local_coefstart <- function(data) {
 
 test_that("refits on samples with every state reuse the fit-time coefstart", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5901)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5901)
   fit <- fit_vglm_with_local_coefstart(data)
   refit_data <- mostr:::markov_model_refit_data(fit)
 
@@ -368,7 +368,7 @@ test_that("refits on samples with every state reuse the fit-time coefstart", {
 
 test_that("refits on samples missing a state are fit without coefstart", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5902)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5902)
   fit <- fit_vglm_with_local_coefstart(data)
   refit_data <- mostr:::markov_model_refit_data(fit)
   absorbed_ids <- unique(refit_data$id[refit_data$y == 6])

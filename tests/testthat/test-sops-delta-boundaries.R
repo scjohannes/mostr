@@ -79,7 +79,7 @@ test_that("logit delta intervals distinguish structural boundaries", {
 
 test_that("absorption during prediction does not certify numerical saturation", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 60, follow_up_time = 8, seed = 8118)
+  data <- make_test_data(n_patients = 60, times = 1:8, seed = 8118)
   model <- suppressWarnings(mostm(
     ordered(y) ~ tx,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),

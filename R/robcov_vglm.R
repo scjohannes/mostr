@@ -5,11 +5,11 @@
 #' functionality for vglm models using the same HC1 and finite-cluster scalar
 #' corrections as the package-owned ORM sandwich.
 #'
-#' @param fit A fitted vglm object from the VGAM package.
+#' @param model A fitted vglm object from the VGAM package.
 #' @param cluster Optional vector of cluster identifiers. If provided, computes
 #'   cluster-robust standard errors. Must have the same length as the fitted
 #'   observations, or the same length as the original pre-NA data when the fitted
-#'   model records omitted rows in `fit@na.action`.
+#'   model records omitted rows in `model@na.action`.
 #' @param bread Character string selecting the sandwich bread. `"observed"`
 #'   (the default) numerically differentiates the summed analytic scores.
 #'   `"vglm"` uses the inverse final VGAM IRLS working information returned by
@@ -161,22 +161,20 @@
 #' )
 #' }
 #'
-#' @seealso \code{\link{compare_se_orm_vglm}} for comparing standard errors
-#'   between orm and vglm fits
-#'
 #' @importFrom stats vcov nobs coef pnorm fitted residuals symnum
 #'
 #' @export
 robcov_vglm <- function(
-  fit,
+  model,
   cluster = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
   cadjust = NULL
 ) {
-  if (!inherits(fit, "vglm")) {
-    mostr_abort("'fit' must be a vglm object")
+  if (!inherits(model, "vglm")) {
+    mostr_abort("`model` must be a vglm object.")
   }
+  fit <- model
 
   bread_type <- match.arg(bread)
   type <- match.arg(type)
@@ -952,8 +950,8 @@ align_cluster_vglm <- function(fit, cluster, n) {
 #'   summary statistics.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
@@ -1051,8 +1049,8 @@ summary.robcov_vglm <- function(object, ...) {
 #' @return Invisibly returns the input object.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
@@ -1107,8 +1105,8 @@ print.robcov_vglm <- function(x, ...) {
 #' @return Named numeric vector of coefficients.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
@@ -1135,8 +1133,8 @@ coef.robcov_vglm <- function(object, ...) {
 #' @return The robust variance-covariance matrix.
 #'
 #' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
@@ -1224,7 +1222,7 @@ vcov.robcov_vglm <- function(object, ...) {
 #'
 #' @importFrom stats vcov
 #'
-#' @export
+#' @noRd
 compare_se_orm_vglm <- function(orm_fit, vglm_fit, cluster = NULL) {
   # Model-based SEs
   se_orm_model <- sqrt(diag(orm_model_bread(orm_fit)$bread))

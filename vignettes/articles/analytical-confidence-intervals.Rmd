@@ -49,7 +49,7 @@ ABSORB <- "8"
 raw_data <- sim_markov(
   "actt2",
   n_patients = N_PATIENTS,
-  follow_up_time = FOLLOW_UP,
+  times = 1:FOLLOW_UP,
   treatment_prob = 0.5,
   seed = SEED,
   treatment_effect = -0.5
@@ -59,7 +59,7 @@ plot_sops(raw_data, linetype_var = "tx", facet_var = NULL)
 
 model_data <- prepare_markov_data(
   raw_data,
-  absorbing_state = as.integer(ABSORB)
+  absorb = as.integer(ABSORB)
 )
 
 fit <- mostm(
@@ -288,7 +288,7 @@ plot_time(time_conditional, show_labels = FALSE)
 If we want to show uncertainty, we can plot the expected time differently as well:
 
 ```{r}
-plot_time(time_conditional, show_labels = FALSE, type = "pointrange")
+plot_time(time_conditional, show_labels = FALSE, geom = "pointrange")
 ```
 
 ### Requirements for unconditional variance

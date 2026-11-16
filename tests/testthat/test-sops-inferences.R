@@ -31,13 +31,13 @@ describe("avg_sops() and inferences() pipeline", {
   build_markov_pipeline_case <- function() {
     raw_data <- make_markov_trajectories(
       n_patients = 70,
-      follow_up_time = 8,
+      times = 1:8,
       treatment_prob = 0.5,
-      absorbing_state = 6,
+      absorb = 6,
       seed = 4041,
       treatment_effect = 0.18
     )
-    data <- mostr::prepare_markov_data(raw_data)
+    data <- mostr::prepare_markov_data(raw_data, absorb = 6)
     data <- add_patient_age(data)
 
     list(
@@ -50,16 +50,16 @@ describe("avg_sops() and inferences() pipeline", {
   build_numeric_yprev_case <- function() {
     raw_data <- make_markov_trajectories(
       n_patients = 90,
-      follow_up_time = 7,
+      times = 1:7,
       n_states = 10,
       thresholds = seq(-3, 3, length.out = 9),
       allowed_start_state = as.integer(2:9),
-      absorbing_state = 10,
+      absorb = 10,
       seed = 4042
     )
     data <- mostr::prepare_markov_data(
       raw_data,
-      absorbing_state = 10,
+      absorb = 10,
       factor_previous = FALSE
     )
 
@@ -632,7 +632,7 @@ describe("avg_sops() and inferences() pipeline", {
 
     data <- suppressWarnings(make_test_data(
       n_patients = 28,
-      follow_up_time = 5,
+      times = 1:5,
       seed = 2811
     ))
     model <- mostm(
@@ -708,13 +708,13 @@ describe("avg_sops() and inferences() pipeline", {
 
     raw_data <- make_markov_trajectories(
       n_patients = 200,
-      follow_up_time = 12,
+      times = 1:12,
       treatment_prob = 0.5,
-      absorbing_state = 6,
+      absorb = 6,
       seed = 2375679,
       treatment_effect = 0
     )
-    data <- mostr::prepare_markov_data(raw_data, absorbing_state = 6)
+    data <- mostr::prepare_markov_data(raw_data, absorb = 6)
     data <- add_patient_age(data)
     form <- ordered(y) ~ rms::rcs(time, 4) + tx + age + yprev
 
@@ -759,13 +759,13 @@ describe("avg_sops() and inferences() pipeline", {
 
     raw_data <- make_markov_trajectories(
       n_patients = 200,
-      follow_up_time = 12,
+      times = 1:12,
       treatment_prob = 0.5,
-      absorbing_state = 6,
+      absorb = 6,
       seed = 2375679,
       treatment_effect = 0
     )
-    data <- mostr::prepare_markov_data(raw_data, absorbing_state = 6)
+    data <- mostr::prepare_markov_data(raw_data, absorb = 6)
     data <- add_patient_age(data)
     data <- add_time_basis(data)
 

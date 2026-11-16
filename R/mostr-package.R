@@ -141,8 +141,6 @@
 #'   patient.
 #' * [robcov_vglm()] computes such a covariance matrix for a [VGAM::vglm()]
 #'   fit; `engine = "vglm"` returns its result.
-#' * [compare_se_orm_vglm()] lists the standard errors of an [rms::orm()] fit
-#'   and a [VGAM::vglm()] fit of the same model side by side.
 #' * [set_coef()] replaces the coefficients of a fitted model.
 #' * [get_effective_coefs()] returns the coefficients as a matrix with one row
 #'   per threshold between states.

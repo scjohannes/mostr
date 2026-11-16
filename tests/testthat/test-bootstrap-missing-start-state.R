@@ -11,15 +11,15 @@
 missing_state_case <- function() {
   data <- withr::with_seed(99, make_markov_trajectories(
     n_patients = 300,
-    follow_up_time = 5,
+    times = 1:5,
     n_states = 4,
     thresholds = c(-1.5, 0, 1.5),
     allowed_start_state = 1:3,
-    absorbing_state = 4,
+    absorb = 4,
     treatment_effect = 0.5,
     seed = 99
   ) |>
-    prepare_markov_data(absorbing_state = 4))
+    prepare_markov_data(absorb = 4))
   data <- data[order(data$id, data$time), , drop = FALSE]
   rownames(data) <- NULL
   data$ypprev <- stats::ave(
@@ -182,15 +182,15 @@ test_that("a refit without a middle state keeps a numeric previous state's numbe
   # effect, so the refit must see the original numbers.
   data <- withr::with_seed(99, make_markov_trajectories(
     n_patients = 300,
-    follow_up_time = 5,
+    times = 1:5,
     n_states = 5,
     thresholds = c(-2, -0.7, 0.7, 2),
     allowed_start_state = 1:4,
-    absorbing_state = 5,
+    absorb = 5,
     treatment_effect = 0.5,
     seed = 99
   ) |>
-    prepare_markov_data(absorbing_state = 5))
+    prepare_markov_data(absorb = 5))
   data$yprev <- as.integer(as.character(data$yprev))
   case <- list(
     ids_all = unique(data$id),

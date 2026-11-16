@@ -70,14 +70,14 @@ expect_trajectory_contract <- function(
 
 expect_absorbing_state_sticky <- function(
   object,
-  absorbing_state,
+  absorb,
   id_col = "id",
   time_col = "time",
   state_col = "y"
 ) {
   object <- object[order(object[[id_col]], object[[time_col]]), , drop = FALSE]
   state_values <- as.character(object[[state_col]])
-  target <- as.character(absorbing_state)
+  target <- as.character(absorb)
 
   testthat::expect_true(
     any(state_values == target, na.rm = TRUE),
@@ -159,7 +159,7 @@ expect_probability_array <- function(
 
 expect_absorbing_probability_monotone <- function(
   object,
-  absorbing_state,
+  absorb,
   tolerance = 1e-10,
   time_margin = 2L,
   state_margin = length(dim(object))
@@ -172,9 +172,9 @@ expect_absorbing_probability_monotone <- function(
 
   state_names <- dimnames(object)[[state_margin]]
   state_index <- if (!is.null(state_names)) {
-    match(as.character(absorbing_state), as.character(state_names))
+    match(as.character(absorb), as.character(state_names))
   } else {
-    as.integer(absorbing_state)
+    as.integer(absorb)
   }
 
   testthat::expect_false(

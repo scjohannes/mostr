@@ -11,15 +11,15 @@ build_avg_time_case <- function(factor_time) {
   withr::local_seed(9321)
   data <- make_markov_trajectories(
     n_patients = 100,
-    follow_up_time = 5,
+    times = 1:5,
     n_states = 3,
     thresholds = c(-1, 1),
     allowed_start_state = 1:2,
-    absorbing_state = 3,
+    absorb = 3,
     treatment_effect = 0.3,
     seed = 9321
   ) |>
-    prepare_markov_data(absorbing_state = 3)
+    prepare_markov_data(absorb = 3)
   data$marker <- data$id %% 2
   data$subgroup <- ifelse(data$id %% 3 == 0, "a", "b")
   if (factor_time) {
@@ -145,7 +145,7 @@ test_that("avg_state_time() totals equal time_in_state() of the matching avg_sop
       } else {
         result
       }
-      expected <- time_in_state(avg, target_states = targets[[name]])
+      expected <- time_in_state(avg, state_sets = targets[[name]])
       joined <- merge(actual, expected, by = row$keys)
       label <- paste(row$label, name, sep = ": ")
       expect_identical(nrow(joined), nrow(actual), info = label)
@@ -178,7 +178,7 @@ test_that("avg_state_time integrates irregular factor visits with optional basel
     )
     expected <- time_in_state(
       avg,
-      target_states = 1:2,
+      state_sets = 1:2,
       time_map = time_map,
       target_times = target %||% c(0, 2, 7, 9)
     )
@@ -299,7 +299,7 @@ test_that("all draw engines reduce matched SOP draws before calculating interval
       n_draws = 6,
       seed = 9322
     )
-    expected <- time_in_state(inferred, target_states = 1:2)
+    expected <- time_in_state(inferred, state_sets = 1:2)
     joined <- merge(result[result$state_set == "alive", ], expected, by = "tx")
     expect_equal(joined$estimate, joined$total_time, info = method)
     expect_equal(joined$std.error.x, joined$std.error.y, info = method)
@@ -542,7 +542,7 @@ test_that("time_in_state() keeps blrm point totals without draws, with NA limits
 
     warnings <- character()
     totals <- withCallingHandlers(
-      time_in_state(without_draws, target_states = 1),
+      time_in_state(without_draws, state_sets = 1),
       warning = function(w) {
         warnings <<- c(warnings, conditionMessage(w))
         invokeRestart("muffleWarning")
@@ -552,7 +552,7 @@ test_that("time_in_state() keeps blrm point totals without draws, with NA limits
       any(grepl("return_draws = TRUE", warnings, fixed = TRUE)),
       info = fn
     )
-    expected <- time_in_state(with_draws, target_states = 1)
+    expected <- time_in_state(with_draws, state_sets = 1)
     expect_equal(totals$total_time, expected$total_time, info = fn)
     # The same columns as with draws, so that code reading them works either
     # way.

@@ -40,7 +40,12 @@
 #'   treatment effect per day. The effect on day `t` is `treatment_effect *
 #'   exp(-treatment_effect_decay * (t - 1))`, so `-log(0.01) / 14` shrinks it to
 #'   1% of its day-1 size by day 15. The default 0 gives a constant effect.
-#' @param follow_up_time Number of days to simulate (default: 28).
+#' @param times The days to simulate, in increasing order and each listed
+#'   once (default: `1:28`, four weeks of daily states). Each value is one
+#'   transition, from the state at the previous value (or, for the first, from
+#'   `yprev` in `baseline_data`), and is passed to `lp_function` as `t`. As in
+#'   [sops()], leaving out days does not skip time: `times = c(1, 7, 14)`
+#'   simulates three transitions, not two weeks.
 #' @param baseline_data A data frame with one row per patient, replacing the
 #'   patients that a preset would sample. It must contain `id`, `yprev` (the
 #'   state on the day before the first simulated day), and every covariate
@@ -72,7 +77,7 @@
 #' @param extra_params Optional object, usually a named numeric vector of
 #'   coefficients, passed unchanged to `lp_function`. `NULL` uses the preset's
 #'   coefficients.
-#' @param absorbing_states Integer vector of states that patients cannot leave
+#' @param absorb Integer vector of states that patients cannot leave
 #'   once they enter them. `NULL` (the default) means the worst state,
 #'   `length(intercepts) + 1`, which is death in every preset. Use `integer()`
 #'   when no state is absorbing.
@@ -87,7 +92,7 @@
 #'
 #' @return A data frame with one row per patient and day and columns:
 #'   - `id`: patient identifier
-#'   - `time`: day, from 1 to `follow_up_time`
+#'   - `time`: day, the values of `times`
 #'   - `y`: state on this day
 #'   - `yprev`: state on the previous day
 #'   - all other columns of `baseline_data`, such as `tx`
@@ -126,7 +131,7 @@
 #'
 #' # Your own patients with the ACTT-1 model
 #' patients <- data.frame(id = 1:4, yprev = c(5, 5, 7, 7), tx = c(0, 1, 0, 1))
-#' sim_markov("actt1", baseline_data = patients, follow_up_time = 7, seed = 1)
+#' sim_markov("actt1", baseline_data = patients, times = 1:7, seed = 1)
 #'
 #' # Your own model with three states: 1 = home, 2 = in hospital, 3 = dead
 #' baseline <- data.frame(id = 1:20, yprev = 2, tx = rep(0:1, 10))
@@ -137,7 +142,7 @@
 #' trajectories <- sim_markov(
 #'   NULL,
 #'   baseline_data = baseline,
-#'   follow_up_time = 10,
+#'   times = 1:10,
 #'   intercepts = c(-9, -3),
 #'   lp_function = hospital_lp,
 #'   treatment_effect = log(0.8),
@@ -153,7 +158,7 @@
 #' trajectories_ppo <- sim_markov(
 #'   NULL,
 #'   baseline_data = baseline,
-#'   follow_up_time = 10,
+#'   times = 1:10,
 #'   intercepts = c(-9, -3),
 #'   lp_function = death_only_lp,
 #'   treatment_effect = log(0.8),
@@ -172,12 +177,12 @@ sim_markov <- function(
   treatment_prob = 0.5,
   treatment_effect = NULL,
   treatment_effect_decay = 0,
-  follow_up_time = 28,
+  times = 1:28,
   baseline_data = NULL,
   intercepts = NULL,
   lp_function = NULL,
   extra_params = NULL,
-  absorbing_states = NULL,
+  absorb = NULL,
   covariate_names = NULL,
   seed = NULL
 ) {
@@ -221,7 +226,7 @@ sim_markov <- function(
 
   treatment_effect <- treatment_effect %||% model$treatment_effect %||% 0
   validate_markov_treatment_effect(treatment_effect, treatment_effect_decay)
-  validate_markov_follow_up_time(follow_up_time)
+  validate_markov_times(times)
 
   if (!is.null(seed)) {
     set.seed(seed)
@@ -244,13 +249,13 @@ sim_markov <- function(
 
   simulate_markov_trajectories(
     baseline_data = baseline_data,
-    follow_up_time = follow_up_time,
+    times = times,
     intercepts = intercepts,
     lp_function = lp_function %||% model$lp_function,
     extra_params = extra_params %||% model$extra_params,
     treatment_effect = treatment_effect,
     treatment_effect_decay = treatment_effect_decay,
-    absorbing_states = absorbing_states %||% (length(intercepts) + 1L),
+    absorb = absorb %||% (length(intercepts) + 1L),
     covariate_names = covariate_names
   )
 }
@@ -315,7 +320,7 @@ sim_markov <- function(
 #' 3.1714 t''' - 1.0672 t''''}, where \eqn{t'} to \eqn{t''''} are the
 #' nonlinear basis columns that `rms::rcs()` creates with knots at days 2, 6,
 #' 11, 16, 21, and 27. Days beyond 28, for example with
-#' `follow_up_time = 60`, extrapolate this spline.
+#' `times = 1:60`, extrapolate this spline.
 #'
 #' In ACTT-2, state 2 was mostly recorded only at the day 14, 21, and 28
 #' visits, so the transition model was fitted with states 1 and 2 merged. The
@@ -549,13 +554,13 @@ NULL
 
 simulate_markov_trajectories <- function(
   baseline_data,
-  follow_up_time,
+  times,
   intercepts,
   lp_function,
   extra_params,
   treatment_effect,
   treatment_effect_decay,
-  absorbing_states,
+  absorb,
   covariate_names
 ) {
   # Input validation
@@ -591,16 +596,15 @@ simulate_markov_trajectories <- function(
 
   # Setup
   N <- nrow(baseline_data)
-  times <- 1:follow_up_time
   n_states <- length(intercepts) + 1
 
   # Initialize state matrix
-  # Rows = patients, Columns = time points (0 to follow_up_time)
+  # Rows = patients, Columns = time points (the baseline, then each of `times`)
   state_matrix <- matrix(
     as.numeric(baseline_data$yprev),
     nrow = N,
     ncol = length(times) + 1,
-    dimnames = list(baseline_data$id, 0:max(times))
+    dimnames = list(baseline_data$id, c(0, times))
   )
 
   # Detect which covariates from baseline_data need to be passed to lp_function
@@ -610,17 +614,18 @@ simulate_markov_trajectories <- function(
   }
 
   # Main simulation loop
-  for (t in times) {
+  for (k in seq_along(times)) {
+    t <- times[k]
     # Current states
-    yprev <- state_matrix[, t]
+    yprev <- state_matrix[, k]
 
     # Identify patients not in absorbing states
-    active_idx <- which(!yprev %in% absorbing_states)
+    active_idx <- which(!yprev %in% absorb)
 
     # If all patients are in absorbing states, fill remaining time and exit
     if (length(active_idx) == 0) {
-      for (i in (t + 1):ncol(state_matrix)) {
-        state_matrix[, i] <- state_matrix[, t]
+      for (i in (k + 1):ncol(state_matrix)) {
+        state_matrix[, i] <- state_matrix[, k]
       }
       break
     }
@@ -723,16 +728,16 @@ simulate_markov_trajectories <- function(
 
     # Update state matrix
     # First, carry forward previous state for all patients
-    state_matrix[, t + 1] <- state_matrix[, t]
+    state_matrix[, k + 1] <- state_matrix[, k]
     # Then update only active patients with new states
-    state_matrix[active_idx, t + 1] <- y_new_active
+    state_matrix[active_idx, k + 1] <- y_new_active
   }
 
   # Construct the patient-major long result directly.
-  patient_rows <- rep(seq_len(N), each = follow_up_time)
+  patient_rows <- rep(seq_len(N), each = length(times))
   result <- data.frame(
     id = baseline_data$id[patient_rows],
-    time = rep(seq_len(follow_up_time), times = N),
+    time = rep(times, times = N),
     y = as.vector(t(state_matrix[, -1L, drop = FALSE])),
     check.names = FALSE
   )
@@ -742,7 +747,7 @@ simulate_markov_trajectories <- function(
     baseline_data[patient_rows, baseline_columns, drop = FALSE]
   )
   result$yprev <- as.vector(t(
-    state_matrix[, -(follow_up_time + 1L), drop = FALSE]
+    state_matrix[, -(length(times) + 1L), drop = FALSE]
   ))
   rownames(result) <- NULL
 
@@ -1029,15 +1034,21 @@ validate_markov_treatment_effect <- function(
 }
 
 
-validate_markov_follow_up_time <- function(follow_up_time) {
+# The baseline state in `yprev` comes before the first simulated time, so
+# times must be positive; each value is one transition, so they must
+# increase, which also rules out a time listed twice.
+validate_markov_times <- function(times) {
   if (
-    length(follow_up_time) != 1L ||
-      !is.numeric(follow_up_time) ||
-      !is.finite(follow_up_time) ||
-      follow_up_time < 1 ||
-      follow_up_time != as.integer(follow_up_time)
+    length(times) < 1L ||
+      !is.numeric(times) ||
+      any(!is.finite(times)) ||
+      any(times <= 0) ||
+      any(diff(times) <= 0)
   ) {
-    mostr_abort("follow_up_time must be a positive integer")
+    mostr_abort(
+      "`times` must be positive numbers in increasing order, each listed ",
+      "once, for example `times = 1:28`."
+    )
   }
 }
 

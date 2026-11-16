@@ -20,7 +20,7 @@ test_that("use_coefstart = TRUE is refused by bootstrap_model_coefs() for orm fi
     absorb = 3
   )
   expect_error(
-    bootstrap_model_coefs(orm_fit, n_boot = 2, use_coefstart = TRUE),
+    bootstrap_model_coefs(orm_fit, n_draws = 2, use_coefstart = TRUE),
     "`use_coefstart` can be `TRUE` only for models fitted with `engine = \"vglm\"`",
     fixed = TRUE
   )

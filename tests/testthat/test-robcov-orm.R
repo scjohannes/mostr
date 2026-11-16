@@ -5,7 +5,7 @@ local_robcov_orm_case <- local({
     if (is.null(value)) {
       data <- suppressWarnings(make_test_data(
         n_patients = 28,
-        follow_up_time = 5,
+        times = 1:5,
         seed = 2811
       ))
       fit <- suppressWarnings(rms::orm(

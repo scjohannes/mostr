@@ -12,7 +12,7 @@ make_daily_visit_case <- function(time_as_factor = FALSE) {
 }
 
 build_daily_visit_case <- function(time_as_factor) {
-  data <- make_test_data(n_patients = 80, follow_up_time = 8, seed = 2612)
+  data <- make_test_data(n_patients = 80, times = 1:8, seed = 2612)
   if (time_as_factor) {
     data$time <- factor(data$time, levels = as.character(1:8))
   }
@@ -52,7 +52,7 @@ make_irregular_visit_case <- function(visit_days = c(1, 2, 4, 8)) {
   skip_if_not_installed("rms")
   raw <- make_markov_trajectories(
     n_patients = 120,
-    follow_up_time = max(visit_days),
+    times = seq_len(max(visit_days)),
     seed = 2613
   )
   visits <- raw[raw$time %in% visit_days, , drop = FALSE]
@@ -65,7 +65,7 @@ make_irregular_visit_case <- function(visit_days = c(1, 2, 4, 8)) {
     visits$time,
     visits$time - visits$time[previous]
   )
-  prepare_markov_data(visits)
+  prepare_markov_data(visits, absorb = 6)
 }
 
 # The irregular visits fitted without and with the gap, made once per test run.

@@ -22,8 +22,8 @@ test_that("a missing value in an unused profile column keeps the profile", {
   s_noted <- sops(case$model, newdata = noted, times = 1:4)
 
   for (time_map in list(NULL, case$time_map)) {
-    expected <- time_in_state(s_plain, target_states = "1", time_map = time_map)
-    out <- time_in_state(s_noted, target_states = "1", time_map = time_map)
+    expected <- time_in_state(s_plain, state_sets = "1", time_map = time_map)
+    out <- time_in_state(s_noted, state_sets = "1", time_map = time_map)
     expect_identical(nrow(out), n)
     out <- out[order(out$rowid), , drop = FALSE]
     expected <- expected[order(expected$rowid), , drop = FALSE]
@@ -86,10 +86,10 @@ test_that("inferences(null = ) does not change interpolate_sops() or time_in_sta
     expect_equal(out$p.value[tested], 2 * stats::pnorm(-abs(out$statistic[tested])), info = method)
 
     expected <- without_draws_warning(
-      time_in_state(without, target_states = "1", time_map = case$time_map)
+      time_in_state(without, state_sets = "1", time_map = case$time_map)
     )
     out <- without_draws_warning(
-      time_in_state(with, target_states = "1", time_map = case$time_map)
+      time_in_state(with, state_sets = "1", time_map = case$time_map)
     )
     expect_identical(nrow(out), 2L)
     out <- out[order(out$tx), , drop = FALSE]

@@ -9,7 +9,7 @@
 # A vglm fit for the cluster-robust covariance checks, made once per test run.
 mvn_cluster_case <- function() {
   grid_fixture("mvn cluster case", function() {
-    data <- make_test_data(n_patients = 30, seed = 444, follow_up_time = 15)
+    data <- make_test_data(n_patients = 30, seed = 444, times = 1:15)
     list(data = data, model = make_test_model(data))
   })
 }
@@ -151,7 +151,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
       skip_if_not_installed("VGAM")
       skip_if_not_installed("rms")
 
-      data <- make_test_data(n_patients = 100, seed = 333, follow_up_time = 15)
+      data <- make_test_data(n_patients = 100, seed = 333, times = 1:15)
       # The vglm fit inside the patient-clustered robcov_vglm object
       m_vglm <- make_test_model(data)$vglm_fit
 
@@ -187,7 +187,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
       skip_if_not_installed("VGAM")
       skip_if_not_installed("rms")
 
-      data <- make_test_data(n_patients = 100, seed = 333, follow_up_time = 15)
+      data <- make_test_data(n_patients = 100, seed = 333, times = 1:15)
       m_orm <- rms::orm(
         y ~ time_lin + time_nlin_1 + tx + yprev,
         data = data,
@@ -255,7 +255,7 @@ describe("MVN Simulation-Based Inference for SOPs", {
       skip_if_not_installed("rms")
       skip_if_not_installed("mvtnorm")
 
-      data <- make_test_data(n_patients = 40, seed = 999, follow_up_time = 10)
+      data <- make_test_data(n_patients = 40, seed = 999, times = 1:10)
       baseline_data <- data[data$time == 1, , drop = FALSE]
       m_vglm <- make_test_model(data)
 
@@ -296,7 +296,7 @@ test_that("seeded inference is invariant to outer worker count", {
     skip("Callr worker invariance requires an installed package.")
   }
 
-  data <- make_test_data(n_patients = 40, seed = 889, follow_up_time = 6)
+  data <- make_test_data(n_patients = 40, seed = 889, times = 1:6)
   model <- make_test_model(data)
   baseline <- data[data$time == 1, , drop = FALSE]
   point <- avg_sops(

@@ -186,7 +186,7 @@ delta_reference_fits <- local({
   value <- NULL
   function() {
     if (is.null(value)) {
-      data <- make_test_data(n_patients = 80, follow_up_time = 6, seed = 7331)
+      data <- make_test_data(n_patients = 80, times = 1:6, seed = 7331)
       orm_fit <- suppressWarnings(mostm(
         y ~ time + tx + yprev,
         data = data,

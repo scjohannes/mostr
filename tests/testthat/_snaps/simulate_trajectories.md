@@ -33,8 +33,8 @@
 ---
 
     Code
-      sim_markov("actt2", follow_up_time = 0)
+      sim_markov("actt2", times = 0)
     Condition
       Error in `sim_markov()`:
-      ! follow_up_time must be a positive integer
+      ! `times` must be positive numbers in increasing order, each listed once, for example `times = 1:28`.
 

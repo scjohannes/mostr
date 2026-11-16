@@ -116,7 +116,7 @@
       mostm(y ~ time + yprev, data = data, id_var = "id", absorb = c(2, 4))
     Condition
       Error in `mostm()`:
-      ! `absorb` names the state "2", but 207 of the fitted rows of `data` have it as the previous state (`yprev`). A patient in an absorbing state can't leave it, so these rows are not transitions the model can learn from. Remove them before fitting, for example with `data[!data$yprev %in% c("2", "4"), ]`; `prepare_markov_data(absorbing_state = )` does this for the previous state.
+      ! `absorb` names the state "2", but 207 of the fitted rows of `data` have it as the previous state (`yprev`). A patient in an absorbing state can't leave it, so these rows are not transitions the model can learn from. Remove them before fitting, for example with `data[!data$yprev %in% c("2", "4"), ]`; `prepare_markov_data(absorb = )` does this for the previous state.
 
 ---
 
@@ -125,7 +125,7 @@
       absorb = c(2, 4))
     Condition
       Error in `mostm()`:
-      ! `absorb` names the state "2", but 87 of the fitted rows of `data` have it as the state two visits back (`ypprev`). A patient in an absorbing state can't leave it, so these rows are not transitions the model can learn from. Remove them before fitting, for example with `data[!data$ypprev %in% c("2", "4"), ]`; `prepare_markov_data(absorbing_state = )` does this for the previous state.
+      ! `absorb` names the state "2", but 87 of the fitted rows of `data` have it as the state two visits back (`ypprev`). A patient in an absorbing state can't leave it, so these rows are not transitions the model can learn from. Remove them before fitting, for example with `data[!data$ypprev %in% c("2", "4"), ]`; `prepare_markov_data(absorb = )` does this for the previous state.
 
 # `mostm()` warns about a state seen only as an outcome that `absorb` leaves out
 

@@ -34,20 +34,20 @@ test_that("sim_markov validates preset inputs", {
     error = TRUE,
     sim_markov("actt2", treatment_effect_decay = -1)
   )
-  expect_snapshot(error = TRUE, sim_markov("actt2", follow_up_time = 0))
+  expect_snapshot(error = TRUE, sim_markov("actt2", times = 0))
 })
 
 test_that("presets return reproducible trajectories with their default effect", {
   skip_on_cran()
   actt_columns <- c("id", "time", "y", "yprev", "tx")
-  # `follow_up_time = NULL` leaves the argument out, so the default of 28
+  # `times = NULL` leaves the argument out, so the default of 28
   # days applies.
   presets <- list(
     list(
       label = "ACTT-1",
       preset = "actt1",
       n_patients = 80,
-      follow_up_time = 6,
+      times = 1:6,
       seed = 1987,
       default_effect = -0.0730,
       columns = actt_columns,
@@ -59,7 +59,7 @@ test_that("presets return reproducible trajectories with their default effect", 
       label = "ACTT-2",
       preset = "actt2",
       n_patients = 80,
-      follow_up_time = 6,
+      times = 1:6,
       seed = 1987,
       default_effect = -0.0730,
       columns = actt_columns,
@@ -71,7 +71,7 @@ test_that("presets return reproducible trajectories with their default effect", 
       label = "ACTT-2, 60 days",
       preset = "actt2",
       n_patients = 20,
-      follow_up_time = 60,
+      times = 1:60,
       seed = 123,
       default_effect = -0.0730,
       columns = actt_columns,
@@ -83,7 +83,7 @@ test_that("presets return reproducible trajectories with their default effect", 
       label = "VIOLET",
       preset = "violet",
       n_patients = 30,
-      follow_up_time = NULL,
+      times = NULL,
       seed = 1904,
       default_effect = log(0.75),
       columns = c("id", "time", "y", "yprev", "age", "sofa", "tx"),
@@ -96,10 +96,10 @@ test_that("presets return reproducible trajectories with their default effect", 
   for (case in presets) {
     simulate <- function(...) {
       args <- list(case$preset, n_patients = case$n_patients, seed = case$seed, ...)
-      args$follow_up_time <- case$follow_up_time
+      args$times <- case$times
       do.call(sim_markov, args)
     }
-    follow_up_time <- if (is.null(case$follow_up_time)) 28 else case$follow_up_time
+    follow_up_time <- length(case$times %||% 1:28)
     traj <- simulate()
 
     expect_trajectory_contract(
@@ -119,7 +119,7 @@ test_that("presets return reproducible trajectories with their default effect", 
       expect_setequal(unique(traj$yprev[traj$time == 1]), case$start_states)
     }
     if (!is.null(case$absorbing)) {
-      expect_absorbing_state_sticky(traj, absorbing_state = case$absorbing)
+      expect_absorbing_state_sticky(traj, absorb = case$absorbing)
       absorbed <- traj$yprev == case$absorbing
       expect_equal(
         traj$y[absorbed],
@@ -145,7 +145,7 @@ test_that("ACTT-1 and ACTT-2 presets share their slopes and sample their own sta
 
   parameters <- list(actt1 = actt1, actt2 = actt2)
   for (preset in names(parameters)) {
-    traj <- sim_markov(preset, n_patients = 10000, follow_up_time = 1, seed = 4815)
+    traj <- sim_markov(preset, n_patients = 10000, times = 1, seed = 4815)
     initial <- traj[traj$time == 1, , drop = FALSE]
     observed <- prop.table(table(factor(initial$yprev, levels = 4:7)))
     expect_equal(
@@ -207,14 +207,14 @@ test_that("ACTT presets code treatment as one", {
       preset,
       n_patients = 20,
       treatment_prob = 0,
-      follow_up_time = 1,
+      times = 1,
       seed = 91
     )
     treated <- sim_markov(
       preset,
       n_patients = 20,
       treatment_prob = 1,
-      follow_up_time = 1,
+      times = 1,
       seed = 91
     )
 
@@ -332,7 +332,7 @@ test_that("ACTT presets match a per-patient call of their linear predictor", {
       sim_markov(
         preset,
         baseline_data = baseline,
-        follow_up_time = 30,
+        times = 1:30,
         treatment_effect = log(0.8),
         treatment_effect_decay = 0.1,
         lp_function = lp_function,
@@ -351,7 +351,7 @@ test_that("presets simulate exactly the patients in baseline_data", {
     traj <- sim_markov(
       preset,
       baseline_data = baseline,
-      follow_up_time = 3,
+      times = 1:3,
       seed = 1
     )
 
@@ -371,10 +371,10 @@ test_that("a supplied model argument replaces only that part of a preset", {
       "actt2",
       baseline_data = baseline,
       intercepts = rev(actt1$orm_intercepts),
-      follow_up_time = 10,
+      times = 1:10,
       seed = 7
     ),
-    sim_markov("actt1", baseline_data = baseline, follow_up_time = 10, seed = 7)
+    sim_markov("actt1", baseline_data = baseline, times = 1:10, seed = 7)
   )
 })
 
@@ -389,12 +389,12 @@ test_that("sim_markov passes the decayed treatment effect to lp_function", {
   sim_markov(
     NULL,
     baseline_data = baseline,
-    follow_up_time = 5,
+    times = 1:5,
     intercepts = 0,
     lp_function = record_lp,
     treatment_effect = 0.5,
     treatment_effect_decay = 0.2,
-    absorbing_states = integer(),
+    absorb = integer(),
     seed = 1
   )
   recorded <- vapply(as.character(1:5), get, numeric(1), envir = seen)
@@ -403,13 +403,50 @@ test_that("sim_markov passes the decayed treatment effect to lp_function", {
   sim_markov(
     NULL,
     baseline_data = baseline,
-    follow_up_time = 2,
+    times = 1:2,
     intercepts = 0,
     lp_function = record_lp,
-    absorbing_states = integer(),
+    absorb = integer(),
     seed = 1
   )
   expect_equal(get("1", envir = seen), 0)
+})
+
+test_that("sim_markov simulates one transition at each listed time", {
+  seen <- numeric()
+  record_lp <- function(yprev, t, tx, treatment_effect, extra_params) {
+    seen <<- c(seen, t)
+    -0.5 * t
+  }
+  baseline <- data.frame(id = 1:3, yprev = c(1, 2, 3), tx = 0)
+
+  result <- sim_markov(
+    NULL,
+    baseline_data = baseline,
+    times = c(1, 7, 14),
+    intercepts = c(-1, 1),
+    lp_function = record_lp,
+    absorb = integer(),
+    seed = 1
+  )
+
+  # Leaving out days does not skip time: three transitions, at days 1, 7, 14.
+  expect_equal(result$time, rep(c(1, 7, 14), times = 3))
+  expect_equal(unique(seen), c(1, 7, 14))
+  by_patient <- split(result, result$id)
+  for (patient in by_patient) {
+    expect_equal(patient$yprev[-1], patient$y[-3])
+  }
+  expect_equal(result$yprev[result$time == 1], baseline$yprev)
+
+  for (bad in list(c(2, 1), c(1, 1), 0, numeric(), c(1, NA), "1")) {
+    expect_error(
+      sim_markov("actt2", n_patients = 2, times = bad),
+      "`times` must be positive numbers in increasing order",
+      fixed = TRUE,
+      class = "mostr_error"
+    )
+  }
 })
 
 test_that("sim_markov warns about absent covariates and still simulates", {
@@ -420,7 +457,7 @@ test_that("sim_markov warns about absent covariates and still simulates", {
     result <- sim_markov(
       NULL,
       baseline_data = baseline,
-      follow_up_time = 2,
+      times = 1:2,
       intercepts = 0,
       lp_function = lp,
       covariate_names = "missing",
@@ -439,10 +476,10 @@ test_that("sim_markov carries forward once all patients are absorbing", {
   result <- sim_markov(
     NULL,
     baseline_data = baseline,
-    follow_up_time = 4,
+    times = 1:4,
     intercepts = -Inf,
     lp_function = function(yprev, t, tx, treatment_effect, extra_params) 0,
-    absorbing_states = 2,
+    absorb = 2,
     seed = 1,
     covariate_names = "tx"
   )
@@ -458,7 +495,7 @@ test_that("sim_markov passes tx even when not requested as a covariate", {
     result <- sim_markov(
       NULL,
       baseline_data = baseline,
-      follow_up_time = 2,
+      times = 1:2,
       intercepts = 0,
       lp_function = function(yprev, t, tx, treatment_effect, extra_params) {
         ifelse(tx == 1, 10, -10)
@@ -481,7 +518,7 @@ test_that("sim_markov preserves character patient IDs", {
   result <- sim_markov(
     NULL,
     baseline_data = baseline,
-    follow_up_time = 2,
+    times = 1:2,
     intercepts = 0,
     lp_function = function(yprev, t, tx, treatment_effect, extra_params) 0,
     covariate_names = "tx",
@@ -499,11 +536,11 @@ test_that("sim_markov supports threshold-specific linear predictors", {
     sim_markov(
       NULL,
       baseline_data = baseline,
-      follow_up_time = 3,
+      times = 1:3,
       intercepts = c(-1, 1),
       lp_function = lp_function,
       treatment_effect = 0.5,
-      absorbing_states = integer(),
+      absorb = integer(),
       covariate_names = "tx",
       seed = 10
     )
@@ -532,7 +569,7 @@ test_that("sim_markov refuses baseline_data columns it creates itself", {
     sim_markov(
       NULL,
       baseline_data = baseline,
-      follow_up_time = 3,
+      times = 1:3,
       intercepts = c(-1, 1),
       lp_function = function(yprev, t, tx, ...) rep(0, length(yprev)),
       seed = 1

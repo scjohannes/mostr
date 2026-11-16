@@ -848,7 +848,7 @@ prediction_refusals <- list(
     function() {
       plot_lp_difference(
         grid_fit(refusal_orm),
-        profile = grid_profiles(refusal_orm)[1, , drop = FALSE],
+        newdata = grid_profiles(refusal_orm)[1, , drop = FALSE],
         variables = list(tx = c(0, 1)),
         times = 1:4,
         previous_states = 1:4
@@ -1444,10 +1444,10 @@ refusal_sim_threshold_lp <- function(intercepts, value) {
   sim_markov(
     NULL,
     baseline_data = data.frame(id = 1, yprev = 1, tx = 1),
-    follow_up_time = 1,
+    times = 1,
     intercepts = intercepts,
     lp_function = function(yprev, t, tx, treatment_effect, extra_params) value,
-    absorbing_states = integer(),
+    absorb = integer(),
     covariate_names = "tx",
     seed = 1
   )
@@ -1608,7 +1608,7 @@ robcov_refusals <- list(
   refusal(
     "V01", "a fit that is not a vglm fit",
     function() robcov_vglm(stats::lm(y ~ x, data = refusal_robcov_data())),
-    "'fit' must be a vglm object"
+    "`model` must be a vglm object"
   ),
   refusal(
     "V02", "a `cluster` of the wrong length",

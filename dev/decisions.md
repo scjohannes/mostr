@@ -70,6 +70,51 @@ exist (removed 2026-11-13).
 same problem but do not use the shared resolvers; left for after the renaming
 of their arguments (issue #12).
 
+## 2026-11-16: Exported argument names settled before the first CRAN release
+
+**Decided** (#12). The renames are `absorbing_state` / `absorbing_states` to
+`absorb` (`prepare_markov_data()`, `sim_markov()`); `follow_up_time` to
+`times` (`sim_markov()`); `x` and `profile` to `model` and `newdata`
+(`plot_lp_difference()`); `fit` to `model` (`robcov_vglm()`); `n_boot` to
+`n_draws` (`bootstrap_model_coefs()`); `target_states` to `state_sets`
+(`time_in_state()`); and `type` to `geom` (`plot_time()`). They come with no
+deprecation aliases, because nothing has been released. `compare_se_orm_vglm()`
+is no longer exported.
+
+**Why.** After the first CRAN release, each rename would need a deprecation
+cycle. Every new name is already used for the same concept elsewhere in the
+package.
+
+- `prepare_markov_data(absorb)` has **no default**. The old default, `6`
+  (death in VIOLET), silently removed rows from data in which 6 is not death.
+  `absorb = NULL` is the explicit way to keep every row. A `NULL` default was
+  rejected: forgetting `absorb` would then keep the rows after death, and
+  `mostm()` would fit dead-to-dead transitions without a warning, because
+  state 6 then occurs as a previous state.
+- `sim_markov(times = 1:28)` takes a vector of times instead of a count, as
+  the maintainer suggested, so that it matches `sops(times = )`: one
+  transition per value, with the value passed to `lp_function` as `t`. The
+  state matrix is indexed by position, so `times = 1:n` reproduces
+  `follow_up_time = n` exactly (9 reference calls covering all presets,
+  `baseline_data`, decay, custom `absorb`, `prepare_markov_data()` and
+  `time_in_state()` gave `identical()` results before and after). The
+  candidate names `n_times` and `max_time` for a count were rejected along
+  with the count itself.
+- `compare_se_orm_vglm()` keeps its argument names `orm_fit` and `vglm_fit`,
+  which say which fit goes where. The maintainer decided it does not need to
+  be exported; the tests still use it.
+- `time_in_state(state_sets)` keeps taking a single set of states (default
+  `1`); only the name changed.
+- `prepare_markov_data()` gains `y_var` and `p_var`, as in `mostm()`, instead
+  of fixing the column names to `y` and `yprev`.
+- Left as they are: `type` (robust covariance type in `mostm()`,
+  `get_vcov_robust()` and `robcov_vglm()`) and `method` (correlation method in
+  `plot_correlation()` and `plot_variogram()`, as in `stats::cor()`), and `x`
+  in the plots that also take observed data. Already settled on `main` before
+  this entry: the `adjust` alias for `cadjust` was removed (d3442c6), and the
+  `id_var` defaults of `plot_correlation()` and `plot_variogram()` were made
+  `NULL`.
+
 ## 2026-11-13: Patients without a fitted row are named at the fit and left out of resamples
 
 **Decided.** `mostm()` warns when a patient loses every row to missing values

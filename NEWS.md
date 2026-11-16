@@ -2,6 +2,33 @@
 
 ## Breaking changes
 
+* Exported arguments now use one name for one concept (#12). The old names
+  are gone, with no deprecation period, because no version has been
+  released yet:
+
+  * `prepare_markov_data()`: `absorbing_state` is now `absorb`, as in
+    `mostm()`, and it is required. The old default, `6`, silently removed
+    the rows after state 6 even in data where state 6 is not death. Write
+    `absorb = 6` to keep the old behaviour, or `absorb = NULL` to keep every
+    row. `prepare_markov_data()` also gains `y_var` and `p_var` to name the
+    state columns, which were fixed to `y` and `yprev`.
+  * `sim_markov()`: `absorbing_states` is now `absorb`, and `follow_up_time`
+    is replaced by `times`, the days to simulate, as in `sops()`. Write
+    `times = 1:28` for `follow_up_time = 28`; this gives identical
+    trajectories. Each value of `times` is one transition, so
+    `times = c(1, 7, 14)` simulates three transitions.
+  * `plot_lp_difference()`: `x` is now `model` and `profile` is now
+    `newdata`, as in the prediction functions.
+  * `robcov_vglm()`: `fit` is now `model`.
+  * `bootstrap_model_coefs()`: `n_boot` is now `n_draws`, as in
+    `inferences()`.
+  * `time_in_state()`: `target_states` is now `state_sets`, as in
+    `state_time()`. It still takes one set of states.
+  * `plot_time()`: `type` is now `geom`, as in `plot_sops()` and
+    `plot_comparisons()`.
+
+* `compare_se_orm_vglm()` is no longer exported.
+
 * A second-order model is declared once, when it is fitted:
   `mostm(..., p2_var = "ypprev")` names the column with the state two visits
   back. `mostm()` also takes `p_var`, the previous-state column (`"yprev"` by
@@ -20,7 +47,7 @@
   * every `absorb` label must be a state of the response;
   * no fitted row may have an absorbing state as its previous state, or, for
     a second-order model, as the state two visits back (remove such rows
-    first; `prepare_markov_data(absorbing_state = )` does this for the
+    first; `prepare_markov_data(absorb = )` does this for the
     previous state);
   * a state that occurs as an outcome but never as a previous state, and is
     not named in `absorb`, gives a warning: it may be absorbing, such as
