@@ -20,7 +20,12 @@ model.}
 \item{newdata}{One-row data frame containing the covariate profile.}
 
 \item{variables}{Named list with one variable and at least two values. The
-first value is the reference.}
+first value is the reference. The variable cannot be the model's time
+column, its \code{gap_var} column (the time since the previous visit), or its
+previous-state column: the plot sets the first two at each visit from
+\code{times} and the previous state in each panel, so a value given here
+would have no effect. Choose the visits with \code{times} and the previous
+states with \code{previous_states}.}
 
 \item{times}{Time values at which to evaluate the linear predictor.}
 

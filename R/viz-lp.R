@@ -21,7 +21,12 @@
 #'   model.
 #' @param newdata One-row data frame containing the covariate profile.
 #' @param variables Named list with one variable and at least two values. The
-#'   first value is the reference.
+#'   first value is the reference. The variable cannot be the model's time
+#'   column, its `gap_var` column (the time since the previous visit), or its
+#'   previous-state column: the plot sets the first two at each visit from
+#'   `times` and the previous state in each panel, so a value given here
+#'   would have no effect. Choose the visits with `times` and the previous
+#'   states with `previous_states`.
 #' @param times Time values at which to evaluate the linear predictor.
 #' @param previous_states Optional previous-state values to facet by. Defaults
 #'   to the fitted states that occur as the previous state in the data the
@@ -65,11 +70,27 @@ plot_lp_difference <- function(
   }
   variables <- validate_avg_comparison_variables(variables)
   variable <- names(variables)[1]
+  settings <- resolve_markov_settings(model)
+  # The grid sets the time and `gap_var` columns at each visit, which
+  # overwrote a value given in `variables` and failed with "replacement has
+  # 1 row, data has 0".
+  stop_visit_columns_in_variables(variables, settings, plot = TRUE)
+  # `plot_lp_grid()` sets the previous-state column to the state of each
+  # panel after applying `variables`, so a value given for it had no effect.
+  if (variable %in% settings$p_var) {
+    mostr_abort(
+      "`variables` cannot set `",
+      variable,
+      "`, the model's previous-state column: the plot has one panel per ",
+      "previous state and sets this column in each, so a value given in ",
+      "`variables` would have no effect. Choose the previous states with ",
+      "`previous_states`."
+    )
+  }
   if (!variable %in% names(newdata)) {
     mostr_abort("Variables not in newdata: ", variable)
   }
   plot_validate_scalar(line_width, "line_width", lower = 0)
-  settings <- resolve_markov_settings(model)
   time_var <- settings$time_var
 
   y_levels <- markov_model_ylevels(model, settings$y_levels)

@@ -25,7 +25,11 @@ bare_variable_data <- function(model, newdata) {
 # named in a list or given as bare names. The recursion overwrites both at
 # every visit (`assign_sop_visit()`), so a value set here had no effect: a
 # comparison of two times was exactly 0 with standard error 0 (issue #29).
-stop_visit_columns_in_variables <- function(variables, settings) {
+# `plot_lp_difference()` and `plot_transitions()` set the same columns at
+# each visit, where such a value plotted a difference of 0 or failed with an
+# obscure error; `plot = TRUE` words the message for a plot, which has no
+# `time_map`.
+stop_visit_columns_in_variables <- function(variables, settings, plot = FALSE) {
   names_set <- if (is.character(variables)) variables else names(variables)
   visit_columns <- c(settings$time_var, settings$gap_var)
   column <- intersect(names_set, visit_columns)
@@ -38,15 +42,27 @@ stop_visit_columns_in_variables <- function(variables, settings) {
   } else {
     "the time since the previous visit (`gap_var`)"
   }
+  if (plot) {
+    computed <- "the plot is computed visit by visit"
+    advice <- "Choose the visits with `times`."
+  } else {
+    computed <- "SOPs are computed visit by visit"
+    advice <- paste0(
+      "Choose the visits with `times`; functions that total time ",
+      "also take `time_map`, which gives the elapsed time of each visit."
+    )
+  }
   mostr_abort(
     "`variables` cannot set `",
     column,
     "`, ",
     role,
-    ": SOPs are computed visit by visit, and this column is set at each ",
+    ": ",
+    computed,
+    ", and this column is set at each ",
     "visit from `times`, so a value given in `variables` would have no ",
-    "effect. Choose the visits with `times`; functions that total time ",
-    "also take `time_map`, which gives the elapsed time of each visit."
+    "effect. ",
+    advice
   )
 }
 
