@@ -12,6 +12,32 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-16: `violet_baseline` becomes internal data
+
+**Decided.** The table of starting state, age and SOFA score combinations of
+the 1,351 VIOLET patients (858 rows with counts `n`) moved from the exported,
+documented dataset `data/violet_baseline.rda` to internal data in
+`R/sysdata.rda`, written by `data-raw/violet_baseline.R` with
+`usethis::use_data(internal = TRUE)`. Its help page is gone; its provenance
+(how the counts are recovered from Harrell's `simlongord`, and the references)
+is now a comment at the top of `data-raw/violet_baseline.R`. `LazyData` was
+dropped from DESCRIPTION because `data/` is now empty.
+`sim_markov("violet", n_patients = 500, times = 1:28, seed = 1)` returns an
+`identical()` result before and after the move (`rlang::hash()`
+`5f822a4d0af8d6d4ec83a6d7af9c0941`).
+
+**Why.** The maintainer sees no reason for users to access the table
+directly; `sim_markov("violet")` is how they use it. Keeping it out of the
+exported API also leaves less to document and maintain for the first CRAN
+release.
+
+**Rejected.** Dropping the table and sampling starting state, age and SOFA
+score independently from stored marginal probabilities, as the ACTT presets
+do for their single baseline characteristic. Independent sampling would lose
+the correlation between the three characteristics (for example, patients who
+start on a ventilator have higher SOFA scores) and so change the simulated
+outcomes.
+
 ## 2026-11-16: Help-page examples run, each with its own short set-up
 
 **Decided** (issue #26). Every exported function's help page has examples

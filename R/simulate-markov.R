@@ -456,10 +456,16 @@ NULL
 #'
 #' @details
 #' **Patients.** Each simulated patient's starting state (`yprev`), age, and
-#' SOFA (Sequential Organ Failure Assessment) score are drawn together, with
-#' replacement, from the 1,351 VIOLET patients summarized in
-#' [violet_baseline]. About 65% of patients start in hospital (state 2) and
-#' 35% on a ventilator or with ARDS (state 3). Treatment (`tx = 1`) is
+#' SOFA (Sequential Organ Failure Assessment) score are drawn jointly, with
+#' replacement, from the combinations of these three characteristics among
+#' the 1,351 VIOLET patients. Drawing them together keeps their correlation:
+#' for example, patients who start on a ventilator tend to have higher SOFA
+#' scores. The VIOLET data are not public. The combinations, and how many
+#' patients had each, are recovered from `simlongord`, whose starting states,
+#' ages and SOFA scores Harrell resampled from the VIOLET patients; they
+#' reproduce every summary he published for these patients. About 65% of
+#' patients start in hospital (state 2) and 35% on a ventilator or with ARDS
+#' (state 3). Treatment (`tx = 1`) is
 #' assigned independently of these characteristics with probability
 #' `treatment_prob`; control patients have `tx = 0`. A `baseline_data` that
 #' you supply must contain the columns `id`, `yprev`, `age`, `sofa`, and `tx`.
@@ -545,8 +551,7 @@ NULL
 #'   seed = 123
 #' )
 #'
-#' @seealso [sim_markov()] to simulate, and [violet_baseline] for the VIOLET
-#'   patients.
+#' @seealso [sim_markov()] to simulate.
 #'
 #' @name violet_preset
 NULL
@@ -916,8 +921,12 @@ violet_markov_parameters <- function() {
   # patients reach home about 1 percentage point less often than in
   # `simlongord` by day 28.
   list(
-    # Lazy data is not visible from the namespace unless mostr is attached.
-    baseline = mostr::violet_baseline,
+    # Internal data (R/sysdata.rda): the joint starting state, age and SOFA
+    # combinations of the 1,351 VIOLET patients with counts `n`, recovered
+    # from Harrell's `simlongord`. Sampling the three together keeps their
+    # correlation; data-raw/violet_baseline.R derives the table and explains
+    # how.
+    baseline = violet_baseline,
     intercepts = c(-4.713, 1.741, 10.034),
     extra_params = c(
       "yprev=1" = -15.797,

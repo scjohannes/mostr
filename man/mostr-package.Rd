@@ -160,8 +160,6 @@ between the two days.
 model, either from a model of a published trial (the presets
 \link{actt1_preset}, \link{actt2_preset} and \link{violet_preset}) or from a model you
 describe.
-\item \link{violet_baseline} holds the starting states, ages and SOFA scores of the
-VIOLET trial patients, from which \code{sim_markov("violet")} samples.
 }
 }
 

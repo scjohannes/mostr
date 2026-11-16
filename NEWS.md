@@ -29,6 +29,12 @@
 
 * `compare_se_orm_vglm()` is no longer exported.
 
+* The `violet_baseline` dataset is no longer exported or documented; it is
+  now internal data that `sim_markov("violet")` draws its patients from.
+  `sim_markov("violet")` draws exactly the same patients as before. Code that
+  used `violet_baseline` or `data(violet_baseline)` directly can simulate
+  patients with `sim_markov("violet")` instead.
+
 * A second-order model is declared once, when it is fitted:
   `mostm(..., p2_var = "ypprev")` names the column with the state two visits
   back. `mostm()` also takes `p_var`, the previous-state column (`"yprev"` by
