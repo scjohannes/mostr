@@ -167,7 +167,13 @@ describe("SOP regression baselines", {
         sim_draw = draw_signature(mostr::get_draws(sim_result))
       ),
       style = "json2",
-      cran = TRUE
+      cran = TRUE,
+      # The MVN draw goes through the vglm robust covariance, which is computed
+      # by finite differences and differs between platforms in its last
+      # digits. A covariance change of about 1e-10 relative moved one draw,
+      # rounded to 8 digits, from 0.31761297 to 0.31761296 on macOS only.
+      # 1e-6 allows such a last-digit flip; a real change is far larger.
+      tolerance = 1e-6
     )
   })
 
