@@ -11,7 +11,13 @@ trajectories.
 
 ## Installation
 
-Install the development version from GitHub with `pak`:
+Install the released version from CRAN:
+
+``` r
+install.packages("mostr")
+```
+
+Or install the development version from GitHub with `pak`:
 
 ``` r
 install.packages("pak")
