@@ -42,18 +42,36 @@
 #' ggplot2, for example as a histogram of `estimate`.
 #'
 #' @examples
-#' \dontrun{
-#' cmp <- avg_comparisons(
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
+#'
+#' # Effect of treatment on the probability of being outside hospital and of
+#' # death on each day, with delta-method confidence bands
+#' daily <- avg_comparisons(
+#'   fit,
+#'   variables = list(tx = c(0, 1)),
+#'   state_sets = list(home = c("1", "2"), dead = "8"),
+#'   times = 1:14
+#' )
+#' plot_comparisons(inferences(daily, method = "delta"))
+#'
+#' # Effect on the expected days in each group of states over days 1 to 14
+#' days <- avg_comparisons(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
 #'   estimand = "time_in_state",
-#'   state_sets = c(1, 2),
-#'   times = 1:30
-#' ) |>
-#'   inferences(method = "mvn", n_draws = 500)
-#'
-#' plot_comparisons(cmp)
-#' }
+#'   state_sets = list(home = c("1", "2"), hospital = as.character(3:7)),
+#'   times = 1:14
+#' )
+#' plot_comparisons(inferences(days, method = "delta"))
 #'
 #' @importFrom ggplot2 geom_errorbar geom_hline geom_point
 #' @export

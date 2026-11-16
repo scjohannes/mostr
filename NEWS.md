@@ -281,6 +281,13 @@
 
 ## Documentation
 
+* Every exported function now has help-page examples that run (#26). Each
+  example simulates a small trial with `sim_markov()`, prepares it with
+  `prepare_markov_data()`, fits it with `mostm()` and then shows the
+  function, so it can be copied and run as it is. Only slow parts, the
+  bootstraps that refit the model and the `blrm` fit in `?mostm`, are inside
+  `\donttest{}`. `soprob_markov()` has an example for the first time.
+
 * `?inferences` now explains that a bootstrap with `newdata`, even when it
   holds the fitted patients themselves, keeps the profiles fixed: its
   intervals match conditional variance and are narrower than those of the

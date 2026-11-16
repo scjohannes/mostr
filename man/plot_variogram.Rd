@@ -81,7 +81,12 @@ by \code{\link[=plot_correlation]{plot_correlation()}} as correlations against a
 Its minimum input requirements are the same as \code{\link[=plot_correlation]{plot_correlation()}}.
 }
 \examples{
-\dontrun{
-plot_variogram(data, id_var = "id", time_var = "day")
-}
+# 200 simulated patients followed for 14 days; dead patients stay in
+# state 8
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+
+# Rank correlation between a patient's states on two days, against the
+# number of days between them
+plot_variogram(trajectories)
+
 }

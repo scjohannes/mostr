@@ -8,9 +8,9 @@ When making code changes, update `ARCHITECTURE.md` in the same work so it stays 
 
 ## Required R Version
 
-Always use **R 4.6.1** for development and validation of this package. Do not rely
+Always use **R 4.6.2** for development and validation of this package. Do not rely
 on whichever R version happens to be on `PATH`. On this Windows machine, use
-`C:\Program Files\R\R-4.6.1\bin\x64\Rscript.exe` (or `R.exe` from the same
+`C:\Program Files\R\R-4.6.2\bin\x64\Rscript.exe` (or `R.exe` from the same
 installation for `R CMD` commands).
 
 For compilation, package builds, and checks, use the matching Rtools45 installation
@@ -20,7 +20,7 @@ as the R invocation:
 ```powershell
 $env:MAKEFLAGS = 'PATH=/x86_64-w64-mingw32.static.posix/bin:/usr/bin'
 $env:LC_ALL = 'C'
-& 'C:\Program Files\R\R-4.6.1\bin\x64\Rscript.exe' -e "devtools::check(vignettes = FALSE)"
+& 'C:\Program Files\R\R-4.6.2\bin\x64\Rscript.exe' -e "devtools::check(vignettes = FALSE)"
 ```
 
 ## Build, Test, and Development Commands
@@ -106,7 +106,7 @@ runs with `devtools::test()` and in CI, which set `NOT_CRAN=true`.
 
   ```powershell
   $env:NOT_CRAN = 'false'
-  & 'C:\Program Files\R\R-4.6.1\bin\x64\Rscript.exe' -e "pkgload::load_all(quiet = TRUE); t <- system.time(r <- testthat::test_local(reporter = 'summary', stop_on_failure = FALSE)); print(t[['elapsed']]); r <- as.data.frame(r); print(utils::head(r[order(-r[['real']]), c('file', 'test', 'real', 'skipped')], 20))"
+  & 'C:\Program Files\R\R-4.6.2\bin\x64\Rscript.exe' -e "pkgload::load_all(quiet = TRUE); t <- system.time(r <- testthat::test_local(reporter = 'summary', stop_on_failure = FALSE)); print(t[['elapsed']]); r <- as.data.frame(r); print(utils::head(r[order(-r[['real']]), c('file', 'test', 'real', 'skipped')], 20))"
   ```
 
   `NOT_CRAN = 'false'` makes `skip_on_cran()` apply; without it,

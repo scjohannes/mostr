@@ -57,12 +57,26 @@ fitted model: the \code{time_var} and \code{p_var} given to \code{\link[=mostm]{
 of the response in fitted order.
 }
 \examples{
-\dontrun{
+# 200 simulated patients followed for 14 days; state 8, death, is
+# absorbing
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+
+# A model in which the treatment effect changes linearly with time
+fit <- mostm(
+  ordered(y) ~ yprev + time * tx,
+  data = model_data,
+  id_var = "id",
+  absorb = "8"
+)
+
+# Treatment minus control in the log odds of a worse state on each day,
+# with one panel per previous state
 plot_lp_difference(
   fit,
-  newdata = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
+  newdata = data.frame(tx = 0),
   variables = list(tx = c(0, 1)),
-  times = 1:28
+  times = 1:14
 )
-}
+
 }

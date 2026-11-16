@@ -4,10 +4,15 @@ Version: 0.2.1
 Authors@R: c(
     person("Johannes", "Schwenke", , "johannes.schwenke@gmail.com", role = c("aut", "cre", "cph")),
     person("Felix", "Herkner", , "felix.herkner@meduniwien.ac.at", role = c("aut", "cph")))
-Description: Estimate state occupancy probabilities and treatment contrasts
-    for longitudinal ordinal outcomes using discrete-time Markov transition
-    models. Supports (partial) proportional-odds models fitted with 'VGAM',
-    'rms', or 'rmsb'.
+Description: Estimate state occupancy probabilities, expected time in
+    states and treatment contrasts for longitudinal ordinal outcomes using
+    discrete-time Markov transition models, following Rohde et al. (2024)
+    <doi:10.1002/sim.10133>. Supports first- and second-order (partial)
+    proportional-odds models fitted with 'rms', 'VGAM', or 'rmsb'.
+    Confidence intervals come from the delta method, from simulating the
+    model coefficients, or from bootstrap resampling of patients. Also
+    simulates ordinal trajectories from models based on three clinical
+    trials and plots observed and estimated trajectories.
 License: GPL (>= 2)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

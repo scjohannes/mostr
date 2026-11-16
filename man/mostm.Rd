@@ -338,12 +338,12 @@ made by \code{mostm()}; a model fitted directly with \code{\link[rms:orm]{rms::o
 }
 }
 \examples{
-# Daily states of 200 simulated patients over 14 days: 1 is the best state
+# Daily states of 100 simulated patients over 10 days: 1 is the best state
 # and 8 is death
 trajectories <- sim_markov(
   "actt2",
-  n_patients = 200,
-  times = 1:14,
+  n_patients = 100,
+  times = 1:10,
   seed = 1
 )
 model_data <- prepare_markov_data(trajectories, absorb = 8)
@@ -367,29 +367,34 @@ fit_vglm <- mostm(
 # Both engines reach the same maximum of the log-likelihood
 c(orm = stats::logLik(fit), vglm = stats::logLik(fit_vglm$vglm_fit))
 
-# Probability of each state on day 14 with and without treatment. SOPs are
-# calculated one day at a time, so request every day up to day 14.
+# Probability of each state on day 10 with and without treatment. SOPs are
+# calculated one day at a time, so request every day up to day 10.
 sops_by_arm <- avg_sops(
   fit,
   variables = list(tx = c(0, 1)),
-  times = 1:14
+  times = 1:10
 )
-sops_by_arm[sops_by_arm$time == 14, ]
+sops_by_arm[sops_by_arm$time == 10, ]
 
 \donttest{
 if (requireNamespace("rmsb", quietly = TRUE)) {
-  # A Bayesian model with a separate time effect at each state threshold,
-  # fitted to the first 60 patients to keep the example short
+  # A Bayesian model with a separate time effect at each state threshold
+  # (partial proportional odds), the kind of model that the VIOLET preset
+  # simulates. Its states are 1 (home), 2 (hospital), 3 (ventilator or
+  # ARDS) and 4 (dead). Stan's sampling takes about a minute.
+  violet <- sim_markov("violet", n_patients = 60, times = 1:10, seed = 1)
+  violet_data <- prepare_markov_data(violet, absorb = 4)
   fit_blrm <- mostm(
     ordered(y) ~ yprev + time + tx,
-    data = model_data,
+    data = violet_data,
     id_var = "id",
-    absorb = "8",
+    absorb = "4",
     engine = "blrm",
-    subset = id <= 60,
     ppo = ~time,
     iter = 1000,
     chains = 2,
+    loo = FALSE,
+    refresh = 0,
     sampling.args = list(seed = 1)
   )
 }

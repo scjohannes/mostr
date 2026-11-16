@@ -514,29 +514,49 @@ time_in_state_delta <- function(
 #' missing.
 #'
 #' @examples
-#' \dontrun{
-#' # --- Scenario 1: Patient-Level Estimates ---
-#' sops_arr <- soprob_markov(model, data, times = 1:30)
-#' days_home <- time_in_state(sops_arr, state_sets = 1)
-#'
-#' # Real-time AUC after fitting on factor visit indices
-#' real_days_home <- time_in_state(
-#'   avg,
-#'   state_sets = 1,
-#'   time_map = c("1" = 3, "2" = 7, "3" = 14, "4" = 28),
-#'   baseline_time = 0,
-#'   target_times = 1:28
+#' # 200 simulated patients assessed on days 3, 7, 14 and 28. States 1 and 2
+#' # are outside hospital, states 3 to 7 in hospital, and state 8 is death.
+#' visit_days <- c(3, 7, 14, 28)
+#' trajectories <- sim_markov(
+#'   "actt2",
+#'   n_patients = 200,
+#'   times = visit_days,
+#'   seed = 1
 #' )
 #'
-#' # --- Scenario 2: Bootstrap Inference ---
-#' avg_boot <- avg_sops(
-#'   model,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:30
-#' ) |>
-#'   inferences(method = "bootstrap", n_draws = 100)
-#' boot_effects <- time_in_state(avg_boot, state_sets = 1)
-#' }
+#' # Number the visits 1 to 4 and fit a separate effect for each visit
+#' trajectories$visit <- factor(match(trajectories$time, visit_days))
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + visit + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   time_var = "visit",
+#'   first_followup_time = "1",
+#'   absorb = "8"
+#' )
+#'
+#' # The day of each visit
+#' day_of_visit <- c("1" = 3, "2" = 7, "3" = 14, "4" = 28)
+#'
+#' # Average SOPs at the four visits under control and under treatment, with
+#' # delta-method standard errors
+#' visit_sops <- inferences(
+#'   avg_sops(fit, variables = list(tx = c(0, 1)), times = factor(1:4)),
+#'   method = "delta"
+#' )
+#'
+#' # Expected days outside hospital (states 1 and 2) from day 0 to day 28:
+#' # the area under the SOP curve, with the visits joined by straight lines
+#' time_in_state(visit_sops, state_sets = c("1", "2"), time_map = day_of_visit)
+#'
+#' # Without time_map, each visit counts as one unit of time
+#' time_in_state(visit_sops, state_sets = c("1", "2"))
+#'
+#' # The same total for three patients, from the array of soprob_markov()
+#' patients <- model_data[model_data$visit == "1", ][1:3, ]
+#' patient_sops <- soprob_markov(fit, newdata = patients, times = factor(1:4))
+#' time_in_state(patient_sops, state_sets = c("1", "2"))
 #'
 #' @keywords time-in-state auc bootstrap
 #' @seealso [avg_state_time()] for model-level average time estimates with analytical,

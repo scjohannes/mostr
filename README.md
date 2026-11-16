@@ -11,7 +11,13 @@ trajectories.
 
 ## Installation
 
-Install the development version from GitHub with `pak`:
+Once mostr is on CRAN, install the released version with:
+
+``` r
+install.packages("mostr")
+```
+
+Or install the development version from GitHub with `pak`:
 
 ``` r
 install.packages("pak")

@@ -137,29 +137,27 @@
 #' weights, bread choice, and missing-data handling.
 #'
 #' @examples
-#' \dontrun{
-#' library(VGAM)
+#' # 100 simulated patients followed for 10 days, one row per patient and day
+#' trajectories <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
 #'
-#' # Fit a proportional odds model
-#' fit <- vglm(y ~ x1 + x2,
-#'             family = cumulative(parallel = TRUE, reverse = TRUE),
-#'             data = mydata)
-#'
-#' # Compute robust (unclustered) standard errors
-#' robust_vcov <- robcov_vglm(fit)
-#' robust_vcov$se
-#'
-#' # Compute cluster-robust standard errors, with n/(n-1) correction by default
-#' robust_vcov_cl <- robcov_vglm(fit, cluster = mydata$cluster_id)
-#' robust_vcov_cl$se
-#'
-#' # Without small-sample correction
-#' robust_vcov_noadj <- robcov_vglm(
-#'   fit,
-#'   cluster = mydata$cluster_id,
-#'   cadjust = FALSE
+#' # A proportional-odds transition model fitted directly with VGAM
+#' fit <- VGAM::vglm(
+#'   ordered(y) ~ yprev + time + tx,
+#'   family = VGAM::cumulative(parallel = TRUE, reverse = TRUE),
+#'   data = model_data
 #' )
-#' }
+#'
+#' # Standard errors that allow for the correlation between the days of one
+#' # patient, with the n / (n - 1) correction for 100 patients
+#' robust <- robcov_vglm(fit, cluster = model_data$id)
+#'
+#' # Model-based and robust standard errors of the slopes
+#' slopes <- c("time", "tx")
+#' cbind(
+#'   model = sqrt(diag(stats::vcov(fit)))[slopes],
+#'   robust = robust$se[slopes]
+#' )
 #'
 #' @importFrom stats vcov nobs coef pnorm fitted residuals symnum
 #'
@@ -949,14 +947,17 @@ align_cluster_vglm <- function(fit, cluster, n) {
 #' @return Invisibly returns a list containing the coefficient table and
 #'   summary statistics.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' summary(robust_fit)
@@ -1048,14 +1049,17 @@ summary.robcov_vglm <- function(object, ...) {
 #'
 #' @return Invisibly returns the input object.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' print(robust_fit)
@@ -1104,14 +1108,17 @@ print.robcov_vglm <- function(x, ...) {
 #'
 #' @return Named numeric vector of coefficients.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' coef(robust_fit)
@@ -1132,14 +1139,17 @@ coef.robcov_vglm <- function(object, ...) {
 #'
 #' @return The robust variance-covariance matrix.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
 #' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' vcov(robust_fit)
