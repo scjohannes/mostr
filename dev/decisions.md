@@ -12,6 +12,64 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-16: Robust and unconditional variance do not depend on covariate units
+
+**Decided.** The vglm observed information (`compute_observed_bread_vglm()`)
+differentiates the scores with a step of
+`eps^(1/3) * max(|beta_j|, 1 / max|X_vlm[, j]|)` instead of
+`eps^(1/3) * max(1, |beta_j|)`, and measures the asymmetry of the score
+Jacobian as `max |J_ij - J_ji| / sqrt(|J_ii J_jj|)` instead of against
+`max(1, max|J|)`. The bread of unconditional variance
+(`delta_validate_named_matrix(positive_definite = TRUE)`) uses the shared
+correlation-scale rule, `markov_correlation_positive_definite()`, so orm,
+vglm and unconditional variance accept and refuse the same matrices (entry of
+2026-11-13 below).
+
+**Why.** With `age` multiplied by 1e6 in the test grid's vglm fit, its
+coefficient is about 1e-8 and the old step of 6e-6 moved the linear
+predictors by up to 500, so `mostm()` refused the information. With the same
+change, the raw rule of `delta_validate_named_matrix()` refused the orm and
+vglm breads: their smallest raw eigenvalue came out as -1e-18 times the
+largest, below what `eigen()` resolves, while the correlation-scale ratio is
+0.0028. After the change, the robust covariance of the grid vglm fit with
+`age` times 1e6, 1e-6, 1e9 or 1e-9, transformed back, matches the unscaled fit
+within 4e-10; unconditional standard errors match it within 3e-14 (orm) and
+7e-11 (vglm). On five vglm grid fits (linear, spline and factor time,
+second-order partial proportional odds, weighted) the robust covariance moved
+by at most 2e-10 relative, and delta standard errors by at most 1.3e-10.
+Unconditional standard errors of ordinary fits are `identical()` before and
+after the bread rule changed, because it only accepts or refuses. The
+Jacobian asymmetry on the grid fits is now 2e-11 to 5e-11, against the
+unchanged cut-off of 1e-5.
+
+**Rejected.** A step from each coefficient's standard error: the scores depend
+on the coefficients only through the linear predictors, and
+`1 / max|X_vlm[, j]|` is the change in a coefficient that moves a linear
+predictor by at most 1, so it needs no further matrix inversion. It is 1 for
+intercepts and 0/1 columns, whose steps are unchanged. Moving the
+positive-semidefinite check of supplied and robust covariances to the
+correlation scale: a semidefinite matrix may have a zero variance, which
+`cov2cor()` cannot scale, and the raw rule can only be lenient under
+rescaling, not refuse; a negative variance it lets through is refused per
+estimate by `delta_jacobian_variance()`.
+
+## 2026-11-16: `variables` cannot set the time or gap column
+
+**Decided.** The six SOP, time and comparison functions refuse the model's
+time column and its `gap_var` column in `variables` (issue #29), as a named
+list or as bare names (`stop_visit_columns_in_variables()`).
+
+**Why.** The recursion sets both columns at every visit from `times`
+(`assign_sop_visit()`), so a value given in `variables` had no effect: a
+comparison of two times was exactly 0 with standard error 0, and `avg_sops()`
+returned a garbled `time` column. Visits are chosen with `times`, and real
+time with `time_map`. The `time_covariates` columns of the issue no longer
+exist (removed 2026-11-13).
+
+**Not yet covered.** `plot_lp_difference()` and `plot_transitions()` have the
+same problem but do not use the shared resolvers; left for after the renaming
+of their arguments (issue #12).
+
 ## 2026-11-13: Patients without a fitted row are named at the fit and left out of resamples
 
 **Decided.** `mostm()` warns when a patient loses every row to missing values
