@@ -772,7 +772,7 @@ vglm_score_evaluator <- function(fit) {
     score_sum
   }
 
-  list(evaluate = evaluate, beta = beta_hat)
+  list(evaluate = evaluate, beta = beta_hat, X_vlm = X_vlm)
 }
 
 
@@ -787,7 +787,23 @@ compute_observed_bread_vglm <- function(fit) {
     dimnames = list(names(beta), names(beta))
   )
 
-  initial_steps <- .Machine$double.eps^(1 / 3) * pmax(1, abs(beta))
+  # The step must follow the coefficient's units. The scores depend on beta
+  # only through the linear predictors, and 1 / max|X_vlm[, j]| is the change
+  # in beta_j that moves a linear predictor by at most 1, so it rescales with
+  # beta_j when the covariate's units change. A unit-free floor such as
+  # max(1, |beta_j|) does not: with age multiplied by 1e6 its coefficient was
+  # about 1e-8, the step of 6e-6 moved the linear predictors by up to 500
+  # (age up to 83e6), and the information came out not positive definite. For intercepts
+  # and 0/1 columns the scale is 1, so their steps are as before. A zero
+  # column has no scale; it gets 1, and the singular information it gives is
+  # refused below.
+  column_scale <- apply(abs(evaluator$X_vlm), 2L, max)
+  unit_step <- ifelse(
+    is.finite(column_scale) & column_scale > 0,
+    1 / column_scale,
+    1
+  )
+  initial_steps <- .Machine$double.eps^(1 / 3) * pmax(unit_step, abs(beta))
   max_step_reductions <- 12L
 
   for (j in seq_len(p)) {
@@ -836,9 +852,25 @@ compute_observed_bread_vglm <- function(fit) {
     jacobian[, j] <- derivative
   }
 
-  jacobian_scale <- max(1, max(abs(jacobian)))
-  jacobian_asymmetry <- max(abs(jacobian - t(jacobian))) / jacobian_scale
-  if (!is.finite(jacobian_asymmetry) || jacobian_asymmetry > 1e-5) {
+  # Each asymmetry J_ij - J_ji is measured against sqrt(|J_ii J_jj|), which
+  # changes with the coefficients' units exactly as J_ij does, so the check
+  # does not depend on covariate units; a scale of max(1, max|J|) would let
+  # the asymmetry of a coefficient on a small scale pass unseen and would be
+  # set by whichever coefficient has the largest units. A zero diagonal entry
+  # gives no scale, and the information it implies is not positive definite,
+  # so that case is left to the refusal below. On the vglm grid fits of the
+  # tests the asymmetry is 2e-11 to 5e-11, also with age multiplied by 1e-9
+  # or 1e9 (measured Nov 2026), over 1e5 times below the cut-off of 1e-5.
+  diagonal_scale <- sqrt(abs(diag(jacobian)))
+  jacobian_asymmetry <- if (all(diagonal_scale > 0)) {
+    max(abs(jacobian - t(jacobian)) / outer(diagonal_scale, diagonal_scale))
+  } else {
+    NA_real_
+  }
+  if (
+    !is.na(jacobian_asymmetry) &&
+      (!is.finite(jacobian_asymmetry) || jacobian_asymmetry > 1e-5)
+  ) {
     mostr_abort(
       "The numerical score Jacobian is materially asymmetric (relative ",
       "asymmetry ",
