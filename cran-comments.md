@@ -1,12 +1,8 @@
 ## R CMD check results
 
-0 errors | 0 warnings | 2 notes
+0 errors | 0 warnings | 1 note
 
 * This is a new submission.
-
-* `checking R code for possible problems`: `inferences_simulation: multiple
-  local function definitions for 'draw_sops' with different formal
-  arguments`. To be fixed before submission.
 
 Checked locally on Windows 11 with R 4.6.1
 (`R CMD check --as-cran --run-donttest` on the built tarball). Update these

@@ -841,19 +841,23 @@ inferences_simulation <- function(
       }
     )
   }
+  # Both versions of draw_coefs() and draw_sops() take arguments of the same
+  # name: R CMD check notes local functions defined twice with different
+  # arguments. `coefs_i` is the coefficients of draw i, as effective
+  # coefficients for the compiled plan or as a model with them set.
   if (!is.null(execution_plan)) {
     draw_coefs <- function(i) {
       get_effective_coefs(model_chk, beta = beta_draws[i, ])
     }
-    draw_sops <- function(Gamma_i) {
-      run_sop_execution_plan(execution_plan, Gamma_i)
+    draw_sops <- function(coefs_i) {
+      run_sop_execution_plan(execution_plan, coefs_i)
     }
     failed <- "markov_msm_run"
   } else {
     draw_coefs <- function(i) set_coef(model, beta_draws[i, ])
-    draw_sops <- function(model_i) {
+    draw_sops <- function(coefs_i) {
       predict_markov_sops(
-        model = model_i,
+        model = coefs_i,
         newdata = newdata_pred,
         times = times,
         settings = settings
