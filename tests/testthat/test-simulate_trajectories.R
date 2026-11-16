@@ -128,7 +128,7 @@ test_that("presets return reproducible trajectories with their default effect", 
       )
     }
   }
-  expect_equal(sum(violet_baseline$n), 1351)
+  expect_equal(sum(mostr:::violet_baseline$n), 1351)
 })
 
 test_that("ACTT-1 and ACTT-2 presets share their slopes and sample their own starting states", {

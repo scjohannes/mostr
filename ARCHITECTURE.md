@@ -100,7 +100,7 @@ flowchart TD
 
 | Component | Source | Main symbols and role |
 |---|---|---|
-| Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/data.R` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`, `violet_baseline`; previous-state conditional categorical sampling |
+| Data generation | `R/simulate-markov.R`, `R/simulate-native.R`, `R/sysdata.rda` | `sim_markov` (one exported generator: `preset = "actt1"`, `"actt2"`, `"violet"`, or `NULL` for a user model), help topics `actt1_preset`, `actt2_preset`, `violet_preset`; internal VIOLET patient table `violet_baseline`; previous-state conditional categorical sampling |
 | Data preparation | `R/markov-data.R`, `R/markov-model-data.R` | `prepare_markov_data` (drops rows after the required `absorb` states; state columns named by `y_var`, `p_var`); store fitted patient profiles and refit data |
 | Model fitting | `R/mostm.R`, `R/markov-model-data.R`, `R/vglm_helpers.R`, `R/robcov_orm.R`, `R/robcov_vglm.R` | `mostm` (the one exported fitter; `engine = "orm"`, `"vglm"`, or optional `"blrm"`); `mostm_fit_orm`, `mostm_fit_vglm`, `mostm_fit_blrm` fit each engine; stored data and `markov_engine` provenance |
 | Settings | `R/markov-settings.R` | `markov_settings` (validating constructor), `markov_model_settings` (a fit's settings), `resolve_markov_settings` (a public call's settings), `markov_result_settings` (a result's settings); see "Settings" below |
@@ -1255,11 +1255,14 @@ printed coefficients with signs flipped, because mostr numbers states from
 best (home) to worst (dead). The age coefficient is 0.0105 rather than the
 printed (rounded) 0.011, because refitting the model to `simlongord` recovers
 0.0105 and only that value reproduces its state proportions. Patients are
-drawn from `violet_baseline`, an
+drawn jointly, which keeps the correlation of the three characteristics,
+from `violet_baseline`: internal data in `R/sysdata.rda` (not exported), an
 858-row table of distinct starting state, age, and SOFA combinations with
-counts `n` summing to the 1,351 VIOLET patients; `data-raw/violet_baseline.R`
-recovers these counts from `simlongord` and checks them against Harrell's
-published summaries.
+counts `n` summing to the 1,351 VIOLET patients. `data-raw/violet_baseline.R`
+recovers these counts from `simlongord`, checks them against Harrell's
+published summaries, and writes them with `usethis::use_data(internal =
+TRUE)`. The ACTT presets have one baseline characteristic each and keep its
+probabilities in code.
 
 ### Data-frame processing
 

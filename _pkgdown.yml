@@ -63,7 +63,6 @@ reference:
       - actt1_preset
       - actt2_preset
       - violet_preset
-      - violet_baseline
   - title: Bootstrap and coefficient utilities
     desc: >
       Lower-level tools used by `inferences()`: bootstrap the model

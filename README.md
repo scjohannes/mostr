@@ -142,7 +142,7 @@ you use `mostr`, please also consider citing `marginaleffects`:
 
 ## Data Provenance
 
-The included `violet_baseline` dataset and the model in
+The patients’ starting states, ages and SOFA scores and the model in
 `sim_markov("violet")` come from `simlongord`, a simulated trial that
 Frank Harrell based on the VIOLET trial ([Harrell,
 2022](https://hbiostat.org/data/repo/simlongord)).
