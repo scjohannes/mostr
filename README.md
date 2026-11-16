@@ -11,7 +11,7 @@ trajectories.
 
 ## Installation
 
-Install the released version from CRAN:
+Once mostr is on CRAN, install the released version with:
 
 ``` r
 install.packages("mostr")
