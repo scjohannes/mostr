@@ -7,7 +7,7 @@ test_that("soprob_markov matches Hmisc::soprobMarkovOrdm for a proportional-odds
   data <- make_test_data(
     n_patients = 60,
     seed = 1234,
-    follow_up_time = follow_up
+    times = seq_len(follow_up)
   )
   model <- suppressWarnings(
     mostm(
@@ -46,7 +46,7 @@ test_that("soprob_markov follows custom partial proportional-odds constraints an
   data <- make_test_data(
     n_patients = 70,
     seed = 789,
-    follow_up_time = follow_up
+    times = seq_len(follow_up)
   )
   # The linear time term gets its own effect on each cut-point through a
   # constraint column 0:4, rather than the identity matrix that
@@ -114,7 +114,7 @@ test_that("soprob_markov follows custom partial proportional-odds constraints an
         times = seq_len(follow_up)
       )
       expect_probability_array(result, expected_dim = c(1L, follow_up, 6L))
-      expect_absorbing_probability_monotone(result, absorbing_state = 6)
+      expect_absorbing_probability_monotone(result, absorb = 6)
       loop <- slow_first_order_sops(
         slow_predictor(model),
         profile,
@@ -134,9 +134,9 @@ test_that("soprob_markov normalizes transitions when no state is absorbing", {
   follow_up <- 10L
   data <- as.data.frame(make_markov_trajectories(
     n_patients = 80,
-    follow_up_time = follow_up,
+    times = seq_len(follow_up),
     treatment_prob = 0.5,
-    absorbing_state = NULL,
+    absorb = NULL,
     allowed_start_state = as.integer(1:6),
     thresholds = c(-2, -1, 0, 1, 2),
     seed = 1000
@@ -170,7 +170,7 @@ test_that("avg_sops() equals manual G-computation over individual SOPs", {
   follow_up <- 6L
   data <- make_test_data(
     n_patients = 40,
-    follow_up_time = follow_up,
+    times = seq_len(follow_up),
     seed = 123
   )
   robust_model <- mostm(

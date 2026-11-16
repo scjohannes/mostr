@@ -4,15 +4,15 @@ make_plot_time_model <- function() {
     withr::local_seed(5521)
     data <- make_markov_trajectories(
       n_patients = 80,
-      follow_up_time = 4,
+      times = 1:4,
       n_states = 3,
       thresholds = c(-1, 1),
       allowed_start_state = 1:2,
-      absorbing_state = 3,
+      absorb = 3,
       treatment_effect = 0.3,
       seed = 5521
     ) |>
-      prepare_markov_data(absorbing_state = 3)
+      prepare_markov_data(absorb = 3)
     mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
@@ -151,7 +151,7 @@ test_that("plot_time pointrange draws confidence intervals per state", {
   total <- avg_state_time(model, variables = list(tx = c(0, 1)), times = 1:3) |>
     inferences(method = "delta")
 
-  plot <- plot_time(total, type = "pointrange")
+  plot <- plot_time(total, geom = "pointrange")
   built <- ggplot2::ggplot_build(plot)
   intervals <- built$data[[1]]
 
@@ -164,7 +164,7 @@ test_that("plot_time pointrange draws confidence intervals per state", {
   expect_identical(plot$labels$colour, "tx")
   expect_null(plot$mapping$shape)
 
-  hidden <- plot_time(total, type = "pointrange", show_uncertainty = FALSE)
+  hidden <- plot_time(total, geom = "pointrange", show_uncertainty = FALSE)
   expect_length(hidden$layers, 1L)
 })
 
@@ -180,7 +180,7 @@ test_that("plot_time pointrange draws scenarios from black to lighter grays", {
     time_args = list(state_sets = list("1" = "1"))
   )
 
-  points <- ggplot2::ggplot_build(plot_time(total, type = "pointrange"))$data[[1]]
+  points <- ggplot2::ggplot_build(plot_time(total, geom = "pointrange"))$data[[1]]
   points <- points[order(points$group), ]
   rgb <- grDevices::col2rgb(points$colour)
   gray <- colSums(rgb * c(0.299, 0.587, 0.114))
@@ -239,7 +239,7 @@ test_that("plot_time accepts or rejects its inputs", {
     ),
     list(
       label = "overlapping state sets as point ranges",
-      call = function() plot_time(overlapping, type = "pointrange"),
+      call = function() plot_time(overlapping, geom = "pointrange"),
       error = NULL
     ),
     list(

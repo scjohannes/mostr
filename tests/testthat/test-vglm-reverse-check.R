@@ -19,7 +19,7 @@ avg_sops_reverse_case <- function(fit) {
 
 test_that("the reverse check reads `reverse` from the fitted family however it was passed", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5401)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5401)
 
   # Each `fit()` returns a vglm fit whose family was spelled differently.
   cases <- list(
@@ -92,7 +92,7 @@ test_that("the reverse check reads `reverse` from the fitted family however it w
 
 test_that("bootstrap refits pass the reverse check for family objects", {
   skip_on_cran()
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 5405)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 5405)
   fit_in_closure <- function(data, rev_flag) {
     fam <- VGAM::cumulative(reverse = rev_flag, parallel = TRUE)
     fit_reverse_vglm(data, fam)

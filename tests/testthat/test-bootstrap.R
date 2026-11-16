@@ -7,14 +7,14 @@ with_stored_refit_data <- function(model, data, id_var = "id") {
 
 test_that("bootstrap_model_coefs validates inputs", {
   expect_error(
-    bootstrap_model_coefs(lm(mpg ~ wt, data = mtcars), n_boot = 1),
+    bootstrap_model_coefs(lm(mpg ~ wt, data = mtcars), n_draws = 1),
     "model must be an orm object",
     fixed = TRUE
   )
 
   model <- structure(list(), class = "vglm")
   expect_error(
-    bootstrap_model_coefs(model, n_boot = 1),
+    bootstrap_model_coefs(model, n_draws = 1),
     "The model has no stored data to resample",
     fixed = TRUE
   )
@@ -22,7 +22,7 @@ test_that("bootstrap_model_coefs validates inputs", {
   expect_error(
     bootstrap_model_coefs(
       with_stored_refit_data(model, data.frame(id = 1:2), id_var = NULL),
-      n_boot = 1
+      n_draws = 1
     ),
     "does not record which column of its data identifies patients",
     fixed = TRUE
@@ -31,14 +31,14 @@ test_that("bootstrap_model_coefs validates inputs", {
   expect_error(
     bootstrap_model_coefs(
       with_stored_refit_data(model, data.frame(patient = 1:2)),
-      n_boot = 1
+      n_draws = 1
     ),
     "id_var 'id' not found in the stored model data",
     fixed = TRUE
   )
 
   expect_error(
-    bootstrap_model_coefs(lm(mpg ~ wt, data = mtcars), n_boot = 1),
+    bootstrap_model_coefs(lm(mpg ~ wt, data = mtcars), n_draws = 1),
     "model must be an orm object",
     fixed = TRUE
   )
@@ -87,7 +87,7 @@ test_that("bootstrap_model_coefs orchestrates bootstrap coefficient extraction",
       )
     },
     {
-      result <- bootstrap_model_coefs(model, n_boot = 2, workers = 1)
+      result <- bootstrap_model_coefs(model, n_draws = 2, workers = 1)
     }
   )
 
@@ -120,7 +120,7 @@ test_that("bootstrap_model_coefs preserves numeric yprev before bootstrapping", 
     },
     apply_to_bootstrap = function(...) list(list(tx = 1)),
     {
-      result <- bootstrap_model_coefs(model, n_boot = 1)
+      result <- bootstrap_model_coefs(model, n_draws = 1)
     }
   )
 
@@ -172,7 +172,7 @@ test_that("bootstrap_model_coefs records coefficients and failed refits", {
     {
       result <- bootstrap_model_coefs(
         model,
-        n_boot = 2,
+        n_draws = 2,
         workers = 1
       )
     }

@@ -177,8 +177,6 @@ standard errors allow for correlation between the transitions of one
 patient.
 \item \code{\link[=robcov_vglm]{robcov_vglm()}} computes such a covariance matrix for a \code{\link[VGAM:vglm]{VGAM::vglm()}}
 fit; \code{engine = "vglm"} returns its result.
-\item \code{\link[=compare_se_orm_vglm]{compare_se_orm_vglm()}} lists the standard errors of an \code{\link[rms:orm]{rms::orm()}} fit
-and a \code{\link[VGAM:vglm]{VGAM::vglm()}} fit of the same model side by side.
 \item \code{\link[=set_coef]{set_coef()}} replaces the coefficients of a fitted model.
 \item \code{\link[=get_effective_coefs]{get_effective_coefs()}} returns the coefficients as a matrix with one row
 per threshold between states.

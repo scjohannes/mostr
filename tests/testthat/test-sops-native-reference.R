@@ -394,7 +394,7 @@ native_plan_fits <- local({
   value <- NULL
   function() {
     if (is.null(value)) {
-      data <- make_test_data(n_patients = 80, follow_up_time = 6, seed = 7351)
+      data <- make_test_data(n_patients = 80, times = 1:6, seed = 7351)
       value <<- list(
         baseline = data[!duplicated(data$id), , drop = FALSE][1:4, ],
         models = list(

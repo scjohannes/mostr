@@ -21,8 +21,8 @@ including coefficients, robust standard errors, z-statistics, and p-values.
 }
 \examples{
 \dontshow{if (rlang::is_installed("VGAM")) withAutoprint(\{ # examplesIf}
-trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+trial <- sim_markov("actt2", n_patients = 40, times = 1:6, seed = 1)
+markov_data <- prepare_markov_data(trial, absorb = 8)
 # The vglm engine of mostm() returns a robcov_vglm object
 robust_fit <- mostm(
   ordered(y) ~ time + tx + yprev,

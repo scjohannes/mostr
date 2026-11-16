@@ -67,12 +67,12 @@ ABSORB <- "4"
 raw_data <- sim_markov(
   "violet",
   n_patients = N_PATIENTS,
-  follow_up_time = FOLLOW_UP,
+  times = 1:FOLLOW_UP,
   treatment_effect = log(0.8),
   seed = SEED
 )
 
-model_data <- prepare_markov_data(raw_data, absorbing_state = 4)
+model_data <- prepare_markov_data(raw_data, absorb = 4)
 ```
 
 ## Fit the proportional-odds model

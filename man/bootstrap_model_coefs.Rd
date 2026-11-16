@@ -4,14 +4,14 @@
 \alias{bootstrap_model_coefs}
 \title{Bootstrap confidence intervals for model coefficients}
 \usage{
-bootstrap_model_coefs(model, n_boot, workers = NULL, use_coefstart = FALSE)
+bootstrap_model_coefs(model, n_draws, workers = NULL, use_coefstart = FALSE)
 }
 \arguments{
 \item{model}{A model fitted with \code{\link[=mostm]{mostm()}} and the \code{"orm"} or \code{"vglm"}
 engine. \code{\link[=mostm]{mostm()}} stores the data used for fitting, and the bootstrap
 resamples patients from those stored data.}
 
-\item{n_boot}{Number of bootstrap samples.}
+\item{n_draws}{Number of bootstrap refits, as \code{n_draws} in \code{\link[=inferences]{inferences()}}.}
 
 \item{workers}{Number of workers for parallel processing. If NULL (default)
 or 1, sequential processing is used. If > 1, uses parallel processing.}
@@ -85,7 +85,7 @@ fit <- mostm(
 )
 
 # Resample the patients stored on the fit.
-bs_coefs <- bootstrap_model_coefs(fit, n_boot = 1000)
+bs_coefs <- bootstrap_model_coefs(fit, n_draws = 1000)
 
 # 95\% percentile confidence intervals
 apply(

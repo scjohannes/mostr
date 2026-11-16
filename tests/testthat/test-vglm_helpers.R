@@ -3,7 +3,7 @@ test_that("the vglm engine supplies rms formula helpers and keeps %ia% semantics
   skip_if_not_installed("VGAM")
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 140, seed = 2468, follow_up_time = 12)
+  data <- make_test_data(n_patients = 140, seed = 2468, times = 1:12)
   baseline <- data[data$time == 1, , drop = FALSE]
   # `%ia%` of a linear term gives one interaction column per non-reference
   # previous state; of a spline basis, more, including nonlinear (time') ones.
@@ -226,7 +226,7 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
   skip_on_cran()
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6110)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6110)
   full <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,

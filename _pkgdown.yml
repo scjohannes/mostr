@@ -54,7 +54,6 @@ reference:
       - plot_correlation
       - plot_variogram
       - plot_lp_difference
-      - compare_se_orm_vglm
   - title: Simulate trajectories
     desc: >
       Simulate daily ordinal health states from models of published trials,

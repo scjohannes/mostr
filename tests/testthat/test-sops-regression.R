@@ -91,14 +91,14 @@ describe("SOP regression baselines", {
   build_generic_markov_case <- function() {
     raw_data <- make_markov_trajectories(
       n_patients = 80,
-      follow_up_time = 10,
+      times = 1:10,
       treatment_prob = 0.5,
-      absorbing_state = 6,
+      absorb = 6,
       seed = 1001,
       treatment_effect = 0.2
     )
 
-    data <- mostr::prepare_markov_data(raw_data)
+    data <- mostr::prepare_markov_data(raw_data, absorb = 6)
     data <- add_patient_age(data)
 
     list(
@@ -113,13 +113,13 @@ describe("SOP regression baselines", {
     raw_data <- mostr::sim_markov(
       "violet",
       n_patients = 80,
-      follow_up_time = 10,
+      times = 1:10,
       treatment_effect = log(0.85),
       seed = 1004
     )
 
     # Death, state 4, is absorbing: its rows as the previous state are removed.
-    data <- mostr::prepare_markov_data(raw_data, absorbing_state = 4)
+    data <- mostr::prepare_markov_data(raw_data, absorb = 4)
     data <- add_patient_age(data)
 
     list(

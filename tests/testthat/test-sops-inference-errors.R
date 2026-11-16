@@ -810,7 +810,7 @@ test_that("inferences_bootstrap() supports fractional weighted refits", {
 
 test_that("inferences() refuses an n_draws that is not a whole number of at least 2", {
   skip_if_not_installed("rms")
-  data <- make_test_data(n_patients = 40, follow_up_time = 5, seed = 31)
+  data <- make_test_data(n_patients = 40, times = 1:5, seed = 31)
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,

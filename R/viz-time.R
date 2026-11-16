@@ -8,12 +8,12 @@
 #'
 #' @param x A `markov_avg_state_time` object returned by [avg_state_time()], optionally
 #'   after [inferences()].
-#' @param type Character string. The kind of plot:
+#' @param geom Character string. The kind of plot:
 #'   \itemize{
 #'     \item `"bar"` (the default): one horizontal bar per scenario, split into
 #'       the average time in each state set ("Grotta bars"). Use it to show
 #'       how follow-up is shared between states. Confidence intervals cannot
-#'       be shown on stacked segments, so this type ignores them.
+#'       be shown on stacked segments, so this chart ignores them.
 #'     \item `"pointrange"`: states along the x axis, with one point per
 #'       scenario and a vertical confidence interval when `x` has `conf.low`
 #'       and `conf.high`. Scenarios are drawn in black and successively
@@ -22,8 +22,8 @@
 #'   }
 #' @param group_var Character vector or `NULL`. Columns that identify the
 #'   scenarios being compared, for example the treatment variable set by
-#'   `variables`. They label the bars (`type = "bar"`) or set the point colors
-#'   (`type = "pointrange"`). If `NULL`, every column other than `state_set`,
+#'   `variables`. They label the bars (`geom = "bar"`) or set the point colors
+#'   (`geom = "pointrange"`). If `NULL`, every column other than `state_set`,
 #'   the estimates, and those in `facet_var` is used. Several columns are
 #'   combined into one label.
 #' @param facet_var Character vector or `NULL`. Optional faceting variable,
@@ -33,21 +33,21 @@
 #'   the units of `x`. `"proportion"` divides each average by the scenario's
 #'   total follow-up, so a bar spans 0 to 1. `"proportion"` requires every
 #'   state to belong to exactly one state set.
-#' @param show_labels Logical. For `type = "bar"`, print each segment's value
+#' @param show_labels Logical. For `geom = "bar"`, print each segment's value
 #'   inside it. Segments shorter than 6% of the longest bar are left unlabeled
 #'   because the label would not fit.
 #' @param digits Number of decimal places for segment labels.
-#' @param show_uncertainty Logical. For `type = "pointrange"`, draw confidence
+#' @param show_uncertainty Logical. For `geom = "pointrange"`, draw confidence
 #'   intervals when `conf.low` and `conf.high` exist.
-#' @param bar_width Numeric bar thickness for `type = "bar"`.
-#' @param point_size Numeric point size for `type = "pointrange"`.
+#' @param bar_width Numeric bar thickness for `geom = "bar"`.
+#' @param point_size Numeric point size for `geom = "pointrange"`.
 #' @param line_width Numeric line width for interval lines.
 #'
 #' @return A ggplot object.
 #'
 #' @details
 #' A stacked bar only makes sense when no state is counted twice. With
-#' `type = "bar"`, the state sets in `x` must therefore not overlap, which
+#' `geom = "bar"`, the state sets in `x` must therefore not overlap, which
 #' holds for the default `state_sets = NULL` of [avg_state_time()] (every state
 #' separately). When the sets also include every state, each bar's length is
 #' the total follow-up: the number of visits, or the elapsed time covered when
@@ -69,13 +69,13 @@
 #' plot_time(tis)
 #'
 #' # Average days in each state with 95% confidence intervals
-#' plot_time(tis, type = "pointrange")
+#' plot_time(tis, geom = "pointrange")
 #' }
 #'
 #' @export
 plot_time <- function(
   x,
-  type = c("bar", "pointrange"),
+  geom = c("bar", "pointrange"),
   group_var = NULL,
   facet_var = NULL,
   scale = c("time", "proportion"),
@@ -86,7 +86,7 @@ plot_time <- function(
   point_size = 2,
   line_width = 0.7
 ) {
-  type <- match.arg(type)
+  geom <- match.arg(geom)
   scale <- match.arg(scale)
   plot_validate_flag(show_labels, "show_labels")
   plot_validate_flag(show_uncertainty, "show_uncertainty")
@@ -115,7 +115,7 @@ plot_time <- function(
   }
 
   state_sets <- attr(x, "time_args")$state_sets
-  if (identical(type, "bar") || identical(scale, "proportion")) {
+  if (identical(geom, "bar") || identical(scale, "proportion")) {
     plot_time_validate_partition(
       state_sets,
       markov_result_settings(x)$y_levels,
@@ -134,7 +134,7 @@ plot_time <- function(
     data <- plot_time_proportions(data)
   }
 
-  p <- if (identical(type, "bar")) {
+  p <- if (identical(geom, "bar")) {
     plot_time_bars(data, show_labels, digits, bar_width)
   } else {
     plot_time_points(data, show_uncertainty, point_size, line_width)
@@ -143,12 +143,12 @@ plot_time <- function(
   group_title <- if (length(group_var)) paste(group_var, collapse = " / ")
   x_label <- plot_time_axis_label(scale, unique(data$time_unit))
   p <- p +
-    if (identical(type, "bar")) {
+    if (identical(geom, "bar")) {
       ggplot2::labs(x = x_label, y = group_title, fill = "State")
     } else {
       ggplot2::labs(x = "State", y = x_label, colour = group_title)
     }
-  if (identical(type, "bar")) {
+  if (identical(geom, "bar")) {
     p <- plot_add_default_scales(p)
   }
   plot_add_facets(p, facet_var)
@@ -175,7 +175,7 @@ plot_time_validate_partition <- function(state_sets, y_levels, scale) {
     mostr_abort(
       "Stacked bars need state sets that do not overlap; state(s) ",
       paste(unique(states[duplicated(states)]), collapse = ", "),
-      " appear in more than one set. Use `type = \"pointrange\"` or ",
+      " appear in more than one set. Use `geom = \"pointrange\"` or ",
       "non-overlapping `state_sets` in `avg_state_time()`."
     )
   }

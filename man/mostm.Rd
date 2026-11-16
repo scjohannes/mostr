@@ -343,10 +343,10 @@ made by \code{mostm()}; a model fitted directly with \code{\link[rms:orm]{rms::o
 trajectories <- sim_markov(
   "actt2",
   n_patients = 200,
-  follow_up_time = 14,
+  times = 1:14,
   seed = 1
 )
-model_data <- prepare_markov_data(trajectories, absorbing_state = 8)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
 
 # State 8, death, is absorbing: patients who reach it stay there.
 fit <- mostm(

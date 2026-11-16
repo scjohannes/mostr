@@ -89,18 +89,21 @@ degenerate_expected_path <- function(baseline, follow_up_time, absorbing) {
   do.call(rbind, rows)
 }
 
-expect_degenerate_path <- function(baseline, follow_up_time, model, vectorized,
+expect_degenerate_path <- function(baseline, times, model, vectorized,
                                    absorbing, label) {
+  # The expected path counts days from 1, so `times` must be `1:n`.
+  follow_up_time <- length(times)
+  stopifnot(identical(as.numeric(times), as.numeric(seq_len(follow_up_time))))
   simulated <- sim_markov(
     NULL,
     baseline_data = baseline,
-    follow_up_time = follow_up_time,
+    times = times,
     intercepts = model$intercepts,
     lp_function = degenerate_lp(model, vectorized),
-    absorbing_states = absorbing,
+    absorb = absorbing,
     seed = 1
   )
-  # `absorbing_states = NULL` means the worst state.
+  # `absorb = NULL` means the worst state.
   expected <- degenerate_expected_path(
     baseline,
     follow_up_time,
@@ -139,7 +142,7 @@ test_that("a degenerate transition model reproduces its one possible path", {
   for (case in cases) {
     expect_degenerate_path(
       baseline,
-      follow_up_time = 8,
+      times = 1:8,
       model = case$model,
       vectorized = case$vectorized,
       absorbing = case$absorbing,
@@ -165,7 +168,7 @@ test_that("absorbed patients keep their rows after everyone is absorbed", {
   for (vectorized in c(FALSE, TRUE)) {
     expect_degenerate_path(
       baseline,
-      follow_up_time = 6,
+      times = 1:6,
       model = degenerate_po,
       vectorized = vectorized,
       absorbing = NULL,
@@ -214,11 +217,11 @@ test_that("random trajectories are valid and consistent for any seed", {
     simulated <- sim_markov(
       NULL,
       baseline_data = baseline,
-      follow_up_time = follow_up_time,
+      times = seq_len(follow_up_time),
       intercepts = random_model_intercepts,
       lp_function = random_model_lp,
       treatment_effect = 0.6,
-      absorbing_states = absorbing
+      absorb = absorbing
     )
     # Columns are patients and rows are days.
     y <- matrix(simulated$y, nrow = follow_up_time)
@@ -310,7 +313,7 @@ test_that("transition frequencies match the model's transition probabilities", {
   simulated <- sim_markov(
     NULL,
     baseline_data = baseline,
-    follow_up_time = 3,
+    times = 1:3,
     intercepts = random_model_intercepts,
     lp_function = random_model_lp,
     treatment_effect = 0.6,
@@ -360,7 +363,7 @@ test_that("transition frequencies match the model's transition probabilities", {
   simulated <- sim_markov(
     "violet",
     baseline_data = baseline,
-    follow_up_time = 3,
+    times = 1:3,
     seed = 20261114
   )
   expect_transition_frequencies(
@@ -393,7 +396,7 @@ test_that("transition frequencies match the model's transition probabilities", {
   simulated <- sim_markov(
     "actt2",
     baseline_data = baseline,
-    follow_up_time = 2,
+    times = 1:2,
     treatment_effect = 0.7,
     seed = 20261115
   )

@@ -1,11 +1,11 @@
 # Generate test trajectories with a proportional-odds Markov model.
 make_markov_trajectories <- function(
   n_patients = 50,
-  follow_up_time = 20,
+  times = 1:20,
   n_states = 6,
   thresholds = seq(-3, 3, length.out = n_states - 1),
   allowed_start_state = seq_len(n_states - 1),
-  absorbing_state = n_states,
+  absorb = n_states,
   treatment_prob = 0.5,
   treatment_effect = 0,
   seed = 123
@@ -19,9 +19,9 @@ make_markov_trajectories <- function(
   sim_markov(
     NULL,
     baseline_data = baseline,
-    follow_up_time = follow_up_time,
+    times = times,
     intercepts = thresholds,
-    absorbing_states = absorbing_state,
+    absorb = absorb,
     covariate_names = "tx",
     treatment_effect = treatment_effect,
     extra_params = c(center = (n_states + 1) / 2),
@@ -39,27 +39,27 @@ make_markov_trajectories <- function(
 #' Generate standard test data using Markov transition simulation
 #'
 #' @param n_patients Number of patients
-#' @param follow_up_time Follow-up time
+#' @param times Days to simulate
 #' @param seed Random seed
 #' @param treatment_effect Treatment effect (treatment_effect)
 #'
 #' @return A prepared markov data frame
 make_test_data <- function(
   n_patients = 50,
-  follow_up_time = 20,
+  times = 1:20,
   seed = 123,
   treatment_effect = 0
 ) {
   raw_data <- make_markov_trajectories(
     n_patients = n_patients,
-    follow_up_time = follow_up_time,
+    times = times,
     treatment_prob = 0.5,
-    absorbing_state = 6,
+    absorb = 6,
     seed = seed,
     treatment_effect = treatment_effect
   )
 
-  data <- prepare_markov_data(raw_data)
+  data <- prepare_markov_data(raw_data, absorb = 6)
 
   # Generate manual spline basis
   # We use rcs() to get the basis, then extract columns
@@ -98,7 +98,7 @@ make_observed_average_case <- function() {
 build_observed_average_case <- function() {
   data <- make_test_data(
     n_patients = 60,
-    follow_up_time = 6,
+    times = 1:6,
     seed = 3211,
     treatment_effect = 0.8
   )

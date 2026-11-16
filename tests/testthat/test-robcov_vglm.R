@@ -1052,10 +1052,10 @@ describe("robcov_vglm() stress tests", {
     trial <- sim_markov(
       "actt2",
       n_patients = 40,
-      follow_up_time = 6,
+      times = 1:6,
       seed = 1
     )
-    data <- prepare_markov_data(trial, absorbing_state = 8)
+    data <- prepare_markov_data(trial, absorb = 8)
     fit <- suppressWarnings(mostm(
       ordered(y) ~ time + tx + yprev,
       family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),

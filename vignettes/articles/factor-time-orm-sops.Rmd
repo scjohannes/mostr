@@ -92,7 +92,7 @@ visit_data$baseline_yprev <- NULL
 
 model_data <- prepare_markov_data(
   visit_data,
-  absorbing_state = ABSORB,
+  absorb = ABSORB,
   factor_previous = TRUE
 )
 

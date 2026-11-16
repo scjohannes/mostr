@@ -86,14 +86,14 @@ ABSORB <- "8"
 raw_data <- sim_markov(
   "actt2",
   n_patients = N_PATIENTS,
-  follow_up_time = FOLLOW_UP,
+  times = 1:FOLLOW_UP,
   treatment_effect = log(0.8),
   seed = SEED
 )
 
 model_data <- prepare_markov_data(
   raw_data,
-  absorbing_state = as.integer(ABSORB),
+  absorb = as.integer(ABSORB),
   factor_previous = TRUE
 )
 ```

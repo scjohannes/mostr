@@ -4,7 +4,7 @@ delta_vglm_case <- local({
     if (is.null(value)) {
       data <- make_test_data(
         n_patients = 100,
-        follow_up_time = 8,
+        times = 1:8,
         seed = 7301
       )
       model <- make_test_model(data)$vglm_fit
@@ -38,7 +38,7 @@ delta_orm_case <- local({
     if (is.null(value)) {
       data <- make_test_data(
         n_patients = 100,
-        follow_up_time = 8,
+        times = 1:8,
         seed = 7311
       )
       model <- suppressWarnings(mostm(
@@ -236,11 +236,11 @@ test_that("absorbing states propagate probability and derivative mass", {
   skip_if_not_installed("rms")
   case <- delta_vglm_case()
   analytical <- run_sop_delta_plan(case$plan, case$model)
-  absorbing_state <- length(case$y_levels)
+  absorb <- length(case$y_levels)
 
-  absorbing_probability <- analytical$probabilities[,, absorbing_state]
+  absorbing_probability <- analytical$probabilities[,, absorb]
   expect_true(all(apply(absorbing_probability, 1L, diff) >= -1e-12))
-  expect_gt(max(abs(analytical$jacobian[, -1L, absorbing_state, ])), 0)
+  expect_gt(max(abs(analytical$jacobian[, -1L, absorb, ])), 0)
   expect_lt(
     max(abs(apply(analytical$jacobian, c(1L, 2L, 4L), sum))),
     1e-10

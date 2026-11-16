@@ -5,8 +5,8 @@
 \title{Plot Treatment Differences in the Linear Predictor}
 \usage{
 plot_lp_difference(
-  x,
-  profile,
+  model,
+  newdata,
   variables,
   times,
   previous_states = NULL,
@@ -14,10 +14,10 @@ plot_lp_difference(
 )
 }
 \arguments{
-\item{x}{A fitted \code{orm}, \code{blrm}, \code{vglm}, or \code{robcov_vglm} Markov
+\item{model}{A fitted \code{orm}, \code{blrm}, \code{vglm}, or \code{robcov_vglm} Markov
 model.}
 
-\item{profile}{One-row data frame containing the covariate profile.}
+\item{newdata}{One-row data frame containing the covariate profile.}
 
 \item{variables}{Named list with one variable and at least two values. The
 first value is the reference.}
@@ -43,7 +43,7 @@ the supplied profile and faceted by previous state.
 }
 \details{
 \code{plot_lp_difference()} is model-based only. At minimum, supply \code{model}, a
-one-row \code{profile}, \code{variables}, and \code{times}. The profile should contain the
+one-row \code{newdata}, \code{variables}, and \code{times}. \code{newdata} should contain the
 model covariates for the patient or scenario being plotted; \code{times} and
 \code{previous_states} define the plotting grid.
 
@@ -55,7 +55,7 @@ of the response in fitted order.
 \dontrun{
 plot_lp_difference(
   fit,
-  profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
+  newdata = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
   variables = list(tx = c(0, 1)),
   times = 1:28
 )

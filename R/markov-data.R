@@ -1,24 +1,32 @@
 #' Prepare Markov Data for Proportional Odds Modeling
 #'
 #' Prepares longitudinal Markov trajectory data for proportional odds regression
-#' by removing absorbing states and converting variables to appropriate types.
-#' The result can be fitted with [mostm()] and any of its engines.
+#' by removing the rows after an absorbing state and converting the state
+#' columns to appropriate types. The result can be fitted with [mostm()] and
+#' any of its engines.
 #'
-#' @param data A data frame containing Markov trajectory data with columns
-#'   `y` (current state) and `yprev` (previous state).
-#' @param absorbing_state Integer or integer vector. The absorbing state(s) to
-#'   filter out (default: 6 for death). Observations where `yprev` equals any of
-#'   these values are removed. Can be a single value (e.g., 6) or a vector of
-#'   multiple absorbing states (e.g., c(1, 6) for both home discharge and death).
-#' @param ordered_response Logical. Should `y` be converted to ordered factor?
-#'   (default: TRUE). Required for vglm, not required for orm.
-#' @param factor_previous Logical. Should `yprev` be converted to factor?
-#'   Defaults to TRUE for backward compatibility and categorical previous-state
-#'   effects. Set to FALSE when modeling the previous state linearly or with
-#'   nonlinear numeric terms such as `rms::rcs(yprev, 6)`.
+#' @param data A data frame containing Markov trajectory data, with a column
+#'   for the current state (`y_var`) and one for the previous state (`p_var`).
+#' @param absorb Required. The absorbing state or states, such as death, that
+#'   a patient never leaves. Rows whose previous state is one of them are
+#'   removed. Give one state (`absorb = 6`), several (`absorb = c(1, 6)` for
+#'   both discharge home and death), or `NULL` to keep every row when the data
+#'   have no absorbing state. There is no default because the absorbing states
+#'   depend on the data: a default of `6` would silently remove rows from data
+#'   in which state 6 is not death. Give the same states to
+#'   `mostm(absorb = )`.
+#' @param ordered_response Logical. Should the current state be converted to an
+#'   ordered factor? (default: TRUE). Required for vglm, not required for orm.
+#' @param factor_previous Logical. Should the previous state be converted to a
+#'   factor? Defaults to TRUE for categorical previous-state effects. Set to
+#'   FALSE when modeling the previous state linearly or with nonlinear numeric
+#'   terms such as `rms::rcs(yprev, 6)`.
+#' @param y_var Name of the column with the current state (default `"y"`).
+#' @param p_var Name of the column with the previous state (default
+#'   `"yprev"`), as in [mostm()].
 #'
-#' @return A data frame with modified `y` and `yprev` columns and absorbing
-#'   states removed.
+#' @return `data` with the rows after an absorbing state removed and the
+#'   `y_var` and `p_var` columns converted as requested.
 #'
 #' @details
 #' This is a convenience function that performs standard data preparation for
@@ -36,16 +44,16 @@
 #'
 #' **Multiple absorbing states**: When modeling scenarios with multiple absorbing
 #' states (e.g., discharge home and death), specify them as a vector. For example,
-#' `absorbing_state = c(1, 6)` will remove all transitions from either state 1
+#' `absorb = c(1, 6)` will remove all transitions from either state 1
 #' (home) or state 6 (death).
 #'
 #' @examples
 #' \dontrun{
 #' # Prepare data with single absorbing state (death only)
-#' model_data <- prepare_markov_data(trajectories, absorbing_state = 6)
+#' model_data <- prepare_markov_data(trajectories, absorb = 6)
 #'
 #' # Prepare data with multiple absorbing states (home and death)
-#' model_data <- prepare_markov_data(trajectories, absorbing_state = c(1, 6))
+#' model_data <- prepare_markov_data(trajectories, absorb = c(1, 6))
 #'
 #' # Fit a proportional-odds transition model with the default orm engine
 #' fit <- mostm(
@@ -57,7 +65,7 @@
 #' # Keep yprev numeric to use one linear or nonlinear previous-state effect
 #' model_data <- prepare_markov_data(
 #'   trajectories,
-#'   absorbing_state = 6,
+#'   absorb = 6,
 #'   factor_previous = FALSE
 #' )
 #' fit <- mostm(
@@ -71,20 +79,39 @@
 #' @export
 prepare_markov_data <- function(
   data,
-  absorbing_state = 6,
+  absorb,
   ordered_response = TRUE,
-  factor_previous = TRUE
+  factor_previous = TRUE,
+  y_var = "y",
+  p_var = "yprev"
 ) {
-  if (!is.null(absorbing_state)) {
-    data <- data[!data$yprev %in% absorbing_state, , drop = FALSE]
+  if (missing(absorb)) {
+    mostr_abort(
+      "`absorb` is required: give the absorbing state(s), such as ",
+      "`absorb = 6` for death, or `absorb = NULL` to keep every row."
+    )
+  }
+  # A missing previous-state column would make every row look non-absorbing
+  # (`NULL %in% absorb` is empty) and drop them all, so check the names first.
+  missing_cols <- setdiff(c(y_var, p_var), names(data))
+  if (length(missing_cols) > 0) {
+    mostr_abort(
+      "Columns not in `data`: ",
+      paste0("`", missing_cols, "`", collapse = ", "),
+      ". Name the state columns with `y_var` and `p_var`."
+    )
+  }
+
+  if (!is.null(absorb)) {
+    data <- data[!data[[p_var]] %in% absorb, , drop = FALSE]
   }
 
   if (factor_previous) {
-    data$yprev <- factor(data$yprev)
+    data[[p_var]] <- factor(data[[p_var]])
   }
 
   if (ordered_response) {
-    data$y <- ordered(data$y)
+    data[[y_var]] <- ordered(data[[y_var]])
   }
 
   data

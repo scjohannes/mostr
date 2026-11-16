@@ -3,7 +3,7 @@ test_that("mostm() records its call and engine, and bootstrap refits call it wit
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6101)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6101)
   fits <- list(
     orm = mostm(
       ordered(y) ~ time + tx + yprev,
@@ -75,7 +75,7 @@ test_that("the vglm engine fits the orm proportional odds model by default", {
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 60, follow_up_time = 8, seed = 6102)
+  data <- make_test_data(n_patients = 60, times = 1:8, seed = 6102)
   fit_orm <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -118,7 +118,7 @@ test_that("mostm() names the engine an argument belongs to", {
   skip_if_not_installed("rmsb")
   local_reproducible_output(width = 80)
 
-  data <- make_test_data(n_patients = 20, follow_up_time = 6, seed = 6103)
+  data <- make_test_data(n_patients = 20, times = 1:6, seed = 6103)
   expect_snapshot(
     mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = "id", ppo = ~time),
     error = TRUE
@@ -200,7 +200,7 @@ test_that("mostm() accepts the engine arguments used in the articles and passes 
   }
 
   # A real fit passes the arguments on to the engine.
-  data <- make_test_data(n_patients = 30, follow_up_time = 6, seed = 6104)
+  data <- make_test_data(n_patients = 30, times = 1:6, seed = 6104)
   fit_orm <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -240,7 +240,7 @@ test_that("mostm() rejects arguments that every fit must keep", {
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 20, follow_up_time = 6, seed = 6105)
+  data <- make_test_data(n_patients = 20, times = 1:6, seed = 6105)
   expect_error(
     mostm(
       ordered(y) ~ time + tx + yprev,
@@ -271,7 +271,7 @@ test_that("the blrm engine rejects `cadjust`", {
 
   # `type` and case weights with blrm are rows F02 and F01 of test-refusals.R;
   # `cadjust` alone is refused by the same check.
-  data <- make_test_data(n_patients = 20, follow_up_time = 6, seed = 6106)
+  data <- make_test_data(n_patients = 20, times = 1:6, seed = 6106)
   expect_error(
     mostm(
       ordered(y) ~ time + tx + yprev,
@@ -290,7 +290,7 @@ test_that("fits without mostm() provenance must be refitted", {
   skip_if_not_installed("rms")
   local_reproducible_output(width = 80)
 
-  data <- make_test_data(n_patients = 30, follow_up_time = 6, seed = 6108)
+  data <- make_test_data(n_patients = 30, times = 1:6, seed = 6108)
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -333,10 +333,10 @@ test_that("orm and vglm fits do not load the blrm engine's packages", {
       trajectories <- sim_markov(
         "actt2",
         n_patients = 40,
-        follow_up_time = 6,
+        times = 1:6,
         seed = 1
       )
-      data <- prepare_markov_data(trajectories, absorbing_state = 8)
+      data <- prepare_markov_data(trajectories, absorb = 8)
       mostm(
         ordered(y) ~ yprev + time + tx,
         data = data,
@@ -362,7 +362,7 @@ test_that("mostm() refuses `id_var = NULL`", {
   # A column called `id` must not stand in for the missing argument. A missing
   # `id_var` is row F22 of test-refusals.R; the check runs before the engine
   # is chosen, so one engine is enough.
-  data <- make_test_data(n_patients = 30, follow_up_time = 6, seed = 6112)
+  data <- make_test_data(n_patients = 30, times = 1:6, seed = 6112)
   expect_error(
     mostm(ordered(y) ~ time + tx + yprev, data = data, id_var = NULL),
     "`mostm()` needs `id_var`",
@@ -374,7 +374,7 @@ test_that("a patient column with another name gives the same results as `id`", {
   skip_on_cran()
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6113)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6113)
   renamed <- data
   names(renamed)[names(renamed) == "id"] <- "pid"
   fit_model <- function(data, id_var) {
@@ -417,7 +417,7 @@ test_that("orm refits keep the fit's na.action and penalty", {
   skip_if_not_installed("rms")
   skip_if_not_installed("Hmisc")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6111)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6111)
   # Missing treatment on later visits only, so every patient keeps a complete
   # starting row.
   later <- which(data$time > 2)
@@ -502,7 +502,7 @@ test_that("mostm() refuses factor() written inside the formula unless the engine
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6301)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6301)
   renamed <- data
   names(renamed)[names(renamed) == "time"] <- "day"
 
@@ -637,7 +637,7 @@ test_that("mostm() refuses random-effect terms that its engine cannot fit", {
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6304)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6304)
   data$mre <- as.numeric(data$time > 1)
   # VGAM would otherwise fit the patient ID number as a straight-line
   # predictor. Stopping before the fit keeps orm the same for every rms
@@ -742,7 +742,7 @@ test_that("mostm() refuses random-effect terms that its engine cannot fit", {
 test_that("model-based functions reject orm fits that hold random effects", {
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6307)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6307)
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = data,
@@ -784,7 +784,7 @@ test_that("a weighted orm fit does not show rms's warning that its bootstrap ign
 test_that("a vglm fit refuses zero weights and points to subset; orm accepts them", {
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
-  data <- make_test_data(n_patients = 40, follow_up_time = 5, seed = 32)
+  data <- make_test_data(n_patients = 40, times = 1:5, seed = 32)
   w <- rep(1, nrow(data))
   w[c(3, 10)] <- 0
 

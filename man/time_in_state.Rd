@@ -6,7 +6,7 @@
 \usage{
 time_in_state(
   x,
-  target_states = 1,
+  state_sets = 1,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL
@@ -20,8 +20,11 @@ time_in_state(
 \code{markov_interpolated_sops} object.
 }}
 
-\item{target_states}{Vector of target state(s) to include in the time calculation.
-Can be integer indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).}
+\item{state_sets}{Vector of target state(s) to include in the time
+calculation; their time is added up into one total. Can be integer
+indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).
+Unlike \code{state_sets} in \code{\link[=state_time]{state_time()}}, this is one set of states, not a
+list of sets.}
 
 \item{time_map}{Optional named numeric vector or data frame mapping visit
 labels to real elapsed times. Supplying this switches tidy SOP and array
@@ -128,12 +131,12 @@ missing.
 \dontrun{
 # --- Scenario 1: Patient-Level Estimates ---
 sops_arr <- soprob_markov(model, data, times = 1:30)
-days_home <- time_in_state(sops_arr, target_states = 1)
+days_home <- time_in_state(sops_arr, state_sets = 1)
 
 # Real-time AUC after fitting on factor visit indices
 real_days_home <- time_in_state(
   avg,
-  target_states = 1,
+  state_sets = 1,
   time_map = c("1" = 3, "2" = 7, "3" = 14, "4" = 28),
   baseline_time = 0,
   target_times = 1:28
@@ -146,7 +149,7 @@ avg_boot <- avg_sops(
   times = 1:30
 ) |>
   inferences(method = "bootstrap", n_draws = 100)
-boot_effects <- time_in_state(avg_boot, target_states = 1)
+boot_effects <- time_in_state(avg_boot, state_sets = 1)
 }
 
 }

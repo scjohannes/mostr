@@ -61,7 +61,7 @@ cubic spline, \eqn{f(t) = -0.3084\,t + 2.5186\,t' - 5.0276\,t'' +
 3.1714 t''' - 1.0672 t''''}, where \eqn{t'} to \eqn{t''''} are the
 nonlinear basis columns that \code{rms::rcs()} creates with knots at days 2, 6,
 11, 16, 21, and 27. Days beyond 28, for example with
-\code{follow_up_time = 60}, extrapolate this spline.
+\code{times = 1:60}, extrapolate this spline.
 
 In ACTT-2, state 2 was mostly recorded only at the day 14, 21, and 28
 visits, so the transition model was fitted with states 1 and 2 merged. The

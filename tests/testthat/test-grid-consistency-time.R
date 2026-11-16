@@ -268,7 +268,7 @@ test_that("time_in_state() on SOPs matches avg_state_time() and state_time() (R1
       )
       totals <- time_in_state(
         average,
-        target_states = set,
+        state_sets = set,
         time_map = time_map,
         baseline_time = grid$baseline_time,
         target_times = grid$target_times
@@ -285,7 +285,7 @@ test_that("time_in_state() on SOPs matches avg_state_time() and state_time() (R1
     if (index %% 3L == 1L) {
       per_profile <- time_in_state(
         grid_call(sops, cell),
-        target_states = "1",
+        state_sets = "1",
         time_map = time_map
       )
       expected <- grid_call(state_time, cell, state_sets = "1", time_map = time_map)
@@ -301,8 +301,8 @@ test_that("time_in_state() on SOPs matches avg_state_time() and state_time() (R1
     tested <- inferences(average, method = "delta", vcov = "conditional", null = 0.5)
     expect_lt(
       grid_gap(
-        suppressWarnings(time_in_state(tested, target_states = "1", time_map = time_map)),
-        time_in_state(average, target_states = "1", time_map = time_map),
+        suppressWarnings(time_in_state(tested, state_sets = "1", time_map = time_map)),
+        time_in_state(average, state_sets = "1", time_map = time_map),
         "tx",
         "total_time"
       ),
