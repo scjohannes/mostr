@@ -45,7 +45,8 @@ variables use their five-number summary (minimum, lower quartile,
 median, upper quartile, maximum). Values are read from the data stored
 with the model, or from \code{newdata} for a model without stored data. The
 default, \code{NULL}, averages with each patient's observed covariates,
-including their observed treatment.}
+including their observed treatment. The model's time column and its
+\code{gap_var} column cannot be set: they are set at each visit from \code{times}.}
 
 \item{by}{How to average, as in the marginaleffects package. \code{TRUE} (the
 default) averages over all profiles. A character vector of column names

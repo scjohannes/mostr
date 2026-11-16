@@ -47,7 +47,9 @@ column can't change any prediction, so the comparison is 0 for a
 difference and 1 for a ratio, with no uncertainty to report: its standard
 error, test and confidence interval from \code{\link[=inferences]{inferences()}}, and the
 posterior interval of a \code{blrm} fit, are \code{NA}, as in the marginaleffects
-package. Check the spelling if this happens unexpectedly.}
+package. Check the spelling if this happens unexpectedly. The model's
+time column and its \code{gap_var} column cannot be compared: they are set at
+each visit from \code{times}.}
 
 \item{estimand}{Character scalar. One of \code{"sop"}, \code{"time_in_state"}, or
 \code{"time_benefit"}.}

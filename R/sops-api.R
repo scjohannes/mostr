@@ -37,7 +37,8 @@
 #'   Each profile is then predicted once for every combination of the values,
 #'   with those columns set to the combination. For the values a bare name
 #'   selects, see [avg_sops()]. The default, `NULL`, predicts each profile with
-#'   its own covariates.
+#'   its own covariates. The model's time column and its `gap_var` column
+#'   cannot be set: they are set at each visit from `times`.
 #' @param by How to average the profiles' SOPs, as in the marginaleffects
 #'   package. `FALSE` (the default) or `NULL` returns one row per profile,
 #'   time, and state. `TRUE` averages over all profiles, and a character
@@ -653,7 +654,8 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   median, upper quartile, maximum). Values are read from the data stored
 #'   with the model, or from `newdata` for a model without stored data. The
 #'   default, `NULL`, averages with each patient's observed covariates,
-#'   including their observed treatment.
+#'   including their observed treatment. The model's time column and its
+#'   `gap_var` column cannot be set: they are set at each visit from `times`.
 #' @param by How to average, as in the marginaleffects package. `TRUE` (the
 #'   default) averages over all profiles. A character vector of column names
 #'   averages within the groups those columns define after standardization.

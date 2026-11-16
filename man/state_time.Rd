@@ -37,7 +37,9 @@ starting profiles stored by \code{\link[=mostm]{mostm()}}, one per fitted patien
 as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}, whose values are
 chosen as in \code{\link[=avg_sops]{avg_sops()}}. Each profile is predicted once for every
 combination of the values. The default, \code{NULL}, uses each profile's own
-covariates.}
+covariates. The model's time column and its \code{gap_var} column cannot be
+set: they are set at each visit from \code{times}, and \code{time_map} gives the
+elapsed time of each visit.}
 
 \item{state_sets}{States to summarize. \code{NULL} returns every state separately.
 A vector pools its states into one total; a named list returns one total

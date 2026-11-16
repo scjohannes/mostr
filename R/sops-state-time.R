@@ -17,7 +17,9 @@
 #'   as `list(tx = c(0, 1))`, or bare names, such as `"tx"`, whose values are
 #'   chosen as in [avg_sops()]. Each profile is predicted once for every
 #'   combination of the values. The default, `NULL`, uses each profile's own
-#'   covariates.
+#'   covariates. The model's time column and its `gap_var` column cannot be
+#'   set: they are set at each visit from `times`, and `time_map` gives the
+#'   elapsed time of each visit.
 #' @param by `FALSE` (the default) or `NULL` returns one total per profile.
 #'   `TRUE` averages over all profiles, and a character vector of column names
 #'   averages within the groups those columns define; both return the result

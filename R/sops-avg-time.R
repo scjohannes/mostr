@@ -15,7 +15,9 @@
 #'   of values, for example `list(tx = c(0, 1))` for average times under each
 #'   treatment, or bare names such as `"tx"`, whose values are chosen as in
 #'   [avg_sops()]. The default, `NULL`, uses each patient's observed
-#'   covariates.
+#'   covariates. The model's time column and its `gap_var` column cannot be
+#'   set: they are set at each visit from `times`, and `time_map` gives the
+#'   elapsed time of each visit.
 #' @param by How to average, as in the marginaleffects package. `TRUE` (the
 #'   default) averages over all profiles, and a character vector of column
 #'   names averages within the groups those columns define, using each

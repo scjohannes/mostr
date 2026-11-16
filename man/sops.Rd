@@ -45,7 +45,8 @@ of values, such as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}
 Each profile is then predicted once for every combination of the values,
 with those columns set to the combination. For the values a bare name
 selects, see \code{\link[=avg_sops]{avg_sops()}}. The default, \code{NULL}, predicts each profile with
-its own covariates.}
+its own covariates. The model's time column and its \code{gap_var} column
+cannot be set: they are set at each visit from \code{times}.}
 
 \item{by}{How to average the profiles' SOPs, as in the marginaleffects
 package. \code{FALSE} (the default) or \code{NULL} returns one row per profile,

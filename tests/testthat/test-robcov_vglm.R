@@ -1135,3 +1135,28 @@ test_that("orm and vglm accept or refuse a covariance by the same rule, the orm 
   )
   expect_identical(accepts("vglm", small_scale), accepts("orm", small_scale))
 })
+
+# Written before the fix as a known bug: the observed information used a
+# finite-difference step of `eps^(1/3) * max(1, |beta|)`, so a coefficient on a
+# small scale (a covariate in large units) got a step far larger than its
+# standard error, and the information came out not positive definite.
+test_that("vglm robust covariance is preserved when a covariate's units change", {
+  skip_on_cran() # Refits the vglm grid cell twice; the CRAN time budget is spent.
+  cell <- grid_cell("vglm")
+  fit <- grid_fit(cell)
+  for (k in c(1e6, 1e-6)) {
+    scaled <- grid_refit(cell, paste("age times", k), function(data) {
+      data$age <- data$age * k
+      data
+    })
+    # Multiplying age by k divides its coefficient by k, so its variance is
+    # divided by k^2 and its covariances by k.
+    units <- ifelse(names(stats::coef(scaled)) == "age", k, 1)
+    expect_equal(
+      unname(scaled$var * outer(units, units)),
+      unname(fit$var),
+      tolerance = 1e-6,
+      info = paste("age times", k)
+    )
+  }
+})

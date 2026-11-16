@@ -823,6 +823,33 @@ test_that("plot_lp_difference supports blrm posterior median linear predictors",
   expect_equal(unique(eta2), 1)
 })
 
+# Issue #22: with one row of `newdata`, `vapply()` returns a vector rather
+# than a 1 x thresholds matrix, and `as.matrix()` turned it into a column.
+test_that("blrm linear predictor matrix keeps one row for one-row newdata", {
+  model <- structure(list(ylevels = 1:3), class = "blrm")
+  newdata <- data.frame(
+    tx = 1,
+    yprev = factor(1, levels = 1:3),
+    row.names = "patient"
+  )
+
+  eta <- with_mocked_bindings(
+    plot_blrm_predict = function(model, newdata, type, ...) {
+      10 * list(...)$kint + as.numeric(newdata$tx)
+    },
+    markov_linear_predictor_matrix(model, newdata)
+  )
+
+  expect_equal(
+    eta,
+    matrix(
+      c(11, 21),
+      nrow = 1,
+      dimnames = list("patient", c("eta1", "eta2"))
+    )
+  )
+})
+
 
 test_that("correlation methods match R with ties and pairwise missing values", {
   skip_on_cran()

@@ -855,6 +855,11 @@ prediction_refusals <- list(
       )
     },
     "`previous_states` includes state(s) that never occur in `yprev`"
+  ),
+  refusal(
+    "P69", "the time column given to `variables` as a bare name",
+    function() refusal_call(sops, variables = "time"),
+    "set at each visit from `times`"
   )
   # P55, a linear-predictor plot of a profile whose factor `yprev` has only its
   # own level, was refused here because vglm silently dropped the rows it could
@@ -865,6 +870,47 @@ prediction_refusals <- list(
 test_that("SOP and summary functions refuse what they cannot compute", {
   skip_on_cran()
   check_refusals(prediction_refusals)
+})
+
+# Issue #29: the recursion sets the time column and the `gap_var` column at
+# every visit from `times`, so a value given in `variables` had no effect (a
+# comparison of two times was exactly 0, with standard error 0). Rows P57 to
+# P62 give the time column, P63 to P68 the gap column, to each SOP function.
+visit_column_refusals <- local({
+  functions <- list(
+    sops = sops,
+    avg_sops = avg_sops,
+    state_time = state_time,
+    avg_state_time = avg_state_time,
+    comparisons = comparisons,
+    avg_comparisons = avg_comparisons
+  )
+  columns <- list(
+    list(name = "time", cell = refusal_orm, first_id = 57L),
+    list(name = "gap", cell = grid_cell("orm", visit = "gap"), first_id = 63L)
+  )
+  rows <- list()
+  for (column in columns) {
+    for (i in seq_along(functions)) {
+      rows[[length(rows) + 1L]] <- local({
+        fun <- functions[[i]]
+        cell <- column$cell
+        variables <- stats::setNames(list(c(1, 2)), column$name)
+        refusal(
+          paste0("P", column$first_id + i - 1L),
+          paste0("the `", column$name, "` column in `variables` of `", names(functions)[i], "()`"),
+          function() refusal_call(fun, cell, variables = variables),
+          "set at each visit from `times`"
+        )
+      })
+    }
+  }
+  rows
+})
+
+test_that("SOP functions refuse the time and gap columns in `variables`", {
+  skip_on_cran()
+  check_refusals(visit_column_refusals)
 })
 
 prediction_refusals_with_extra_fits <- list(

@@ -44,7 +44,9 @@ The previous-state column holds states of the fitted model, as a factor
 of values, for example \code{list(tx = c(0, 1))} for average times under each
 treatment, or bare names such as \code{"tx"}, whose values are chosen as in
 \code{\link[=avg_sops]{avg_sops()}}. The default, \code{NULL}, uses each patient's observed
-covariates.}
+covariates. The model's time column and its \code{gap_var} column cannot be
+set: they are set at each visit from \code{times}, and \code{time_map} gives the
+elapsed time of each visit.}
 
 \item{state_sets}{States to summarize. \code{NULL} returns every state separately.
 A vector pools its states into one total; a named list returns one total

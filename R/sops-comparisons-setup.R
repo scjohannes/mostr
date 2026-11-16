@@ -21,6 +21,35 @@ bare_variable_data <- function(model, newdata) {
   data_res$refit_data %||% data_res$source_data
 }
 
+# Refuses the time column and the `gap_var` column in `variables`, whether
+# named in a list or given as bare names. The recursion overwrites both at
+# every visit (`assign_sop_visit()`), so a value set here had no effect: a
+# comparison of two times was exactly 0 with standard error 0 (issue #29).
+stop_visit_columns_in_variables <- function(variables, settings) {
+  names_set <- if (is.character(variables)) variables else names(variables)
+  visit_columns <- c(settings$time_var, settings$gap_var)
+  column <- intersect(names_set, visit_columns)
+  if (length(column) == 0L) {
+    return(invisible(NULL))
+  }
+  column <- column[[1L]]
+  role <- if (identical(column, settings$time_var)) {
+    "the model's time column"
+  } else {
+    "the time since the previous visit (`gap_var`)"
+  }
+  mostr_abort(
+    "`variables` cannot set `",
+    column,
+    "`, ",
+    role,
+    ": SOPs are computed visit by visit, and this column is set at each ",
+    "visit from `times`, so a value given in `variables` would have no ",
+    "effect. Choose the visits with `times`; functions that total time ",
+    "also take `time_map`, which gives the elapsed time of each visit."
+  )
+}
+
 # Turns a bare variable name into the named list of values to compare, then
 # validates the list. Values of the previous-state columns are matched to
 # states by label (`match_previous_state_variables()`).
@@ -31,6 +60,9 @@ resolve_comparison_variables <- function(
   fn,
   settings
 ) {
+  if (!missing(variables)) {
+    stop_visit_columns_in_variables(variables, settings)
+  }
   if (!missing(variables) && is.character(variables)) {
     if (length(variables) != 1L || is.na(variables) || !nzchar(variables)) {
       mostr_abort("`", fn, "` supports exactly one named variable.")
@@ -56,6 +88,7 @@ resolve_prediction_variables <- function(variables, model, newdata, settings) {
   if (is.null(variables)) {
     return(variables)
   }
+  stop_visit_columns_in_variables(variables, settings)
   if (is.character(variables)) {
     if (
       anyNA(variables) || any(!nzchar(variables)) || anyDuplicated(variables)

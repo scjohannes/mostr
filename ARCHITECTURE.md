@@ -251,6 +251,20 @@ flowchart TD
   `robcov_orm()`, a non-logistic orm family stops with
   `stop_unsupported_markov_link()`, the classed error `validate_markov_model()`
   raises, so such fits fail at fit time rather than in the sandwich code.
+- Every matrix that robust covariance or unconditional variance inverts is
+  accepted or refused by one rule, `markov_correlation_positive_definite()` in
+  `R/robcov_orm.R`, which checks the correlation matrix so that covariate
+  units do not matter: `orm_model_bread()`, the vglm checks in
+  `R/robcov_vglm.R`, and the bread of unconditional variance
+  (`delta_validate_named_matrix(positive_definite = TRUE)` in
+  `R/sops-delta-unconditional.R`). Covariances that are only multiplied by
+  Jacobians (`positive_semidefinite = TRUE`) keep a raw eigenvalue rule,
+  because a zero variance is allowed there and cannot be scaled to a
+  correlation. The vglm observed information
+  (`compute_observed_bread_vglm()`) differentiates the scores with a step of
+  `eps^(1/3) * max(|beta_j|, 1 / max|X_vlm[, j]|)` for each coefficient,
+  which follows the coefficient's units, and measures the asymmetry of the
+  score Jacobian against `sqrt(|J_ii J_jj|)`.
 - Downstream code reads the patient column with `markov_require_id_var()` in
   `R/markov-model-data.R`, which returns an explicit `id_var` argument or the
   one stored by `mostm()` and otherwise stops; no column name is guessed. The
@@ -626,6 +640,14 @@ There is no lookup table of visit-specific columns any more
 (`time_covariates` was removed on 2026-11-13; see `dev/decisions.md`), and
 `mostm()` accepts `gap_var` only with numeric time. A request that leaves
 out visits therefore relabels later transitions rather than skipping time.
+
+Because the recursion sets the time column and the `gap_var` column at every
+visit, `variables` cannot set them. `stop_visit_columns_in_variables()` in
+`R/sops-comparisons-setup.R`, called by `resolve_prediction_variables()` and
+`resolve_comparison_variables()` before bare names are turned into values,
+refuses both in the six SOP, time and comparison functions.
+`plot_lp_difference()` and `plot_transitions()` do not use these resolvers
+and do not refuse them yet.
 
 `warn_skipped_sop_visits()` in `R/sops-times.R` compares the requested times
 with the fitted visit schedule: the fitted levels for factor time

@@ -292,6 +292,30 @@
 
 ## Bug fixes
 
+* `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
+  and `avg_comparisons()` refuse the model's time column and its `gap_var`
+  column in `variables` (#29). The probabilities are computed visit by visit,
+  and both columns are set at each visit from `times`, so a value given in
+  `variables` had no effect: a comparison of two times was exactly 0, with
+  standard error 0, and `avg_sops()` returned a garbled `time` column. Choose
+  the visits with `times`, and real time with `time_map`.
+
+* The robust variance of `mostm(engine = "vglm")` fits no longer depends on
+  the units of a covariate. The observed information was computed by finite
+  differences with a step that did not follow the coefficient's units, so a
+  covariate in very small units (for example multiplied by 1e6) made the fit
+  stop with "The observed vglm information is singular or not positive
+  definite". The step now follows each coefficient's units. For ordinary fits
+  the robust covariance changes by about 1e-10 relative.
+
+* Analytical standard errors with unconditional variance no longer refuse a
+  fit because of a covariate's units. The model-based bread was checked for
+  positive definiteness on the raw scale, so with a covariate multiplied by
+  1e6, `inferences(vcov = "unconditional")` stopped with "`model-based bread`
+  is not numerically positive definite" for orm and vglm fits. It now uses
+  the rule of the orm and vglm robust variance, on the correlation scale.
+  Standard errors that were computed before are unchanged.
+
 * Analytical standard errors with unconditional variance no longer depend on
   the data frame the model was fitted to. `inferences(method = "delta")` took
   the patient of each fitted row by evaluating the `data` of the `mostm()`
