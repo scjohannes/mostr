@@ -305,6 +305,16 @@
 
 ## Bug fixes
 
+* `vcov()` on results of `inferences(method = "delta")` now follows the rows
+  the result has when it is called (#43). Filtering or sorting a result, for
+  example `day14 <- res[res$time == 14, ]` as `?sops` suggests, used to leave
+  `vcov()` returning the covariance of every original row in the original
+  order, so `sqrt(diag(vcov(day14)))` did not match `day14$std.error`, and
+  `vcov(day14, rows = 1:2)` silently returned the first two original rows
+  instead of the first two rows of `day14`. `rows` now refers to the rows of
+  the object passed, and rows whose identifying columns (such as `time` or
+  `state`) were edited after `inferences()` raise an error.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,

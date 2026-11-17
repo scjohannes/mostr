@@ -1013,6 +1013,14 @@ Rows are matched to the stored derivatives by row key, and the weights must
 reproduce the reported totals. Delta SOPs already passed through
 `interpolate_sops()` are refused.
 
+`vcov()` and the internal `get_jacobian()` (`R/sops-delta-accessors.R`) match
+rows the same way. Base R `[` keeps the `"analytical"` attribute when rows are
+filtered or sorted, so `delta_current_rows()` rebuilds each current row's key
+from the stored key column names (`names(analytical$row_keys)`) and maps it to
+its stored row; `delta_resolve_rows()` then reads `rows` relative to the
+object as passed. Repeated rows map to the same stored row, and rows without a
+stored match (edited key columns, rows from another result) are refused (#43).
+
 Other tidy SOPs get the limits of their totals from stored draws
 (`time_in_state_tidy_inference()` reduces each draw and calls
 `compute_ci_from_draws()`). SOPs with `conf.low`, `conf.high`, or `std.error`
