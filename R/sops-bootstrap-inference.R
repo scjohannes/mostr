@@ -70,6 +70,10 @@ inferences_bootstrap <- function(
 
   refit_data <- stored_refit_bootstrap_data(object, model)
   validate_refit_bootstrap_data(refit_data, id_var, settings$time_var)
+  # Without `newdata`, each draw starts every patient at this visit, as the
+  # point estimate does.
+  first_followup_time <-
+    markov_model_starting_profile_metadata(model)$first_followup_time
 
   if (newdata_supplied && method == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
@@ -142,21 +146,22 @@ inferences_bootstrap <- function(
       baseline_weights <- NULL
     } else {
       # B. Compute standardized SOPs using G-computation on bootstrap data
-      # Extract baseline data (one row per patient)
+      # Extract baseline data (one row per patient, at `first_followup_time`
+      # as in the point estimate)
       if (method == "bootstrap") {
-        baseline_boot <- resolve_markov_prediction_data(
+        baseline_boot <- markov_bootstrap_starting_rows(
           boot_data,
           id_var = "new_id",
           time_var = settings$time_var,
-          data_label = "bootstrap data"
+          first_followup_time = first_followup_time
         )
         baseline_weights <- NULL
       } else {
-        baseline_boot <- resolve_markov_prediction_data(
+        baseline_boot <- markov_bootstrap_starting_rows(
           boot_data,
           id_var = id_var,
           time_var = settings$time_var,
-          data_label = "bootstrap data"
+          first_followup_time = first_followup_time
         )
         baseline_weights <- fwb_baseline_weights(
           fwb_weights = fwb_weights,
@@ -310,11 +315,11 @@ inferences_bootstrap <- function(
       check_bootstrap_by_groups(
         boot_ids,
         baseline_data = add_observed_by_columns(
-          resolve_markov_prediction_data(
+          markov_bootstrap_starting_rows(
             refit_data,
             id_var = id_var,
             time_var = settings$time_var,
-            data_label = "refit data"
+            first_followup_time = first_followup_time
           ),
           variables,
           by

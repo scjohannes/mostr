@@ -413,6 +413,17 @@
   * `factor()` and the other factor conversions, and `splines::ns()`,
     `splines::bs()` and `stats::poly()`, inside the `ppo` formula, as it
     already did in the main formula.
+* `inferences(method = "bootstrap")` and `inferences(method = "fwb")` on
+  `avg_sops()`, `avg_state_time()` and `avg_comparisons()` without `newdata`
+  now start each resampled patient from their row at `first_followup_time`,
+  as the point estimate does (#47). Each draw used to start from the patient's
+  earliest row after sorting time. That is the wrong visit when time is
+  character (`"Week 10"` sorts before `"Week 2"`) or a factor whose levels are
+  not in visit order or include a visit before `first_followup_time`. In a
+  simulated trial with character visits `"Week 2"`, `"Week 6"` and
+  `"Week 10"`, almost every draw started from Week 10, and the interval
+  limits moved by up to 0.11, so far that an interval no longer contained its
+  estimate. Results for numeric time are unchanged.
 
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`

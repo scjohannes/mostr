@@ -729,6 +729,67 @@ resolve_markov_prediction_data <- function(
   data[!duplicated(id), , drop = FALSE]
 }
 
+# Each patient's starting row in a bootstrap or FWB draw: their row at
+# `first_followup_time`, matched as `markov_prepare_stored_data()` matches it,
+# so that every draw starts each patient where the point estimate does. Taking
+# the earliest row by sorting time, as `resolve_markov_prediction_data()`
+# does, starts from the wrong visit when time is character (alphabetical
+# order puts "Week 10" before "Week 2") or a factor whose levels are not in
+# visit order or include a visit before `first_followup_time`, such as a
+# screening visit kept in the stored refit data but dropped from the fit
+# (issue #47).
+#
+# Patients come out in the level order of `factor(id)`, the order that
+# sorting by ID gave before; draws for numeric time are therefore unchanged,
+# since there the earliest row is the row at `first_followup_time`.
+markov_bootstrap_starting_rows <- function(
+  data,
+  id_var,
+  time_var,
+  first_followup_time
+) {
+  if (is.null(first_followup_time) || length(first_followup_time) != 1L) {
+    mostr_abort(
+      "Internal error: the model stores no `first_followup_time` to pick ",
+      "each resampled patient's starting row."
+    )
+  }
+  id <- data[[id_var]]
+  at_start <- as.character(data[[time_var]]) %in%
+    as.character(first_followup_time)
+  at_start_ids <- as.character(id[at_start])
+  all_ids <- unique(as.character(id))
+  # The stored refit data hold only fitted patients, and the point estimate
+  # has checked that each has exactly one row at `first_followup_time`, so a
+  # miss here means a resample was built from other data.
+  missing_ids <- setdiff(all_ids, at_start_ids)
+  duplicated_ids <- unique(at_start_ids[duplicated(at_start_ids)])
+  if (length(missing_ids) || length(duplicated_ids)) {
+    mostr_abort(
+      "Internal error: each resampled patient needs exactly one row at ",
+      "`first_followup_time = ",
+      as.character(first_followup_time),
+      "`. ",
+      if (length(missing_ids)) {
+        paste0("No row: ", markov_format_patient_ids(missing_ids), ". ")
+      },
+      if (length(duplicated_ids)) {
+        paste0(
+          "Several rows: ",
+          markov_format_patient_ids(duplicated_ids),
+          "."
+        )
+      }
+    )
+  }
+  rows <- which(at_start)
+  # The old sort kept the data order when every patient had one row.
+  if (anyDuplicated(id)) {
+    rows <- rows[order(as.integer(factor(id))[rows])]
+  }
+  data[rows, , drop = FALSE]
+}
+
 ensure_markov_rowid <- function(data) {
   data$rowid <- seq_len(nrow(data))
   data

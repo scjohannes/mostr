@@ -468,6 +468,21 @@ the SOP and time-in-state estimands of `avg_comparisons()`) and in the
 time-benefit bootstrap. Supplied `newdata` profiles are fixed, so every group
 is always present.
 
+Without `newdata`, each bootstrap or FWB draw predicts for its own patients,
+starting each from their row at the model's stored `first_followup_time`.
+`markov_bootstrap_starting_rows()` (`R/markov-model-data.R`) picks these rows
+by matching `as.character(time)`, the same match `markov_prepare_stored_data()`
+uses to store the point estimate's starting profiles. It serves the draws of
+`inferences_bootstrap()` and the time-benefit bootstrap, and the
+`check_bootstrap_by_groups()` input. Picking the earliest row by sorting time
+(`resolve_markov_prediction_data()`) would start from the wrong visit when
+time is character (alphabetical order) or a factor whose levels are out of
+visit order or include a visit before `first_followup_time`, whose rows stay
+in the stored refit data although the fit drops them (#47). Patients come out
+in the level order of `factor(id)`, as with that sort, so numeric-time draws
+are identical. A patient with no row, or several, at that visit is an
+internal error, because the point estimate has already required exactly one.
+
 Refits evaluate the fitted model's stored `mostm()` call
 (`bootstrap_model_call()`), so every refit calls `mostm()` again with the
 original engine, the resampled data, bootstrap weights, and optional starting
@@ -1400,7 +1415,7 @@ their existing data-frame subsetting semantics.
 | Weighted averages | `sops-result-helpers.R`: `aggregate_sops_estimates` groups through data.table and retains `weighted_sop_mean`, including missing estimates and zero-total-weight groups. |
 | Percentile and Wald intervals | `sops-draws.R`: `compute_ci_from_draws` groups through data.table and retains R's quantile and standard-deviation calculations and point-estimate centering. |
 | Patient bootstrap materialization | `bootstrap_helpers.R`: the existing cached row plan still determines sampled copies and row order; data.table extracts the rows without constructing data-frame row names. |
-| Repeated-ID prediction data | `markov-model-data.R`: sort a private row-index table by factor-coded ID and visit, then select the first row per ID. This preserves factor ID order, earliest visits, first-row ties, and missing visits ordered last. |
+| Repeated-ID prediction data | `markov-model-data.R`: sort a private row-index table by factor-coded ID and visit, then select the first row per ID. This preserves factor ID order, earliest visits, first-row ties, and missing visits ordered last. Bootstrap and FWB draws do not use it to choose starting rows; see `markov_bootstrap_starting_rows()` under the refit bootstrap. |
 
 The package-wide review also covered simulation output, model-frame preparation,
 backend prediction, analytical inference, diagnostics, reshaping utilities,

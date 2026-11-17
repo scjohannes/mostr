@@ -266,7 +266,12 @@ test_that("inferences_simulation() errors when all compiled-path or R-engine dra
 })
 
 test_that("FWB draw weights are normalized within by groups", {
-  model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
+  # Draws start each patient at `first_followup_time`, which `mostm()` stores.
+  model <- structure(
+    list(coefficients = c(a = 0)),
+    class = "mock_model",
+    markov_starting_profile_metadata = list(first_followup_time = 1)
+  )
   make_by_group_object <- function(newdata, refit_data = NULL) {
     object <- expand.grid(
       time = 1,
@@ -532,7 +537,12 @@ test_that("soprob_markov() validates model classes and propagates Bayesian draws
 })
 
 test_that("inferences_bootstrap() validates inputs and records callback outcomes", {
-  model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
+  # Draws start each patient at `first_followup_time`, which `mostm()` stores.
+  model <- structure(
+    list(coefficients = c(a = 0)),
+    class = "mock_model",
+    markov_starting_profile_metadata = list(first_followup_time = 1)
+  )
   newdata <- data.frame(
     id = rep(1:2, each = 2),
     time = rep(1:2, times = 2),
@@ -727,7 +737,12 @@ test_that("inferences_bootstrap() validates inputs and records callback outcomes
 })
 
 test_that("inferences_bootstrap() supports fractional weighted refits", {
-  model <- structure(list(coefficients = c(a = 0)), class = "mock_model")
+  # Draws start each patient at `first_followup_time`, which `mostm()` stores.
+  model <- structure(
+    list(coefficients = c(a = 0)),
+    class = "mock_model",
+    markov_starting_profile_metadata = list(first_followup_time = 1)
+  )
   newdata <- data.frame(
     id = rep(1:2, each = 2),
     time = rep(1:2, times = 2),
