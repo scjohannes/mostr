@@ -404,14 +404,16 @@ test_that("comparison intervals add null tests and replace earlier inference", {
     estimand = "time_in_state",
     times = 1:4
   )
-  first <- inferences(cmp, n_draws = 5, seed = 11)
+  # Percentile intervals come without a test, so the test is checked with Wald
+  # intervals.
+  first <- inferences(cmp, n_draws = 5, seed = 11, conf_type = "wald")
   expect_identical(attr(first, "null"), 0)
   expect_equal(first$statistic, first$estimate / first$std.error)
   expect_true(all(c("p.value", "s.value") %in% names(first)))
   draws <- get_draws(first)
   expect_true(all(c("draw", "draw_id", "tx", "id") %in% names(draws)))
 
-  again <- inferences(first, n_draws = 5, seed = 11)
+  again <- inferences(first, n_draws = 5, seed = 11, conf_type = "wald")
   expect_identical(names(again), names(first))
   expect_equal(again$std.error, first$std.error)
 
@@ -427,7 +429,11 @@ test_that("comparison intervals add null tests and replace earlier inference", {
     comparison = "ratio",
     times = 1:4
   )
-  expect_identical(attr(inferences(ratio, n_draws = 5, seed = 11), "null"), 1)
+  expect_identical(
+    attr(inferences(ratio, n_draws = 5, seed = 11, conf_type = "wald"), "null"),
+    1
+  )
+  expect_null(attr(inferences(ratio, n_draws = 5, seed = 11), "null"))
 })
 
 # Checks one model setup end to end: point estimates against paired `sops()`

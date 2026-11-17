@@ -12,6 +12,49 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: Null tests agree with their interval; none for percentile intervals
+
+`inferences(null = )` tests on the scale of the interval it reports (#57).
+Percentile intervals (the default of `mvn`, `bootstrap` and `fwb`) carry no
+`statistic`, `p.value` or `s.value`. Logit intervals of delta SOPs are tested
+on the logit scale, and Wald intervals keep the Wald test. Ratio draws follow
+R arithmetic: `x / 0` is `Inf` and stays in the percentile limits, and `0 / 0`
+is left out with a warning.
+
+Reason: the old Wald test on the estimate's scale disagreed with the interval
+next to it. In `actt2` simulations (n = 200, six fits, 1000 MVN draws, times
+1 to 28, both orders of `tx`), the 5% test disagreed with the 95% percentile
+interval in 50 of 2688 ratio tests. Flipping `c(0, 1)` to `c(1, 0)` changed
+the decision in 32 of 1344 rows, while the percentile interval never changed.
+For differences it disagreed in 22 of 672 rows. For delta SOPs (n = 400, 20
+profiles, 4480 rows) with `null = 0.05`, it disagreed with the logit interval
+in 87 rows; a logit-scale test disagreed in none. The maintainer chose to
+follow marginaleffects 1.0.0, which reports no p-value for
+`inferences(method = "simulation")` and keeps its test and interval on one
+scale. Users who want a p-value with draws use `conf_type = "wald"`. The
+draws from `get_draws()` allow any other summary.
+
+Rejected:
+- A p-value found by inverting the percentile interval,
+  `2 * min(share of draws <= null, share >= null)`. It agreed with the
+  interval (4 disagreements in 2688 tests, all at its edge) and does not
+  depend on the order of a ratio. But it moves in steps of 1/`n_draws`, it is
+  0 when every draw is on one side, and it has no test statistic. It would
+  also differ from marginaleffects.
+- A Wald test of `log(ratio)`. It does not depend on the order, but it still
+  disagreed with the percentile interval in 30 of 2688 tests, and it does
+  nothing for differences.
+- Keeping the test and documenting the disagreement. Users would still see a
+  p-value of 0.054 next to an interval that excludes 1.
+
+For zero denominators, dropping the `x / 0` draws silently removed exactly
+the draws that make the upper limit infinite. With 5% such draws in
+constructed data, `conf.high` was 8.2 instead of `Inf`. In a real ordinary
+bootstrap (n = 50, 300 resamples), 15 resamples had no death and so gave a
+death ratio of `0 / 0`; these are still dropped, but now with a warning.
+Rejected: returning `NA` limits whenever any draw is undefined, which would
+remove the interval for every rare state in a small bootstrap.
+
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 
 The tests may take at most 90 seconds in CRAN mode on the development machine

@@ -57,7 +57,13 @@ test_that("inferences(null = ) does not change interpolate_sops() or time_in_sta
     })
   }
   for (method in c("delta", "mvn")) {
-    extra <- if (method == "mvn") list(n_draws = 30, seed = 1) else list()
+    # Percentile intervals come without a test, so the draws get Wald
+    # intervals here.
+    extra <- if (method == "mvn") {
+      list(n_draws = 30, seed = 1, conf_type = "wald")
+    } else {
+      list()
+    }
     without <- do.call(inferences, c(list(averaged, method = method), extra))
     with <- do.call(inferences, c(list(averaged, method = method, null = 0.5), extra))
 
@@ -77,12 +83,19 @@ test_that("inferences(null = ) does not change interpolate_sops() or time_in_sta
       expect_equal(out[[column]][index], expected[[column]], info = paste(method, column))
     }
     # The tests refer to the interpolated estimates, against the same null.
+    # Delta-method SOPs keep the logit interval through the interpolation, so
+    # they are tested on the logit scale; Wald intervals on the probability
+    # scale.
     tested <- !is.na(out$std.error) & out$std.error > 0
-    expect_equal(
-      out$statistic[tested],
-      (out$estimate[tested] - 0.5) / out$std.error[tested],
-      info = method
-    )
+    estimate <- out$estimate[tested]
+    se <- out$std.error[tested]
+    expected_statistic <- if (method == "delta") {
+      (stats::qlogis(estimate) - stats::qlogis(0.5)) /
+        (se / (estimate * (1 - estimate)))
+    } else {
+      (estimate - 0.5) / se
+    }
+    expect_equal(out$statistic[tested], expected_statistic, info = method)
     expect_equal(out$p.value[tested], 2 * stats::pnorm(-abs(out$statistic[tested])), info = method)
 
     expected <- without_draws_warning(

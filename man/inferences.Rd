@@ -88,9 +88,9 @@ available only with \code{method = "delta"} on SOP objects.
 }}
 
 \item{null}{The value each estimate is tested against. A test adds three
-columns: the Wald \code{statistic}, (estimate - \code{null}) / \code{std.error}; its
-two-sided normal \code{p.value}; and the \code{s.value}, \eqn{-\log_2(p)}, which
-expresses the evidence against the null in bits.
+columns: the Wald \code{statistic}; its two-sided normal \code{p.value}; and the
+\code{s.value}, \eqn{-\log_2(p)}, which expresses the evidence against the
+null in bits.
 \itemize{
 \item \code{"auto"} (the default): tests \code{\link[=comparisons]{comparisons()}} and
 \code{\link[=avg_comparisons]{avg_comparisons()}} results against
@@ -101,9 +101,30 @@ value, so they are not tested.
 Ratio comparisons cannot be tested against 0.
 \item \code{NULL}: no test.
 }
-Ratios are tested on the ratio scale, using the ratio's own standard
-error. Bayesian \code{blrm} results are never tested; supplying a number for
-them gives a warning.}
+The test is on the scale of the interval, so that p < 0.05 exactly when
+the 95\% interval excludes the null:
+\itemize{
+\item Wald intervals (\code{conf_type = "wald"}, and the delta method for
+comparisons and average times): the statistic is
+(estimate - \code{null}) / \code{std.error}. A ratio is tested on the ratio
+scale with its own standard error.
+\item Logit intervals (the default for SOPs with \code{method = "delta"}):
+the statistic is \eqn{(\mathrm{logit}(p) - \mathrm{logit}(p_0)) / s},
+where \eqn{p} is the estimate, \eqn{p_0} the null, and
+\eqn{s = \mathrm{SE}/(p(1 - p))} the standard error of
+\eqn{\mathrm{logit}(p)}, the quantity the interval is built from.
+\code{null} must be strictly between 0 and 1. \code{std.error} stays on the
+probability scale.
+\item Percentile intervals (the default for \code{method = "mvn"},
+\code{"bootstrap"} and \code{"fwb"}): no test, as in the marginaleffects
+package. A test based on the draws' standard deviation can reject
+the null while the percentile interval contains it, or the reverse.
+Supplying a number for \code{null} gives a warning. Use
+\code{conf_type = "wald"} for a p-value; with \code{return_draws = TRUE},
+\code{\link[=get_draws]{get_draws()}} returns the draws for any other summary.
+}
+Bayesian \code{blrm} results are never tested; supplying a number for them
+gives a warning.}
 
 \item{return_draws}{Logical. If \code{TRUE}, stores individual simulation or
 bootstrap draws as an attribute. Extract with \code{\link[=get_draws]{get_draws()}}. Delta
@@ -124,9 +145,17 @@ The input object with added columns:
 simulation, or bootstrap}
 
 When a null value is tested (by default, for \code{\link[=comparisons]{comparisons()}} and
-\code{\link[=avg_comparisons]{avg_comparisons()}} results),
+\code{\link[=avg_comparisons]{avg_comparisons()}} results with a Wald interval),
 the object also has \code{statistic}, \code{p.value}, and \code{s.value} columns; see
 \code{null}.
+
+A ratio whose reference value is 0 is \code{Inf}, or undefined (\code{NaN}) when
+the compared value is 0 too. Infinite draws count in a percentile
+interval, so \code{conf.high} can be \code{Inf}, and the standard error of such an
+estimate is \code{NA}. Undefined draws are left out of the interval, with a
+warning that gives their number. They occur in the ordinary bootstrap
+when a resample has no patient in a rare state, such as death in a small
+trial.
 
 A comparison of a variable that the model doesn't use (see \code{variables}
 in \code{\link[=avg_comparisons]{avg_comparisons()}}) is 0 for a difference, or 1 for a ratio, whatever

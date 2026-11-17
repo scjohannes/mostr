@@ -6,15 +6,20 @@
 draw_summary_function <- function(conf_level, conf_type) {
   alpha <- 1 - conf_level
   function(x) {
+    # Missing and undefined (NaN) draws are left out; infinite draws, such as
+    # a ratio with a reference probability of 0, are kept, so a percentile
+    # limit can be Inf. The standard deviation of draws that include an
+    # infinite value is not finite, so the standard error (and with it a Wald
+    # interval) is NA rather than the NaN that `sd()` returns.
+    se <- if (any(is.infinite(x))) NA_real_ else stats::sd(x, na.rm = TRUE)
     if (conf_type == "perc") {
       return(c(
         conf.low = unname(stats::quantile(x, alpha / 2, na.rm = TRUE)),
         conf.high = unname(stats::quantile(x, 1 - alpha / 2, na.rm = TRUE)),
-        std.error = stats::sd(x, na.rm = TRUE)
+        std.error = se
       ))
     }
 
-    se <- stats::sd(x, na.rm = TRUE)
     critical <- abs(stats::qnorm(alpha / 2))
     c(
       conf.low = -critical * se,
@@ -59,6 +64,7 @@ compute_ci_from_draws <- function(
     mostr_abort("conf_type must be 'perc' or 'wald'")
   }
   summarize_values <- draw_summary_function(conf_level, conf_type)
+  warn_undefined_draws(draws_df, group_cols, keep_na_groups)
 
   if (length(group_cols) == 0L) {
     stats <- summarize_values(draws_df$estimate)
@@ -123,6 +129,47 @@ compute_ci_from_draws <- function(
   }
 
   summary_stats
+}
+
+# Undefined draws (NaN, as 0 / 0 gives for a ratio of two probabilities of 0)
+# can't be ordered, so the interval leaves them out. That changes which
+# quantiles the limits are, so the user is told how many were left out. With
+# several estimates, the message gives the largest count, from the estimate
+# that lost the most draws. Missing (NA) draws are left out without a warning,
+# as before.
+warn_undefined_draws <- function(draws_df, group_cols, keep_na_groups) {
+  undefined <- is.nan(draws_df$estimate)
+  if (!any(undefined)) {
+    return(invisible(NULL))
+  }
+  key <- split_key(draws_df, group_cols, keep_na = keep_na_groups)
+  n_undefined <- tapply(undefined, key, sum)
+  n_total <- tapply(undefined, key, length)
+  affected <- which(!is.na(n_undefined) & n_undefined > 0)
+  if (length(affected) == 0L) {
+    return(invisible(NULL))
+  }
+  worst <- affected[which.max(n_undefined[affected])]
+  counts <- paste(n_undefined[[worst]], "of", n_total[[worst]], "draws")
+  if (length(affected) == 1L) {
+    warning(
+      counts,
+      " of an estimate were undefined (0 / 0) and were left out of its ",
+      "interval.",
+      call. = FALSE
+    )
+  } else {
+    warning(
+      "Draws of ",
+      length(affected),
+      " estimates were undefined (0 / 0) and were left out of their ",
+      "intervals: up to ",
+      counts,
+      " of an estimate.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
 }
 
 

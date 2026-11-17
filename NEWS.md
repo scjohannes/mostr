@@ -262,6 +262,27 @@
 * Results of `inferences()` no longer carry an `n_boot` attribute; `n_draws`
   holds the same number.
 
+* The test that `inferences(null = )` adds now agrees with the interval it is
+  reported next to (#57). Before, it was always a Wald test on the scale of
+  the estimate, `(estimate - null) / std.error`, so p could be below 0.05
+  while the 95% interval contained the null, or the other way round. For a
+  ratio, the result also depended on which level was the reference.
+  * Percentile intervals, the default for `method = "mvn"`, `"bootstrap"`
+    and `"fwb"`, now come without `statistic`, `p.value` and `s.value`, as
+    in the marginaleffects package. So `avg_comparisons()` and
+    `comparisons()` results from these methods no longer have p-values by
+    default. Use `conf_type = "wald"` to get a Wald interval and a test that
+    agrees with it. With `return_draws = TRUE`, `get_draws()` gives the draws
+    for any other summary. A numeric `null` given with a percentile interval
+    now gives a warning instead of a test.
+  * SOPs from `method = "delta"` with the default logit interval are tested
+    on the logit scale, the scale that interval is built on. `null` must
+    then be strictly between 0 and 1. `conf_type = "wald"` keeps the test on
+    the probability scale.
+  * In simulations of 1344 ratio comparisons, the old test disagreed with the
+    percentile interval in 50 of 2688 tests. For delta SOPs tested against
+    `null = 0.05`, it disagreed with the logit interval in 87 of 4480.
+
 ## Minor improvements
 
 * When `rms::orm()` cannot fit a model, the error now suggests
@@ -304,6 +325,21 @@
   weight.
 
 ## Bug fixes
+
+* `inferences()` no longer reports an `s.value` of `Inf` for a test
+  statistic larger than about 38.5 in absolute value (#57). The p-value is
+  then smaller than the smallest number R can store and is reported as 0;
+  the s-value is now calculated from the logarithm of the p-value, so it
+  stays finite. For example, a statistic of 39 gives an s-value of 1102.8.
+
+* Ratio comparisons no longer drop draws with a zero denominator without
+  notice (#57). A draw whose reference value is 0 used to become `NA` and was
+  left out of the interval and standard error. A ratio `x / 0` with `x > 0`
+  is now `Inf` and counts in the percentile interval, so `conf.high` can be
+  `Inf`; its standard error is then `NA`. A ratio `0 / 0` has no value: such
+  draws are still left out, but with a warning giving their number. This
+  happens in the ordinary bootstrap when a resample has no patient in a rare
+  state, such as death in a small trial.
 
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`

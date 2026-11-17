@@ -68,9 +68,9 @@
 #'       available only with `method = "delta"` on SOP objects.
 #'   }
 #' @param null The value each estimate is tested against. A test adds three
-#'   columns: the Wald `statistic`, (estimate - `null`) / `std.error`; its
-#'   two-sided normal `p.value`; and the `s.value`, \eqn{-\log_2(p)}, which
-#'   expresses the evidence against the null in bits.
+#'   columns: the Wald `statistic`; its two-sided normal `p.value`; and the
+#'   `s.value`, \eqn{-\log_2(p)}, which expresses the evidence against the
+#'   null in bits.
 #'   \itemize{
 #'     \item `"auto"` (the default): tests [comparisons()] and
 #'       [avg_comparisons()] results against
@@ -81,9 +81,30 @@
 #'       Ratio comparisons cannot be tested against 0.
 #'     \item `NULL`: no test.
 #'   }
-#'   Ratios are tested on the ratio scale, using the ratio's own standard
-#'   error. Bayesian `blrm` results are never tested; supplying a number for
-#'   them gives a warning.
+#'   The test is on the scale of the interval, so that p < 0.05 exactly when
+#'   the 95% interval excludes the null:
+#'   \itemize{
+#'     \item Wald intervals (`conf_type = "wald"`, and the delta method for
+#'       comparisons and average times): the statistic is
+#'       (estimate - `null`) / `std.error`. A ratio is tested on the ratio
+#'       scale with its own standard error.
+#'     \item Logit intervals (the default for SOPs with `method = "delta"`):
+#'       the statistic is \eqn{(\mathrm{logit}(p) - \mathrm{logit}(p_0)) / s},
+#'       where \eqn{p} is the estimate, \eqn{p_0} the null, and
+#'       \eqn{s = \mathrm{SE}/(p(1 - p))} the standard error of
+#'       \eqn{\mathrm{logit}(p)}, the quantity the interval is built from.
+#'       `null` must be strictly between 0 and 1. `std.error` stays on the
+#'       probability scale.
+#'     \item Percentile intervals (the default for `method = "mvn"`,
+#'       `"bootstrap"` and `"fwb"`): no test, as in the marginaleffects
+#'       package. A test based on the draws' standard deviation can reject
+#'       the null while the percentile interval contains it, or the reverse.
+#'       Supplying a number for `null` gives a warning. Use
+#'       `conf_type = "wald"` for a p-value; with `return_draws = TRUE`,
+#'       [get_draws()] returns the draws for any other summary.
+#'   }
+#'   Bayesian `blrm` results are never tested; supplying a number for them
+#'   gives a warning.
 #' @param return_draws Logical. If `TRUE`, stores individual simulation or
 #'   bootstrap draws as an attribute. Extract with [get_draws()]. Delta
 #'   inference never stores draws. Default is `TRUE`.
@@ -101,9 +122,17 @@
 #'     simulation, or bootstrap}
 #'
 #'   When a null value is tested (by default, for [comparisons()] and
-#'   [avg_comparisons()] results),
+#'   [avg_comparisons()] results with a Wald interval),
 #'   the object also has `statistic`, `p.value`, and `s.value` columns; see
 #'   `null`.
+#'
+#'   A ratio whose reference value is 0 is `Inf`, or undefined (`NaN`) when
+#'   the compared value is 0 too. Infinite draws count in a percentile
+#'   interval, so `conf.high` can be `Inf`, and the standard error of such an
+#'   estimate is `NA`. Undefined draws are left out of the interval, with a
+#'   warning that gives their number. They occur in the ordinary bootstrap
+#'   when a resample has no patient in a rare state, such as death in a small
+#'   trial.
 #'
 #'   A comparison of a variable that the model doesn't use (see `variables`
 #'   in [avg_comparisons()]) is 0 for a difference, or 1 for a ratio, whatever

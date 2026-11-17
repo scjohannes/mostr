@@ -179,12 +179,35 @@ drop_unused_comparison_uncertainty <- function(x) {
   x
 }
 
+# Adds `statistic`, `p.value` and `s.value` for the test of `estimate = null`
+# on the scale of the result's interval, so that the test rejects at level
+# 1 - conf_level exactly when the interval excludes the null. The scale is
+# read from `attr(x, "conf_type")`:
+# - "perc": no test. A percentile interval comes from the draws' quantiles,
+#   and a Wald test from their standard deviation could disagree with it;
+#   marginaleffects likewise reports simulation intervals without a test.
+# - "logit": the delta-method logit interval, so the test is on the logit
+#   scale too.
+# - "wald" or no attribute: the test is on the estimate's own scale.
+# `warn = TRUE` (an explicitly requested null) warns when no test is added.
 add_null_test <- function(x, null, warn = TRUE) {
   if (is.null(null)) {
     return(order_estimate_columns(x))
   }
   if (!is.numeric(null) || length(null) != 1L || !is.finite(null)) {
     mostr_abort("`null` must be a single finite numeric value.")
+  }
+  conf_type <- attr(x, "conf_type") %||% "wald"
+  if (identical(conf_type, "perc")) {
+    if (warn) {
+      warning(
+        "A null hypothesis was requested, but percentile intervals are ",
+        "reported without a test: a Wald test could disagree with them. ",
+        "Use `conf_type = \"wald\"` for a test that agrees with its interval.",
+        call. = FALSE
+      )
+    }
+    return(order_estimate_columns(x))
   }
   if (!"std.error" %in% names(x)) {
     if (warn) {
@@ -195,9 +218,33 @@ add_null_test <- function(x, null, warn = TRUE) {
     }
     return(order_estimate_columns(x))
   }
-  x$statistic <- (x$estimate - null) / x$std.error
+  if (identical(conf_type, "logit")) {
+    if (null <= 0 || null >= 1) {
+      mostr_abort(
+        "A test that agrees with the logit interval needs a `null` strictly ",
+        "between 0 and 1, because the logit of 0 or 1 is infinite. ",
+        "Use `conf_type = \"wald\"` to test on the probability scale."
+      )
+    }
+    # The logit interval is qlogis(p) +/- z * SE / (p (1 - p)), with SE / (p
+    # (1 - p)) the delta-method standard error of qlogis(p). Testing qlogis(p)
+    # against qlogis(null) with that standard error rejects exactly when the
+    # interval excludes the null. Estimates on or outside the boundary have no
+    # logit interval (its limits are NA), so they get no test either.
+    statistic <- rep(NA_real_, nrow(x))
+    interior <- is.finite(x$estimate) & x$estimate > 0 & x$estimate < 1
+    p <- x$estimate[interior]
+    statistic[interior] <- (stats::qlogis(p) - stats::qlogis(null)) /
+      (x$std.error[interior] / (p * (1 - p)))
+    x$statistic <- statistic
+  } else {
+    x$statistic <- (x$estimate - null) / x$std.error
+  }
   x$p.value <- 2 * stats::pnorm(-abs(x$statistic))
-  x$s.value <- -log2(x$p.value)
+  # Work on the log scale: `p.value` underflows to 0 for |z| above about
+  # 38.5, and -log2(0) would give an infinite s-value.
+  x$s.value <- -(log(2) + stats::pnorm(-abs(x$statistic), log.p = TRUE)) /
+    log(2)
   attr(x, "null") <- null
   order_estimate_columns(x)
 }

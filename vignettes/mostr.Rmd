@@ -208,6 +208,18 @@ fitted with `engine = "orm"` or `"vglm"`. For other models, `inferences()`
 offers simulation (`method = "mvn"`, the default) and two kinds of bootstrap
 (`method = "bootstrap"` and `method = "fwb"`).
 
+These methods recompute the result many times, once per draw. By default,
+the interval runs from the 2.5% to the 97.5% quantile of those values (a
+percentile interval), and no p-value is reported, as in the marginaleffects
+package. A p-value from a test cannot always be made to agree with a
+percentile interval: the test could reject the null while the interval
+contains it. If you need a p-value, use `conf_type = "wald"`. The interval is
+then the estimate plus or minus 1.96 standard errors, where the standard
+error is the standard deviation of the draws, and the test of the null uses
+the same standard error, so p < 0.05 exactly when the 95% interval excludes
+the null. With `return_draws = TRUE`, `get_draws()` returns the draws, so you
+can also compute the percentile interval or any other summary yourself.
+
 ## Where to go next
 
 `?mostr` lists every function by task. The articles below go further.

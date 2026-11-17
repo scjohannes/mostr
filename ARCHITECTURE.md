@@ -313,6 +313,29 @@ replays that call `inferences()` on intermediate SOP objects therefore never
 add tests, and the warnings for Bayesian outputs or missing standard errors
 fire only when the user supplied a numeric null.
 
+The test follows the result's `conf_type` attribute, so that it agrees with
+the interval reported next to it (#57; `dev/decisions.md`, 2026-11-17).
+`"wald"` gives the Wald test `(estimate - null) / std.error`. `"logit"`, the
+default interval of delta SOPs, gives a Wald test on the logit scale with
+standard error `std.error / (estimate (1 - estimate))`, the quantity
+`delta_interval_bounds()` builds the interval from. It needs a null strictly
+between 0 and 1. `"perc"`, the default of the draw-based methods, gives no
+test, as in marginaleffects, and a warning if the null was explicit. Every
+caller, including `interpolate_sops()` replaying a stored null, goes through
+this one rule. Interpolated delta SOPs keep `conf_type = "logit"`, but their
+limits are linear interpolations of the logit limits, not a logit interval
+rebuilt from the interpolated estimate and standard error. Near p = 0.05 at
+interpolated times, test and interval can therefore still differ slightly. The s-value is computed from `pnorm(log.p = TRUE)`, so it stays
+finite when the p-value underflows to 0.
+
+Ratio comparisons follow R arithmetic in `comparison_value()`
+(`R/sops-comparisons-reduce.R`): `x / 0` is `Inf` and `0 / 0` is `NaN`.
+`compute_ci_from_draws()` (`R/sops-draws.R`) keeps infinite draws in the
+percentile limits. It sets the standard error of a group with an infinite
+draw to `NA`, and leaves out `NaN` draws with a warning that gives their
+number. The ordinary bootstrap produces `0 / 0` when a resample has no
+patient in a state, because both arms then give that state probability 0.
+
 A comparison whose `variables` column is not used by the model is 0 (1 for a
 ratio) by construction. As in marginaleffects 1.0.0, such calls run without a
 message, and `drop_unused_comparison_uncertainty()` in
