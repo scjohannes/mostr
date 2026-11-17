@@ -580,7 +580,10 @@ plot_state_scores <- function(x, y_levels = NULL) {
     return(as.integer(x))
   }
   out <- suppressWarnings(as.integer(as.character(x)))
-  if (anyNA(out) && any(!is.na(x))) {
+  # Fall back to sorting the states as text only when a recorded state is not
+  # an integer. A missing state is NA either way; counting it here used to sort
+  # integer states as text, so state 10 scored 2 after state 1.
+  if (any(is.na(out) & !is.na(x))) {
     levels <- sort(unique(as.character(x)))
     out <- as.integer(factor(as.character(x), levels = levels))
   }

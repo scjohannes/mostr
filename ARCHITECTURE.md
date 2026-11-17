@@ -88,6 +88,15 @@ Vignette correlation heatmaps omit tile labels. `plot_correlation_heatmap()`
 chooses a 0-1 fill scale for nonnegative finite correlations and -1 to 1 when
 negative values occur or no finite values are available; explicit `fill_limits`
 override this choice for both observed and model-based plots.
+Strata for `facet_var` come from `plot_facet_groups()` and
+`plot_group_subset()` in `R/diagnostic-data.R`; a missing value is its own
+stratum, so the row selection is always `TRUE` or `FALSE` (#52). Observed
+correlations score states with `plot_state_scores()`: `y_levels` positions,
+factor codes, or integer values, falling back to text order only when a
+recorded state is not an integer. Empirical `plot_sops()` lines come from
+`plot_sops_empirical_summary()` in `R/viz-sops.R`, which adds a zero count
+for every observed state at each time, facet and linetype combination present
+in the data before computing proportions.
 The proportional-odds vignette (`full-po-sops`) documents the ACTT-2 population, NIAID eight-point
 health-state scale, and data-access acknowledgment; its 400-patient, 28-day
 description matches the simulation code.

@@ -66,7 +66,8 @@
 #'   an error, so to plot a second-order model, give `p2_var` to [mostm()].
 #'   Supplying it for trajectory data is an error.
 #' @param facet_var Optional grouping variable. Correlations are computed
-#'   separately within each observed stratum.
+#'   separately within each observed stratum; rows with a missing value form
+#'   their own stratum.
 #' @param seed Optional random seed for `blrm` posterior draw selection.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.

@@ -1015,3 +1015,116 @@ test_that("plot_variogram shows correlations below zero", {
     c(0, 1)
   )
 })
+
+test_that("observed correlations keep integer state scores when a state is missing", {
+  # Patient 4 has no state at visit 2. Scoring states as text puts "10" second,
+  # so state 10 used to get score 2 as soon as any state was missing.
+  data <- data.frame(
+    id = rep(1:4, each = 2),
+    time = rep(1:2, times = 4),
+    y = c(1, 2, 3, 10, 5, 9, 2, NA)
+  )
+  expect_identical(plot_state_scores(c(1:10, NA)), c(1:10, NA))
+
+  # Pearson correlation of the states themselves for the three patients seen
+  # at both visits.
+  expected <- stats::cor(c(1, 3, 5), c(2, 10, 9))
+  plot <- plot_correlation(data, method = "pearson", show_values = FALSE)
+  expect_equal(plot$data$correlation, expected)
+  variogram <- plot_variogram(data, method = "pearson", smooth = FALSE)
+  expect_equal(variogram$data$correlation, expected)
+
+  expected <- stats::cor(c(1, 3, 5), c(2, 10, 9), method = "spearman")
+  plot <- plot_correlation(data, show_values = FALSE)
+  expect_equal(plot$data$correlation, expected)
+})
+
+test_that("a missing facet_var value forms its own stratum in diagnostic plots", {
+  model <- structure(list(), class = "vglm", markov_id_var = "id")
+  newdata <- data.frame(
+    id = 1:5,
+    time = 0,
+    yprev = factor(c(1, 2, 1, 2, 2), levels = 1:2),
+    site = c("a", "a", "b", NA, "b")
+  )
+  # The chance of state 2 depends on the previous state and the visit, so the
+  # correlations between visits are defined and differ between strata.
+  predict_mock <- function(object, newdata) {
+    yprev <- as.character(newdata$yprev)
+    p2 <- ifelse(yprev == "1", 0.2, 0.7) + 0.05 * newdata$time
+    cbind("1" = 1 - p2, "2" = p2)
+  }
+  draw <- function(fun, data, ...) {
+    with_mocked_bindings(
+      validate_markov_model = function(object) NULL,
+      predict_vglm_response_markov = predict_mock,
+      fun(model, newdata = data, times = 1:3, y_levels = 1:2, ...)
+    )$data
+  }
+  # Results for one stratum, computed from that stratum's rows alone.
+  alone <- function(fun, rows, ...) {
+    data <- newdata[rows, , drop = FALSE]
+    data$site <- NULL
+    draw(fun, data, facet_var = NULL, ...)
+  }
+  strata <- list(a = newdata$site %in% "a", b = newdata$site %in% "b",
+    missing = is.na(newdata$site))
+
+  plots <- list(
+    transitions = list(fun = plot_transitions, value = "estimate",
+      args = list(show_values = FALSE)),
+    spearman = list(fun = plot_correlation, value = "correlation",
+      args = list(show_values = FALSE)),
+    pearson = list(fun = plot_correlation, value = "correlation",
+      args = list(show_values = FALSE, method = "pearson")),
+    variogram = list(fun = plot_variogram, value = "correlation",
+      args = list(smooth = FALSE))
+  )
+  for (name in names(plots)) {
+    p <- plots[[name]]
+    faceted <- do.call(draw, c(list(p$fun, newdata, facet_var = "site"), p$args))
+    for (stratum in names(strata)) {
+      in_stratum <- if (stratum == "missing") {
+        is.na(faceted$site)
+      } else {
+        faceted$site %in% stratum
+      }
+      expected <- do.call(alone, c(list(p$fun, strata[[stratum]]), p$args))
+      expect_false(anyNA(expected[[p$value]]), info = paste(name, stratum))
+      expect_equal(
+        faceted[[p$value]][in_stratum],
+        expected[[p$value]],
+        info = paste(name, stratum)
+      )
+    }
+  }
+})
+
+test_that("observed correlations accept a missing facet_var value", {
+  data <- data.frame(
+    id = rep(1:6, each = 3),
+    time = rep(1:3, times = 6),
+    y = c(1, 1, 2, 1, 2, 2, 2, 2, 3, 1, 3, 3, 2, 3, 3, 3, 2, 1),
+    site = rep(c("a", "a", "b", "b", "a", NA), each = 3)
+  )
+  # stats::cor() warns that the standard deviation is zero for the
+  # one-patient stratum of the missing value and for visits where every
+  # patient of a stratum is in the same state.
+  plot <- suppressWarnings(
+    plot_correlation(data, facet_var = "site", show_values = FALSE)
+  )
+  for (stratum in c("a", "b")) {
+    expected <- suppressWarnings(plot_correlation(
+      data[data$site %in% stratum, c("id", "time", "y")],
+      show_values = FALSE
+    ))$data$correlation
+    expect_equal(
+      plot$data$correlation[plot$data$site %in% stratum],
+      expected,
+      info = stratum
+    )
+  }
+  # A single patient has no variation between patients, so every correlation
+  # in the stratum of the missing value is undefined.
+  expect_true(all(is.na(plot$data$correlation[is.na(plot$data$site)])))
+})
