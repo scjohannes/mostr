@@ -168,6 +168,7 @@ vglm_prediction_design <- function(
   newdata,
   terms = stats::delete.response(stats::terms(model))
 ) {
+  newdata <- normalize_vglm_prediction_data(model, newdata)
   frame <- stats::model.frame(
     terms,
     newdata,
@@ -635,26 +636,55 @@ orm_model_matrix <- function(model, newdata, include_intercept = FALSE) {
 normalize_orm_prediction_data <- function(model, newdata) {
   design <- model$Design
   categorical <- design$name[design$assume.code %in% c(5L, 8L)]
+  fitted_levels <- lapply(
+    stats::setNames(nm = categorical),
+    function(nm) as.character(design$parms[[nm]])
+  )
+  factors_with_fitted_levels(newdata, fitted_levels, "orm")
+}
 
-  for (nm in categorical) {
-    if (!nm %in% names(newdata)) {
-      next
-    }
+# The prediction rows with each predictor that the vglm fit used as a factor
+# turned into a factor with the fitted levels. stats::model.frame() with
+# `xlev` leaves a numeric column numeric, so numbers such as
+# `variables = list(txf = c(0, 1))` or the previous states of
+# plot_transitions() made model.matrix() stop with "contrasts apply only to
+# factors" (issue #44), while the orm engine accepts them. The fitted levels
+# come from `model@xlevels`, which names the variables of the model frame:
+# a term such as factor(tx) is listed as "factor(tx)", which no prediction
+# column is named, so its column `tx` stays as given and is converted by the
+# formula.
+normalize_vglm_prediction_data <- function(model, newdata) {
+  fitted_levels <- tryCatch(model@xlevels, error = function(e) NULL)
+  factors_with_fitted_levels(newdata, fitted_levels, "vglm")
+}
 
-    levels_nm <- as.character(design$parms[[nm]])
+# Each column of `newdata` named in `fitted_levels` (a list of level vectors)
+# as a factor with those levels, whatever its type: numbers and characters
+# are matched to the levels by their labels. Values that are not fitted levels
+# are refused, naming the column, because they would otherwise become missing
+# values or an error from deep inside the engine. Missing values stay missing,
+# for the refusals that name them later. An ordered factor stays ordered; the
+# fitted contrasts are passed to model.matrix(), so a column that arrives
+# plain gets the same design.
+factors_with_fitted_levels <- function(newdata, fitted_levels, engine) {
+  for (nm in intersect(names(fitted_levels), names(newdata))) {
     values <- newdata[[nm]]
-    coerced <- factor(as.character(values), levels = levels_nm)
+    coerced <- factor(
+      as.character(values),
+      levels = as.character(fitted_levels[[nm]]),
+      ordered = is.ordered(values)
+    )
     bad <- is.na(coerced) & !is.na(values)
     if (any(bad)) {
+      bad_values <- unique(as.character(values[bad]))
       mostr_abort(
         "Values in `",
         nm,
-        "` are not among fitted orm levels: ",
-        paste(
-          utils::head(unique(as.character(values[bad])), 5),
-          collapse = ", "
-        ),
-        if (length(unique(values[bad])) > 5) " ..." else ""
+        "` are not among fitted ",
+        engine,
+        " levels: ",
+        paste(utils::head(bad_values, 5), collapse = ", "),
+        if (length(bad_values) > 5) " ..." else ""
       )
     }
     newdata[[nm]] <- coerced
@@ -833,14 +863,12 @@ get_time_info <- function(model, data, time_var) {
     NULL
   }
 
-  levels <- NULL
-  ordered <- FALSE
-  if (is.factor(values)) {
-    levels <- model_levels %||% levels(values)
-    ordered <- is.ordered(values)
-  } else if (is.null(values)) {
-    levels <- model_levels
-  }
+  # The fitted levels decide, whatever the type of the prediction rows' time
+  # column: a vglm fit with factor time given numeric or character times
+  # otherwise treated time as numeric, so requested `times` were neither
+  # checked against the fitted levels nor turned into factors (issue #44).
+  levels <- model_levels %||% (if (is.factor(values)) levels(values))
+  ordered <- is.ordered(values)
 
   list(
     is_factor = !is.null(levels),

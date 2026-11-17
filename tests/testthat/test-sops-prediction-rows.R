@@ -259,9 +259,9 @@ test_that("a profile whose factor `yprev` has only its own levels gives the SOPs
 })
 
 test_that("a profile whose `yprev` holds integers gives the SOPs of the fitted factor levels for every engine", {
-  # The model reads `yprev` as a factor. orm turns the integers into its
-  # fitted levels; vglm stops in stats::model.matrix() with "contrasts apply
-  # only to factors".
+  # The model reads `yprev` as a factor. Both engines turn the integers into
+  # the fitted levels; vglm used to stop in stats::model.matrix() with
+  # "contrasts apply only to factors" (issue #44).
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
   fits <- known_bug_fits()
