@@ -31,6 +31,7 @@ matching non-numeric labels such as `"ward"` to states by level order;
 Rejected: a warning per missing covariate. The help page already said the
 columns are required, and an `lp_function` with a default argument would run
 on that default for every patient.
+
 ## 2026-11-17: vglm fits use VGAM's per-term assignment unless constraints name spline columns
 
 `mostm(engine = "vglm")` gives `VGAM::vglm.fit()` VGAM's usual one assignment
@@ -52,6 +53,7 @@ how VGAM evaluates the family's constraint expression, and everything the
 combination can say is also expressible in `constraints` with
 `parallel = FALSE`. Rejected: always fitting with the per-term assignment,
 which would remove the existing per-column constraints feature.
+
 ## 2026-11-17: Infinite covariate values in `newdata` left as they are
 
 With an infinite covariate value in `newdata` (for example `tx = Inf`),
@@ -66,6 +68,7 @@ maintainer's choice.
 Rejected, for now: refusing non-finite covariate values in `newdata`, as
 missing values are refused; and having the delta kernel report non-finite
 derivatives with a clear error.
+
 ## 2026-11-17: Real-time results show starting states that never occur as outcomes
 
 A starting state that occurs only as `yprev` at the first visit, such as an
@@ -91,6 +94,7 @@ Rejected:
   touches the prediction backends and the bootstrap's handling of absent
   states for rows that are always 0.
 - Refusing such data in `mostm()`. A screening state is a legitimate design.
+
 ## 2026-11-17: An explicit `cluster` must group the fitting rows by patient
 
 **Decided (#53).** In analytical inference, an explicit `cluster` (a vector
@@ -124,6 +128,7 @@ correction is given.
 "bootstrap" | "fwb")` ignores `cluster` and a matrix `vcov` without saying so.
 These methods cluster on the stored patient column, so their numbers are
 right. Reason not recorded.
+
 ## 2026-11-17: Penalized orm sandwich subtracts each patient's share of the penalty gradient
 
 For a penalized `orm` fit, `robcov_orm()` now subtracts `P beta / G` from
@@ -163,6 +168,7 @@ Options rejected:
 
 Unconditional variance still refuses penalized `orm` fits; whether the
 corrected scores allow lifting that refusal was not checked.
+
 ## 2026-11-17: `inferences()` refuses interpolated SOPs
 
 `inferences()` stops on a result of `interpolate_sops()`, for all four
@@ -203,6 +209,7 @@ three times slower.
 
 Rejected: skipping more tests on CRAN to get back under 60 seconds. It would
 take checks away from CRAN for a margin CRAN does not require.
+
 ## 2026-11-17: blrm random intercepts are matched by cluster value, never by Stan's index
 
 **Decided** (issue #39). `get_blrm_gamma_draws()` names every column of the
@@ -236,6 +243,7 @@ recorded.
 **Rejected.** Refusing fits with `cluster()` on a non-patient variable in
 `mostm()`, and refusing only `include_re = TRUE` for such fits. Reason not
 recorded.
+
 ## 2026-11-17: Posterior medians of totals and interpolations come from the draws
 
 **Decided.** For `blrm` results with `posterior_summary = "median"`,
@@ -261,6 +269,7 @@ posterior median of that share in each draw.
 `plot_time(scale = "proportion")`: every bar would span exactly 0 to 1, but
 the shares would be rescaled medians, not medians of shares. Posterior means,
 `orm` and `vglm` results give the same proportions either way.
+
 ## 2026-11-17: `blrm` `cppo` scores follow the fit; `ppo` without `cppo` is refused in `mostm()` (#46)
 
 **Decided.** The scores that scale the partial proportional-odds effects of a

@@ -326,6 +326,7 @@
   patient ID was looked up among the sites. `newdata` must contain the
   variable, and a missing value in it is no longer reported as a missing
   predictor when `include_re = FALSE`, where it is not used.
+
 * For `blrm` fits summarised with `posterior_summary = "median"`,
   `time_in_state()` and `interpolate_sops()` now compute each total or
   interpolated probability in every posterior draw and then take the median
@@ -342,6 +343,7 @@
 * `plot_time(scale = "proportion")` divides each average time by the length
   of follow-up, instead of by the sum of the plotted averages (#40). The two
   differ only for posterior medians, whose sum need not equal the follow-up.
+
 * `sim_markov()` reads a factor `yprev` in `baseline_data` by its labels
   (#41). It used the factor's internal codes, so a factor with levels 4 to 7,
   as `droplevels()` or one-day data from `prepare_markov_data()` give, started
@@ -359,6 +361,7 @@
     `-1e-12`) to zero. A partial proportional-odds `lp_function` whose
     cumulative probabilities were equal up to rounding stopped with
     "Categorical probabilities must be finite and non-negative."
+
 * `mostm(engine = "vglm")` now honours a `parallel` formula that names an
   inline spline such as `rms::rcs(time, 4)` or `lsp(day, 2)` (#42). Before,
   `family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ rms::rcs(time, 4))`
@@ -374,6 +377,7 @@
   names the same spline, which VGAM would apply to none of its columns, so
   `mostm()` now refuses the combination; give every column of the spline its
   matrix in `constraints` and use `parallel = FALSE` instead.
+
 * `vcov()` on results of `inferences(method = "delta")` now follows the rows
   the result has when it is called (#43). Filtering or sorting a result, for
   example `day14 <- res[res$time == 14, ]` as `?sops` suggests, used to leave
@@ -383,6 +387,7 @@
   instead of the first two rows of `day14`. `rows` now refers to the rows of
   the object passed, and rows whose identifying columns (such as `time` or
   `state`) were edited after `inferences()` raise an error.
+
 * `mostm(engine = "vglm")` refuses the VGAM arguments `xij` and `form2`
   (#45). With `xij`, a predictor takes a different value in each linear
   predictor, but the state occupancy probabilities, their intervals and the
@@ -399,6 +404,7 @@
   levels are refused, naming the column. For a fit with factor time, the
   requested `times` are now checked against the fitted levels whatever the
   type of the time column in `newdata`.
+
 * State occupancy probabilities from `mostm(engine = "blrm")` fits with
   `ppo` and `cppo` now use the same `cppo` scores as the fitted model (#46).
   `rmsb::blrm()` calls `cppo` once with all state labels, but mostr called it
@@ -413,6 +419,7 @@
   * `factor()` and the other factor conversions, and `splines::ns()`,
     `splines::bs()` and `stats::poly()`, inside the `ppo` formula, as it
     already did in the main formula.
+
 * `inferences(method = "bootstrap")` and `inferences(method = "fwb")` on
   `avg_sops()`, `avg_state_time()` and `avg_comparisons()` without `newdata`
   now start each resampled patient from their row at `first_followup_time`,
@@ -424,6 +431,7 @@
   `"Week 10"`, almost every draw started from Week 10, and the interval
   limits moved by up to 0.11, so far that an interval no longer contained its
   estimate. Results for numeric time are unchanged.
+
 * The patient-clustered variance of `mostm(engine = "orm")` fits and the
   unconditional variance of their delta-method intervals no longer leave out
   rows whose observed state the model makes almost impossible (#48). For a
@@ -434,6 +442,7 @@
   the standard errors could then be too small by half or more. The
   contribution is now computed without that subtraction. For other fits the
   standard errors change by about 1e-13 relative.
+
 * Real-time results now count a starting state that never occurs as an
   outcome, such as an admission-only screening state (#50). The fitted states
   are the outcome states, so such a state was left out of the starting
@@ -447,6 +456,7 @@
   now include the state, with its share of starting states at
   `baseline_time` and probability 0 at every visit, and `state_sets` may name
   it. Visit-scale `sops()` and `avg_sops()` are unchanged.
+
 * For a fitted model, `plot_transitions()`, `plot_correlation()` and
   `plot_variogram()` now follow the fit's visits (#51). They fill in visits
   that `times` leaves out, but they used to fill in every whole number from
@@ -462,6 +472,7 @@
   character time they keep the requested order. A requested time between
   fitted visits is an error, and so is a time before the first follow-up
   visit when `newdata` is omitted.
+
 * `inferences(method = "delta")` refuses a `cluster` that does not group the
   fitting rows by patient, exactly as the `id_var` column of the fit does
   (#53). Before, any vector of the right length was used as given. An ID
@@ -486,6 +497,7 @@
   "'list' object cannot be coerced to type 'integer'". For `vglm` fits with
   `na.action = Hmisc::na.delete`, they stopped with a wrong-length error,
   because the per-variable missing counts were read as row numbers.
+
 * The ordinary bootstrap (`inferences(method = "bootstrap")`) keeps
   resamples in which patients start in a state but nobody moves into it
   (#54). Such a draw used to fail and was left out with a warning, so the
@@ -530,6 +542,7 @@
   the model's states match `y_levels`, as the compiled code does (#54). A
   mismatch stopped with an unclear error, or, at a single visit, gave
   probabilities that summed to 2.
+
 * `vcov()` of a delta-method `sops()` or `comparisons()` result no longer
   stops with "subscript out of bounds" when `newdata` has a matrix column,
   such as one made with `I(cbind(a, b))`, even one the model doesn't use
@@ -542,6 +555,7 @@
   `sops()`; `inferences(avg_state_time(time_map = , by = ))` with these
   methods works too (#56). Their draws gave `state` as a factor while the
   result gave it as a number.
+
 * The robust variance of penalized `orm` fits (`mostm(..., penalty = )`) is
   no longer too large (#49). A penalized fit balances the log-likelihood
   against the penalty, so at its estimate the patients' log-likelihood scores
@@ -555,6 +569,7 @@
   changed less: by at most about 20%, and usually by under 3%. `vcov(fit)`,
   `inferences(method = "delta")` and `inferences(method = "mvn")` all use this
   covariance. Unpenalized fits are unchanged.
+
 * `inferences()` refuses SOPs already passed through `interpolate_sops()`
   (#58). Inference is computed at the visits and matched to the rows by
   `time`, which interpolation had moved to the real-time scale. The
@@ -562,6 +577,7 @@
   visit's interval for the rest, without a warning, and MVN and delta
   stopped with unclear errors. Run `inferences()` first and interpolate its
   result: `interpolate_sops(inferences(x), time_map = )`.
+
 * `mostm()` refuses stratification terms, `strat(g)` or `rms::strat(g)`, for
   every engine (#59). Stratification gives each stratum its own baseline
   hazard in a Cox model fitted with `rms::cph()` and has no meaning for an
