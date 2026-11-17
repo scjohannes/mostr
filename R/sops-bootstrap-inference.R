@@ -571,6 +571,18 @@ summarize_refit_draws <- function(
     boot_results[[i]]$draw_id <- i
   }
   boot_df <- bind_rows_fill(boot_results)
+  # The `by` and individual-SOP refits label their draws with
+  # `state_factor()`, so a numeric response gives factor states in the draws
+  # but numbers in `object`. The draws stored on the result are later joined
+  # to it with data.table (`interpolate_sops()`, `avg_state_time()`), which
+  # refuses to join a factor to an integer, so they take the result's type.
+  # Factor and character states are left as they are.
+  if (is.numeric(object$state) && !is.numeric(boot_df$state)) {
+    boot_df$state <- coerce_state_like(
+      as_state_labels(boot_df$state),
+      object$state
+    )
+  }
 
   summary_stats <- compute_ci_from_draws(
     draws_df = boot_df,

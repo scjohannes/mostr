@@ -311,6 +311,13 @@
   (#56). The key that identifies each result row turned a matrix column into
   one string per matrix cell instead of one per row.
 
+* With a numeric response (for example integer `y` in `mostm(y ~ ...)`),
+  `interpolate_sops()` no longer stops with "Incompatible join types" on
+  refit-bootstrap or FWB results of `avg_sops(by = )`, or on FWB results of
+  `sops()`; `inferences(avg_state_time(time_map = , by = ))` with these
+  methods works too (#56). Their draws gave `state` as a factor while the
+  result gave it as a number.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,

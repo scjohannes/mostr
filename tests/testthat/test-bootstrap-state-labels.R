@@ -170,3 +170,72 @@ test_that("bootstrap_model_coefs() drops absent states from a renamed previous-s
     tolerance = 1e-8
   )
 })
+
+# With a numeric response, results give `state` as a number. The refit
+# bootstrap and FWB built the draws of `by` groups and of individual SOPs with
+# `state` as a factor, and `interpolate_sops()` joins the draws to the result
+# with data.table, which refuses to join a factor to a number.
+test_that("bootstrap and FWB draws of a numeric response can be interpolated", {
+  skip_on_cran()
+  skip_if_not_installed("rms")
+  case <- make_comparisons_case()
+  fit_with <- function(y) {
+    data <- case$data
+    data$y <- y
+    mostm(
+      y ~ time + tx + marker + yprev,
+      data = data,
+      first_followup_time = 1,
+      id_var = "id",
+      absorb = 3
+    )
+  }
+  numeric_model <- fit_with(as.integer(as.character(case$data$y)))
+  factor_model <- fit_with(factor(case$data$y, ordered = TRUE))
+  expect_true(is.numeric(avg_sops(numeric_model, times = 1:2)$state))
+
+  for (method in c("bootstrap", "fwb")) {
+    by_group <- function(model) {
+      interpolate_sops(
+        inferences(
+          avg_sops(model, times = 1:4, by = "marker"),
+          method = method,
+          n_draws = 4,
+          seed = 11
+        ),
+        time_map = case$time_map
+      )
+    }
+    with_numbers <- by_group(numeric_model)
+    with_factor <- by_group(factor_model)
+    expect_equal(with_numbers$conf.low, with_factor$conf.low, tolerance = 1e-8, info = method)
+    expect_equal(with_numbers$conf.high, with_factor$conf.high, tolerance = 1e-8, info = method)
+
+    totals <- function(model) {
+      inferences(
+        avg_state_time(model, times = 1:4, time_map = case$time_map, by = "marker"),
+        method = method,
+        n_draws = 4,
+        seed = 11
+      )
+    }
+    expect_equal(
+      totals(numeric_model)$conf.low,
+      totals(factor_model)$conf.low,
+      tolerance = 1e-8,
+      info = method
+    )
+  }
+
+  individual <- function(model) {
+    interpolate_sops(
+      inferences(sops(model, times = 1:4), method = "fwb", n_draws = 4, seed = 11),
+      time_map = case$time_map
+    )
+  }
+  expect_equal(
+    individual(numeric_model)$conf.low,
+    individual(factor_model)$conf.low,
+    tolerance = 1e-8
+  )
+})
