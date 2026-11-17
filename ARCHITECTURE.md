@@ -1234,6 +1234,12 @@ from the stored key column names (`names(analytical$row_keys)`) and maps it to
 its stored row; `delta_resolve_rows()` then reads `rows` relative to the
 object as passed. Repeated rows map to the same stored row, and rows without a
 stored match (edited key columns, rows from another result) are refused (#43).
+`inferences_impl()` refuses any `markov_interpolated_sops` input, for every
+method. Interpolation keeps the `markov_sops` or `markov_avg_sops` class, but
+inference replays the visit SOPs and matches their draws or derivatives to
+the rows by `time`, which interpolation has moved to the real-time scale.
+Inference therefore runs on visit SOPs only, and `interpolate_sops()`
+interpolates its draws afterwards (#58).
 
 Other tidy SOPs get the limits of their totals from stored draws
 (`time_in_state_tidy_inference()` reduces each draw and calls

@@ -13,7 +13,10 @@
 #'   [state_time()] (`markov_state_time`), or [comparisons()]
 #'   (`markov_comparisons`), or an average, from [avg_sops()]
 #'   (`markov_avg_sops`), [avg_state_time()] (`markov_avg_state_time`), or
-#'   [avg_comparisons()] (`markov_avg_comparisons`).
+#'   [avg_comparisons()] (`markov_avg_comparisons`). SOPs from
+#'   [interpolate_sops()] are refused, because inference is computed at the
+#'   visits: run `inferences()` first and interpolate its result, as in
+#'   `interpolate_sops(inferences(x), time_map = )`.
 #' @param method Character. Inference method:
 #'   \itemize{
 #'     \item `"mvn"`: Multivariate-normal coefficient draws.
@@ -493,6 +496,27 @@ inferences_impl <- function(
       "or 'markov_comparisons' object. ",
       "Got: ",
       paste(class(x), collapse = ", ")
+    )
+  }
+  # Inference replays the visit SOPs and matches their draws to the rows of
+  # `x` by `time`. Interpolated rows are on the real-time scale, so only rows
+  # whose day equals some visit number found draws, and those were another
+  # visit's: the bootstrap and FWB returned wrong intervals without warning,
+  # and MVN and delta stopped with messages about misaligned cells (#58).
+  if (inherits(x, "markov_interpolated_sops")) {
+    mostr_abort(
+      "`inferences()` cannot be applied to SOPs already interpolated with ",
+      "`interpolate_sops()`, because their rows are on the real-time scale ",
+      "and inference is computed at the visits. Run `inferences()` on the ",
+      "visit SOPs first and interpolate the result: ",
+      "`interpolate_sops(inferences(x), time_map = )`.",
+      if (inherits(attr(x, "model"), "blrm")) {
+        paste0(
+          " For a `blrm` model, the SOPs already carry posterior intervals, ",
+          "and `interpolate_sops()` recomputes them from the stored ",
+          "posterior draws."
+        )
+      }
     )
   }
 

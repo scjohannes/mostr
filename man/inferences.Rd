@@ -24,7 +24,10 @@ inferences(
 \code{\link[=state_time]{state_time()}} (\code{markov_state_time}), or \code{\link[=comparisons]{comparisons()}}
 (\code{markov_comparisons}), or an average, from \code{\link[=avg_sops]{avg_sops()}}
 (\code{markov_avg_sops}), \code{\link[=avg_state_time]{avg_state_time()}} (\code{markov_avg_state_time}), or
-\code{\link[=avg_comparisons]{avg_comparisons()}} (\code{markov_avg_comparisons}).}
+\code{\link[=avg_comparisons]{avg_comparisons()}} (\code{markov_avg_comparisons}). SOPs from
+\code{\link[=interpolate_sops]{interpolate_sops()}} are refused, because inference is computed at the
+visits: run \code{inferences()} first and interpolate its result, as in
+\code{interpolate_sops(inferences(x), time_map = )}.}
 
 \item{method}{Character. Inference method:
 \itemize{
