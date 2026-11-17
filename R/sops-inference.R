@@ -44,7 +44,11 @@
 #'   conditional and unconditional variance estimates, supply a
 #'   vector aligned with the fitting rows or a one-sided formula selecting a
 #'   stored fitting-data column. Otherwise the model's stored `id_var` is used;
-#'   fitting rows are never treated as implicit clusters. For unconditional
+#'   fitting rows are never treated as implicit clusters. The clusters must be
+#'   the patients: each fitting row gets its patient, in the order the rows
+#'   were fitted. When the fit stores its patient-ID column, a `cluster` that
+#'   groups the rows differently, such as sites or one cluster per row, is an
+#'   error. For unconditional
 #'   inference, the cluster labels must match the stored starting-profile patient
 #'   IDs exactly.
 #' @param workers Number of parallel workers. If NULL (default) or 1, uses

@@ -258,7 +258,11 @@ flowchart TD
   attribute (`markov_set_engine()`). `"orm"` fits always receive the
   package-owned patient-clustered sandwich (`robcov_orm()`), and `"vglm"` fits
   are always returned as a `robcov_vglm` object holding the `vglm` fit in
-  `$vglm_fit`; only bootstrap refits skip this step (see below). Before
+  `$vglm_fit`; only bootstrap refits skip this step (see below).
+  `get_vcov_robust()` returns the stored covariance of either engine unless
+  `cluster`, `bread`, `type` or `cadjust` is given. Then it recomputes from
+  the engine fit, and without `cluster` it treats the rows as independent.
+  Before
   `robcov_orm()`, a non-logistic orm family stops with
   `stop_unsupported_markov_link()`, the classed error `validate_markov_model()`
   raises, so such fits fail at fit time rather than in the sandwich code.
@@ -283,7 +287,16 @@ flowchart TD
   which serves analytical inference with conditional and unconditional
   variance: without an explicit `cluster`, it needs the stored fitting data
   and `id_var`, and never treats rows as separate patients. Such errors are
-  reachable only for objects whose `mostm()` metadata were removed.
+  reachable only for objects whose `mostm()` metadata were removed. An
+  explicit `cluster` must split the fitting rows into the same groups as the
+  stored patient column (one patient per cluster, labels free). Otherwise it
+  is refused, because a reordered vector, row-level IDs or site IDs would give
+  covariances that are not clustered by patient (#53).
+- A cluster vector longer than the fitted rows is aligned by
+  `align_cluster_orm()` and `align_cluster_vglm()` from the rows that the
+  fit's `na.action` omitted. A `Hmisc::na.delete` record (class `"delete"`)
+  lists those rows in `$omit` next to per-variable counts in `$nmiss`, so
+  only `$omit` is read.
 - `validate_markov_model()` in `R/sops-backends.R` accepts a model only when
   `markov_model_engine()` matches its class. Raw engine fits and fits from the
   removed `orm_markov()`, `vglm_markov()`, and `blrm_markov()` lack the

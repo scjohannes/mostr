@@ -12,6 +12,40 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: An explicit `cluster` must group the fitting rows by patient
+
+**Decided (#53).** In analytical inference, an explicit `cluster` (a vector
+or a formula) must split the fitting rows into the same groups as the stored
+`id_var` column: one cluster per patient, and all of a patient's rows in one
+cluster. The labels may differ under conditional variance. Under
+unconditional variance they must still be the starting-profile patients.
+Anything else is refused.
+
+**Why.** Without a check, an ID vector from data reordered after the fit
+summed the scores of different patients. In a 150-patient `actt2`
+simulation (1486 fitting rows), this changed delta standard errors by up to
+16% (orm) and 17% (vglm) under conditional variance, and by up to 12% and
+15% under unconditional variance, with no message. One cluster per row and
+clusters of whole sites were accepted under conditional variance, and the
+result said `cluster_level = "patient"`. The help page already said that
+clusters other than patients are not supported.
+
+**Rejected:** accepting coarser clusters, such as sites holding whole
+patients, under conditional variance and recording their level. The
+maintainer chose the patient grouping only.
+
+**Also decided.** `get_vcov_robust()` on a `mostm(engine = "vglm")` fit now
+recomputes when `cluster`, `bread`, `type` or `cadjust` is given, as for orm.
+Without `cluster`, such a correction treats the fitting rows as independent,
+for both engines. A user who leaves out `cluster` may want exactly that.
+Rejected: clustering on the stored patient column by default when only a
+correction is given.
+
+**Not changed (decided 2026-11-13).** `inferences(method = "mvn" |
+"bootstrap" | "fwb")` ignores `cluster` and a matrix `vcov` without saying so.
+These methods cluster on the stored patient column, so their numbers are
+right. Reason not recorded.
+
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 
 The tests may take at most 90 seconds in CRAN mode on the development machine
