@@ -462,6 +462,30 @@
   character time they keep the requested order. A requested time between
   fitted visits is an error, and so is a time before the first follow-up
   visit when `newdata` is omitted.
+* `inferences(method = "delta")` refuses a `cluster` that does not group the
+  fitting rows by patient, exactly as the `id_var` column of the fit does
+  (#53). Before, any vector of the right length was used as given. An ID
+  vector taken from data reordered after the fit summed the scores of
+  different patients, and changed the standard errors by up to 17% in a
+  150-patient example with no warning. Under conditional variance, one
+  cluster per row or clusters of whole sites were accepted and reported as
+  patient clusters. Give each fitting row its patient, in the fitted order,
+  or leave `cluster` out to use the stored patient column.
+
+* `get_vcov_robust()` on `mostm(engine = "vglm")` fits uses `cluster`,
+  `bread`, `type` and `cadjust` (#53). It returned the stored covariance
+  whatever these arguments said. As for `orm` fits, the stored covariance is
+  returned when none of them is given. A correction without `cluster` treats
+  every fitting row as independent.
+
+* `robcov_orm()`, `robcov_vglm()`, `get_vcov_robust()` and
+  `inferences(method = "delta")` accept a cluster vector that still includes
+  the rows a fit dropped for missing values when the fit used
+  `Hmisc::na.delete`, which is the default for `orm` fits (#53). The vector
+  is aligned with the fitted rows. For `orm` fits, these calls stopped with
+  "'list' object cannot be coerced to type 'integer'". For `vglm` fits with
+  `na.action = Hmisc::na.delete`, they stopped with a wrong-length error,
+  because the per-variable missing counts were read as row numbers.
 
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`

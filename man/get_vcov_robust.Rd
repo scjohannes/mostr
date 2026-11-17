@@ -33,7 +33,9 @@ variable cannot be found in the model's original data, it will be extracted
 from this data frame. \strong{Note:} For cluster-robust SEs, the cluster vector
 must have the same length as the model's fitting data, not prediction data.}
 
-\item{bread}{Bread used for a raw \code{vglm} model: \code{"observed"} or \code{"vglm"}.}
+\item{bread}{Bread used when computing a VGLM sandwich, for a raw \code{vglm}
+model or a \code{robcov_vglm} object: \code{"observed"} or \code{"vglm"}. Supplying it
+for a \code{robcov_vglm} object recomputes the covariance.}
 
 \item{type}{HC correction used when computing an ORM or VGLM sandwich:
 \code{"HC0"} or \code{"HC1"}.}
@@ -54,8 +56,18 @@ interface for obtaining robust vcov from different model types.
 This function handles several cases:
 
 \strong{1. Pre-computed robust vcov (\code{robcov_vglm} object):}
-If the model is already a \code{robcov_vglm} object (from calling
-\code{robcov_vglm()}), the stored robust vcov is returned directly.
+If the model is already a \code{robcov_vglm} object (from \code{\link[=robcov_vglm]{robcov_vglm()}} or
+\code{mostm(engine = "vglm")}) and none of \code{cluster}, \code{type}, \code{cadjust} and
+\code{bread} is supplied, its stored robust vcov is returned unchanged. If any of
+them is supplied, the covariance is recomputed with \code{\link[=robcov_vglm]{robcov_vglm()}} from
+the underlying \code{vglm} fit, as described in the cases below.
+
+Without \code{cluster}, a \code{type} or \code{cadjust} override (or a \code{bread} override
+for VGLM) treats every fitting row as independent, for ORM and VGLM models
+alike: the stored
+covariance from \code{\link[=mostm]{mostm()}} is clustered by patient, but the recomputed one
+is not. To keep the patient clusters, also pass \code{cluster = ~id} (with your
+patient-ID column).
 
 \strong{2. No clustering requested:}
 If \code{cluster = NULL}, returns the robust sandwich covariance. VGLM models use

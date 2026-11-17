@@ -162,7 +162,9 @@ set_coef.vglm <- function(model, new_coefs) {
 #'   variable cannot be found in the model's original data, it will be extracted
 #'   from this data frame. **Note:** For cluster-robust SEs, the cluster vector
 #'   must have the same length as the model's fitting data, not prediction data.
-#' @param bread Bread used for a raw `vglm` model: `"observed"` or `"vglm"`.
+#' @param bread Bread used when computing a VGLM sandwich, for a raw `vglm`
+#'   model or a `robcov_vglm` object: `"observed"` or `"vglm"`. Supplying it
+#'   for a `robcov_vglm` object recomputes the covariance.
 #' @param type HC correction used when computing an ORM or VGLM sandwich:
 #'   `"HC0"` or `"HC1"`.
 #' @param cadjust Optional logical finite-cluster correction used when computing
@@ -175,8 +177,18 @@ set_coef.vglm <- function(model, new_coefs) {
 #' This function handles several cases:
 #'
 #' **1. Pre-computed robust vcov (`robcov_vglm` object):**
-#' If the model is already a `robcov_vglm` object (from calling
-#' `robcov_vglm()`), the stored robust vcov is returned directly.
+#' If the model is already a `robcov_vglm` object (from [robcov_vglm()] or
+#' `mostm(engine = "vglm")`) and none of `cluster`, `type`, `cadjust` and
+#' `bread` is supplied, its stored robust vcov is returned unchanged. If any of
+#' them is supplied, the covariance is recomputed with [robcov_vglm()] from
+#' the underlying `vglm` fit, as described in the cases below.
+#'
+#' Without `cluster`, a `type` or `cadjust` override (or a `bread` override
+#' for VGLM) treats every fitting row as independent, for ORM and VGLM models
+#' alike: the stored
+#' covariance from [mostm()] is clustered by patient, but the recomputed one
+#' is not. To keep the patient clusters, also pass `cluster = ~id` (with your
+#' patient-ID column).
 #'
 #' **2. No clustering requested:**
 #' If `cluster = NULL`, returns the robust sandwich covariance. VGLM models use
@@ -240,11 +252,21 @@ get_vcov_robust <- function(
 ) {
   type_missing <- missing(type)
   cadjust_missing <- missing(cadjust)
+  bread_missing <- missing(bread)
   type <- match.arg(type)
+  # A `cluster` formula is read from the data `mostm()` stored on the model as
+  # given, before a `robcov_vglm` is replaced by its vglm fit below.
+  stored_data_model <- model
 
   # --- Case 1: Already a robcov_vglm object ---
   if (inherits(model, "robcov_vglm")) {
-    return(model$var)
+    if (is.null(cluster) && type_missing && cadjust_missing && bread_missing) {
+      return(model$var)
+    }
+    # Any override recomputes the sandwich from the vglm fit. Returning the
+    # stored covariance would silently ignore the requested cluster or
+    # correction.
+    model <- sop_delta_backend_model(model)
   }
 
   # --- Case 2: package-owned orm robust covariance ---
@@ -300,7 +322,7 @@ get_vcov_robust <- function(
     # Prefer the explicit `data` argument when supplied. Model calls often store
     # only a symbol such as `data`, and evaluating that symbol from a caller can
     # resolve to an unrelated object in interactive/test wrapper environments.
-    model_data <- markov_model_data(model)
+    model_data <- markov_model_data(stored_data_model)
     if (!is.null(model_data) && !cluster_var %in% names(model_data)) {
       model_data <- NULL
     }

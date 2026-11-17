@@ -485,10 +485,13 @@ align_cluster_orm <- function(model, cluster, n_scores) {
     return(cluster)
   }
 
-  na_action <- model$na.action
-  if (!is.null(na_action) && length(cluster) > n_scores) {
-    keep <- seq_along(cluster)
-    keep <- keep[-as.integer(na_action)]
+  omitted <- na_action_omitted_rows(model$na.action)
+  if (
+    length(omitted) > 0L &&
+      length(cluster) > n_scores &&
+      max(omitted) <= length(cluster)
+  ) {
+    keep <- seq_along(cluster)[-omitted]
     if (length(keep) == n_scores) {
       return(cluster[keep])
     }

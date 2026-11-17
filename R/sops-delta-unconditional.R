@@ -235,6 +235,70 @@ delta_validate_cluster <- function(cluster, n_rows) {
   list(cluster = cluster, ids = ids)
 }
 
+# An explicit `cluster` must group the fitting rows exactly as the patient
+# column stored by `mostm()` does: one label per patient and one patient per
+# label. Labels may differ. Without a stored patient column there is nothing to
+# compare with, and the explicit cluster is taken as given.
+delta_check_patient_partition <- function(model, cluster, n_rows) {
+  id_var <- markov_model_id_var(model)
+  data <- markov_model_data(model)
+  if (
+    is.null(id_var) ||
+      !is.data.frame(data) ||
+      !id_var %in% names(data) ||
+      nrow(data) != n_rows
+  ) {
+    return(invisible(NULL))
+  }
+  stored <- as.character(data[[id_var]])
+  explicit <- as.character(cluster)
+  explicit_code <- match(explicit, unique(explicit))
+  stored_code <- match(stored, unique(stored))
+  pairs <- unique(data.frame(explicit = explicit_code, stored = stored_code))
+  patients_per_cluster <- tabulate(pairs$explicit)
+  clusters_per_patient <- tabulate(pairs$stored)
+  if (all(patients_per_cluster == 1L) && all(clusters_per_patient == 1L)) {
+    return(invisible(NULL))
+  }
+
+  examples <- function(values) {
+    values <- utils::head(values, 5L)
+    paste0("`", values, "`", collapse = ", ")
+  }
+  problems <- character()
+  if (any(patients_per_cluster > 1L)) {
+    problems <- c(
+      problems,
+      paste0(
+        "Some clusters hold several patients, as sites do or a vector in ",
+        "another order would (for example clusters ",
+        examples(unique(explicit)[patients_per_cluster > 1L]),
+        ")."
+      )
+    )
+  }
+  if (any(clusters_per_patient > 1L)) {
+    problems <- c(
+      problems,
+      paste0(
+        "Some patients are split across clusters, as with one cluster per ",
+        "row or a vector in another order (for example patients ",
+        examples(unique(stored)[clusters_per_patient > 1L]),
+        ")."
+      )
+    )
+  }
+  mostr_abort(
+    "`cluster` does not group the fitting rows by patient, as the stored ",
+    "patient column `",
+    id_var,
+    "` does. `cluster` must give the patient of each fitting row, in the ",
+    "order the rows were fitted. ",
+    paste(problems, collapse = " "),
+    " Clusters other than patients are not supported."
+  )
+}
+
 # Resolve the patient of each fitting row for analytical inference with
 # conditional or unconditional variance. Explicit row-level IDs take
 # precedence; fitting rows are never implicit clusters. The data stored by
@@ -295,6 +359,13 @@ resolve_delta_cluster <- function(model, cluster = NULL) {
   }
 
   checked <- delta_validate_cluster(cluster, n_rows)
+  if (source != "stored_id_var") {
+    # The variance below is labelled patient-clustered. A vector in another
+    # order, sites or one cluster per row would sum the scores of different
+    # patients or split one patient's correlated rows, and give wrong standard
+    # errors without any warning.
+    delta_check_patient_partition(model, checked$cluster, n_rows)
+  }
   list(
     cluster = checked$cluster,
     ids = checked$ids,

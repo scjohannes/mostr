@@ -909,15 +909,10 @@ align_cluster_vglm <- function(fit, cluster, n) {
     return(cluster)
   }
 
-  na_action <- tryCatch(
+  na_action <- na_action_omitted_rows(tryCatch(
     methods::slot(fit, "na.action"),
     error = function(e) NULL
-  )
-  if (is.list(na_action)) {
-    na_action <- unlist(na_action, use.names = FALSE)
-  }
-  na_action <- as.integer(na_action)
-  na_action <- na_action[!is.na(na_action)]
+  ))
 
   if (
     length(na_action) > 0L &&

@@ -178,3 +178,26 @@ notify_sop_r_engine_fallback <- function(reason = NULL) {
   )
   invisible(TRUE)
 }
+
+# The row numbers a fit dropped for missing values, from its `na.action`
+# record. `Hmisc::na.delete()`, the default of `rms::orm()`, records a list of
+# class "delete" whose first element counts the missing values per variable;
+# read as row numbers, those counts would drop the wrong rows. A vglm fit stores
+# its record inside a list, so each element is read on its own.
+na_action_omitted_rows <- function(na_action) {
+  if (is.null(na_action)) {
+    return(integer())
+  }
+  omitted <- function(record) {
+    if (inherits(record, "delete")) {
+      record <- record$omit
+    }
+    as.integer(record)
+  }
+  rows <- if (is.list(na_action) && !inherits(na_action, "delete")) {
+    unlist(lapply(na_action, omitted), use.names = FALSE)
+  } else {
+    omitted(na_action)
+  }
+  rows[!is.na(rows)]
+}
