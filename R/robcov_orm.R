@@ -167,17 +167,51 @@ validate_robcov_orm_fit <- function(fit) {
   coefficients
 }
 
-orm_model_bread <- function(fit) {
-  coefficients <- stats::coef(fit)
+# TRUE when an orm fit maximized a penalized log-likelihood: it has a penalty
+# matrix with a finite non-zero entry, or a non-zero `penalty`.
+orm_fit_is_penalized <- function(fit) {
   penalty_matrix <- fit$penalty.matrix
   penalty <- unlist(fit$penalty, use.names = FALSE)
-  penalized <-
-    (!is.null(penalty_matrix) &&
-      length(penalty_matrix) > 0L &&
-      any(is.finite(penalty_matrix) & penalty_matrix != 0)) ||
+  (!is.null(penalty_matrix) &&
+    length(penalty_matrix) > 0L &&
+    any(is.finite(penalty_matrix) & penalty_matrix != 0)) ||
     (!is.null(penalty) &&
       length(penalty) > 0L &&
       any(is.finite(penalty) & penalty != 0))
+}
+
+# Gradient of the penalty 0.5 * beta' P beta at `coefficients`, as a named
+# vector over all coefficients, or NULL for an unpenalized fit. rms stores P in
+# `penalty.matrix`, already multiplied by the penalty, over the non-intercept
+# coefficients only; these come last in `coef(fit)`, so the intercept entries
+# of the gradient are zero.
+orm_penalty_gradient <- function(fit, coefficients) {
+  if (!orm_fit_is_penalized(fit)) {
+    return(NULL)
+  }
+  penalty_matrix <- fit$penalty.matrix
+  p <- length(coefficients)
+  if (
+    !is.matrix(penalty_matrix) ||
+      nrow(penalty_matrix) != ncol(penalty_matrix) ||
+      nrow(penalty_matrix) > p
+  ) {
+    mostr_abort(
+      "The penalized orm fit's `penalty.matrix` must be a square matrix with ",
+      "no more rows than there are coefficients."
+    )
+  }
+  penalized_index <- p - nrow(penalty_matrix) + seq_len(nrow(penalty_matrix))
+  gradient <- stats::setNames(numeric(p), names(coefficients))
+  gradient[penalized_index] <- as.vector(
+    penalty_matrix %*% coefficients[penalized_index]
+  )
+  gradient
+}
+
+orm_model_bread <- function(fit) {
+  coefficients <- stats::coef(fit)
+  penalized <- orm_fit_is_penalized(fit)
   requested_penalty_variance <- fit$call$var.penalty
   requested_sandwich <- !is.null(requested_penalty_variance) &&
     identical(as.character(requested_penalty_variance)[1L], "sandwich")
@@ -333,6 +367,26 @@ robcov_orm <- function(
     sandwich_scores <- scores[represented, , drop = FALSE]
     n_clusters <- NULL
   }
+  # The scores are log-likelihood gradients. A penalized fit maximizes
+  # loglik - 0.5 * beta' P beta, so at its estimate the scores sum to the
+  # penalty gradient P beta rather than to zero, and leaving it in adds
+  # (P beta)(P beta)' / G to the meat. Each sandwich unit (patient, or row
+  # without a cluster) therefore gives up an equal share P beta / G of it;
+  # zero-weight rows have zero scores, so the represented units still sum to
+  # P beta. In simulated ACTT-2 fits with 250 patients, leaving the share in
+  # inflated coefficient SEs by up to 1.6 times at penalty 10 and 2 times at
+  # penalty 100; with it removed, the SEs were within 0.89 to 1.10 of the
+  # Monte Carlo SD over 200 data sets (#49). The explicit gradient is
+  # subtracted rather than the numerical column means, so that a fit that has
+  # not converged is not silently centred. Unpenalized fits skip this step.
+  penalty_gradient <- orm_penalty_gradient(fit, coefficients)
+  if (!is.null(penalty_gradient)) {
+    sandwich_scores <- sweep(
+      sandwich_scores,
+      2L,
+      penalty_gradient / nrow(sandwich_scores)
+    )
+  }
   # By default a patient-clustered variance is multiplied by G / (G - 1), with
   # G the number of patients, as sandwich::vcovCL() does (`cadjust = TRUE`,
   # HC0 for models other than lm); rms::robcov() applies no factor. With HC0
@@ -381,6 +435,7 @@ robcov_orm <- function(
     n_clusters = n_clusters,
     bread_convention = bread_result$source,
     weighted = weighted,
+    penalty_gradient_removed = !is.null(penalty_gradient),
     covariance_identity = assembled$covariance
   )
   result

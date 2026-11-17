@@ -430,16 +430,7 @@ delta_reject_weighted_unconditional <- function(model) {
 }
 
 delta_reject_penalized_orm_unconditional <- function(model) {
-  penalty_matrix <- model$penalty.matrix
-  penalty <- unlist(model$penalty, use.names = FALSE)
-  penalized <-
-    (!is.null(penalty_matrix) &&
-      length(penalty_matrix) > 0L &&
-      any(is.finite(penalty_matrix) & penalty_matrix != 0)) ||
-    (!is.null(penalty) &&
-      length(penalty) > 0L &&
-      any(is.finite(penalty) & penalty != 0))
-  if (!penalized) {
+  if (!orm_fit_is_penalized(model)) {
     return(invisible(NULL))
   }
 

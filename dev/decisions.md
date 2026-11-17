@@ -12,6 +12,46 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: Penalized orm sandwich subtracts each patient's share of the penalty gradient
+
+For a penalized `orm` fit, `robcov_orm()` now subtracts `P beta / G` from
+each patient's score sum (`P beta / n` from each row when there is no
+cluster) before forming the meat (#49). The log-likelihood scores of a
+penalized fit sum to the penalty gradient `P beta`, not zero, so the
+uncentred meat had an extra `(P beta)(P beta)' / G`. The bread, the inverse
+of the penalized information, was already right. The maintainer chose this
+form from the options below.
+
+Measured on simulated ACTT-2 data (250 patients, 28 days,
+`y ~ yprev + rcs(time, 3) + tx`; R 4.6.2, rms 8.2-1; scripts in
+`benchmarks/local/orm-penalty-sandwich/`):
+
+- Old SE / corrected SE, largest over coefficients: 1.04 (penalty 1), 1.58
+  (10), 1.97 (100), 2.40 (1,000), 4.54 (10,000). Conditional delta SEs of
+  `avg_sops()` moved by at most 1.19, median about 1.00; day-28 treatment
+  differences by at most 1.004.
+- Monte Carlo, 200 data sets, mean SE / SD of the estimates; the band set
+  before the run was +-10%. Old meat 0.93 to 1.46 (penalty 10) and 0.90 to
+  1.81 (penalty 100). Corrected 0.90 to 1.07 and 0.89 to 1.10. Its low end
+  is shared by coefficients the penalty barely moves (`tx` 0.95), which is
+  the usual small-sample shortfall of a sandwich.
+
+Options rejected:
+
+- Centring the patient score sums: gives the same numbers at convergence
+  (within 1e-10), but it would also remove gradient left by an incompletely
+  converged unpenalized fit, which the sandwich does not do today. The
+  explicit penalty term keeps unpenalized fits bit-identical and states the
+  estimating equation.
+- A share of `P beta` in proportion to each patient's number of rows: SEs
+  1 to 5% lower and slightly less well calibrated (0.87 to 1.06 at penalty
+  100).
+- Keeping the old meat because `rms::robcov()` does the same: it overstates
+  coefficient SEs by multiples at large penalties.
+
+Unconditional variance still refuses penalized `orm` fits; whether the
+corrected scores allow lifting that refusal was not checked.
+
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 
 The tests may take at most 90 seconds in CRAN mode on the development machine
