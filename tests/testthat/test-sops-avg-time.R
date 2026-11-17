@@ -41,7 +41,14 @@ test_that("analytical inference clears bootstrap and previous null metadata", {
   skip_on_cran()
   case <- make_avg_time_case()
   boot <- avg_state_time(case$model, times = 1:3) |>
-    inferences(method = "fwb", n_draws = 3, seed = 7211, null = 0)
+    inferences(
+      method = "fwb",
+      n_draws = 3,
+      seed = 7211,
+      conf_type = "wald",
+      null = 0
+    )
+  expect_identical(attr(boot, "null"), 0)
   result <- inferences(boot, method = "delta")
   expect_identical(attr(result, "method"), "delta")
   expect_null(attr(result, "fwb_weight_type"))

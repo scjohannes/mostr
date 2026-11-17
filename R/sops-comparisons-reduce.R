@@ -411,9 +411,11 @@ comparison_value <- function(hi, lo, comparison) {
     return(hi - lo)
   }
   if (comparison == "ratio") {
-    out <- hi / lo
-    out[lo == 0] <- NA_real_
-    return(out)
+    # Plain R arithmetic, as in marginaleffects: x / 0 with x > 0 is Inf and
+    # 0 / 0 is NaN. Setting these to NA would let the summary of the draws
+    # drop them silently, so a percentile limit that should be Inf would come
+    # out finite.
+    return(hi / lo)
   }
   mostr_abort("Unknown comparison: ", comparison)
 }

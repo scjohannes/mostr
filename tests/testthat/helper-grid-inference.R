@@ -244,15 +244,19 @@ check_inference_setting <- function(setting) {
   point <- inference_point(setting)
   keys <- inference_keys(point)
   null <- inference_null(setting)
+  # Draw methods give A and B percentile intervals, which come without a
+  # test; an explicit null there would only draw a warning. Their null test
+  # is checked on the Wald run C.
+  percentile_null <- if (draw_method) "auto" else null
 
   # N4: the caller's random number stream is left as it was.
   random_state <- function() get(".Random.seed", envir = globalenv())
   set.seed(99)
   before <- random_state()
-  a <- inference_run(point, setting, null = null)
+  a <- inference_run(point, setting, null = percentile_null)
   expect_identical(random_state(), before, label = paste(label, "N4 random state"))
 
-  b <- inference_run(point, setting, conf_level = 0.8, null = null)
+  b <- inference_run(point, setting, conf_level = 0.8, null = percentile_null)
   c <- inference_run(
     point,
     setting,
@@ -265,6 +269,12 @@ check_inference_setting <- function(setting) {
   c_df <- as.data.frame(c)
 
   # L9 and L13.
+  if (draw_method) {
+    expect_false(
+      any(c("statistic", "p.value", "s.value") %in% c(names(a_df), names(b_df))),
+      label = paste(label, "no test with percentile intervals")
+    )
+  }
   for (run in list(a = a_df, b = b_df, c = c_df)) {
     expect_false(anyNA(run$std.error), label = paste(label, "L9 complete"))
     expect_gte(min(run$std.error), 0, label = paste(label, "L9"))
@@ -443,7 +453,11 @@ check_inference_setting <- function(setting) {
   # N1: swapping the compared values flips the contrast, its standard error
   # and its limits; a ratio becomes its reciprocal.
   if (inference_is_comparison(setting)) {
-    swapped <- inference_run(inference_point(setting, list(tx = c(1, 0))), setting, null = null)
+    swapped <- inference_run(
+      inference_point(setting, list(tx = c(1, 0))),
+      setting,
+      null = percentile_null
+    )
     swapped <- as.data.frame(swapped)
     swap_keys <- setdiff(keys, "tx")
     if (setting$comparison == "ratio") {
