@@ -234,6 +234,10 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
     setup$settings$id_var,
     setup$settings$time_var
   )
+  # Without `newdata`, each draw starts every patient at this visit, as the
+  # point estimate does.
+  first_followup_time <-
+    markov_model_starting_profile_metadata(model)$first_followup_time
   if (newdata_supplied && method == "fwb") {
     warn_fixed_profile_bootstrap_weights("FWB")
   }
@@ -267,11 +271,13 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       baseline_data <- setup$baseline_data
       baseline_weights <- NULL
     } else if (method == "bootstrap") {
-      baseline_data <- resolve_markov_prediction_data(
+      # Each patient starts at `first_followup_time`, as in the point
+      # estimate.
+      baseline_data <- markov_bootstrap_starting_rows(
         boot_result$data,
         id_var = "new_id",
         time_var = setup$settings$time_var,
-        data_label = "bootstrap data"
+        first_followup_time = first_followup_time
       )
       baseline_data <- ensure_markov_rowid(baseline_data)
       newdata_cf <- create_counterfactual_data(
@@ -281,11 +287,11 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       )
       baseline_weights <- NULL
     } else {
-      baseline_data <- resolve_markov_prediction_data(
+      baseline_data <- markov_bootstrap_starting_rows(
         boot_result$data,
         id_var = setup$settings$id_var,
         time_var = setup$settings$time_var,
-        data_label = "bootstrap data"
+        first_followup_time = first_followup_time
       )
       baseline_data <- ensure_markov_rowid(baseline_data)
       newdata_cf <- create_counterfactual_data(

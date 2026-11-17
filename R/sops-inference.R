@@ -226,7 +226,9 @@
 #' and the number of resamples that lack it. Use `method = "fwb"` then, or
 #' remove those profiles from `newdata`. Without `newdata`, each draw
 #' predicts its own resampled patients, so their starting states are always
-#' present.
+#' present. Each of these patients starts from their row at the
+#' `first_followup_time` of [mostm()], as in the point estimate, whether time
+#' is numeric, a factor or character.
 #'
 #' A draw whose refit or prediction fails, for example because the model
 #' cannot be fitted to that resample, is left out with a warning that says
