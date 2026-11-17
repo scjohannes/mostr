@@ -169,7 +169,17 @@ chooses the package that fits it:
 partial proportional odds model, in which some predictors have a separate
 effect at each threshold between states: supply
 \code{family = VGAM::cumulative(reverse = TRUE, parallel = FALSE)} together with
-\code{constraints}. Without \code{family}, this engine fits the same proportional
+\code{constraints}, or name the terms with a separate effect at each threshold
+in a \code{parallel} formula, for example
+\code{parallel = FALSE ~ rms::rcs(time, 4)}. A spline term counts as one term
+there, as in \code{\link[VGAM:vglm]{VGAM::vglm()}}; to give single spline columns their own
+constraint matrix, name them in \code{constraints} by their column names,
+which are the coefficient names without the \verb{:1}, \verb{:2}, ... threshold
+suffix, such as \code{"rms::rcs(time, 4)time'"}. Then give every column of
+that spline its matrix there and use \code{parallel = FALSE} or a formula that
+does not name the spline; \code{mostm()} refuses a \code{parallel} formula that
+names it.
+Without \code{family}, this engine fits the same proportional
 odds model as \code{"orm"}, so changing \code{engine} is enough to compare the two.
 \item \code{"blrm"} fits a Bayesian model with \code{\link[rmsb:blrm]{rmsb::blrm()}}, which samples from the
 posterior distribution with Stan. Partial proportional odds effects are

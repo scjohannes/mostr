@@ -246,8 +246,16 @@ flowchart TD
   `markov_rms_model_frame()`. `mostm_fit_orm()` stops when `rms::orm()`
   returns a failed fit (`fail = TRUE`). `mostm_fit_vglm()` in
   `R/vglm_helpers.R` builds the model as `VGAM::vglm()` does, with rms formula
-  helpers and one VGAM assignment per inline rms basis column
-  (`split_rms_basis_assign()`); its `family` defaults to
+  helpers. The returned fit has one VGAM assignment per inline rms basis
+  column (`split_rms_basis_assign()`). The fit itself uses that per-column
+  assignment only when `constraints` names single basis columns; otherwise it
+  uses VGAM's one assignment per term, because `VGAM::cm.VGAM()` matches
+  `parallel` formulas and `constraints` names against the assignment names,
+  and a term such as `rms::rcs(time, 4)` would match nothing (#42). For the
+  same reason it refuses a `parallel` formula that names a basis term whose
+  columns `constraints` names. Prediction
+  uses the per-column constraint matrices, which do not depend on the
+  assignment. Its `family` defaults to
   `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`, the same
   proportional-odds model as `"orm"`. It takes `etastart` and `mustart` from
   the model frame, so starting values lose the rows that `subset` or

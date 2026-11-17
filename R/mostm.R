@@ -17,7 +17,17 @@
 #'   partial proportional odds model, in which some predictors have a separate
 #'   effect at each threshold between states: supply
 #'   `family = VGAM::cumulative(reverse = TRUE, parallel = FALSE)` together with
-#'   `constraints`. Without `family`, this engine fits the same proportional
+#'   `constraints`, or name the terms with a separate effect at each threshold
+#'   in a `parallel` formula, for example
+#'   `parallel = FALSE ~ rms::rcs(time, 4)`. A spline term counts as one term
+#'   there, as in [VGAM::vglm()]; to give single spline columns their own
+#'   constraint matrix, name them in `constraints` by their column names,
+#'   which are the coefficient names without the `:1`, `:2`, ... threshold
+#'   suffix, such as `"rms::rcs(time, 4)time'"`. Then give every column of
+#'   that spline its matrix there and use `parallel = FALSE` or a formula that
+#'   does not name the spline; `mostm()` refuses a `parallel` formula that
+#'   names it.
+#'   Without `family`, this engine fits the same proportional
 #'   odds model as `"orm"`, so changing `engine` is enough to compare the two.
 #' * `"blrm"` fits a Bayesian model with [rmsb::blrm()], which samples from the
 #'   posterior distribution with Stan. Partial proportional odds effects are
