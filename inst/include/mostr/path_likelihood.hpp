@@ -18,6 +18,23 @@
 // respect to theta = c(alpha, beta) come from a forward and a backward pass
 // over each stretch (see evaluate_stretches()).
 //
+// Prior work. This likelihood is not new. The statistical analysis plan of
+// the ACTIV-6 trial (version 5.0, 2022-04-01; statisticians Thomas G.
+// Stewart and Frank Harrell; section 4.8, "Missing outcome data") specifies
+// it for a first-order Markov ordinal model: "if outcome values are observed
+// for days 1, 3, and 12, then the likelihood contribution will be"
+//   P(Y1 = y1, Y3 = y3, Y12 = y12 | y0, trt)
+//     = P(Y12 = y12 | y3, trt) P(Y3 = y3 | y1, trt) P(Y1 = y1 | y0, trt),
+// "where the probabilities conditional on outcomes from more than a day
+// prior are calculated using the Chapman-Kolmogorov equation for n-step
+// transition probabilities", the sum over the states i_1, ..., i_{r-1} of
+// the r - 1 days in between of the product of the one-day transition
+// probabilities. The forward recursion here computes that sum without
+// listing its terms. What this file adds to the plan's formula: states known
+// only to lie in a range, an absorbing state that may have been entered
+// during a gap, and exact derivatives.
+// https://cdn.clinicaltrials.gov/large-docs/86/NCT05890586/SAP_003.pdf
+//
 // Model: for a design row x and cut-point k = 1..K-1,
 //   c_k = plogis(alpha_k + x'beta) = P(Y >= k + 1),
 //   P(Y = y) = c_{y-1} - c_y with c_0 = 1 and c_K = 0.

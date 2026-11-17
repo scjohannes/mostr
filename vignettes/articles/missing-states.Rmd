@@ -347,6 +347,18 @@ probabilities of each state of $R_{u+2}$, and so on, until visit $v$. This
 is the same visit-by-visit calculation that `avg_sops()` uses for state
 occupancy probabilities.
 
+This likelihood has been used before. The statistical analysis plan of the
+ACTIV-6 trial, written by Thomas G. Stewart and Frank Harrell, specifies it
+for a first-order Markov ordinal model of daily symptom scores
+([version 5.0, 2022, section 4.8](https://cdn.clinicaltrials.gov/large-docs/86/NCT05890586/SAP_003.pdf)):
+when outcomes are observed on days 1, 3 and 12 only, each observed outcome
+contributes its probability given the last observed outcome, and "the
+probabilities conditional on outcomes from more than a day prior are
+calculated using the Chapman-Kolmogorov equation for n-step transition
+probabilities", which is the sum above with every state allowed at the
+unrecorded visits. mostr adds ranges of states given with `Ocens()` and an
+absorbing state that may have been entered during a gap.
+
 Visits whose state and previous state are both recorded contribute
 $p_t(j, k)$ as in an ordinary fit. `engine = "orm"` finds the coefficients
 that maximise the product of all these probabilities (the likelihood);

@@ -664,7 +664,11 @@ flowchart TD
   closed-form proportional-odds derivatives. A stretch carries the vector
   of state probabilities forward one visit at a time, then backward, and
   forms the score from both; for the Hessian it also carries the first
-  derivatives of the forward vector. Paths are never listed. The cell
+  derivatives of the forward vector. Paths are never listed. The sum over
+  paths is the n-step transition probability (Chapman-Kolmogorov equation)
+  that the ACTIV-6 statistical analysis plan of Stewart and Harrell
+  specifies for missing daily outcomes; the header's comment quotes it and
+  `dev/decisions.md` (2026-11-17) says what mostr adds. The cell
   probabilities of each (step, previous state) pair are computed per
   stretch into small tables, because without tied covariates a pair occurs
   in no other stretch, and only for the cut-points the step's range of

@@ -12,6 +12,40 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: Prior work on the likelihood for unobserved states is cited
+
+**Decided.** The comment at the top of
+`inst/include/mostr/path_likelihood.hpp` and the article
+`vignettes/articles/missing-states.Rmd` cite and quote the statistical
+analysis plan of the ACTIV-6 trial (ACTIV-6: COVID-19 Study of Repurposed
+Medications, Arm B (Fluvoxamine), NCT05890586, version 5.0, 2022-04-01;
+statisticians Thomas G. Stewart and Frank Harrell):
+<https://cdn.clinicaltrials.gov/large-docs/86/NCT05890586/SAP_003.pdf>.
+Its section 4.8, "Missing outcome data", reads: "Each subject will
+contribute to the likelihood calculation for each observed outcome. For
+example, if outcome values are observed for days 1, 3, and 12, then the
+likelihood contribution will be" P(Y12 = y12 | y3, trt) P(Y3 = y3 | y1, trt)
+P(Y1 = y1 | y0, trt), "where the probabilities conditional on outcomes from
+more than a day prior are calculated using the Chapman-Kolmogorov equation
+for n-step transition probabilities", followed by the sum over the states of
+the days in between of the product of the one-day transition probabilities.
+
+**Why.** That sum is the likelihood `missing_states = "average"` maximises,
+so the idea is not ours and readers should be able to find where it was
+written down first. Frank Harrell pointed to Thomas Stewart's work on this
+in a public discussion on 2026-11-17; the plan is the only written source
+found. Rohde, French, Stewart and Harrell (2024, Statistics in Medicine,
+doi:10.1002/sim.10133) does not cover missing states (the maintainer's
+reading of the paper).
+
+**What mostr adds to the plan's formula.** States known only to lie in a
+range (`Ocens()`), an absorbing state that may have been entered during a
+gap, the exact score and Hessian
+for the maximum likelihood fit of `engine = "orm"`, and an analytic gradient
+for the Stan program of `engine = "blrm"`. The plan does not say how its
+Bayesian model computed the sum, and whether the published ACTIV-6 analyses
+used it was not checked.
+
 ## 2026-11-16: `violet_baseline` becomes internal data
 
 **Decided.** The table of starting state, age and SOFA score combinations of
