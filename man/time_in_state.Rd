@@ -70,8 +70,11 @@ It automatically adapts to the input format:
 \item \strong{Patient-Level:} If input is an array from \code{soprob_markov}, it returns time-in-state for each patient.
 \item \strong{Tidy SOP:} If input is a \code{markov_sops} or \code{markov_avg_sops}
 object, it returns grouped total time. Stored simulation, bootstrap, or
-posterior draws are reduced identically and used to recompute confidence
-intervals and standard errors. For SOPs from
+posterior draws are added up in the same way, one draw at a time, and
+used to recompute confidence intervals and standard errors. For
+posterior SOPs of a \code{blrm} fit, \code{total_time} is the posterior mean or
+median (as chosen by \code{posterior_summary} in \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}})
+of the totals of the draws; see Details. For SOPs from
 \code{inferences(method = "delta")}, standard errors and confidence limits of
 the totals are computed with the delta method; see Details. SOPs with
 confidence limits but no stored draws give totals with \code{NA} limits and
@@ -79,6 +82,20 @@ a warning; see Details.
 }
 }
 \details{
+\subsection{Posterior totals}{
+
+For posterior SOPs with stored draws (\code{return_draws = TRUE}), the total
+time is computed in every posterior draw, and \code{total_time}, \code{conf.low},
+\code{conf.high} and \code{std.error} summarise these draw totals: the posterior mean
+or median, the equal-tailed credible limits, and the posterior standard
+deviation. This gives the same results as \code{\link[=state_time]{state_time()}} and
+\code{\link[=avg_state_time]{avg_state_time()}}. With \code{posterior_summary = "median"}, the total is not
+the sum of the SOP estimates shown at each visit, because the median of a
+sum is not the sum of the medians. With the default
+\code{posterior_summary = "mean"}, the two agree. Without stored draws, the
+total adds up the estimates; see the next section.
+}
+
 \subsection{SOPs with limits but no draws}{
 
 The confidence limits of a total cannot be computed from the limits of the

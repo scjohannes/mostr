@@ -700,7 +700,18 @@ interpolate_sop_draws <- function(
   result
 }
 
-interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
+# Interval columns of interpolated SOPs from their interpolated draws. With
+# `posterior_summary` (posterior draws), the estimate is replaced too, by the
+# posterior mean or median of the interpolated draws, the same summary that
+# `sops()` and `avg_sops()` give at the visits. Otherwise the estimate stays
+# the interpolated point estimate and only the limits come from the draws.
+interpolated_ci_from_draws <- function(
+  draws,
+  result,
+  conf_level,
+  conf_type,
+  posterior_summary = NULL
+) {
   value_col <- sop_draw_value_col(draws)
   if (is.null(value_col) || !"draw_id" %in% names(draws)) {
     return(result)
@@ -713,6 +724,36 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
   weight_cols <- intersect("fwb_weight", names(draws))
   group_cols <- setdiff(names(draws), c(value_col, "draw_id", weight_cols))
   join_cols <- intersect(group_cols, names(result))
+  if (!is.null(posterior_summary)) {
+    summary <- summarize_comparison_draws(
+      draws_for_ci,
+      group_cols = join_cols,
+      posterior_summary = posterior_summary,
+      conf_level = conf_level,
+      keep_na = TRUE
+    )
+    result$.sop_order <- seq_len(nrow(result))
+    result_base <- result[,
+      setdiff(
+        names(result),
+        c("estimate", "conf.low", "conf.high", "std.error")
+      ),
+      drop = FALSE
+    ]
+    out <- left_join_preserve_order(result_base, summary, by = join_cols)
+    out <- out[order(out$.sop_order), , drop = FALSE]
+    out$.sop_order <- NULL
+    # Keep the column order of `result`.
+    out <- out[,
+      c(
+        names(result)[names(result) %in% names(out)],
+        setdiff(names(out), names(result))
+      ),
+      drop = FALSE
+    ]
+    rownames(out) <- NULL
+    return(out)
+  }
   point_estimates <- result[, c(join_cols, "estimate"), drop = FALSE]
   if (!all(group_cols %in% join_cols)) {
     point_estimates <- left_join_preserve_order(
@@ -759,8 +800,15 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #' @param baseline_time Real time of the observed baseline state. The default
 #'   `0` adds a fixed anchor from the stored previous-state values. Set to `NULL`
 #'   to disable baseline anchoring.
-#' @param normalize Logical. If `TRUE`, normalize interpolated estimates so
-#'   state probabilities sum to one within each time and group.
+#' @param normalize Logical. If `TRUE`, divide the interpolated probabilities
+#'   by their sum over the states within each time and group, so that they
+#'   sum to one. Stored draws are normalized one draw at a time. For posterior
+#'   SOPs of a `blrm` fit with stored draws, `estimate` is then the posterior
+#'   mean or median of the interpolated, normalized draws. Posterior medians
+#'   are never divided by their own sum, because medians of probabilities need
+#'   not sum to one; without stored draws, they are interpolated but not
+#'   normalized. Posterior means, and estimates of `orm` and `vglm` fits,
+#'   already sum to one, so for them normalizing changes only rounding.
 #'
 #' @return An interpolated data frame with the same core columns as `x`, where
 #'   `time` is on the real-time scale. If `x` has tests from
@@ -784,7 +832,10 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #'
 #' If `x` contains stored simulation, bootstrap, or posterior draws, the draws
 #' are interpolated too. Interval columns are then recomputed from the
-#' interpolated draws. Coefficient-only draws treat the empirical baseline anchor
+#' interpolated draws. For posterior draws of a `blrm` fit, `estimate` is
+#' recomputed too, as the posterior mean or median (as chosen by
+#' `posterior_summary` in [sops()] or [avg_sops()]) of the interpolated draws,
+#' so at the observed visits it equals the estimate in `x`. Coefficient-only draws treat the empirical baseline anchor
 #' as fixed; empirical FWB and refit-bootstrap draws use the
 #' corresponding draw-specific patient weights or resampled cohort.
 #' If interval columns are present but stored draws are unavailable,
@@ -940,11 +991,22 @@ interpolate_sops <- function(
     result <- bind_rows_fill(pieces)
   }
   result <- result[, intersect(names(x), names(result)), drop = FALSE]
-  if (isTRUE(normalize)) {
+
+  draws <- attr(x, "draws")
+  posterior <- identical(attr(x, "method"), "posterior")
+  posterior_summary <- attr(x, "posterior_summary") %||% "mean"
+  # Posterior estimates with stored draws are replaced below by the summary
+  # of the interpolated (and, with `normalize`, renormalised) draws.
+  # Posterior medians are never renormalised: medians of probabilities need
+  # not sum to one, so dividing by their sum would move every median away
+  # from the median of its own draws.
+  if (
+    isTRUE(normalize) &&
+      !(posterior && (!is.null(draws) || posterior_summary == "median"))
+  ) {
     result <- normalize_interpolated_sops(result)
   }
 
-  draws <- attr(x, "draws")
   if (is.null(draws)) {
     warn_missing_interpolation_draws(x)
   }
@@ -965,7 +1027,8 @@ interpolate_sops <- function(
       draws = interpolated_draws,
       result = result,
       conf_level = attr(x, "conf_level") %||% 0.95,
-      conf_type = attr(x, "conf_type") %||% "perc"
+      conf_type = attr(x, "conf_type") %||% "perc",
+      posterior_summary = if (posterior) posterior_summary else NULL
     )
   }
 

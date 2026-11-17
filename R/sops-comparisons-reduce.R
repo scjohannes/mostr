@@ -677,13 +677,16 @@ summarize_comparison_draws <- function(
   draws_df,
   group_cols,
   posterior_summary,
-  conf_level
+  conf_level,
+  keep_na = FALSE
 ) {
   conf_level <- validate_conf_level(conf_level)
   alpha <- 1 - conf_level
   # Keep groups in the order they first appear, which follows the point
   # reduction, rather than the alphabetical order of `interaction()` levels.
-  key <- as.character(split_key(draws_df, group_cols))
+  # `keep_na = TRUE` keeps a group whose grouping value is missing, such as a
+  # profile column that is NA, instead of dropping its draws.
+  key <- as.character(split_key(draws_df, group_cols, keep_na = keep_na))
   groups <- split(
     seq_len(nrow(draws_df)),
     factor(key, levels = unique(key))

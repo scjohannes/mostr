@@ -30,8 +30,13 @@
 #'   for example a `by` variable. Use a length-two vector for
 #'   `facet_grid(row ~ column)`.
 #' @param scale Character string. `"time"` (the default) plots average time in
-#'   the units of `x`. `"proportion"` divides each average by the scenario's
-#'   total follow-up, so a bar spans 0 to 1. `"proportion"` requires every
+#'   the units of `x`. `"proportion"` divides each average and its confidence
+#'   limits by the length of follow-up: the number of visits, or, when
+#'   [avg_state_time()] used `time_map`, the elapsed time it covered. A bar
+#'   then spans 0 to 1. For posterior medians of a `blrm` fit (`posterior_summary
+#'   = "median"`), the medians of the state totals need not add up to the
+#'   follow-up, so a bar can end slightly before or after 1; each share is the
+#'   posterior median of that share of follow-up. `"proportion"` requires every
 #'   state to belong to exactly one state set.
 #' @param show_labels Logical. For `geom = "bar"`, print each segment's value
 #'   inside it. Segments shorter than 6% of the longest bar are left unlabeled
@@ -140,7 +145,7 @@ plot_time <- function(
   # One bar per scenario within each facet.
   data$.bar <- interaction(data[, c(".group", facet_var)], drop = TRUE)
   if (identical(scale, "proportion")) {
-    data <- plot_time_proportions(data)
+    data <- plot_time_proportions(data, attr(x, "follow_up"))
   }
 
   p <- if (identical(geom, "bar")) {
@@ -213,8 +218,21 @@ plot_time_group_labels <- function(data, group_var) {
   interaction(data[, group_var, drop = FALSE], sep = " / ", lex.order = TRUE)
 }
 
-plot_time_proportions <- function(data) {
-  total <- stats::ave(data$estimate, data$.bar, FUN = sum)
+# Shares of follow-up: the totals divided by the length of follow-up stored by
+# `avg_state_time()`. The sum of the plotted totals equals it for frequentist
+# fits and posterior means, but not for posterior medians, whose shares would
+# otherwise be rescaled to add up to one. Results without the stored length
+# (made before it was stored) fall back to that sum.
+plot_time_proportions <- function(data, follow_up = NULL) {
+  stored <- is.numeric(follow_up) &&
+    length(follow_up) == 1L &&
+    is.finite(follow_up) &&
+    follow_up > 0
+  total <- if (stored) {
+    rep(follow_up, nrow(data))
+  } else {
+    stats::ave(data$estimate, data$.bar, FUN = sum)
+  }
   for (col in intersect(c("estimate", "conf.low", "conf.high"), names(data))) {
     data[[col]] <- data[[col]] / total
   }

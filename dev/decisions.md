@@ -62,6 +62,31 @@ recorded.
 **Rejected.** Refusing fits with `cluster()` on a non-patient variable in
 `mostm()`, and refusing only `include_re = TRUE` for such fits. Reason not
 recorded.
+## 2026-11-17: Posterior medians of totals and interpolations come from the draws
+
+**Decided.** For `blrm` results with `posterior_summary = "median"`,
+`time_in_state()` takes `total_time` from the median of the draw-level
+totals, and `interpolate_sops()` takes `estimate` from the median of the
+interpolated draws, without renormalizing medians (#40). This is what
+`state_time()`, `avg_state_time()` and the comparison functions already did.
+`plot_time(scale = "proportion")` divides by the length of follow-up (the
+number of visits, or the real-time span with `time_map`) instead of by the sum
+of the plotted estimates.
+
+**Why.** The median of a sum is not the sum of the medians, and medians of
+probabilities need not sum to one. In a real `blrm` fit (60 patients, 10
+visits, 1,000 draws) `time_in_state()` differed from `avg_state_time()` by up
+to 0.024 visits, the eight state totals added to 9.900 instead of 10, and
+`interpolate_sops(normalize = TRUE)` with an identity time map moved an
+observed-visit probability from 0.5079 to 0.5220. A constructed 3-visit case
+gave a total of 0 with interval [1, 1]. For the proportion plot, the user chose
+the follow-up length because the share of follow-up in a state is then the
+posterior median of that share in each draw.
+
+**Rejected.** Keeping the sum of the plotted estimates as the denominator for
+`plot_time(scale = "proportion")`: every bar would span exactly 0 to 1, but
+the shares would be rescaled medians, not medians of shares. Posterior means,
+`orm` and `vglm` results give the same proportions either way.
 
 ## 2026-11-16: `violet_baseline` becomes internal data
 

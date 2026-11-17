@@ -326,6 +326,22 @@
   patient ID was looked up among the sites. `newdata` must contain the
   variable, and a missing value in it is no longer reported as a missing
   predictor when `include_re = FALSE`, where it is not used.
+* For `blrm` fits summarised with `posterior_summary = "median"`,
+  `time_in_state()` and `interpolate_sops()` now compute each total or
+  interpolated probability in every posterior draw and then take the median
+  (#40). Before, `time_in_state()` added up the medians of the visits, and
+  `interpolate_sops()` interpolated the medians and, with `normalize = TRUE`,
+  divided them by their sum, which changed the estimates even at the observed
+  visits. The median of a sum is not the sum of the medians, so the estimates
+  differed from those of `state_time()` and `avg_state_time()` (by up to 0.024
+  visits in a fit of 60 patients over 10 visits) and could fall outside their
+  own intervals. The intervals were already right. Results with the default
+  `posterior_summary = "mean"`, and results of `orm` and `vglm` fits, are
+  unchanged.
+
+* `plot_time(scale = "proportion")` divides each average time by the length
+  of follow-up, instead of by the sum of the plotted averages (#40). The two
+  differ only for posterior medians, whose sum need not equal the follow-up.
 
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
