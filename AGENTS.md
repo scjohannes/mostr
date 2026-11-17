@@ -99,10 +99,12 @@ runs with `devtools::test()` and in CI, which set `NOT_CRAN=true`.
 - In a test that uses `expect_snapshot()`, put `skip_on_cran()` above the
   set-up: testthat skips a snapshot on CRAN only when it reaches it, after the
   set-up has run.
-- Budget: the tests take at most 60 seconds in CRAN mode on the development
-  machine (AMD Ryzen AI 9 HX 370, 12 cores, 24 threads; about 50 seconds in
-  November 2026, against 5.7 minutes before this rule). Measure after adding
-  tests:
+- Budget: the tests take at most 90 seconds in CRAN mode on the development
+  machine (AMD Ryzen AI 9 HX 370, 12 cores, 24 threads; 69 seconds on R 4.6.2
+  on 16 November 2026, against 5.7 minutes before this rule). This is the
+  project's own limit, not CRAN's: CRAN asks for about 10 minutes for the
+  whole check, and its machines are slower than this one. Measure after
+  adding tests:
 
   ```powershell
   $env:NOT_CRAN = 'false'

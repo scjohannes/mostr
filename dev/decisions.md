@@ -12,6 +12,24 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
+
+The tests may take at most 90 seconds in CRAN mode on the development machine
+(AGENTS.md, "Tests on CRAN"). On 2026-11-16 they took 69 seconds on R 4.6.2
+with no other R processes running (561 tests, 275 skipped on CRAN), above the
+old limit of 60 seconds; the earlier figure of about 50 seconds was measured
+on R 4.6.1, and the cause of the rise (R 4.6.2 or tests added since) was not
+measured. The 60-second limit was the
+project's own margin, not a CRAN rule; why 60 was chosen was not recorded.
+CRAN asks for about 10 minutes for the whole check. A full
+`R CMD check --as-cran` of the built tarball took 7.2 minutes here, of which
+about 3 minutes without the `\donttest{}` examples (install 36 s, examples
+47 s, tests 85 s, vignette 12 s), which leaves room even on machines two to
+three times slower.
+
+Rejected: skipping more tests on CRAN to get back under 60 seconds. It would
+take checks away from CRAN for a margin CRAN does not require.
+
 ## 2026-11-16: `violet_baseline` becomes internal data
 
 **Decided.** The table of starting state, age and SOFA score combinations of
