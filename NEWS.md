@@ -305,6 +305,16 @@
 
 ## Bug fixes
 
+* `mostm()` refuses stratification terms, `strat(g)` or `rms::strat(g)`, for
+  every engine (#59). Stratification gives each stratum its own baseline
+  hazard in a Cox model fitted with `rms::cph()` and has no meaning for an
+  ordinal model. `engine = "orm"` and `"blrm"` fitted such a model without
+  `g` and without a warning, and their `sops()` then failed for
+  `rms::strat(g)`; `engine = "vglm"` fitted `g` as an ordinary predictor.
+  Enter `g` as an ordinary covariate instead, and, to let its effect differ
+  between the thresholds between states, use `engine = "vglm"` or `"blrm"`
+  with partial proportional odds.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,

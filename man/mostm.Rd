@@ -29,7 +29,13 @@ supported. For the \code{"orm"} and \code{"blrm"} engines, categorical predictor
 including time, must be factor or character columns of \code{data} rather
 than converted with \code{factor()} inside the formula; for factor time, also
 set \code{first_followup_time}. Random-effect terms are available only for the
-\code{"blrm"} engine; see "Random effects" below.
+\code{"blrm"} engine; see "Random effects" below. Stratification terms,
+\code{strat(g)} or \code{rms::strat(g)}, are errors for every engine: they give
+each stratum its own baseline hazard in a Cox model fitted with
+\code{\link[rms:cph]{rms::cph()}} and have no meaning for an ordinal model. Enter \code{g} as an
+ordinary covariate instead; to let its effect differ between the
+thresholds between states, use partial proportional odds with
+\code{engine = "vglm"} or \code{"blrm"}.
 
 Time terms are written inline, for example \code{rms::rcs(time, 4)},
 \code{log(time)} or \code{rms::pol(time, 2)}; the prediction functions evaluate
