@@ -267,7 +267,9 @@ second-order models also the state two visits back). If one does not, it
 stops, naming the state and the number of resamples that lack it. Use
 \code{method = "fwb"} then, or remove those profiles from \code{newdata}. Without
 \code{newdata}, each draw predicts its own resampled patients, so their starting
-states are always present. Each of these patients starts from their row at the \code{first_followup_time} of \code{\link[=mostm]{mostm()}}, as in the point estimate, whether time is numeric, a factor or character.
+states are always present. Each of these patients starts from their row at
+the \code{first_followup_time} of \code{\link[=mostm]{mostm()}}, as in the point estimate, whether
+time is numeric, a factor or character.
 
 A resample can also hold patients who start in a state while nobody in it
 moves into that state. The refit's outcome states are those that occur as
