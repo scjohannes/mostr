@@ -47,8 +47,12 @@ for example a \code{by} variable. Use a length-two vector for
 \code{facet_grid(row ~ column)}.}
 
 \item{scale}{Character string. \code{"time"} (the default) plots average time in
-the units of \code{x}. \code{"proportion"} divides each average by the scenario's
-total follow-up, so a bar spans 0 to 1. \code{"proportion"} requires every
+the units of \code{x}. \code{"proportion"} divides each average and its confidence
+limits by the length of follow-up: the number of visits, or, when
+\code{\link[=avg_state_time]{avg_state_time()}} used \code{time_map}, the elapsed time it covered. A bar
+then spans 0 to 1. For posterior medians of a \code{blrm} fit (\code{posterior_summary = "median"}), the medians of the state totals need not add up to the
+follow-up, so a bar can end slightly before or after 1; each share is the
+posterior median of that share of follow-up. \code{"proportion"} requires every
 state to belong to exactly one state set.}
 
 \item{show_labels}{Logical. For \code{geom = "bar"}, print each segment's value

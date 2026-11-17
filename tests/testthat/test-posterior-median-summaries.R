@@ -177,7 +177,9 @@ test_that("a posterior-median total lies inside its own interval", {
   avg <- do.call(avg_sops, c(args, return_draws = TRUE))
 
   draws <- attr(avg, "draws")
-  in_state_one <- as.numeric(draws$time == draws$draw_id)
+  # The selected posterior draws are not numbered 1 to 3, so number them.
+  draw_number <- match(draws$draw_id, unique(draws$draw_id))
+  in_state_one <- as.numeric(draws$time == draw_number)
   draws$estimate <- ifelse(
     draws$state == 1,
     in_state_one,

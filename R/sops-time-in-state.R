@@ -173,6 +173,27 @@ time_in_state_tidy_inference <- function(x, state_sets, real_time, source = x) {
   )
   draws_for_ci <- draw_result
   draws_for_ci$estimate <- draws_for_ci$total_time
+  if (identical(attr(x, "method"), "posterior")) {
+    # A posterior total is summarised from the totals of the draws, as in
+    # `avg_state_time()`. With `posterior_summary = "median"`, the median of a
+    # sum is not the sum of the visit-wise medians, which can even fall
+    # outside the interval of the total. For the mean both orders agree.
+    summary <- summarize_comparison_draws(
+      draws_for_ci,
+      group_cols = group_cols,
+      posterior_summary = attr(x, "posterior_summary") %||% "mean",
+      conf_level = attr(x, "conf_level") %||% 0.95,
+      keep_na = TRUE
+    )
+    names(summary)[names(summary) == "estimate"] <- "total_time"
+    result <- left_join_preserve_order(
+      result[, setdiff(names(result), "total_time"), drop = FALSE],
+      summary,
+      by = group_cols
+    )
+    attr(result, "draws") <- draw_result
+    return(result)
+  }
   point_estimates <- result
   point_estimates$estimate <- point_estimates$total_time
   ci <- compute_ci_from_draws(
@@ -416,8 +437,11 @@ time_in_state_delta <- function(
 #'   \item **Patient-Level:** If input is an array from \code{soprob_markov}, it returns time-in-state for each patient.
 #'   \item **Tidy SOP:** If input is a `markov_sops` or `markov_avg_sops`
 #'     object, it returns grouped total time. Stored simulation, bootstrap, or
-#'     posterior draws are reduced identically and used to recompute confidence
-#'     intervals and standard errors. For SOPs from
+#'     posterior draws are added up in the same way, one draw at a time, and
+#'     used to recompute confidence intervals and standard errors. For
+#'     posterior SOPs of a `blrm` fit, `total_time` is the posterior mean or
+#'     median (as chosen by `posterior_summary` in [sops()] or [avg_sops()])
+#'     of the totals of the draws; see Details. For SOPs from
 #'     `inferences(method = "delta")`, standard errors and confidence limits of
 #'     the totals are computed with the delta method; see Details. SOPs with
 #'     confidence limits but no stored draws give totals with `NA` limits and
@@ -467,6 +491,19 @@ time_in_state_delta <- function(
 #' }
 #'
 #' @details
+#' ## Posterior totals
+#'
+#' For posterior SOPs with stored draws (`return_draws = TRUE`), the total
+#' time is computed in every posterior draw, and `total_time`, `conf.low`,
+#' `conf.high` and `std.error` summarise these draw totals: the posterior mean
+#' or median, the equal-tailed credible limits, and the posterior standard
+#' deviation. This gives the same results as [state_time()] and
+#' [avg_state_time()]. With `posterior_summary = "median"`, the total is not
+#' the sum of the SOP estimates shown at each visit, because the median of a
+#' sum is not the sum of the medians. With the default
+#' `posterior_summary = "mean"`, the two agree. Without stored draws, the
+#' total adds up the estimates; see the next section.
+#'
 #' ## SOPs with limits but no draws
 #'
 #' The confidence limits of a total cannot be computed from the limits of the

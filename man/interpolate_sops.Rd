@@ -26,8 +26,15 @@ mapped visit times plus \code{baseline_time} when the baseline anchor is enabled
 \code{0} adds a fixed anchor from the stored previous-state values. Set to \code{NULL}
 to disable baseline anchoring.}
 
-\item{normalize}{Logical. If \code{TRUE}, normalize interpolated estimates so
-state probabilities sum to one within each time and group.}
+\item{normalize}{Logical. If \code{TRUE}, divide the interpolated probabilities
+by their sum over the states within each time and group, so that they
+sum to one. Stored draws are normalized one draw at a time. For posterior
+SOPs of a \code{blrm} fit with stored draws, \code{estimate} is then the posterior
+mean or median of the interpolated, normalized draws. Posterior medians
+are never divided by their own sum, because medians of probabilities need
+not sum to one; without stored draws, they are interpolated but not
+normalized. Posterior means, and estimates of \code{orm} and \code{vglm} fits,
+already sum to one, so for them normalizing changes only rounding.}
 }
 \value{
 An interpolated data frame with the same core columns as \code{x}, where
@@ -59,7 +66,10 @@ probability 1 to that state and 0 to the others.
 
 If \code{x} contains stored simulation, bootstrap, or posterior draws, the draws
 are interpolated too. Interval columns are then recomputed from the
-interpolated draws. Coefficient-only draws treat the empirical baseline anchor
+interpolated draws. For posterior draws of a \code{blrm} fit, \code{estimate} is
+recomputed too, as the posterior mean or median (as chosen by
+\code{posterior_summary} in \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}}) of the interpolated draws,
+so at the observed visits it equals the estimate in \code{x}. Coefficient-only draws treat the empirical baseline anchor
 as fixed; empirical FWB and refit-bootstrap draws use the
 corresponding draw-specific patient weights or resampled cohort.
 If interval columns are present but stored draws are unavailable,

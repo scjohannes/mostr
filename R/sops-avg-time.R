@@ -385,17 +385,25 @@ reduce_avg_time_df <- function(
 }
 
 avg_time_from_sops <- function(avg, args, return_draws) {
+  # The length of follow-up that the totals cover, which
+  # `plot_time(scale = "proportion")` divides by: one unit per visit on the
+  # visit scale, or the span of the real-time grid that the totals integrate
+  # over. In every draw the state totals add up to it, but posterior medians
+  # of the totals need not, so their sum is not a substitute.
+  follow_up <- length(unique(avg$time))
   if (!is.null(args$time_map)) {
+    grid <- comparison_real_time_target_times(
+      avg,
+      args$time_map,
+      args$target_times,
+      args$baseline_time
+    )
+    follow_up <- max(grid) - min(grid)
     avg <- interpolate_sops(
       avg,
       time_map = args$time_map,
       baseline_time = args$baseline_time,
-      target_times = comparison_real_time_target_times(
-        avg,
-        args$time_map,
-        args$target_times,
-        args$baseline_time
-      )
+      target_times = grid
     )
   }
   avg_args <- attr(avg, "avg_args")
@@ -451,7 +459,9 @@ avg_time_from_sops <- function(avg, args, return_draws) {
   if (!is.null(args$time_unit)) {
     result$time_unit <- args$time_unit
   }
-  order_estimate_columns(result)
+  result <- order_estimate_columns(result)
+  attr(result, "follow_up") <- follow_up
+  result
 }
 
 set_avg_time_attrs <- function(result, avg, args) {

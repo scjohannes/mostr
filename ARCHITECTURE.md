@@ -1015,7 +1015,17 @@ reproduce the reported totals. Delta SOPs already passed through
 
 Other tidy SOPs get the limits of their totals from stored draws
 (`time_in_state_tidy_inference()` reduces each draw and calls
-`compute_ci_from_draws()`). SOPs with `conf.low`, `conf.high`, or `std.error`
+`compute_ci_from_draws()`). For posterior SOPs it instead takes the total and
+its limits from `summarize_comparison_draws()` over the draw totals, so a
+posterior-median total is the median of the totals, as in `avg_state_time()`,
+not the sum of visit-wise medians. Likewise `interpolate_sops()` sets the
+estimate of posterior SOPs with draws to the posterior mean or median of the
+interpolated draws (`interpolated_ci_from_draws(posterior_summary = )`), and
+never renormalises posterior medians, which need not sum to one.
+`avg_time_from_sops()` stores the follow-up length (number of visits, or the
+span of the real-time grid) in `attr(x, "follow_up")`;
+`plot_time(scale = "proportion")` divides by it, falling back to the sum of
+the plotted totals for results without it. SOPs with `conf.low`, `conf.high`, or `std.error`
 but no draw table (`sop_has_draw_table()`), such as posterior SOPs with
 `return_draws = FALSE` or SOPs from `inferences(return_draws = FALSE)`, go
 through `time_in_state_without_draws()`: the totals keep those columns as `NA`
