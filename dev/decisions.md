@@ -128,6 +128,31 @@ posterior median of that share in each draw.
 `plot_time(scale = "proportion")`: every bar would span exactly 0 to 1, but
 the shares would be rescaled medians, not medians of shares. Posterior means,
 `orm` and `vglm` results give the same proportions either way.
+## 2026-11-17: `blrm` `cppo` scores follow the fit; `ppo` without `cppo` is refused in `mostm()` (#46)
+
+**Decided.** The scores that scale the partial proportional-odds effects of a
+`blrm` fit are computed as `cppo(ylevels)[-1]`: one call on all state levels,
+keeping the elements for the cut-points "y >= state 2" to "y >= state k".
+`mostm(engine = "blrm")` refuses `ppo` without `cppo` before sampling, and
+checks the `ppo` formula for `factor()` and for `ns()`, `bs()` and `poly()`
+terms as it checks the main formula.
+
+**Why.** `rmsb::blrm()` sets `pposcore <- cppo(ylev)` and its Stan model
+(`lrmconppo.stan`) uses `pposcore[j]` for the cut-point at level j. On a
+40-patient, 10-state fit with `cppo = rank` (rmsb 1.1.2), the probabilities
+from the posterior draws reproduced Stan's stored `log_lik` to 4.6e-14 with
+`cppo(ylevels)[-1]`. They missed it by up to 2.7 with mostr's earlier
+one-state-at-a-time `vapply()`, and by 0.35 with `cppo(ylevels[-1])`, the
+scores of `rmsb::predict.blrm()`. For a `cppo` that works value by value, all
+three agree (9e-14). mostr can't predict from an unconstrained fit. Refusing
+before sampling saves the user a full MCMC run that ends in an error at
+`sops()`, which is what the `?mostm` example did.
+
+**Rejected.** Matching `rmsb::predict.blrm()` (`cppo(ylevels[-1])`), because
+for `cppo` functions that use other states' values it departs from the model
+that was sampled. Refusing such `cppo` functions outright, because the fit's
+scores are well defined. Fitting unconstrained `ppo` with a warning, because
+none of mostr's SOP functions could use the result.
 
 ## 2026-11-16: `violet_baseline` becomes internal data
 

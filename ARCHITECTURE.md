@@ -216,6 +216,17 @@ flowchart TD
   `data`, and, when the time variable is converted, for a factor time column
   with `first_followup_time`. `"vglm"` builds its own model frame and fits
   these terms.
+- For `"blrm"`, a `ppo` formula goes through both checks above, whose
+  `where` argument names it in the message ("the `ppo` formula"); the
+  defaults keep the main-formula messages. Its design is built
+  by the same `rms::predictrms()` call (`second = TRUE`) as the main formula,
+  so it has the same problems (with `ppo = ~splines::ns(time, 2)`, the `ppo`
+  design of two days' rows differed from the fitted one by up to 0.99). A
+  `ppo` without `cppo` (`NULL` counts as absent) stops with
+  `stop_blrm_ppo_without_cppo()`: `rmsb::blrm()` would then fit a separate
+  effect at every cut-point, and the prediction code handles only constrained
+  fits. Both checks read the evaluated values in `refit_args`, so a `ppo`
+  given as the name of a formula works. Issue #46.
 - For every engine, `mostm_check_random_effects()` stops before fitting when
   the right-hand side of the formula calls `cluster()` or `mix_re()`, with or
   without a package prefix (found by `formula_rhs_calls()`, the search that
@@ -837,6 +848,16 @@ probabilities P(Y >= k) then stop decreasing in k and a category probability
 is negative. SOPs are not defined there, so every route that turns linear
 predictors into category probabilities stops with a classed
 `mostr_crossed_thresholds` error; none clips and rescales.
+
+For `"blrm"`, `predict_blrm_response_markov()` (`R/sops-backends.R`) adds
+the `ppo` linear predictor times a score at each cut-point "y >= state j",
+j = 2..k. `blrm_cppo_scores()` computes the scores as rmsb fits them: one
+call `cppo(ylevels)` on all states, keeping elements 2..k. Calling `cppo` on
+one state at a time, or `rmsb::predict.blrm()`'s `cppo(ylevels[-1])`, gives
+other scores when a state's score depends on the other states (for example
+`cppo = rank`); on a real 10-state fit, only `cppo(ylevels)[-1]` reproduced
+Stan's log-likelihood (to 5e-14). A `cppo` that does not return one finite
+number for each state is refused (issue #46).
 
 The tolerance is `crossed_threshold_tolerance()` = 1e-10 in
 `R/sops-crossed-thresholds.R`, mirrored by `kCrossedTolerance` in
