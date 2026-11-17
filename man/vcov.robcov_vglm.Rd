@@ -18,16 +18,18 @@ The robust variance-covariance matrix.
 Returns the robust (sandwich) variance-covariance matrix.
 }
 \examples{
-\dontshow{if (rlang::is_installed("VGAM")) withAutoprint(\{ # examplesIf}
-trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+# 100 simulated patients followed for 10 days; state 8, death, is
+# absorbing
+trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
+markov_data <- prepare_markov_data(trial, absorb = 8)
 # The vglm engine of mostm() returns a robcov_vglm object
 robust_fit <- mostm(
   ordered(y) ~ time + tx + yprev,
   data = markov_data,
   id_var = "id",
+  absorb = "8",
   engine = "vglm"
 )
 vcov(robust_fit)
-\dontshow{\}) # examplesIf}
+
 }

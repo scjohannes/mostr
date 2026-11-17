@@ -45,7 +45,8 @@ of values, such as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}
 Each profile is then predicted once for every combination of the values,
 with those columns set to the combination. For the values a bare name
 selects, see \code{\link[=avg_sops]{avg_sops()}}. The default, \code{NULL}, predicts each profile with
-its own covariates.}
+its own covariates. The model's time column and its \code{gap_var} column
+cannot be set: they are set at each visit from \code{times}.}
 
 \item{by}{How to average the profiles' SOPs, as in the marginaleffects
 package. \code{FALSE} (the default) or \code{NULL} returns one row per profile,
@@ -198,20 +199,41 @@ from \code{newdata} first.
 }
 
 \examples{
-\dontrun{
-# SOPs for each profile
-sops_ind <- sops(fit, newdata = baseline_data, times = 1:30)
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+fit <- mostm(
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
+  id_var = "id",
+  absorb = "8"
+)
 
-# Each profile's SOPs under control and under treatment
-sops_cf <- sops(fit, newdata = baseline_data, variables = list(tx = c(0, 1)),
-                times = 1:30)
+# The first visit of three patients: their starting state (yprev) and
+# their treatment
+patients <- model_data[model_data$time == 1, ][1:3, ]
+patients[, c("id", "yprev", "tx")]
 
-# Averaged within ECOG levels; the same as avg_sops(by = "ecog")
-sops_ecog <- sops(fit, newdata = baseline_data, times = 1:30, by = "ecog")
+# Probability of each state on days 1 to 14 for each patient
+patient_sops <- sops(fit, newdata = patients, times = 1:14)
+patient_sops[patient_sops$time == 14, ]
 
-# Compatible with inferences()
-sops_cf |> inferences(method = "mvn", n_draws = 1000)
-}
+# Each patient under control and under treatment, with confidence
+# intervals from the delta method
+sops_by_arm <- sops(
+  fit,
+  newdata = patients,
+  variables = list(tx = c(0, 1)),
+  times = 1:14
+)
+sops_by_arm <- inferences(sops_by_arm, method = "delta")
+sops_by_arm[sops_by_arm$time == 14 & sops_by_arm$state == "1", ]
+
+# SOPs of all fitted patients, averaged within each treatment arm; the same
+# as avg_sops(fit, by = "tx", times = 1:14)
+arm_sops <- sops(fit, times = 1:14, by = "tx")
+arm_sops[arm_sops$time == 14, ]
 
 }
 \seealso{

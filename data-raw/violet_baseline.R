@@ -1,15 +1,46 @@
-## Code to prepare the `violet_baseline` dataset
+## Code to prepare `violet_baseline`, internal data in R/sysdata.rda
 ##
-## Frank Harrell simulated a 250,000-patient trial (`simlongord`) from a Markov
-## model fitted to the VIOLET trial:
-## https://hbiostat.org/data/repo/simlongord
-## Each simulated patient's starting state, age, and SOFA score were drawn with
-## replacement from the 1,351 VIOLET patients with a day-1 record. This script
-## recovers those 1,351 records, collapsed to one row per distinct combination
-## with the number of VIOLET patients who had it.
+## `violet_baseline` holds the joint distribution of the starting state, age,
+## and SOFA score of the 1,351 patients in the VIOLET trial of early high-dose
+## vitamin D3 versus placebo in critically ill adults. Each row is one
+## combination of the three characteristics, and `n` is the number of VIOLET
+## patients who had it (858 rows; the counts sum to 1,351). Columns:
+## - yprev: state before the first day of follow-up, 2 = in hospital or
+##   another health care facility, 3 = on a ventilator or with acute
+##   respiratory distress syndrome (ARDS). `sim_markov("violet")` uses
+##   1 = home, 2 = hospital or facility, 3 = ventilator or ARDS, 4 = dead.
+## - age: age in years.
+## - sofa: Sequential Organ Failure Assessment (SOFA) score at enrollment,
+##   from 0 to 24; higher scores mean more severe organ failure.
+## - n: number of VIOLET patients with this combination.
+## `violet_markov_parameters()` in R/simulate-markov.R passes the table to
+## `sim_markov("violet")`, which draws patients as rows sampled with
+## replacement and with probabilities proportional to `n`. Drawing the three
+## characteristics together keeps their correlation. The table is internal
+## because users have no need for it beyond the preset (see dev/decisions.md).
+##
+## Provenance. The original VIOLET data are not public. Frank Harrell
+## simulated a 250,000-patient trial (`simlongord`) from a Markov model fitted
+## to VIOLET. Each simulated patient's starting state, age, and SOFA score were
+## drawn with replacement from the 1,351 VIOLET patients with a day-1 record,
+## so each VIOLET patient was drawn about 185 times, and dividing how often a
+## combination occurs in `simlongord` by 185 recovers how many VIOLET patients
+## had it. This script performs that recovery, collapsed to one row per
+## distinct combination. The recovered counts reproduce every summary that
+## Harrell reported for these patients, including the 474 patients on a
+## ventilator or with ARDS, the number of patients with each SOFA score, and
+## the mean and percentiles of age; the script stops if any disagrees.
 ##
 ## Credit: Frank Harrell created `simlongord`, which is available through
-## `Hmisc::getHdata()`.
+## `Hmisc::getHdata(simlongord)`.
+##
+## References:
+## National Heart, Lung, and Blood Institute PETAL Clinical Trials Network
+## (2019). "Early High-Dose Vitamin D3 for Critically Ill, Vitamin D-Deficient
+## Patients." New England Journal of Medicine, 381(26), 2529-2540.
+## doi:10.1056/NEJMoa1911124
+## Harrell FE Jr (2022). "Simulating a Large Clinical Trial From VIOLET."
+## https://hbiostat.org/data/repo/simlongord
 
 library(Hmisc)
 
@@ -116,4 +147,9 @@ violet_baseline <- violet_baseline[
 ]
 rownames(violet_baseline) <- NULL
 
-usethis::use_data(violet_baseline, overwrite = TRUE, compress = "xz")
+usethis::use_data(
+  violet_baseline,
+  internal = TRUE,
+  overwrite = TRUE,
+  compress = "xz"
+)

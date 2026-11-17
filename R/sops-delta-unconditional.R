@@ -96,6 +96,15 @@ delta_validate_named_matrix <- function(
     mostr_abort("`", label, "` contains non-finite values.")
   }
 
+  # Measured against the largest entry, so with coefficients in very different
+  # units the asymmetry of a small-variance coefficient's entries goes
+  # unnoticed. It cannot refuse a matrix that is symmetric up to rounding,
+  # whatever its units: the rounding error of entry (i, j) is a few machine
+  # epsilons times sqrt(value[i, i] * value[j, j]), at most the largest entry.
+  # The robust covariances and breads the package builds are symmetric up to
+  # rounding; the check is there to catch a supplied `vcov` that is not a
+  # covariance, and the symmetrised matrix that is used is checked for
+  # definiteness below.
   scale <- max(abs(value))
   symmetry_error <- max(abs(value - t(value)))
   if (!is.finite(symmetry_error) || symmetry_error > 1e-8 * scale) {
@@ -103,26 +112,40 @@ delta_validate_named_matrix <- function(
   }
   value <- value / 2 + t(value) / 2
 
-  if (positive_semidefinite || positive_definite) {
+  # The bread is inverted (scaled by n) in the stacked influence function, so
+  # it uses the correlation-scale rule shared with the orm and vglm robust
+  # variance. The raw rule it replaces, smallest eigenvalue against
+  # 100 * eps * q * largest, refused a well-conditioned bread when a covariate
+  # was multiplied by 1e6: on the orm and vglm test-grid fits the smallest raw
+  # eigenvalue came out as -1e-18 times the largest, below what eigen() can
+  # resolve, while the correlation-scale ratio stayed 0.0028 (measured Nov
+  # 2026).
+  if (positive_definite && !markov_correlation_positive_definite(value)) {
+    mostr_abort(
+      "`",
+      label,
+      "` is not numerically positive definite."
+    )
+  }
+  # Covariances that are only multiplied by Jacobians keep the raw rule. It
+  # cannot refuse a matrix that is positive semidefinite up to rounding,
+  # whatever the units: eigen() is accurate to a few eps times the largest
+  # eigenvalue, far inside the tolerance of sqrt(eps) times the largest. It is
+  # lenient instead: it cannot see a negative eigenvalue in the direction of a
+  # coefficient with a small variance. The correlation rule would see it, but
+  # a semidefinite matrix may have a zero variance (a coefficient held fixed),
+  # which cov2cor() cannot scale. A negative variance that this lets through is
+  # refused per estimate by delta_jacobian_variance(), whose tolerance scales
+  # with each estimate. validate_vglm_matrix() uses a similar raw rule.
+  if (positive_semidefinite) {
     eigenvalues <- eigen(value, symmetric = TRUE, only.values = TRUE)$values
-    eigen_scale <- max(abs(eigenvalues))
-    semidefinite_tolerance <- sqrt(.Machine$double.eps) * eigen_scale
-    definite_tolerance <- 100 * .Machine$double.eps * q * eigen_scale
-    if (
-      positive_semidefinite &&
-        min(eigenvalues) < -semidefinite_tolerance
-    ) {
+    semidefinite_tolerance <- sqrt(.Machine$double.eps) *
+      max(abs(eigenvalues))
+    if (min(eigenvalues) < -semidefinite_tolerance) {
       mostr_abort(
         "`",
         label,
         "` is not numerically positive semidefinite."
-      )
-    }
-    if (positive_definite && min(eigenvalues) <= definite_tolerance) {
-      mostr_abort(
-        "`",
-        label,
-        "` is not numerically positive definite."
       )
     }
   }

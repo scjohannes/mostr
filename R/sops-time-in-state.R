@@ -17,7 +17,7 @@ trapezoid_auc <- function(time, value) {
   trapezoid_row_totals(matrix(agg$value, nrow = 1L), agg$time)
 }
 
-time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
+time_in_state_tidy <- function(x, state_sets, real_time = FALSE) {
   value_col <- if ("estimate" %in% names(x)) {
     "estimate"
   } else if ("draw" %in% names(x)) {
@@ -26,7 +26,7 @@ time_in_state_tidy <- function(x, target_states, real_time = FALSE) {
     mostr_abort("Tidy SOP input must contain an `estimate` or `draw` column.")
   }
 
-  keep <- as.character(x$state) %in% as.character(target_states)
+  keep <- as.character(x$state) %in% as.character(state_sets)
   if (!any(keep)) {
     mostr_abort("Target states not found in SOP data frame.")
   }
@@ -151,8 +151,8 @@ time_in_state_without_draws <- function(result, source) {
   result
 }
 
-time_in_state_tidy_inference <- function(x, target_states, real_time, source = x) {
-  result <- time_in_state_tidy(x, target_states, real_time = real_time)
+time_in_state_tidy_inference <- function(x, state_sets, real_time, source = x) {
+  result <- time_in_state_tidy(x, state_sets, real_time = real_time)
   if (!sop_has_draw_table(x)) {
     return(time_in_state_without_draws(result, source))
   }
@@ -160,7 +160,7 @@ time_in_state_tidy_inference <- function(x, target_states, real_time, source = x
   draws <- draws[draws$time %in% x$time, , drop = FALSE]
   draw_result <- time_in_state_tidy(
     draws,
-    target_states,
+    state_sets,
     real_time = real_time
   )
   weight_cols <- intersect(
@@ -210,7 +210,7 @@ time_in_state_is_delta <- function(x) {
 # sampled patients starting in a target state, whose influence is added.
 time_in_state_delta <- function(
   x,
-  target_states,
+  state_sets,
   time_map,
   baseline_time,
   target_times
@@ -228,7 +228,7 @@ time_in_state_delta <- function(
   # which are replaced below.
   point <- sop_point_estimates(x)
   result <- if (is.null(time_map)) {
-    time_in_state_tidy(point, target_states, real_time = FALSE)
+    time_in_state_tidy(point, state_sets, real_time = FALSE)
   } else {
     grid <- comparison_real_time_target_times(
       point,
@@ -242,7 +242,7 @@ time_in_state_delta <- function(
       target_times = grid,
       baseline_time = baseline_time
     )
-    time_in_state_tidy(interpolated, target_states, real_time = TRUE)
+    time_in_state_tidy(interpolated, state_sets, real_time = TRUE)
   }
 
   source <- as.data.frame(x)
@@ -300,7 +300,7 @@ time_in_state_delta <- function(
     source_time,
     names(integration$visit)
   )])
-  targets <- as.character(target_states)
+  targets <- as.character(state_sets)
   keep <- which(
     as.character(source$state) %in% targets & time_weight != 0
   )
@@ -430,8 +430,11 @@ time_in_state_delta <- function(
 #'     \item **Tidy SOP:** A `markov_sops`, `markov_avg_sops`, or
 #'       `markov_interpolated_sops` object.
 #'   }
-#' @param target_states Vector of target state(s) to include in the time calculation.
-#'   Can be integer indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).
+#' @param state_sets Vector of target state(s) to include in the time
+#'   calculation; their time is added up into one total. Can be integer
+#'   indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).
+#'   Unlike `state_sets` in [state_time()], this is one set of states, not a
+#'   list of sets.
 #' @param time_map Optional named numeric vector or data frame mapping visit
 #'   labels to real elapsed times. Supplying this switches tidy SOP and array
 #'   inputs to trapezoidal real-time AUC.
@@ -511,29 +514,49 @@ time_in_state_delta <- function(
 #' missing.
 #'
 #' @examples
-#' \dontrun{
-#' # --- Scenario 1: Patient-Level Estimates ---
-#' sops_arr <- soprob_markov(model, data, times = 1:30)
-#' days_home <- time_in_state(sops_arr, target_states = 1)
-#'
-#' # Real-time AUC after fitting on factor visit indices
-#' real_days_home <- time_in_state(
-#'   avg,
-#'   target_states = 1,
-#'   time_map = c("1" = 3, "2" = 7, "3" = 14, "4" = 28),
-#'   baseline_time = 0,
-#'   target_times = 1:28
+#' # 200 simulated patients assessed on days 3, 7, 14 and 28. States 1 and 2
+#' # are outside hospital, states 3 to 7 in hospital, and state 8 is death.
+#' visit_days <- c(3, 7, 14, 28)
+#' trajectories <- sim_markov(
+#'   "actt2",
+#'   n_patients = 200,
+#'   times = visit_days,
+#'   seed = 1
 #' )
 #'
-#' # --- Scenario 2: Bootstrap Inference ---
-#' avg_boot <- avg_sops(
-#'   model,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:30
-#' ) |>
-#'   inferences(method = "bootstrap", n_draws = 100)
-#' boot_effects <- time_in_state(avg_boot, target_states = 1)
-#' }
+#' # Number the visits 1 to 4 and fit a separate effect for each visit
+#' trajectories$visit <- factor(match(trajectories$time, visit_days))
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + visit + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   time_var = "visit",
+#'   first_followup_time = "1",
+#'   absorb = "8"
+#' )
+#'
+#' # The day of each visit
+#' day_of_visit <- c("1" = 3, "2" = 7, "3" = 14, "4" = 28)
+#'
+#' # Average SOPs at the four visits under control and under treatment, with
+#' # delta-method standard errors
+#' visit_sops <- inferences(
+#'   avg_sops(fit, variables = list(tx = c(0, 1)), times = factor(1:4)),
+#'   method = "delta"
+#' )
+#'
+#' # Expected days outside hospital (states 1 and 2) from day 0 to day 28:
+#' # the area under the SOP curve, with the visits joined by straight lines
+#' time_in_state(visit_sops, state_sets = c("1", "2"), time_map = day_of_visit)
+#'
+#' # Without time_map, each visit counts as one unit of time
+#' time_in_state(visit_sops, state_sets = c("1", "2"))
+#'
+#' # The same total for three patients, from the array of soprob_markov()
+#' patients <- model_data[model_data$visit == "1", ][1:3, ]
+#' patient_sops <- soprob_markov(fit, newdata = patients, times = factor(1:4))
+#' time_in_state(patient_sops, state_sets = c("1", "2"))
 #'
 #' @keywords time-in-state auc bootstrap
 #' @seealso [avg_state_time()] for model-level average time estimates with analytical,
@@ -541,7 +564,7 @@ time_in_state_delta <- function(
 #' @export
 time_in_state <- function(
   x,
-  target_states = 1,
+  state_sets = 1,
   time_map = NULL,
   baseline_time = 0,
   target_times = NULL
@@ -583,7 +606,7 @@ time_in_state <- function(
     }
     return(time_in_state_tidy_inference(
       sops,
-      target_states,
+      state_sets,
       real_time = TRUE
     ))
   }
@@ -607,7 +630,7 @@ time_in_state <- function(
     if (time_in_state_is_delta(sops)) {
       return(time_in_state_delta(
         sops,
-        target_states,
+        state_sets,
         time_map = time_map,
         baseline_time = baseline_time,
         target_times = target_times
@@ -631,14 +654,14 @@ time_in_state <- function(
       )
       return(time_in_state_tidy_inference(
         interpolated,
-        target_states,
+        state_sets,
         real_time = TRUE,
         source = sops
       ))
     }
     return(time_in_state_tidy_inference(
       sops,
-      target_states,
+      state_sets,
       real_time = FALSE
     ))
   }
@@ -680,7 +703,7 @@ time_in_state <- function(
     state_names <- as.character(1:dims[state_dim])
   }
 
-  target_chars <- as.character(target_states)
+  target_chars <- as.character(state_sets)
   missing_states <- setdiff(target_chars, state_names)
   if (length(missing_states) > 0) {
     mostr_abort(paste(

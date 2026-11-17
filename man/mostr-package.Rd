@@ -160,8 +160,6 @@ between the two days.
 model, either from a model of a published trial (the presets
 \link{actt1_preset}, \link{actt2_preset} and \link{violet_preset}) or from a model you
 describe.
-\item \link{violet_baseline} holds the starting states, ages and SOFA scores of the
-VIOLET trial patients, from which \code{sim_markov("violet")} samples.
 }
 }
 
@@ -177,8 +175,6 @@ standard errors allow for correlation between the transitions of one
 patient.
 \item \code{\link[=robcov_vglm]{robcov_vglm()}} computes such a covariance matrix for a \code{\link[VGAM:vglm]{VGAM::vglm()}}
 fit; \code{engine = "vglm"} returns its result.
-\item \code{\link[=compare_se_orm_vglm]{compare_se_orm_vglm()}} lists the standard errors of an \code{\link[rms:orm]{rms::orm()}} fit
-and a \code{\link[VGAM:vglm]{VGAM::vglm()}} fit of the same model side by side.
 \item \code{\link[=set_coef]{set_coef()}} replaces the coefficients of a fitted model.
 \item \code{\link[=get_effective_coefs]{get_effective_coefs()}} returns the coefficients as a matrix with one row
 per threshold between states.

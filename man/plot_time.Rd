@@ -6,7 +6,7 @@
 \usage{
 plot_time(
   x,
-  type = c("bar", "pointrange"),
+  geom = c("bar", "pointrange"),
   group_var = NULL,
   facet_var = NULL,
   scale = c("time", "proportion"),
@@ -22,12 +22,12 @@ plot_time(
 \item{x}{A \code{markov_avg_state_time} object returned by \code{\link[=avg_state_time]{avg_state_time()}}, optionally
 after \code{\link[=inferences]{inferences()}}.}
 
-\item{type}{Character string. The kind of plot:
+\item{geom}{Character string. The kind of plot:
 \itemize{
 \item \code{"bar"} (the default): one horizontal bar per scenario, split into
 the average time in each state set ("Grotta bars"). Use it to show
 how follow-up is shared between states. Confidence intervals cannot
-be shown on stacked segments, so this type ignores them.
+be shown on stacked segments, so this chart ignores them.
 \item \code{"pointrange"}: states along the x axis, with one point per
 scenario and a vertical confidence interval when \code{x} has \code{conf.low}
 and \code{conf.high}. Scenarios are drawn in black and successively
@@ -37,8 +37,8 @@ uncertainty of each average.
 
 \item{group_var}{Character vector or \code{NULL}. Columns that identify the
 scenarios being compared, for example the treatment variable set by
-\code{variables}. They label the bars (\code{type = "bar"}) or set the point colors
-(\code{type = "pointrange"}). If \code{NULL}, every column other than \code{state_set},
+\code{variables}. They label the bars (\code{geom = "bar"}) or set the point colors
+(\code{geom = "pointrange"}). If \code{NULL}, every column other than \code{state_set},
 the estimates, and those in \code{facet_var} is used. Several columns are
 combined into one label.}
 
@@ -51,18 +51,18 @@ the units of \code{x}. \code{"proportion"} divides each average by the scenario'
 total follow-up, so a bar spans 0 to 1. \code{"proportion"} requires every
 state to belong to exactly one state set.}
 
-\item{show_labels}{Logical. For \code{type = "bar"}, print each segment's value
+\item{show_labels}{Logical. For \code{geom = "bar"}, print each segment's value
 inside it. Segments shorter than 6\% of the longest bar are left unlabeled
 because the label would not fit.}
 
 \item{digits}{Number of decimal places for segment labels.}
 
-\item{show_uncertainty}{Logical. For \code{type = "pointrange"}, draw confidence
+\item{show_uncertainty}{Logical. For \code{geom = "pointrange"}, draw confidence
 intervals when \code{conf.low} and \code{conf.high} exist.}
 
-\item{bar_width}{Numeric bar thickness for \code{type = "bar"}.}
+\item{bar_width}{Numeric bar thickness for \code{geom = "bar"}.}
 
-\item{point_size}{Numeric point size for \code{type = "pointrange"}.}
+\item{point_size}{Numeric point size for \code{geom = "pointrange"}.}
 
 \item{line_width}{Numeric line width for interval lines.}
 }
@@ -76,7 +76,7 @@ with confidence intervals.
 }
 \details{
 A stacked bar only makes sense when no state is counted twice. With
-\code{type = "bar"}, the state sets in \code{x} must therefore not overlap, which
+\code{geom = "bar"}, the state sets in \code{x} must therefore not overlap, which
 holds for the default \code{state_sets = NULL} of \code{\link[=avg_state_time]{avg_state_time()}} (every state
 separately). When the sets also include every state, each bar's length is
 the total follow-up: the number of visits, or the elapsed time covered when
@@ -86,19 +86,28 @@ To compare scenarios with a confidence interval for the difference, use
 \code{avg_comparisons(estimand = "time_in_state")} and \code{\link[=plot_comparisons]{plot_comparisons()}}.
 }
 \examples{
-\dontrun{
-tis <- avg_state_time(
-  fit,
-  variables = list(tx = c(0, 1)),
-  times = 1:28
-) |>
-  inferences(method = "delta")
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+fit <- mostm(
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
+  id_var = "id",
+  absorb = "8"
+)
 
-# How the 28 days are divided between states in each arm
-plot_time(tis)
+# Expected days in each state over days 1 to 14, with all patients under
+# control and then all under treatment
+days <- inferences(
+  avg_state_time(fit, variables = list(tx = c(0, 1)), times = 1:14),
+  method = "delta"
+)
 
-# Average days in each state with 95\% confidence intervals
-plot_time(tis, type = "pointrange")
-}
+# How the 14 days are divided between the states in each arm
+plot_time(days)
+
+# Expected days in each state with 95\% confidence intervals
+plot_time(days, geom = "pointrange")
 
 }

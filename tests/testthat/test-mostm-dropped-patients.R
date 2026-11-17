@@ -4,7 +4,7 @@
 # estimate does.
 
 dropped_patients_data <- function() {
-  data <- make_test_data(n_patients = 80, follow_up_time = 6, seed = 9461)
+  data <- make_test_data(n_patients = 80, times = 1:6, seed = 9461)
   ids <- unique(data$id)
   set.seed(4127)
   ages <- stats::setNames(round(stats::rnorm(length(ids), 60, 10)), ids)

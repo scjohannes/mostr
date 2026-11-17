@@ -3,15 +3,15 @@ make_null_test_model <- function() {
   withr::local_seed(4417)
   data <- make_markov_trajectories(
     n_patients = 80,
-    follow_up_time = 4,
+    times = 1:4,
     n_states = 3,
     thresholds = c(-1, 1),
     allowed_start_state = 1:2,
-    absorbing_state = 3,
+    absorb = 3,
     treatment_effect = 0.3,
     seed = 4417
   ) |>
-    prepare_markov_data(absorbing_state = 3)
+    prepare_markov_data(absorb = 3)
   mostm(
     ordered(y) ~ time + tx + yprev,
     family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),

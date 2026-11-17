@@ -7,7 +7,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
 
   data <- make_test_data(
     n_patients = 100,
-    follow_up_time = follow_up,
+    times = seq_len(follow_up),
     seed = 12345,
     treatment_effect = 0
   ) |>
@@ -69,7 +69,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - single p
 
   data <- make_test_data(
     n_patients = 100,
-    follow_up_time = follow_up,
+    times = seq_len(follow_up),
     seed = 12345,
     treatment_effect = 0
   ) |>
@@ -132,7 +132,7 @@ test_that("soprobMarkovOrdm and soprob_markov yield identical results - all pati
 
   data <- make_test_data(
     n_patients = 50, # Use smaller sample for full comparison
-    follow_up_time = follow_up,
+    times = seq_len(follow_up),
     seed = 12345,
     treatment_effect = 0
   ) |>
@@ -261,7 +261,7 @@ test_that("compiled plan matches markov_msm_build() and the R reference for PPO,
     data <- withr::with_seed(case$age_seed, {
       make_test_data(
         n_patients = case$n_patients,
-        follow_up_time = follow_up,
+        times = seq_len(follow_up),
         seed = 12345
       ) |>
         dplyr::group_by(id) |>

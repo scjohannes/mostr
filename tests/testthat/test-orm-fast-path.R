@@ -51,7 +51,7 @@ test_that("designs built one previous state at a time match sops() on every mode
 
   # orm with a spline-by-treatment interaction.
   orm_data <- add_test_age(
-    make_test_data(n_patients = 60, follow_up_time = 7, seed = 6101)
+    make_test_data(n_patients = 60, times = 1:7, seed = 6101)
   )
   orm_fit <- suppressWarnings(mostm(
     y ~ rms::rcs(time, 3) * tx + yprev + age,
@@ -69,14 +69,14 @@ test_that("designs built one previous state at a time match sops() on every mode
   # vglm with a spline of a numeric previous state.
   numeric_data <- make_markov_trajectories(
     n_patients = 100,
-    follow_up_time = 7,
+    times = 1:7,
     n_states = 10,
     thresholds = seq(-3, 3, length.out = 9),
     allowed_start_state = as.integer(2:9),
-    absorbing_state = 10,
+    absorb = 10,
     seed = 4242
   ) |>
-    prepare_markov_data(absorbing_state = 10, factor_previous = FALSE)
+    prepare_markov_data(absorb = 10, factor_previous = FALSE)
   expect_type(numeric_data$yprev, "double")
   cases[[length(cases) + 1L]] <- list(
     label = "vglm, rcs(yprev) of a numeric previous state",
@@ -95,13 +95,13 @@ test_that("designs built one previous state at a time match sops() on every mode
   # vglm with an inline rcs(time) spline.
   spline_data <- make_markov_trajectories(
     n_patients = 70,
-    follow_up_time = 8,
+    times = 1:8,
     treatment_prob = 0.5,
-    absorbing_state = 6,
+    absorb = 6,
     seed = 4041,
     treatment_effect = 0.18
   ) |>
-    prepare_markov_data()
+    prepare_markov_data(absorb = 6)
   spline_data$age <- 45 + ((spline_data$id * 11) %% 31)
   spline_profiles <- spline_data[spline_data$time == 1, , drop = FALSE][1:12, ]
   cases[[length(cases) + 1L]] <- list(
@@ -230,7 +230,7 @@ test_that("orm SOPs report a state count that differs from the fit and a missing
   skip_on_cran()
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6111)
+  data <- make_test_data(n_patients = 45, times = 1:6, seed = 6111)
   data <- add_test_age(data)
   # Death, state 6, is left out of `absorb` on purpose, so `mostm()` warns
   # and prediction then has no transitions out of it to work with.
@@ -269,7 +269,7 @@ test_that("orm SOPs report a state count that differs from the fit and a missing
 test_that("execution-plan budgets bound all retained first-order designs", {
   skip_if_not_installed("rms")
 
-  data <- make_test_data(n_patients = 40, follow_up_time = 6, seed = 6112)
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6112)
   data <- add_test_age(data)
   fit <- suppressWarnings(mostm(
     y ~ time + tx + yprev + age,
@@ -326,12 +326,12 @@ test_that("orm fast path agrees with predict.orm for numeric previous state", {
 
   data <- make_markov_trajectories(
     n_patients = 70,
-    follow_up_time = 7,
+    times = 1:7,
     seed = 6102,
-    absorbing_state = 6
+    absorb = 6
   ) |>
     mostr::prepare_markov_data(
-      absorbing_state = 6,
+      absorb = 6,
       factor_previous = FALSE
     )
 
@@ -356,7 +356,7 @@ test_that("orm scale=TRUE agrees with default scale in SOP workflows", {
   skip_if_not_installed("rms")
   skip_if_not_installed("mvtnorm")
 
-  data <- make_test_data(n_patients = 45, follow_up_time = 6, seed = 6105)
+  data <- make_test_data(n_patients = 45, times = 1:6, seed = 6105)
   data <- add_test_age(data)
 
   fit_default <- mostm(
@@ -455,7 +455,7 @@ test_that("orm checks the size of an MVN covariance matrix", {
   skip_if_not_installed("rms")
   skip_if_not_installed("mvtnorm")
 
-  data <- make_test_data(n_patients = 55, follow_up_time = 6, seed = 6103)
+  data <- make_test_data(n_patients = 55, times = 1:6, seed = 6103)
   data <- add_test_age(data)
 
   fit <- mostm(
@@ -492,7 +492,7 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
   data <- sim_markov("actt2", n_patients = 200, seed = 1)
   first_data <- prepare_markov_data(
     data,
-    absorbing_state = 8,
+    absorb = 8,
     ordered_response = FALSE
   )
   first_fit <- mostm(
@@ -506,7 +506,7 @@ test_that("orm SOPs and design matrices do not require the outcome column in new
   })
   second_data <- prepare_markov_data(
     data,
-    absorbing_state = 8,
+    absorb = 8,
     ordered_response = FALSE
   )
   second_data$ypprev <- factor(second_data$ypprev)

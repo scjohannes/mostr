@@ -127,8 +127,6 @@
 #'   model, either from a model of a published trial (the presets
 #'   [actt1_preset], [actt2_preset] and [violet_preset]) or from a model you
 #'   describe.
-#' * [violet_baseline] holds the starting states, ages and SOFA scores of the
-#'   VIOLET trial patients, from which `sim_markov("violet")` samples.
 #'
 #' @section Work with model coefficients and standard errors:
 #' These functions are used inside [inferences()] and are exported for users
@@ -141,8 +139,6 @@
 #'   patient.
 #' * [robcov_vglm()] computes such a covariance matrix for a [VGAM::vglm()]
 #'   fit; `engine = "vglm"` returns its result.
-#' * [compare_se_orm_vglm()] lists the standard errors of an [rms::orm()] fit
-#'   and a [VGAM::vglm()] fit of the same model side by side.
 #' * [set_coef()] replaces the coefficients of a fitted model.
 #' * [get_effective_coefs()] returns the coefficients as a matrix with one row
 #'   per threshold between states.

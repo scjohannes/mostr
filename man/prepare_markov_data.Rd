@@ -6,36 +6,48 @@
 \usage{
 prepare_markov_data(
   data,
-  absorbing_state = 6,
+  absorb,
   ordered_response = TRUE,
-  factor_previous = TRUE
+  factor_previous = TRUE,
+  y_var = "y",
+  p_var = "yprev"
 )
 }
 \arguments{
-\item{data}{A data frame containing Markov trajectory data with columns
-\code{y} (current state) and \code{yprev} (previous state).}
+\item{data}{A data frame containing Markov trajectory data, with a column
+for the current state (\code{y_var}) and one for the previous state (\code{p_var}).}
 
-\item{absorbing_state}{Integer or integer vector. The absorbing state(s) to
-filter out (default: 6 for death). Observations where \code{yprev} equals any of
-these values are removed. Can be a single value (e.g., 6) or a vector of
-multiple absorbing states (e.g., c(1, 6) for both home discharge and death).}
+\item{absorb}{Required. The absorbing state or states, such as death, that
+a patient never leaves. Rows whose previous state is one of them are
+removed. Give one state (\code{absorb = 6}), several (\code{absorb = c(1, 6)} for
+both discharge home and death), or \code{NULL} to keep every row when the data
+have no absorbing state. There is no default because the absorbing states
+depend on the data: a default of \code{6} would silently remove rows from data
+in which state 6 is not death. Give the same states to
+\code{mostm(absorb = )}.}
 
-\item{ordered_response}{Logical. Should \code{y} be converted to ordered factor?
-(default: TRUE). Required for vglm, not required for orm.}
+\item{ordered_response}{Logical. Should the current state be converted to an
+ordered factor? (default: TRUE). Required for vglm, not required for orm.}
 
-\item{factor_previous}{Logical. Should \code{yprev} be converted to factor?
-Defaults to TRUE for backward compatibility and categorical previous-state
-effects. Set to FALSE when modeling the previous state linearly or with
-nonlinear numeric terms such as \code{rms::rcs(yprev, 6)}.}
+\item{factor_previous}{Logical. Should the previous state be converted to a
+factor? Defaults to TRUE for categorical previous-state effects. Set to
+FALSE when modeling the previous state linearly or with nonlinear numeric
+terms such as \code{rms::rcs(yprev, 6)}.}
+
+\item{y_var}{Name of the column with the current state (default \code{"y"}).}
+
+\item{p_var}{Name of the column with the previous state (default
+\code{"yprev"}), as in \code{\link[=mostm]{mostm()}}.}
 }
 \value{
-A data frame with modified \code{y} and \code{yprev} columns and absorbing
-states removed.
+\code{data} with the rows after an absorbing state removed and the
+\code{y_var} and \code{p_var} columns converted as requested.
 }
 \description{
 Prepares longitudinal Markov trajectory data for proportional odds regression
-by removing absorbing states and converting variables to appropriate types.
-The result can be fitted with \code{\link[=mostm]{mostm()}} and any of its engines.
+by removing the rows after an absorbing state and converting the state
+columns to appropriate types. The result can be fitted with \code{\link[=mostm]{mostm()}} and
+any of its engines.
 }
 \details{
 This is a convenience function that performs standard data preparation for
@@ -55,36 +67,45 @@ formula). The \code{"orm"} and \code{"blrm"} engines also accept an integer resp
 
 \strong{Multiple absorbing states}: When modeling scenarios with multiple absorbing
 states (e.g., discharge home and death), specify them as a vector. For example,
-\code{absorbing_state = c(1, 6)} will remove all transitions from either state 1
+\code{absorb = c(1, 6)} will remove all transitions from either state 1
 (home) or state 6 (death).
 }
 \examples{
-\dontrun{
-# Prepare data with single absorbing state (death only)
-model_data <- prepare_markov_data(trajectories, absorbing_state = 6)
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8 is death. sim_markov()
+# keeps the rows after death, with state 8 on every later day.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
 
-# Prepare data with multiple absorbing states (home and death)
-model_data <- prepare_markov_data(trajectories, absorbing_state = c(1, 6))
+# Death is absorbing: remove the rows that start in state 8
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+c(before = nrow(trajectories), after = nrow(model_data))
+str(model_data)
 
-# Fit a proportional-odds transition model with the default orm engine
+# Fit a transition model to the prepared data
 fit <- mostm(
-  y ~ tx + rms::rcs(time, 4) + yprev,
-  data = model_data,
-  id_var = "id"
-)
-
-# Keep yprev numeric to use one linear or nonlinear previous-state effect
-model_data <- prepare_markov_data(
-  trajectories,
-  absorbing_state = 6,
-  factor_previous = FALSE
-)
-fit <- mostm(
-  ordered(y) ~ tx + rms::rcs(time, 4) + rms::rcs(yprev, 6),
+  y ~ yprev + rms::rcs(time, 3) + tx,
   data = model_data,
   id_var = "id",
-  engine = "vglm"
+  absorb = "8"
 )
-}
+
+# Keep the previous state numeric, for one linear previous-state effect
+# instead of one coefficient per state
+numeric_data <- prepare_markov_data(
+  trajectories,
+  absorb = 8,
+  factor_previous = FALSE
+)
+fit_linear <- mostm(
+  y ~ yprev + rms::rcs(time, 3) + tx,
+  data = numeric_data,
+  id_var = "id",
+  absorb = "8"
+)
+
+# Several absorbing states: also treat leaving hospital (states 1 and 2)
+# as final, as in an analysis of time to discharge
+discharge_data <- prepare_markov_data(trajectories, absorb = c(1, 2, 8))
+nrow(discharge_data)
 
 }

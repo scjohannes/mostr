@@ -48,7 +48,7 @@ library(mostr)
 trial <- sim_markov(
   "actt2",
   n_patients = 250,
-  follow_up_time = 28,
+  times = 1:28,
   treatment_effect = log(0.7),
   seed = 2026
 )
@@ -66,7 +66,7 @@ information about transitions, and turns `y` and `yprev` into factors so that
 each previous state gets its own coefficient.
 
 ```{r prepare}
-model_data <- prepare_markov_data(trial, absorbing_state = 8)
+model_data <- prepare_markov_data(trial, absorb = 8)
 ```
 
 ## Fit a transition model

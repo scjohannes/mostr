@@ -37,7 +37,9 @@ starting profiles stored by \code{\link[=mostm]{mostm()}}, one per fitted patien
 as \code{list(tx = c(0, 1))}, or bare names, such as \code{"tx"}, whose values are
 chosen as in \code{\link[=avg_sops]{avg_sops()}}. Each profile is predicted once for every
 combination of the values. The default, \code{NULL}, uses each profile's own
-covariates.}
+covariates. The model's time column and its \code{gap_var} column cannot be
+set: they are set at each visit from \code{times}, and \code{time_map} gives the
+elapsed time of each visit.}
 
 \item{state_sets}{States to summarize. \code{NULL} returns every state separately.
 A vector pools its states into one total; a named list returns one total
@@ -218,16 +220,31 @@ from \code{newdata} first.
 }
 
 \examples{
-\dontrun{
-# Each patient's expected days at home under control and under treatment.
-state_time(
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+fit <- mostm(
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
+  id_var = "id",
+  absorb = "8"
+)
+
+# The first visit of three patients, with different starting states
+patients <- model_data[model_data$time == 1, ][1:3, ]
+
+# Each patient's expected days outside hospital over days 1 to 14 under
+# control and under treatment, with confidence intervals from the delta
+# method
+days_home <- state_time(
   fit,
+  newdata = patients,
   variables = list(tx = c(0, 1)),
-  state_sets = list(home = "1"),
-  times = 1:30
-) |>
-  inferences(method = "delta")
-}
+  state_sets = list(home = c("1", "2")),
+  times = 1:14
+)
+inferences(days_home, method = "delta")
 
 }
 \seealso{

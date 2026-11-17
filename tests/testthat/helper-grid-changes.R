@@ -244,7 +244,7 @@ check_unused_column <- function(cell) {
   )
   totals <- time_in_state(
     do.call(sops, c(list(fit), args)),
-    target_states = "1",
+    state_sets = "1",
     time_map = time_map
   )
   expect_identical(nrow(totals), 120L, label = label)

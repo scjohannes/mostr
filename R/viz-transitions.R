@@ -27,7 +27,11 @@
 #'   one prediction row per ID.
 #' @param variables Optional named list with one counterfactual variable. For
 #'   `comparison = "difference"`, at least two values are required and the
-#'   first value is the reference.
+#'   first value is the reference. The variable cannot be the model's time
+#'   column or its `gap_var` column (the time since the previous visit): the
+#'   plot sets both at each visit from `times`, so a value given here would
+#'   have no effect. Choose the visits with `times` instead. The previous-state
+#'   column is allowed; its values set the state each patient starts from.
 #' @param times Optional current-time values to plot. Required for model-based
 #'   plots.
 #' @param y_levels The states in order. For a fitted model, `NULL` (the
@@ -69,16 +73,30 @@
 #' @return A ggplot object.
 #'
 #' @examples
-#' \dontrun{
-#' plot_transitions(data, time_var = "week", p_var = "yprev")
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
 #'
+#' # Observed share of patients moving from each state to each state, on the
+#' # first three days
+#' plot_transitions(model_data[model_data$time <= 3, ])
+#'
+#' # Treatment minus control in the transition probabilities from the model
+#' # on days 1 to 3, averaged over the fitted patients
 #' plot_transitions(
 #'   fit,
-#'   times = 1:7,
+#'   times = 1:3,
 #'   variables = list(tx = c(0, 1)),
 #'   comparison = "difference"
 #' )
-#' }
+#'
 #' @export
 plot_transitions <- function(
   x,

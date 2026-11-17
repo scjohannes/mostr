@@ -5,7 +5,7 @@ delta_avg_time_case <- local({
     skip_if_not_installed("rms")
     key <- as.character(factor_time)
     if (is.null(cases[[key]])) {
-      data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 9461)
+      data <- make_test_data(n_patients = 35, times = 1:6, seed = 9461)
       if (factor_time) {
         data$time <- factor(data$time)
       }
@@ -247,7 +247,7 @@ test_that("unconditional observed-cohort times agree with patient-weight refits"
         )
         total <- time_in_state(
           individual,
-          target_states = c("1", "2"),
+          state_sets = c("1", "2"),
           time_map = case$time_map,
           target_times = 0:14
         )
@@ -286,7 +286,7 @@ test_that("average-time analytical inference preserves restrictions and row alig
   expect_snapshot(inferences(grouped, method = "delta"), error = TRUE)
 })
 
-starting_state_manual_time <- function(case, state, target_states, target_times) {
+starting_state_manual_time <- function(case, state, state_sets, target_times) {
   baseline <- attr(
     avg_sops(case$fit, times = case$times),
     "newdata_pred"
@@ -299,7 +299,7 @@ starting_state_manual_time <- function(case, state, target_states, target_times)
   )
   mean(time_in_state(
     individual,
-    target_states = target_states,
+    state_sets = state_sets,
     time_map = case$time_map,
     target_times = target_times
   )$total_time)
@@ -453,7 +453,7 @@ test_that("time_in_state() on delta SOPs keeps the uncertainty avg_state_time() 
       times = case$times
     ) |>
       inferences(method = "delta", vcov = variance)
-    total <- time_in_state(sop, target_states = c("1", "2"))
+    total <- time_in_state(sop, state_sets = c("1", "2"))
     direct <- avg_state_time(
       case$fit,
       variables = variables,
@@ -488,7 +488,7 @@ test_that("time_in_state() keeps delta uncertainty on the real-time scale", {
         inferences(method = "delta", vcov = variance)
       total <- time_in_state(
         sop,
-        target_states = c("1", "2"),
+        state_sets = c("1", "2"),
         time_map = case$time_map,
         target_times = target_times
       )
@@ -524,7 +524,7 @@ test_that("time_in_state() on per-profile delta SOPs matches state_time()", {
   for (time_map in list(NULL, case$time_map)) {
     total <- time_in_state(
       sop,
-      target_states = c("1", "2"),
+      state_sets = c("1", "2"),
       time_map = time_map
     )
     direct <- state_time(
@@ -551,7 +551,7 @@ test_that("time_in_state() on per-profile delta SOPs matches state_time()", {
     interpolate_sops(sop, time_map = case$time_map)
   )
   expect_error(
-    time_in_state(interpolated, target_states = "1"),
+    time_in_state(interpolated, state_sets = "1"),
     "already interpolated",
     class = "mostr_error"
   )
@@ -559,7 +559,7 @@ test_that("time_in_state() on per-profile delta SOPs matches state_time()", {
   # probabilities, which the stored derivatives do not describe.
   kept <- sop[as.character(sop$state) %in% c("1", "2"), , drop = FALSE]
   expect_error(
-    time_in_state(kept, target_states = "1", time_map = case$time_map),
+    time_in_state(kept, state_sets = "1", time_map = case$time_map),
     "all states",
     class = "mostr_error"
   )
@@ -582,8 +582,8 @@ test_that("time_in_state() follows the latest inferences() run, not an earlier d
   expect_equal(rerun$conf.low, fresh$conf.low)
   expect_null(attr(rerun, "analytical", exact = TRUE))
 
-  total_fresh <- time_in_state(fresh, target_states = c("1", "2"))
-  total_rerun <- time_in_state(rerun, target_states = c("1", "2"))
+  total_fresh <- time_in_state(fresh, state_sets = c("1", "2"))
+  total_rerun <- time_in_state(rerun, state_sets = c("1", "2"))
   expect_equal(total_rerun$conf.low, total_fresh$conf.low)
   expect_equal(total_rerun$conf.high, total_fresh$conf.high)
   expect_equal(names(total_rerun), names(total_fresh))
@@ -607,7 +607,7 @@ test_that("time_in_state() follows a delta inferences() run after an mvn one", {
   expect_equal(rerun$std.error, fresh$std.error)
   expect_equal(rerun$conf.low, fresh$conf.low)
 
-  total_fresh <- time_in_state(fresh, target_states = c("1", "2"))
-  total_rerun <- time_in_state(rerun, target_states = c("1", "2"))
+  total_fresh <- time_in_state(fresh, state_sets = c("1", "2"))
+  total_rerun <- time_in_state(rerun, state_sets = c("1", "2"))
   expect_equal(total_rerun, total_fresh)
 })

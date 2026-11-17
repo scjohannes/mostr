@@ -116,8 +116,8 @@ test_that("bootstrap_model_coefs() relabels only the response and yprev", {
     engine = "vglm"
   )
   local_mocked_bindings(fast_group_bootstrap = resample_never_absorbed(data))
-  as_factor <- bootstrap_model_coefs(fit, n_boot = 1)
-  as_number <- bootstrap_model_coefs(case$model, n_boot = 1)
+  as_factor <- bootstrap_model_coefs(fit, n_draws = 1)
+  as_number <- bootstrap_model_coefs(case$model, n_draws = 1)
   expect_equal(as_factor$tx1, as_number$tx, tolerance = 1e-8)
   # One threshold is left of the original two.
   expect_true(is.finite(as_factor[["(Intercept)"]]))
@@ -131,7 +131,7 @@ test_that("bootstrap_model_coefs() relabels only the response and yprev", {
 test_that("bootstrap_model_coefs() drops absent states from a renamed previous-state column", {
   skip_on_cran()
   skip_if_not_installed("rms")
-  data <- make_test_data(n_patients = 120, follow_up_time = 6, seed = 9461)
+  data <- make_test_data(n_patients = 120, times = 1:6, seed = 9461)
   data$yprev <- factor(data$yprev)
   renamed <- data
   names(renamed)[names(renamed) == "yprev"] <- "prev_state"
@@ -160,9 +160,9 @@ test_that("bootstrap_model_coefs() drops absent states from a renamed previous-s
       )
     }
   )
-  with_yprev <- bootstrap_model_coefs(fit_yprev, n_boot = 1)
+  with_yprev <- bootstrap_model_coefs(fit_yprev, n_draws = 1)
   expect_no_warning(
-    with_renamed <- bootstrap_model_coefs(fit_renamed, n_boot = 1)
+    with_renamed <- bootstrap_model_coefs(fit_renamed, n_draws = 1)
   )
   expect_equal(
     unname(unlist(with_renamed)),

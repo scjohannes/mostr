@@ -172,7 +172,7 @@ test_that("the prediction functions refuse the settings that the fit records", {
         c(
           list(
             first,
-            profile = profiles[1, , drop = FALSE],
+            newdata = profiles[1, , drop = FALSE],
             variables = list(tx = c(0, 1)),
             times = 1:4
           ),
@@ -417,7 +417,7 @@ test_that("`mostm()` checks that `gap_var` is the time since the previous row", 
 # at the first prediction.
 test_that("`mostm()` refuses a default `p_var` that is not a column of `data`", {
   skip_if_not_installed("rms")
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 9461)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 9461)
   names(data)[names(data) == "yprev"] <- "prev_state"
   expect_error(
     mostm(y ~ time + tx + prev_state, data = data, id_var = "id", absorb = 6),

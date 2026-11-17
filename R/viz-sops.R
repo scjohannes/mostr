@@ -60,25 +60,31 @@
 #' linetype combination.
 #'
 #' @examples
-#' \dontrun{
-#' # After simulating trajectories
-#' trajectories <- sim_markov("violet", n_patients = 200, seed = 1)
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
 #'
-#' # Basic line plot
+#' # Observed share of patients in each state on each day, one panel per arm
 #' plot_sops(trajectories)
 #'
-#' # Stacked bar plot with faceting by treatment
+#' # The same as stacked bars
 #' plot_sops(trajectories, geom = "bar")
 #'
-#' # Line plot with linetype by treatment (no faceting)
-#' plot_sops(trajectories, geom = "line", facet_var = NULL, linetype_var = "tx")
+#' # Probabilities from the model, with all patients under control and then
+#' # all under treatment, and confidence bands from the delta method
+#' sops_by_arm <- inferences(
+#'   avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:14),
+#'   method = "delta"
+#' )
+#' plot_sops(sops_by_arm)
 #'
-#' # Facet by one variable, linetype by another
-#' plot_sops(trajectories, facet_var = "site", linetype_var = "tx", geom = "line")
-#'
-#' # Customize variable names
-#' plot_sops(trajectories, time_var = "day", y_var = "state", facet_var = "treatment")
-#' }
 #' @importFrom ggplot2 ggplot aes geom_bar geom_col geom_line geom_ribbon
 #' @importFrom ggplot2 facet_grid facet_wrap vars labs scale_color_viridis_d
 #' @importFrom ggplot2 scale_fill_viridis_d

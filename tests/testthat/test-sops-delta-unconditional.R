@@ -5,7 +5,7 @@ local_delta_vglm_fit <- local({
     if (is.null(fit)) {
       data <- make_test_data(
         n_patients = 35,
-        follow_up_time = 6,
+        times = 1:6,
         seed = 2401
       )
       fit <<- mostm(
@@ -28,7 +28,7 @@ local_delta_orm_fit <- local({
     if (is.null(fit)) {
       data <- make_test_data(
         n_patients = 35,
-        follow_up_time = 6,
+        times = 1:6,
         seed = 2402
       )
       fit <<- mostm(
@@ -45,7 +45,7 @@ local_delta_orm_fit <- local({
 test_that("explicit zero ORM penalties preserve unpenalized inference", {
   skip_on_cran()
   skip_if_not_installed("rms")
-  data <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 2402)
+  data <- make_test_data(n_patients = 35, times = 1:6, seed = 2402)
   reference <- local_delta_orm_fit()
   infer <- function(model, covariance) {
     avg <- avg_sops(
@@ -555,7 +555,7 @@ test_that("unconditional score machinery rejects partial proportional odds", {
   skip_if_not_installed("VGAM")
   data <- make_test_data(
     n_patients = 35,
-    follow_up_time = 6,
+    times = 1:6,
     seed = 2403
   )
   fit <- mostm(
@@ -709,7 +709,7 @@ test_that("stacked influence rejects patients missing from profiles or scores", 
 test_that("unconditional delta standard errors ignore later changes to the user's data frame", {
   skip_on_cran()
   skip_if_not_installed("rms")
-  d <- make_test_data(n_patients = 35, follow_up_time = 6, seed = 2402)
+  d <- make_test_data(n_patients = 35, times = 1:6, seed = 2402)
   fit <- mostm(
     ordered(y) ~ time + tx + yprev,
     data = d,
@@ -769,4 +769,99 @@ test_that("stacked influence gives standard errors without a cells-by-cells cova
     sqrt(diag(stats::cov(result$influence)) / nrow(values)),
     ignore_attr = TRUE
   )
+})
+
+# Written before the fix as a known bug: delta_validate_named_matrix() checked
+# positive definiteness on the raw scale, so a bread whose eigenvalues spread
+# over many orders of magnitude only because of a covariate's units was
+# refused. SOPs do not depend on a covariate's units, so neither may their
+# standard errors.
+test_that("unconditional standard errors do not depend on a covariate's units", {
+  skip_on_cran() # Refits two grid cells twice; the CRAN time budget is spent.
+  for (engine in c("orm", "vglm")) {
+    cell <- grid_cell(engine)
+    se <- function(fit) {
+      avg <- avg_sops(fit, variables = grid_treatments, times = 1:2)
+      inferences(avg, method = "delta", vcov = "unconditional")$std.error
+    }
+    expected <- se(grid_fit(cell))
+    for (k in c(1e6, 1e-6)) {
+      scaled <- grid_refit(cell, paste("age times", k), function(data) {
+        data$age <- data$age * k
+        data
+      })
+      expect_equal(
+        se(scaled),
+        expected,
+        tolerance = 1e-6,
+        info = paste(engine, "age times", k)
+      )
+    }
+  }
+})
+
+test_that("the unconditional bread is accepted or refused by the orm rule", {
+  # delta_validate_named_matrix(positive_definite = TRUE) checks the bread that
+  # the stacked influence function inverts. It must accept and refuse the same
+  # matrices as orm_model_bread(), whose correlation-scale rule is explained in
+  # markov_correlation_positive_definite().
+  coefficients <- c("y>=2" = 0.4, "y>=3" = -0.6, x = 0.3)
+  coefficient_names <- names(coefficients)
+  accepts <- function(engine, covariance) {
+    dimnames(covariance) <- list(coefficient_names, coefficient_names)
+    tryCatch(
+      {
+        if (engine == "orm") {
+          fit <- structure(
+            list(
+              coefficients = coefficients,
+              orig.var = covariance,
+              non.slopes = 2L
+            ),
+            class = "orm"
+          )
+          orm_model_bread(fit)
+        } else {
+          delta_validate_named_matrix(
+            covariance,
+            coefficient_names,
+            "model-based bread",
+            positive_definite = TRUE
+          )
+        }
+        TRUE
+      },
+      mostr_error = function(e) FALSE
+    )
+  }
+
+  # Unit variances; eigenvalues 2, 1 - 1e-11 and 1e-11.
+  rotation <- qr.Q(qr(matrix(c(1, 2, 3, 4, 5, 7, 2, 1, 9), 3)))
+  nearly_singular <- rotation %*% diag(c(2, 1 - 1e-11, 1e-11)) %*% t(rotation)
+  nearly_singular <- (nearly_singular + t(nearly_singular)) / 2
+  # A well-conditioned correlation matrix with standard errors 1e6, 1 and
+  # 1e-6, as when one covariate is in units a million times too small: the raw
+  # eigenvalues spread over 24 orders of magnitude, so the raw rule refused it.
+  correlation <- matrix(c(1, 0.5, 0.2, 0.5, 1, 0.3, 0.2, 0.3, 1), 3)
+  spread_scale <- diag(c(1e6, 1, 1e-6)) %*% correlation %*% diag(c(1e6, 1, 1e-6))
+  cases <- list(
+    nearly_singular = nearly_singular,
+    small_scale = diag(1e-16, 3),
+    spread_scale = spread_scale,
+    zero_variance = diag(c(1, 0, 1))
+  )
+  expected <- c(
+    nearly_singular = FALSE,
+    small_scale = TRUE,
+    spread_scale = TRUE,
+    zero_variance = FALSE
+  )
+  for (case in names(cases)) {
+    expect_identical(accepts("orm", cases[[case]]), expected[[case]], info = case)
+    expect_identical(
+      accepts("delta", cases[[case]]),
+      accepts("orm", cases[[case]]),
+      info = case
+    )
+  }
 })

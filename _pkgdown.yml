@@ -54,7 +54,6 @@ reference:
       - plot_correlation
       - plot_variogram
       - plot_lp_difference
-      - compare_se_orm_vglm
   - title: Simulate trajectories
     desc: >
       Simulate daily ordinal health states from models of published trials,
@@ -64,7 +63,6 @@ reference:
       - actt1_preset
       - actt2_preset
       - violet_preset
-      - violet_baseline
   - title: Bootstrap and coefficient utilities
     desc: >
       Lower-level tools used by `inferences()`: bootstrap the model

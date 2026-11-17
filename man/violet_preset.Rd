@@ -24,10 +24,16 @@ The output has columns \code{id}, \code{time}, \code{y}, \code{yprev}, \code{age
 }
 \details{
 \strong{Patients.} Each simulated patient's starting state (\code{yprev}), age, and
-SOFA (Sequential Organ Failure Assessment) score are drawn together, with
-replacement, from the 1,351 VIOLET patients summarized in
-\link{violet_baseline}. About 65\% of patients start in hospital (state 2) and
-35\% on a ventilator or with ARDS (state 3). Treatment (\code{tx = 1}) is
+SOFA (Sequential Organ Failure Assessment) score are drawn jointly, with
+replacement, from the combinations of these three characteristics among
+the 1,351 VIOLET patients. Drawing them together keeps their correlation:
+for example, patients who start on a ventilator tend to have higher SOFA
+scores. The VIOLET data are not public. The combinations, and how many
+patients had each, are recovered from \code{simlongord}, whose starting states,
+ages and SOFA scores Harrell resampled from the VIOLET patients; they
+reproduce every summary he published for these patients. About 65\% of
+patients start in hospital (state 2) and 35\% on a ventilator or with ARDS
+(state 3). Treatment (\code{tx = 1}) is
 assigned independently of these characteristics with probability
 \code{treatment_prob}; control patients have \code{tx = 0}. A \code{baseline_data} that
 you supply must contain the columns \code{id}, \code{yprev}, \code{age}, \code{sofa}, and \code{tx}.
@@ -115,6 +121,5 @@ Harrell FE Jr (2022). "Simulating a Large Clinical Trial From VIOLET."
 \url{https://hbiostat.org/data/repo/simlongord}
 }
 \seealso{
-\code{\link[=sim_markov]{sim_markov()}} to simulate, and \link{violet_baseline} for the VIOLET
-patients.
+\code{\link[=sim_markov]{sim_markov()}} to simulate.
 }

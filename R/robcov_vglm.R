@@ -5,11 +5,11 @@
 #' functionality for vglm models using the same HC1 and finite-cluster scalar
 #' corrections as the package-owned ORM sandwich.
 #'
-#' @param fit A fitted vglm object from the VGAM package.
+#' @param model A fitted vglm object from the VGAM package.
 #' @param cluster Optional vector of cluster identifiers. If provided, computes
 #'   cluster-robust standard errors. Must have the same length as the fitted
 #'   observations, or the same length as the original pre-NA data when the fitted
-#'   model records omitted rows in `fit@na.action`.
+#'   model records omitted rows in `model@na.action`.
 #' @param bread Character string selecting the sandwich bread. `"observed"`
 #'   (the default) numerically differentiates the summed analytic scores.
 #'   `"vglm"` uses the inverse final VGAM IRLS working information returned by
@@ -137,46 +137,42 @@
 #' weights, bread choice, and missing-data handling.
 #'
 #' @examples
-#' \dontrun{
-#' library(VGAM)
+#' # 100 simulated patients followed for 10 days, one row per patient and day
+#' trajectories <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
 #'
-#' # Fit a proportional odds model
-#' fit <- vglm(y ~ x1 + x2,
-#'             family = cumulative(parallel = TRUE, reverse = TRUE),
-#'             data = mydata)
-#'
-#' # Compute robust (unclustered) standard errors
-#' robust_vcov <- robcov_vglm(fit)
-#' robust_vcov$se
-#'
-#' # Compute cluster-robust standard errors, with n/(n-1) correction by default
-#' robust_vcov_cl <- robcov_vglm(fit, cluster = mydata$cluster_id)
-#' robust_vcov_cl$se
-#'
-#' # Without small-sample correction
-#' robust_vcov_noadj <- robcov_vglm(
-#'   fit,
-#'   cluster = mydata$cluster_id,
-#'   cadjust = FALSE
+#' # A proportional-odds transition model fitted directly with VGAM
+#' fit <- VGAM::vglm(
+#'   ordered(y) ~ yprev + time + tx,
+#'   family = VGAM::cumulative(parallel = TRUE, reverse = TRUE),
+#'   data = model_data
 #' )
-#' }
 #'
-#' @seealso \code{\link{compare_se_orm_vglm}} for comparing standard errors
-#'   between orm and vglm fits
+#' # Standard errors that allow for the correlation between the days of one
+#' # patient, with the n / (n - 1) correction for 100 patients
+#' robust <- robcov_vglm(fit, cluster = model_data$id)
+#'
+#' # Model-based and robust standard errors of the slopes
+#' slopes <- c("time", "tx")
+#' cbind(
+#'   model = sqrt(diag(stats::vcov(fit)))[slopes],
+#'   robust = robust$se[slopes]
+#' )
 #'
 #' @importFrom stats vcov nobs coef pnorm fitted residuals symnum
 #'
 #' @export
 robcov_vglm <- function(
-  fit,
+  model,
   cluster = NULL,
   bread = c("observed", "vglm"),
   type = c("HC0", "HC1"),
   cadjust = NULL
 ) {
-  if (!inherits(fit, "vglm")) {
-    mostr_abort("'fit' must be a vglm object")
+  if (!inherits(model, "vglm")) {
+    mostr_abort("`model` must be a vglm object.")
   }
+  fit <- model
 
   bread_type <- match.arg(bread)
   type <- match.arg(type)
@@ -772,7 +768,7 @@ vglm_score_evaluator <- function(fit) {
     score_sum
   }
 
-  list(evaluate = evaluate, beta = beta_hat)
+  list(evaluate = evaluate, beta = beta_hat, X_vlm = X_vlm)
 }
 
 
@@ -787,7 +783,23 @@ compute_observed_bread_vglm <- function(fit) {
     dimnames = list(names(beta), names(beta))
   )
 
-  initial_steps <- .Machine$double.eps^(1 / 3) * pmax(1, abs(beta))
+  # The step must follow the coefficient's units. The scores depend on beta
+  # only through the linear predictors, and 1 / max|X_vlm[, j]| is the change
+  # in beta_j that moves a linear predictor by at most 1, so it rescales with
+  # beta_j when the covariate's units change. A unit-free floor such as
+  # max(1, |beta_j|) does not: with age multiplied by 1e6 its coefficient was
+  # about 1e-8, the step of 6e-6 moved the linear predictors by up to 500
+  # (age up to 83e6), and the information came out not positive definite. For intercepts
+  # and 0/1 columns the scale is 1, so their steps are as before. A zero
+  # column has no scale; it gets 1, and the singular information it gives is
+  # refused below.
+  column_scale <- apply(abs(evaluator$X_vlm), 2L, max)
+  unit_step <- ifelse(
+    is.finite(column_scale) & column_scale > 0,
+    1 / column_scale,
+    1
+  )
+  initial_steps <- .Machine$double.eps^(1 / 3) * pmax(unit_step, abs(beta))
   max_step_reductions <- 12L
 
   for (j in seq_len(p)) {
@@ -836,9 +848,25 @@ compute_observed_bread_vglm <- function(fit) {
     jacobian[, j] <- derivative
   }
 
-  jacobian_scale <- max(1, max(abs(jacobian)))
-  jacobian_asymmetry <- max(abs(jacobian - t(jacobian))) / jacobian_scale
-  if (!is.finite(jacobian_asymmetry) || jacobian_asymmetry > 1e-5) {
+  # Each asymmetry J_ij - J_ji is measured against sqrt(|J_ii J_jj|), which
+  # changes with the coefficients' units exactly as J_ij does, so the check
+  # does not depend on covariate units; a scale of max(1, max|J|) would let
+  # the asymmetry of a coefficient on a small scale pass unseen and would be
+  # set by whichever coefficient has the largest units. A zero diagonal entry
+  # gives no scale, and the information it implies is not positive definite,
+  # so that case is left to the refusal below. On the vglm grid fits of the
+  # tests the asymmetry is 2e-11 to 5e-11, also with age multiplied by 1e-9
+  # or 1e9 (measured Nov 2026), over 1e5 times below the cut-off of 1e-5.
+  diagonal_scale <- sqrt(abs(diag(jacobian)))
+  jacobian_asymmetry <- if (all(diagonal_scale > 0)) {
+    max(abs(jacobian - t(jacobian)) / outer(diagonal_scale, diagonal_scale))
+  } else {
+    NA_real_
+  }
+  if (
+    !is.na(jacobian_asymmetry) &&
+      (!is.finite(jacobian_asymmetry) || jacobian_asymmetry > 1e-5)
+  ) {
     mostr_abort(
       "The numerical score Jacobian is materially asymmetric (relative ",
       "asymmetry ",
@@ -919,14 +947,17 @@ align_cluster_vglm <- function(fit, cluster, n) {
 #' @return Invisibly returns a list containing the coefficient table and
 #'   summary statistics.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' summary(robust_fit)
@@ -1018,14 +1049,17 @@ summary.robcov_vglm <- function(object, ...) {
 #'
 #' @return Invisibly returns the input object.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' print(robust_fit)
@@ -1074,14 +1108,17 @@ print.robcov_vglm <- function(x, ...) {
 #'
 #' @return Named numeric vector of coefficients.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' coef(robust_fit)
@@ -1102,14 +1139,17 @@ coef.robcov_vglm <- function(object, ...) {
 #'
 #' @return The robust variance-covariance matrix.
 #'
-#' @examplesIf rlang::is_installed("VGAM")
-#' trial <- sim_markov("actt2", n_patients = 40, follow_up_time = 6, seed = 1)
-#' markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+#' @examples
+#' # 100 simulated patients followed for 10 days; state 8, death, is
+#' # absorbing
+#' trial <- sim_markov("actt2", n_patients = 100, times = 1:10, seed = 1)
+#' markov_data <- prepare_markov_data(trial, absorb = 8)
 #' # The vglm engine of mostm() returns a robcov_vglm object
 #' robust_fit <- mostm(
 #'   ordered(y) ~ time + tx + yprev,
 #'   data = markov_data,
 #'   id_var = "id",
+#'   absorb = "8",
 #'   engine = "vglm"
 #' )
 #' vcov(robust_fit)
@@ -1192,7 +1232,7 @@ vcov.robcov_vglm <- function(object, ...) {
 #'
 #' @importFrom stats vcov
 #'
-#' @export
+#' @noRd
 compare_se_orm_vglm <- function(orm_fit, vglm_fit, cluster = NULL) {
   # Model-based SEs
   se_orm_model <- sqrt(diag(orm_model_bread(orm_fit)$bread))

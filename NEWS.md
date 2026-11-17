@@ -67,6 +67,58 @@
   out and now stops unless you set `missing_states = "drop"`. Fits to data
   without missing states are unchanged.
 
+## Bug fixes
+
+* Predictions from `engine = "orm"` fits with an ordered factor with numeric
+  levels among the predictors were wrong, without a message. This happens,
+  for example, when the previous state is made by lagging an ordered `y`.
+  rms codes such a factor with a column for the level's number plus
+  indicators from the third level on, but mostr built the prediction rows
+  with an indicator for every level after the first, so `sops()`,
+  `avg_sops()`, their standard errors and fits with unobserved states used
+  the wrong columns (state probabilities were off by up to 0.33 in a test).
+  `engine = "blrm"` was wrong in the same way whenever the prediction rows
+  did not contain every level of the factor. Both now use rms's own coding;
+  a plain factor and an ordered factor with the same levels give the same
+  predictions. Predictions from plain factors and numbers are unchanged.
+
+# mostr 0.2.1
+
+## Breaking changes
+
+* Exported arguments now use one name for one concept (#12). The old names
+  are gone, with no deprecation period, because no version has been
+  released yet:
+
+  * `prepare_markov_data()`: `absorbing_state` is now `absorb`, as in
+    `mostm()`, and it is required. The old default, `6`, silently removed
+    the rows after state 6 even in data where state 6 is not death. Write
+    `absorb = 6` to keep the old behaviour, or `absorb = NULL` to keep every
+    row. `prepare_markov_data()` also gains `y_var` and `p_var` to name the
+    state columns, which were fixed to `y` and `yprev`.
+  * `sim_markov()`: `absorbing_states` is now `absorb`, and `follow_up_time`
+    is replaced by `times`, the days to simulate, as in `sops()`. Write
+    `times = 1:28` for `follow_up_time = 28`; this gives identical
+    trajectories. Each value of `times` is one transition, so
+    `times = c(1, 7, 14)` simulates three transitions.
+  * `plot_lp_difference()`: `x` is now `model` and `profile` is now
+    `newdata`, as in the prediction functions.
+  * `robcov_vglm()`: `fit` is now `model`.
+  * `bootstrap_model_coefs()`: `n_boot` is now `n_draws`, as in
+    `inferences()`.
+  * `time_in_state()`: `target_states` is now `state_sets`, as in
+    `state_time()`. It still takes one set of states.
+  * `plot_time()`: `type` is now `geom`, as in `plot_sops()` and
+    `plot_comparisons()`.
+
+* `compare_se_orm_vglm()` is no longer exported.
+
+* The `violet_baseline` dataset is no longer exported or documented; it is
+  now internal data that `sim_markov("violet")` draws its patients from.
+  `sim_markov("violet")` draws exactly the same patients as before. Code that
+  used `violet_baseline` or `data(violet_baseline)` directly can simulate
+  patients with `sim_markov("violet")` instead.
+
 * A second-order model is declared once, when it is fitted:
   `mostm(..., p2_var = "ypprev")` names the column with the state two visits
   back. `mostm()` also takes `p_var`, the previous-state column (`"yprev"` by
@@ -85,7 +137,7 @@
   * every `absorb` label must be a state of the response;
   * no fitted row may have an absorbing state as its previous state, or, for
     a second-order model, as the state two visits back (remove such rows
-    first; `prepare_markov_data(absorbing_state = )` does this for the
+    first; `prepare_markov_data(absorb = )` does this for the
     previous state);
   * a state that occurs as an outcome but never as a previous state, and is
     not named in `absorb`, gives a warning: it may be absorbing, such as
@@ -313,6 +365,13 @@
 
 ## Documentation
 
+* Every exported function now has help-page examples that run (#26). Each
+  example simulates a small trial with `sim_markov()`, prepares it with
+  `prepare_markov_data()`, fits it with `mostm()` and then shows the
+  function, so it can be copied and run as it is. Only slow parts, the
+  bootstraps that refit the model and the `blrm` fit in `?mostm`, are inside
+  `\donttest{}`. `soprob_markov()` has an example for the first time.
+
 * `?inferences` now explains that a bootstrap with `newdata`, even when it
   holds the fitted patients themselves, keeps the profiles fixed: its
   intervals match conditional variance and are narrower than those of the
@@ -330,18 +389,37 @@
 
 ## Bug fixes
 
-* Predictions from `engine = "orm"` fits with an ordered factor with numeric
-  levels among the predictors were wrong, without a message. This happens,
-  for example, when the previous state is made by lagging an ordered `y`.
-  rms codes such a factor with a column for the level's number plus
-  indicators from the third level on, but mostr built the prediction rows
-  with an indicator for every level after the first, so `sops()`,
-  `avg_sops()`, their standard errors and fits with unobserved states used
-  the wrong columns (state probabilities were off by up to 0.33 in a test).
-  `engine = "blrm"` was wrong in the same way whenever the prediction rows
-  did not contain every level of the factor. Both now use rms's own coding;
-  a plain factor and an ordered factor with the same levels give the same
-  predictions. Predictions from plain factors and numbers are unchanged.
+* `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
+  and `avg_comparisons()` refuse the model's time column and its `gap_var`
+  column in `variables` (#29). The probabilities are computed visit by visit,
+  and both columns are set at each visit from `times`, so a value given in
+  `variables` had no effect: a comparison of two times was exactly 0, with
+  standard error 0, and `avg_sops()` returned a garbled `time` column. Choose
+  the visits with `times`, and real time with `time_map`.
+
+* `plot_lp_difference()` and `plot_transitions()` refuse the model's time
+  column and its `gap_var` column in `variables` for the same reason (#29):
+  `plot_transitions(comparison = "difference")` plotted a difference of 0,
+  and `plot_lp_difference()` stopped with an unclear error.
+  `plot_lp_difference()` also refuses the previous-state column (`p_var`) in
+  `variables`, because each panel sets it to that panel's previous state;
+  choose the previous states with `previous_states`.
+
+* The robust variance of `mostm(engine = "vglm")` fits no longer depends on
+  the units of a covariate. The observed information was computed by finite
+  differences with a step that did not follow the coefficient's units, so a
+  covariate in very small units (for example multiplied by 1e6) made the fit
+  stop with "The observed vglm information is singular or not positive
+  definite". The step now follows each coefficient's units. For ordinary fits
+  the robust covariance changes by about 1e-10 relative.
+
+* Analytical standard errors with unconditional variance no longer refuse a
+  fit because of a covariate's units. The model-based bread was checked for
+  positive definiteness on the raw scale, so with a covariate multiplied by
+  1e6, `inferences(vcov = "unconditional")` stopped with "`model-based bread`
+  is not numerically positive definite" for orm and vglm fits. It now uses
+  the rule of the orm and vglm robust variance, on the correlation scale.
+  Standard errors that were computed before are unchanged.
 
 * Analytical standard errors with unconditional variance no longer depend on
   the data frame the model was fitted to. `inferences(method = "delta")` took

@@ -18,7 +18,9 @@
 #'   is predicted with the variable set to each value, and the first value is
 #'   the reference. See [avg_comparisons()] for the values a bare name selects
 #'   and for a variable that the model doesn't use, whose comparisons are 0
-#'   (1 for a ratio) with `NA` standard errors, tests and intervals.
+#'   (1 for a ratio) with `NA` standard errors, tests and intervals. The
+#'   model's time column and its `gap_var` column cannot be compared: they
+#'   are set at each visit from `times`.
 #' @param by `FALSE` (the default) or `NULL` returns one comparison per
 #'   profile. `TRUE` averages the comparisons over all profiles, and a
 #'   character vector of column names averages them within the groups those
@@ -111,35 +113,53 @@
 #'   profile's state occupancy probabilities.
 #'
 #' @examples
-#' \dontrun{
-#' # One SOP difference per patient, visit, and state, with intervals from
-#' # coefficient draws.
-#' comparisons(
-#'   fit,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:30
-#' ) |>
-#'   inferences(method = "mvn", n_draws = 500)
-#'
-#' # Time in state 1 under treatment versus control for chosen profiles.
-#' comparisons(
-#'   fit,
-#'   newdata = profiles,
-#'   variables = list(tx = c(0, 1)),
-#'   estimand = "time_in_state",
-#'   state_sets = "1",
-#'   times = 1:30
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
 #' )
 #'
-#' # The same comparisons averaged within age groups.
+#' # The first visit of three patients, with different starting states
+#' patients <- model_data[model_data$time == 1, ][1:3, ]
+#'
+#' # For each patient, treatment minus control in the probability of being
+#' # outside hospital on each day, with delta-method confidence intervals
+#' home_difference <- comparisons(
+#'   fit,
+#'   newdata = patients,
+#'   variables = list(tx = c(0, 1)),
+#'   state_sets = list(home = c("1", "2")),
+#'   times = 1:14
+#' )
+#' home_difference <- inferences(home_difference, method = "delta")
+#' home_difference[home_difference$time == 14, ]
+#'
+#' # The difference in expected days outside hospital over days 1 to 14
+#' days_difference <- comparisons(
+#'   fit,
+#'   newdata = patients,
+#'   variables = list(tx = c(0, 1)),
+#'   estimand = "time_in_state",
+#'   state_sets = list(home = c("1", "2")),
+#'   times = 1:14
+#' )
+#' inferences(days_difference, method = "delta")
+#'
+#' # The same difference for every fitted patient, averaged within groups of
+#' # patients with the same starting state
 #' comparisons(
 #'   fit,
 #'   variables = list(tx = c(0, 1)),
 #'   estimand = "time_in_state",
-#'   by = "age_group",
-#'   times = 1:30
+#'   state_sets = list(home = c("1", "2")),
+#'   by = "yprev",
+#'   times = 1:14
 #' )
-#' }
 #'
 #' @export
 comparisons <- function(

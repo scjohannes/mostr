@@ -45,7 +45,8 @@ variables use their five-number summary (minimum, lower quartile,
 median, upper quartile, maximum). Values are read from the data stored
 with the model, or from \code{newdata} for a model without stored data. The
 default, \code{NULL}, averages with each patient's observed covariates,
-including their observed treatment.}
+including their observed treatment. The model's time column and its
+\code{gap_var} column cannot be set: they are set at each visit from \code{times}.}
 
 \item{by}{How to average, as in the marginaleffects package. \code{TRUE} (the
 default) averages over all profiles. A character vector of column names
@@ -213,31 +214,43 @@ from \code{newdata} first.
 }
 
 \examples{
-\dontrun{
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
 fit <- mostm(
-  ordered(y) ~ rms::rcs(time, 4) + tx + yprev,
-  data = data,
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
   id_var = "id",
-  absorb = 6,
-  engine = "vglm"
+  absorb = "8"
 )
 
-# Models fitted with mostm() can use their stored starting profiles.
-observed <- avg_sops(fit, times = 1:60)
+# Probability of each state on day 14, averaged over the fitted patients'
+# own starting states and treatments
+observed <- avg_sops(fit, times = 1:14)
+observed[observed$time == 14, ]
 
-# Set treatment to each requested value before averaging.
-result <- avg_sops(
-  model = fit,
-  variables = list(tx = c(0, 1)),
-  times = 1:60
-) |> inferences(method = "mvn", n_draws = 500)
+# All patients under control, then all under treatment. Intervals come
+# from 20 draws of the coefficients; use 1000 or more in an analysis.
+sops_by_arm <- avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:14)
+sops_by_arm <- inferences(
+  sops_by_arm,
+  method = "mvn",
+  n_draws = 20,
+  seed = 1
+)
+sops_by_arm[sops_by_arm$time == 14, ]
 
-# Refit bootstrap resamples the patients stored on the fitted model.
-result_boot <- avg_sops(
-  model = fit,
-  variables = list(tx = c(0, 1)),
-  times = 1:60
-) |> inferences(method = "fwb", n_draws = 500)
+\donttest{
+# A bootstrap that resamples the patients and refits the model to each of
+# 10 resamples
+sops_boot <- inferences(
+  avg_sops(fit, variables = list(tx = c(0, 1)), times = 1:14),
+  method = "bootstrap",
+  n_draws = 10,
+  seed = 1
+)
+sops_boot[sops_boot$time == 14 & sops_boot$state == "1", ]
 }
 
 }

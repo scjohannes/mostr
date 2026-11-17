@@ -318,73 +318,44 @@
 #'   [robcov_vglm()], [set_coef()]
 #'
 #' @examples
-#' \dontrun{
-#' # Step 1: Fit model with stored data and cluster-robust vcov
-#' fit_robust <- mostm(
-#'   ordered(y) ~ time + tx + yprev,
-#'   data = data,
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
 #'   id_var = "id",
-#'   absorb = "6",
-#'   engine = "vglm"
+#'   absorb = "8"
 #' )
 #'
-#' # Step 2a: Simulation inference
-#' result_sim <- avg_sops(
-#'   model = fit_robust,
+#' # Average effect of treatment on the expected days outside hospital over
+#' # days 1 to 14
+#' days_home <- avg_comparisons(
+#'   fit,
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:60
-#' ) |>
-#'   inferences(method = "mvn", n_draws = 1000)
-#'
-#' # The orm engine stores the package-owned full robust covariance matrix.
-#' fit_orm <- mostm(
-#'   y ~ time + tx + yprev,
-#'   data = data,
-#'   id_var = "id",
-#'   absorb = "6"
+#'   estimand = "time_in_state",
+#'   state_sets = list(home = c("1", "2")),
+#'   times = 1:14
 #' )
 #'
-#' avg_orm <- avg_sops(
-#'   model = fit_orm,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:60
-#' )
-#' result_orm <- avg_orm |>
-#'   inferences(method = "mvn", n_draws = 1000)
+#' # Delta method with unconditional variance (the default for averages):
+#' # accounts for the estimated coefficients and for which patients were
+#' # sampled
+#' inferences(days_home, method = "delta")
 #'
-#' # Step 2b: Bootstrap inference reuses stored full data
-#' result_boot <- avg_sops(
-#'   model = fit_robust,
-#'   variables = list(tx = c(0, 1)),
-#'   times = 1:60
-#' ) |>
-#'   inferences(method = "bootstrap", n_draws = 500)
+#' # Conditional variance treats the patients' starting states and
+#' # treatments as given, so its interval is usually narrower
+#' inferences(days_home, method = "delta", vcov = "conditional")
 #'
-#' # Individual-level SOPs with simulation inference
-#' ind_result <- sops(
-#'   model = fit_robust,
-#'   times = 1:60) |>
-#'   inferences(n_draws = 500)
+#' # 20 draws of the coefficients from their multivariate normal
+#' # distribution; use 1000 or more in an analysis
+#' inferences(days_home, method = "mvn", n_draws = 20, seed = 1)
 #'
-#' # Individual-level refit bootstrap uses FWB.
-#' ind_boot <- sops(
-#'   model = fit_robust,
-#'   times = 1:60) |>
-#'   inferences(method = "fwb", n_draws = 500)
-#'
-#' # Extract draws for custom analyses
-#' draws <- get_draws(result_sim)
-#'
-#' # Compute treatment effect on time in state
-#' library(dplyr)
-#' library(tidyr)
-#' treatment_effect <- draws |>
-#'   filter(state == 1) |>
-#'   group_by(draw_id, tx) |>
-#'   summarise(total_time = sum(draw), .groups = "drop") |>
-#'   pivot_wider(names_from = tx, values_from = total_time) |>
-#'   mutate(effect = `1` - `0`)
-#' quantile(treatment_effect$effect, c(0.025, 0.5, 0.975))
+#' \donttest{
+#' # Fractional weighted bootstrap: refits the model 10 times with random
+#' # weights for the patients
+#' inferences(days_home, method = "fwb", n_draws = 10, seed = 1)
 #' }
 #'
 #' @seealso [get_draws()] to extract individual draws from any inference method
@@ -870,19 +841,23 @@ inferences_simulation <- function(
       }
     )
   }
+  # Both versions of draw_coefs() and draw_sops() take arguments of the same
+  # name: R CMD check notes local functions defined twice with different
+  # arguments. `coefs_i` is the coefficients of draw i, as effective
+  # coefficients for the compiled plan or as a model with them set.
   if (!is.null(execution_plan)) {
     draw_coefs <- function(i) {
       get_effective_coefs(model_chk, beta = beta_draws[i, ])
     }
-    draw_sops <- function(Gamma_i) {
-      run_sop_execution_plan(execution_plan, Gamma_i)
+    draw_sops <- function(coefs_i) {
+      run_sop_execution_plan(execution_plan, coefs_i)
     }
     failed <- "markov_msm_run"
   } else {
     draw_coefs <- function(i) set_coef(model, beta_draws[i, ])
-    draw_sops <- function(model_i) {
+    draw_sops <- function(coefs_i) {
       predict_markov_sops(
-        model = model_i,
+        model = coefs_i,
         newdata = newdata_pred,
         times = times,
         settings = settings

@@ -62,7 +62,7 @@ delta_public_vglm_case <- local({
     if (is.null(value)) {
       data <- make_test_data(
         n_patients = 60,
-        follow_up_time = 8,
+        times = 1:8,
         seed = 8101
       )
       model <- make_test_model(data)
@@ -89,7 +89,7 @@ delta_public_orm_case <- local({
     if (is.null(value)) {
       data <- make_test_data(
         n_patients = 55,
-        follow_up_time = 7,
+        times = 1:7,
         seed = 8102
       )
       model <- suppressWarnings(mostm(
@@ -123,7 +123,7 @@ delta_public_unconditional_case <- local({
     if (is.null(value)) {
       data <- make_test_data(
         n_patients = 32,
-        follow_up_time = 6,
+        times = 1:6,
         seed = 8103
       )
       model <- mostm(

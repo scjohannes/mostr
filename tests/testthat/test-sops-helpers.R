@@ -315,7 +315,7 @@ test_that("get_draws() preserves covariates for individual SOP draws", {
   skip_if_not_installed("dplyr")
 
   withr::local_seed(123)
-  data <- make_test_data(n_patients = 20, seed = 123, follow_up_time = 30)
+  data <- make_test_data(n_patients = 20, seed = 123, times = 1:30)
   data$age <- stats::rnorm(nrow(data), 60, 10)
 
   expect_warning(
@@ -412,21 +412,21 @@ test_that("time_in_state() sums occupancy over time for arrays and refuses a pla
     list(
       label = "3D array with named states",
       input = arr3,
-      target_states = "1",
+      state_sets = "1",
       value = identity,
       expected = c(1.0, 1.0)
     ),
     list(
       label = "4D array of draws",
       input = arr4,
-      target_states = c("1", "2"),
+      state_sets = c("1", "2"),
       value = dim,
       expected = c(2L, 2L)
     ),
     list(
       label = "3D array with unnamed states",
       input = unnamed,
-      target_states = 1,
+      state_sets = 1,
       value = identity,
       expected = c(0.4, 1.6)
     ),
@@ -443,15 +443,15 @@ test_that("time_in_state() sums occupancy over time for arrays and refuses a pla
     list(
       label = "3D array without the target state",
       input = arr3,
-      target_states = "3",
+      state_sets = "3",
       error = "Target states not found"
     )
   )
 
   for (case in cases) {
     args <- list(case$input)
-    if (!is.null(case$target_states)) {
-      args$target_states <- case$target_states
+    if (!is.null(case$state_sets)) {
+      args$state_sets <- case$state_sets
     }
     if (is.null(case$error)) {
       out <- do.call(time_in_state, args)

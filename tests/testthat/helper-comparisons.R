@@ -10,15 +10,15 @@ build_comparisons_case <- function() {
   withr::local_seed(4417)
   data <- make_markov_trajectories(
     n_patients = 60,
-    follow_up_time = 5,
+    times = 1:5,
     n_states = 3,
     thresholds = c(-1, 1),
     allowed_start_state = 1:2,
-    absorbing_state = 3,
+    absorb = 3,
     treatment_effect = 0.4,
     seed = 4417
   ) |>
-    prepare_markov_data(absorbing_state = 3)
+    prepare_markov_data(absorb = 3)
   data$marker <- data$id %% 2
   # A group of two patients, often absent from an ordinary bootstrap resample.
   data$rare <- data$id <= 2

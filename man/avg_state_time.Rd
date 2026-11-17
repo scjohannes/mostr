@@ -44,7 +44,9 @@ The previous-state column holds states of the fitted model, as a factor
 of values, for example \code{list(tx = c(0, 1))} for average times under each
 treatment, or bare names such as \code{"tx"}, whose values are chosen as in
 \code{\link[=avg_sops]{avg_sops()}}. The default, \code{NULL}, uses each patient's observed
-covariates.}
+covariates. The model's time column and its \code{gap_var} column cannot be
+set: they are set at each visit from \code{times}, and \code{time_map} gives the
+elapsed time of each visit.}
 
 \item{state_sets}{States to summarize. \code{NULL} returns every state separately.
 A vector pools its states into one total; a named list returns one total
@@ -246,24 +248,33 @@ from \code{newdata} first.
 }
 
 \examples{
-\dontrun{
-# Average over the fitted patients' observed starting states and covariates.
-avg_state_time(fit, times = 1:30) |>
-  inferences(method = "delta")
+# 200 simulated patients followed for 14 days. States 1 and 2 are outside
+# hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+fit <- mostm(
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
+  id_var = "id",
+  absorb = "8"
+)
 
-avg_state_time(
-  fit, variables = list(tx = c(0, 1)), times = 1:30,
-  state_sets = list(home = "1", hospital = c("2", "3"))
-) |>
-  inferences(method = "delta", vcov = "conditional")
+# Expected number of days in each state over days 1 to 14, averaged over
+# the fitted patients' own starting states and treatments, with confidence
+# intervals from the delta method
+inferences(avg_state_time(fit, times = 1:14), method = "delta")
 
-# Visits on days 3, 7, 14, and 28; totals cover days 0 to 28.
-avg_state_time(
-  fit, times = 1:4, time_map = c("1" = 3, "2" = 7, "3" = 14, "4" = 28),
+# Days outside hospital and days in hospital, with all patients under
+# control and then all under treatment
+days_by_arm <- avg_state_time(
+  fit,
+  variables = list(tx = c(0, 1)),
+  state_sets = list(home = c("1", "2"), hospital = as.character(3:7)),
+  times = 1:14,
   time_unit = "days"
-) |>
-  inferences(method = "fwb", n_draws = 500)
-}
+)
+inferences(days_by_arm, method = "delta")
+
 }
 \seealso{
 \code{\link[=avg_sops]{avg_sops()}}, \code{\link[=avg_comparisons]{avg_comparisons()}}, \code{\link[=time_in_state]{time_in_state()}}, \code{\link[=inferences]{inferences()}}

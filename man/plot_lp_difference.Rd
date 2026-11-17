@@ -5,8 +5,8 @@
 \title{Plot Treatment Differences in the Linear Predictor}
 \usage{
 plot_lp_difference(
-  x,
-  profile,
+  model,
+  newdata,
   variables,
   times,
   previous_states = NULL,
@@ -14,13 +14,18 @@ plot_lp_difference(
 )
 }
 \arguments{
-\item{x}{A fitted \code{orm}, \code{blrm}, \code{vglm}, or \code{robcov_vglm} Markov
+\item{model}{A fitted \code{orm}, \code{blrm}, \code{vglm}, or \code{robcov_vglm} Markov
 model.}
 
-\item{profile}{One-row data frame containing the covariate profile.}
+\item{newdata}{One-row data frame containing the covariate profile.}
 
 \item{variables}{Named list with one variable and at least two values. The
-first value is the reference.}
+first value is the reference. The variable cannot be the model's time
+column, its \code{gap_var} column (the time since the previous visit), or its
+previous-state column: the plot sets the first two at each visit from
+\code{times} and the previous state in each panel, so a value given here
+would have no effect. Choose the visits with \code{times} and the previous
+states with \code{previous_states}.}
 
 \item{times}{Time values at which to evaluate the linear predictor.}
 
@@ -43,7 +48,7 @@ the supplied profile and faceted by previous state.
 }
 \details{
 \code{plot_lp_difference()} is model-based only. At minimum, supply \code{model}, a
-one-row \code{profile}, \code{variables}, and \code{times}. The profile should contain the
+one-row \code{newdata}, \code{variables}, and \code{times}. \code{newdata} should contain the
 model covariates for the patient or scenario being plotted; \code{times} and
 \code{previous_states} define the plotting grid.
 
@@ -52,12 +57,26 @@ fitted model: the \code{time_var} and \code{p_var} given to \code{\link[=mostm]{
 of the response in fitted order.
 }
 \examples{
-\dontrun{
+# 200 simulated patients followed for 14 days; state 8, death, is
+# absorbing
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+
+# A model in which the treatment effect changes linearly with time
+fit <- mostm(
+  ordered(y) ~ yprev + time * tx,
+  data = model_data,
+  id_var = "id",
+  absorb = "8"
+)
+
+# Treatment minus control in the log odds of a worse state on each day,
+# with one panel per previous state
 plot_lp_difference(
   fit,
-  profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
+  newdata = data.frame(tx = 0),
   variables = list(tx = c(0, 1)),
-  times = 1:28
+  times = 1:14
 )
-}
+
 }

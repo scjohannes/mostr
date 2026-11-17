@@ -4,14 +4,14 @@
 \alias{bootstrap_model_coefs}
 \title{Bootstrap confidence intervals for model coefficients}
 \usage{
-bootstrap_model_coefs(model, n_boot, workers = NULL, use_coefstart = FALSE)
+bootstrap_model_coefs(model, n_draws, workers = NULL, use_coefstart = FALSE)
 }
 \arguments{
 \item{model}{A model fitted with \code{\link[=mostm]{mostm()}} and the \code{"orm"} or \code{"vglm"}
 engine. \code{\link[=mostm]{mostm()}} stores the data used for fitting, and the bootstrap
 resamples patients from those stored data.}
 
-\item{n_boot}{Number of bootstrap samples.}
+\item{n_draws}{Number of bootstrap refits, as \code{n_draws} in \code{\link[=inferences]{inferences()}}.}
 
 \item{workers}{Number of workers for parallel processing. If NULL (default)
 or 1, sequential processing is used. If > 1, uses parallel processing.}
@@ -76,26 +76,26 @@ previous-state effects or numeric for linear/spline effects. Refits keep
 the column type and the state numbers used to fit the original model.
 }
 \examples{
-\dontrun{
+# 200 simulated patients followed for 14 days; state 8, death, is
+# absorbing
+trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+model_data <- prepare_markov_data(trajectories, absorb = 8)
 fit <- mostm(
-  ordered(y) ~ tx + yprev + time,
-  data = my_data,
+  ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+  data = model_data,
   id_var = "id",
-  engine = "vglm"
+  absorb = "8"
 )
 
-# Resample the patients stored on the fit.
-bs_coefs <- bootstrap_model_coefs(fit, n_boot = 1000)
+# Resample the patients stored on the fit and refit the model 10 times;
+# use 1000 or more refits in an analysis
+set.seed(1)
+boot_coefs <- bootstrap_model_coefs(fit, n_draws = 10)
+dim(boot_coefs)
 
-# 95\% percentile confidence intervals
-apply(
-  bs_coefs[, -1],
-  2,
-  stats::quantile,
-  probs = c(0.025, 0.975),
-  na.rm = TRUE
-)
-}
+# Percentile intervals for the treatment effect (log odds ratio)
+stats::quantile(boot_coefs$tx, c(0.025, 0.975), na.rm = TRUE)
+
 }
 \keyword{bootstrap}
 \keyword{coefficients}

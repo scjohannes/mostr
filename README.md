@@ -11,7 +11,13 @@ trajectories.
 
 ## Installation
 
-Install the development version from GitHub with `pak`:
+Once mostr is on CRAN, install the released version with:
+
+``` r
+install.packages("mostr")
+```
+
+Or install the development version from GitHub with `pak`:
 
 ``` r
 install.packages("pak")
@@ -35,13 +41,13 @@ set.seed(20260526)
 trial <- sim_markov(
   "actt2",
   n_patients = 300,
-  follow_up_time = 28,
+  times = 1:28,
   treatment_prob = 0.5,
   treatment_effect = log(0.8),
   seed = 20260526
 )
 
-markov_data <- prepare_markov_data(trial, absorbing_state = 8)
+markov_data <- prepare_markov_data(trial, absorb = 8)
 
 fit <- mostm(
   y ~ rms::rcs(time, 4) + tx + yprev,
@@ -143,7 +149,7 @@ you use `mostr`, please also consider citing `marginaleffects`:
 
 ## Data Provenance
 
-The included `violet_baseline` dataset and the model in
+The patients’ starting states, ages and SOFA scores and the model in
 `sim_markov("violet")` come from `simlongord`, a simulated trial that
 Frank Harrell based on the VIOLET trial ([Harrell,
 2022](https://hbiostat.org/data/repo/simlongord)).

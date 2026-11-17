@@ -9,7 +9,7 @@
 #'
 #' @details
 #' `plot_lp_difference()` is model-based only. At minimum, supply `model`, a
-#' one-row `profile`, `variables`, and `times`. The profile should contain the
+#' one-row `newdata`, `variables`, and `times`. `newdata` should contain the
 #' model covariates for the patient or scenario being plotted; `times` and
 #' `previous_states` define the plotting grid.
 #'
@@ -17,11 +17,16 @@
 #' fitted model: the `time_var` and `p_var` given to [mostm()], and the states
 #' of the response in fitted order.
 #'
-#' @param x A fitted `orm`, `blrm`, `vglm`, or `robcov_vglm` Markov
+#' @param model A fitted `orm`, `blrm`, `vglm`, or `robcov_vglm` Markov
 #'   model.
-#' @param profile One-row data frame containing the covariate profile.
+#' @param newdata One-row data frame containing the covariate profile.
 #' @param variables Named list with one variable and at least two values. The
-#'   first value is the reference.
+#'   first value is the reference. The variable cannot be the model's time
+#'   column, its `gap_var` column (the time since the previous visit), or its
+#'   previous-state column: the plot sets the first two at each visit from
+#'   `times` and the previous state in each panel, so a value given here
+#'   would have no effect. Choose the visits with `times` and the previous
+#'   states with `previous_states`.
 #' @param times Time values at which to evaluate the linear predictor.
 #' @param previous_states Optional previous-state values to facet by. Defaults
 #'   to the fitted states that occur as the previous state in the data the
@@ -33,24 +38,37 @@
 #' @return A ggplot object.
 #'
 #' @examples
-#' \dontrun{
+#' # 200 simulated patients followed for 14 days; state 8, death, is
+#' # absorbing
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#'
+#' # A model in which the treatment effect changes linearly with time
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + time * tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
+#'
+#' # Treatment minus control in the log odds of a worse state on each day,
+#' # with one panel per previous state
 #' plot_lp_difference(
 #'   fit,
-#'   profile = data.frame(tx = 0, age = 59, sex = "Male", yprev = 3),
+#'   newdata = data.frame(tx = 0),
 #'   variables = list(tx = c(0, 1)),
-#'   times = 1:28
+#'   times = 1:14
 #' )
-#' }
+#'
 #' @export
 plot_lp_difference <- function(
-  x,
-  profile,
+  model,
+  newdata,
   variables,
   times,
   previous_states = NULL,
   line_width = 0.7
 ) {
-  model <- x
   if (!inherits(model, c("orm", "blrm", "vglm", "robcov_vglm"))) {
     mostr_abort(
       "`model` must be an `orm`, `blrm`, `vglm`, or ",
@@ -58,19 +76,35 @@ plot_lp_difference <- function(
     )
   }
   validate_markov_model(model)
-  if (!is.data.frame(profile) || nrow(profile) != 1L) {
-    mostr_abort("`profile` must be a one-row data frame.")
+  if (!is.data.frame(newdata) || nrow(newdata) != 1L) {
+    mostr_abort("`newdata` must be a one-row data frame.")
   }
   if (missing(times) || is.null(times)) {
     mostr_abort("`times` must be supplied.")
   }
   variables <- validate_avg_comparison_variables(variables)
   variable <- names(variables)[1]
-  if (!variable %in% names(profile)) {
-    mostr_abort("Variables not in profile: ", variable)
+  settings <- resolve_markov_settings(model)
+  # The grid sets the time and `gap_var` columns at each visit, which
+  # overwrote a value given in `variables` and failed with "replacement has
+  # 1 row, data has 0".
+  stop_visit_columns_in_variables(variables, settings, plot = TRUE)
+  # `plot_lp_grid()` sets the previous-state column to the state of each
+  # panel after applying `variables`, so a value given for it had no effect.
+  if (variable %in% settings$p_var) {
+    mostr_abort(
+      "`variables` cannot set `",
+      variable,
+      "`, the model's previous-state column: the plot has one panel per ",
+      "previous state and sets this column in each, so a value given in ",
+      "`variables` would have no effect. Choose the previous states with ",
+      "`previous_states`."
+    )
+  }
+  if (!variable %in% names(newdata)) {
+    mostr_abort("Variables not in newdata: ", variable)
   }
   plot_validate_scalar(line_width, "line_width", lower = 0)
-  settings <- resolve_markov_settings(model)
   time_var <- settings$time_var
 
   y_levels <- markov_model_ylevels(model, settings$y_levels)
@@ -85,14 +119,14 @@ plot_lp_difference <- function(
   # the profile's other predictors need values.
   stop_missing_predictors(
     model,
-    profile,
+    newdata,
     settings,
     set_columns = c(variable, settings$p_var),
-    data_arg = "profile"
+    data_arg = "newdata"
   )
   data <- plot_lp_grid(
     model = model,
-    profile = profile,
+    profile = newdata,
     variables = variables,
     times = times,
     previous_states = previous_states,
@@ -311,7 +345,9 @@ plot_blrm_lp_median_matrix <- function(model, newdata) {
     },
     numeric(nrow(newdata))
   )
-  out <- as.matrix(out)
+  # With one row of `newdata`, vapply() returns a vector, which as.matrix()
+  # would turn into one column instead of one row (issue #22).
+  out <- matrix(out, nrow = nrow(newdata), ncol = n_thresholds)
   colnames(out) <- paste0("eta", seq_len(ncol(out)))
   rownames(out) <- rownames(newdata)
   out

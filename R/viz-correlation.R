@@ -78,10 +78,24 @@
 #' @return A ggplot object.
 #'
 #' @examples
-#' \dontrun{
-#' plot_correlation(data, id_var = "id", time_var = "day")
-#' plot_correlation(fit, times = 1:14)
-#' }
+#' # 200 simulated patients followed for 14 days. States 1 and 2 are outside
+#' # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#' model_data <- prepare_markov_data(trajectories, absorb = 8)
+#' fit <- mostm(
+#'   ordered(y) ~ yprev + rms::rcs(time, 3) + tx,
+#'   data = model_data,
+#'   id_var = "id",
+#'   absorb = "8"
+#' )
+#'
+#' # Rank correlation between each patient's states on any two of the first
+#' # seven days, in the simulated data, where dead patients stay in state 8
+#' plot_correlation(trajectories[trajectories$time <= 7, ])
+#'
+#' # The same correlations implied by the fitted model
+#' plot_correlation(fit, times = 1:7)
+#'
 #' @export
 plot_correlation <- function(
   x,
@@ -154,9 +168,14 @@ plot_correlation <- function(
 #' @return A ggplot object.
 #'
 #' @examples
-#' \dontrun{
-#' plot_variogram(data, id_var = "id", time_var = "day")
-#' }
+#' # 200 simulated patients followed for 14 days; dead patients stay in
+#' # state 8
+#' trajectories <- sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)
+#'
+#' # Rank correlation between a patient's states on two days, against the
+#' # number of days between them
+#' plot_variogram(trajectories)
+#'
 #' @export
 plot_variogram <- function(
   x,

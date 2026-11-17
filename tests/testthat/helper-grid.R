@@ -13,15 +13,15 @@ grid_data <- function() {
     grid_cache$data <- withr::with_seed(2024, {
       data <- make_markov_trajectories(
         n_patients = 120,
-        follow_up_time = 6,
+        times = 1:6,
         n_states = grid_n_states,
         thresholds = c(-1.5, 0, 1.5),
         allowed_start_state = 1:3,
-        absorbing_state = grid_n_states,
+        absorb = grid_n_states,
         treatment_effect = 0.5,
         seed = 2024
       ) |>
-        prepare_markov_data(absorbing_state = grid_n_states)
+        prepare_markov_data(absorb = grid_n_states)
       data <- data[order(data$id, data$time), , drop = FALSE]
       rownames(data) <- NULL
 

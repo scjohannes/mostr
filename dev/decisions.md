@@ -12,6 +12,201 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-16: `violet_baseline` becomes internal data
+
+**Decided.** The table of starting state, age and SOFA score combinations of
+the 1,351 VIOLET patients (858 rows with counts `n`) moved from the exported,
+documented dataset `data/violet_baseline.rda` to internal data in
+`R/sysdata.rda`, written by `data-raw/violet_baseline.R` with
+`usethis::use_data(internal = TRUE)`. Its help page is gone; its provenance
+(how the counts are recovered from Harrell's `simlongord`, and the references)
+is now a comment at the top of `data-raw/violet_baseline.R`. `LazyData` was
+dropped from DESCRIPTION because `data/` is now empty.
+`sim_markov("violet", n_patients = 500, times = 1:28, seed = 1)` returns an
+`identical()` result before and after the move (`rlang::hash()`
+`5f822a4d0af8d6d4ec83a6d7af9c0941`).
+
+**Why.** The maintainer sees no reason for users to access the table
+directly; `sim_markov("violet")` is how they use it. Keeping it out of the
+exported API also leaves less to document and maintain for the first CRAN
+release.
+
+**Rejected.** Dropping the table and sampling starting state, age and SOFA
+score independently from stored marginal probabilities, as the ACTT presets
+do for their single baseline characteristic. Independent sampling would lose
+the correlation between the three characteristics (for example, patients who
+start on a ventilator have higher SOFA scores) and so change the simulated
+outcomes.
+
+## 2026-11-16: Help-page examples run, each with its own short set-up
+
+**Decided** (issue #26). Every exported function's help page has examples
+that `R CMD check` runs. Each example repeats a short set-up:
+`sim_markov("actt2", n_patients = 200, times = 1:14, seed = 1)`,
+`prepare_markov_data(absorb = 8)` and `mostm()` with the default orm engine
+and optimizer (entry of 2026-11-08), then calls the function. Sizes and
+draws:
+
+- **orm examples: 200 patients over 14 days.** With 100 patients over 10 days
+  state 3 occurs about 7 times, and 0.3% to 1.5% of multivariate normal draws
+  of the coefficients (3 seeds, 4000 draws each, model-based covariance) give
+  crossed cut-points, so `inferences(method = "mvn")` stops with an error for
+  some draws; at 200 patients over 14 days, none of 4000 draws crossed for any
+  of 3 seeds. The draws come from an eigen decomposition, whose eigenvector
+  signs can differ between BLAS libraries, so a seed does not make a fragile
+  data set safe on every platform.
+- **vglm examples: 100 patients over 10 days.** The vglm engine's robust
+  covariance dominates their time: 4.9 s to fit 200 patients over 14 days
+  with a factor previous state, against 1.8 s at 100 over 10. Over 5 seeds,
+  100 or 150 patients over 7 days gave VGAM warnings or a covariance that is
+  not positive definite for 1 or 2 seeds; 100 over 10 gave none. The four
+  `robcov_vglm` method examples moved from 40 patients over 6 days, which
+  printed VGAM warnings about intersecting predictors, to this size, and the
+  `?mostm` example from 200 patients over 14 days (6.6 s) to 100 over 10.
+- **20 coefficient draws, 10 refits.** The SOP recursion is repeated for
+  every draw (about 0.05 s for 200 patients and two arms), so `n_draws = 20`
+  for `method = "mvn"`, 10 refits in `bootstrap_model_coefs()`, and 10 in
+  the `\donttest{}` refit bootstraps. The comments say to use 1000 or more.
+- **`avg_comparisons()` shows no draws.** It is the first example that
+  fits a model in `R CMD check`'s alphabetical order, so it also pays about
+  2.5 s for loading rms and Hmisc.
+- **The `blrm` fit stays in `\donttest{}`.** Every `blrm` fit tried took 35 to
+  90 s of Stan sampling here. The previous example (ACTT-2, 60 patients over
+  14 days, `ppo = ~time`) took 72 s with 149 divergent transitions;
+  proportional-odds ACTT-2 fits warned about low effective sample sizes.
+  60 VIOLET patients over 10 days with `ppo = ~time` and `loo = FALSE` gave no
+  warnings in about 45 s; the VIOLET preset simulates a partial
+  proportional-odds time effect.
+
+**Timings** (AMD Ryzen AI 9 HX 370, R 4.6.1, rms 8.2.1, VGAM 1.1-14, installed
+build, all examples in one session as in `R CMD check`). Without
+`\donttest{}`: the slowest are `avg_comparisons` 4.1 s (including loading
+rms), `vcov.robcov_vglm` 2.7 s, `plot_sops` 2.5 s, `coef.robcov_vglm` 2.4 s,
+`plot_comparisons` and `mostm` 2.3 s; `R CMD check --as-cran` with
+`_R_CHECK_EXAMPLE_TIMING_THRESHOLD_=5` reported no example over 5 s, and all
+examples took 53 s. With `\donttest{}`: `mostm` 49 s, `inferences` 4.3 s,
+`avg_comparisons` 4.2 s, `avg_sops` 4.0 s; all examples took 105 s.
+`--as-cran` runs `\donttest{}` examples too.
+
+**Rejected.** A fitted orm or vglm object stored in `data/`: these objects
+change with rms and VGAM versions, and `mostm()` stores its data and settings
+on the fit, so a stored fit could break with any new version of either
+package. An internal helper that returns an example fit: the examples would
+no longer show how to fit a model, and they could not be copied and run
+outside the package. `\dontrun{}` for the `blrm` fit: it can run, it is only
+slow, which is what `\donttest{}` is for.
+
+## 2026-11-16: Robust and unconditional variance do not depend on covariate units
+
+**Decided.** The vglm observed information (`compute_observed_bread_vglm()`)
+differentiates the scores with a step of
+`eps^(1/3) * max(|beta_j|, 1 / max|X_vlm[, j]|)` instead of
+`eps^(1/3) * max(1, |beta_j|)`, and measures the asymmetry of the score
+Jacobian as `max |J_ij - J_ji| / sqrt(|J_ii J_jj|)` instead of against
+`max(1, max|J|)`. The bread of unconditional variance
+(`delta_validate_named_matrix(positive_definite = TRUE)`) uses the shared
+correlation-scale rule, `markov_correlation_positive_definite()`, so orm,
+vglm and unconditional variance accept and refuse the same matrices (entry of
+2026-11-13 below).
+
+**Why.** With `age` multiplied by 1e6 in the test grid's vglm fit, its
+coefficient is about 1e-8 and the old step of 6e-6 moved the linear
+predictors by up to 500, so `mostm()` refused the information. With the same
+change, the raw rule of `delta_validate_named_matrix()` refused the orm and
+vglm breads: their smallest raw eigenvalue came out as -1e-18 times the
+largest, below what `eigen()` resolves, while the correlation-scale ratio is
+0.0028. After the change, the robust covariance of the grid vglm fit with
+`age` times 1e6, 1e-6, 1e9 or 1e-9, transformed back, matches the unscaled fit
+within 4e-10; unconditional standard errors match it within 3e-14 (orm) and
+7e-11 (vglm). On five vglm grid fits (linear, spline and factor time,
+second-order partial proportional odds, weighted) the robust covariance moved
+by at most 2e-10 relative, and delta standard errors by at most 1.3e-10.
+Unconditional standard errors of ordinary fits are `identical()` before and
+after the bread rule changed, because it only accepts or refuses. The
+Jacobian asymmetry on the grid fits is now 2e-11 to 5e-11, against the
+unchanged cut-off of 1e-5.
+
+**Rejected.** A step from each coefficient's standard error: the scores depend
+on the coefficients only through the linear predictors, and
+`1 / max|X_vlm[, j]|` is the change in a coefficient that moves a linear
+predictor by at most 1, so it needs no further matrix inversion. It is 1 for
+intercepts and 0/1 columns, whose steps are unchanged. Moving the
+positive-semidefinite check of supplied and robust covariances to the
+correlation scale: a semidefinite matrix may have a zero variance, which
+`cov2cor()` cannot scale, and the raw rule can only be lenient under
+rescaling, not refuse; a negative variance it lets through is refused per
+estimate by `delta_jacobian_variance()`.
+
+## 2026-11-16: `variables` cannot set the time or gap column
+
+**Decided.** The six SOP, time and comparison functions refuse the model's
+time column and its `gap_var` column in `variables` (issue #29), as a named
+list or as bare names (`stop_visit_columns_in_variables()`).
+
+**Why.** The recursion sets both columns at every visit from `times`
+(`assign_sop_visit()`), so a value given in `variables` had no effect: a
+comparison of two times was exactly 0 with standard error 0, and `avg_sops()`
+returned a garbled `time` column. Visits are chosen with `times`, and real
+time with `time_map`. The `time_covariates` columns of the issue no longer
+exist (removed 2026-11-13).
+
+**Plots (added 2026-11-16, after the renaming of issue #12).**
+`plot_lp_difference()` and `plot_transitions()` had the same problem without
+using the shared resolvers, and now call `stop_visit_columns_in_variables()`
+too, with wording for plots. `plot_transitions(comparison = "difference")`
+plotted a difference of 0; `plot_lp_difference()` stopped with the unclear
+error "replacement has 1 row, data has 0". `plot_lp_difference()` also refuses
+the previous-state column (`p_var`): its grid sets that column to each
+panel's state after applying `variables`, so the value was lost in the same
+way; the panels are chosen with `previous_states`. `plot_transitions()` keeps
+accepting `p_var` in `variables`, because there it sets the starting state,
+as in `sops()`.
+
+## 2026-11-16: Exported argument names settled before the first CRAN release
+
+**Decided** (#12). The renames are `absorbing_state` / `absorbing_states` to
+`absorb` (`prepare_markov_data()`, `sim_markov()`); `follow_up_time` to
+`times` (`sim_markov()`); `x` and `profile` to `model` and `newdata`
+(`plot_lp_difference()`); `fit` to `model` (`robcov_vglm()`); `n_boot` to
+`n_draws` (`bootstrap_model_coefs()`); `target_states` to `state_sets`
+(`time_in_state()`); and `type` to `geom` (`plot_time()`). They come with no
+deprecation aliases, because nothing has been released. `compare_se_orm_vglm()`
+is no longer exported.
+
+**Why.** After the first CRAN release, each rename would need a deprecation
+cycle. Every new name is already used for the same concept elsewhere in the
+package.
+
+- `prepare_markov_data(absorb)` has **no default**. The old default, `6`
+  (death in VIOLET), silently removed rows from data in which 6 is not death.
+  `absorb = NULL` is the explicit way to keep every row. A `NULL` default was
+  rejected: forgetting `absorb` would then keep the rows after death, and
+  `mostm()` would fit dead-to-dead transitions without a warning, because
+  state 6 then occurs as a previous state.
+- `sim_markov(times = 1:28)` takes a vector of times instead of a count, as
+  the maintainer suggested, so that it matches `sops(times = )`: one
+  transition per value, with the value passed to `lp_function` as `t`. The
+  state matrix is indexed by position, so `times = 1:n` reproduces
+  `follow_up_time = n` exactly (9 reference calls covering all presets,
+  `baseline_data`, decay, custom `absorb`, `prepare_markov_data()` and
+  `time_in_state()` gave `identical()` results before and after). The
+  candidate names `n_times` and `max_time` for a count were rejected along
+  with the count itself.
+- `compare_se_orm_vglm()` keeps its argument names `orm_fit` and `vglm_fit`,
+  which say which fit goes where. The maintainer decided it does not need to
+  be exported; the tests still use it.
+- `time_in_state(state_sets)` keeps taking a single set of states (default
+  `1`); only the name changed.
+- `prepare_markov_data()` gains `y_var` and `p_var`, as in `mostm()`, instead
+  of fixing the column names to `y` and `yprev`.
+- Left as they are: `type` (robust covariance type in `mostm()`,
+  `get_vcov_robust()` and `robcov_vglm()`) and `method` (correlation method in
+  `plot_correlation()` and `plot_variogram()`, as in `stats::cor()`), and `x`
+  in the plots that also take observed data. Already settled on `main` before
+  this entry: the `adjust` alias for `cadjust` was removed (d3442c6), and the
+  `id_var` defaults of `plot_correlation()` and `plot_variogram()` were made
+  `NULL`.
+
 ## 2026-11-15: Sampling scale of the Stan program for unobserved states
 
 **Decided.** `inst/stan/po_paths.stan` no longer declares rmsb's

@@ -48,9 +48,9 @@ baseline <- data.frame(
 raw_data <- sim_markov(
   NULL,
   baseline_data = baseline,
-  follow_up_time = FOLLOW_UP,
+  times = 1:FOLLOW_UP,
   intercepts = qlogis(seq_len(N_QOL - 1L) / N_QOL),
-  absorbing_states = integer(),
+  absorb = integer(),
   covariate_names = "tx",
   treatment_effect = -0.25,
   lp_function = function(yprev, t, tx, treatment_effect, extra_params) {
@@ -67,8 +67,9 @@ plot_sops(raw_data, geom = "bar")
 
 `prepare_markov_data(..., factor_previous = FALSE)` keeps `yprev` numeric so
 that it can enter the model through `rcs(yprev, 5)`, a restricted cubic spline
-with five knots. Because no state is absorbing, `absorbing_state = NULL`, and
-`mostm()` gets `absorb = NULL`, its default. A numeric previous state makes
+with five knots. Because no state is absorbing, both
+`prepare_markov_data()` and `mostm()` get `absorb = NULL`, which keeps every
+row and is the default of `mostm()`. A numeric previous state makes
 `absorb` matter: without it, the model would predict transitions out of an
 absorbing state from the transitions out of the other states. `mostm()`
 warns when a state occurs as an outcome but never as a previous state, which
@@ -77,7 +78,7 @@ does not happen here.
 ```{r fit-model}
 model_data <- prepare_markov_data(
   raw_data,
-  absorbing_state = NULL,
+  absorb = NULL,
   factor_previous = FALSE
 )
 

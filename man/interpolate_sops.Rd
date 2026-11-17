@@ -70,19 +70,47 @@ support. Targets before its first or after its last available value return
 support.
 }
 \examples{
-\dontrun{
-avg <- avg_sops(
-  fit,
-  newdata = baseline,
-  variables = list(tx = c(0, 1)),
-  times = 1:4
+# 200 simulated patients assessed on days 3, 7, 14 and 28. States 1 and 2
+# are outside hospital, states 3 to 7 in hospital, and state 8 is death.
+visit_days <- c(3, 7, 14, 28)
+trajectories <- sim_markov(
+  "actt2",
+  n_patients = 200,
+  times = visit_days,
+  seed = 1
 )
-interpolate_sops(
-  avg,
-  time_map = c("1" = 3, "2" = 7, "3" = 14, "4" = 28),
-  target_times = 0:28,
-  baseline_time = 0
+
+# Number the visits 1 to 4 and fit a separate effect for each visit
+trajectories$visit <- factor(match(trajectories$time, visit_days))
+model_data <- prepare_markov_data(trajectories, absorb = 8)
+fit <- mostm(
+  ordered(y) ~ yprev + visit + tx,
+  data = model_data,
+  id_var = "id",
+  time_var = "visit",
+  first_followup_time = "1",
+  absorb = "8"
 )
-}
+
+# The day of each visit
+day_of_visit <- c("1" = 3, "2" = 7, "3" = 14, "4" = 28)
+
+# SOPs at the four visits under control and under treatment, with
+# intervals from 50 draws of the coefficients
+visit_sops <- inferences(
+  avg_sops(fit, variables = list(tx = c(0, 1)), times = factor(1:4)),
+  method = "mvn",
+  n_draws = 50,
+  seed = 1
+)
+
+# SOPs on every day from 0 to 28, joining the visits by straight lines.
+# On day 0 every patient is in their starting state.
+daily_sops <- interpolate_sops(
+  visit_sops,
+  time_map = day_of_visit,
+  target_times = 0:28
+)
+daily_sops[daily_sops$state == "1" & daily_sops$tx == 0, ]
 
 }
