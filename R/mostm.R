@@ -71,7 +71,11 @@
 #'   * `"vglm"`: arguments of [VGAM::vglm()], such as `family`, `constraints`,
 #'     `coefstart`, or `control`, and of [VGAM::vglm.control()], such as
 #'     `maxit` or `trace`. `family` defaults to
-#'     `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`.
+#'     `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`. `xij` and `form2`
+#'     are not accepted, neither directly nor inside `control`: VGAM uses them
+#'     to give a predictor a different value at each threshold between states,
+#'     but the state occupancy probabilities use one value of each predictor
+#'     at every threshold.
 #'   * `"blrm"`: arguments of [rmsb::blrm()], such as `ppo`, `cppo`, `iter`,
 #'     `warmup`, `chains`, the prior settings `conc` and `psigma`, or
 #'     `backend`, which chooses between rstan and cmdstan. Settings of the
@@ -724,8 +728,12 @@ mostm_engine_args <- function(engine) {
   args <- switch(
     engine,
     orm = c(names(formals(rms::orm)), names(formals(rms::orm.fit))),
+    # `form2` is listed although mostm_fit_vglm() no longer takes it, so
+    # that mostm_check_vglm_xij() refuses it with its reason instead of the
+    # generic "Not an argument" error. `xij` comes from VGAM::vglm.control().
     vglm = c(
       names(formals(mostm_fit_vglm)),
+      "form2",
       names(formals(VGAM::vglm.control)),
       names(formals(vglm_categorical_control()))
     ),
@@ -757,6 +765,9 @@ mostm_check_engine_args <- function(engine, dots, values) {
   }
   if ("offset" %in% supplied) {
     stop_unsupported_offset()
+  }
+  if (engine == "vglm") {
+    mostm_check_vglm_xij(values)
   }
   kept <- intersect(supplied, c("x", "y", "x.arg", "y.arg"))
   if (length(kept)) {
@@ -820,6 +831,36 @@ mostm_check_engine_args <- function(engine, dots, values) {
     )
   }
   invisible(NULL)
+}
+
+# With `xij`, VGAM gives a predictor a different value in each linear
+# predictor, taken from the extra design matrix `Xm2` that `form2` builds. The
+# SOP recursion, the delta-method results and plot_lp() build only the
+# ordinary design matrix, so they would use one column in every linear
+# predictor and return wrong probabilities without a warning (issue #45).
+# `values` holds the evaluated engine arguments, so a `control` built with
+# VGAM::vglm.control(xij = ...) is caught as well. `[[` avoids the partial
+# matching of `$`.
+mostm_check_vglm_xij <- function(values) {
+  control <- values[["control"]]
+  has_xij <- !is.null(values[["xij"]]) ||
+    (is.list(control) && !is.null(control[["xij"]]))
+  if (!has_xij && is.null(values[["form2"]])) {
+    return(invisible(NULL))
+  }
+  arg <- if (has_xij) "xij" else "form2"
+  mostr_abort(
+    "`",
+    arg,
+    "` cannot be used with `engine = \"vglm\"`. The state occupancy ",
+    "probabilities use one value of each predictor in every linear ",
+    "predictor (one per threshold between states), so predictor values ",
+    "that differ between thresholds, given by `xij` with the columns that ",
+    "`form2` builds, would give wrong probabilities. To let the effect of a ",
+    "predictor differ between thresholds, fit a partial proportional odds ",
+    "model, for example with ",
+    "`family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ x)`."
+  )
 }
 
 # rms::orm() and rmsb::blrm() name the design matrix columns of a factor after

@@ -236,7 +236,12 @@ flowchart TD
   another engine is an error naming that engine. Unknown names are errors for
   `"orm"` and `"vglm"`; `"blrm"` passes them on, because `rmsb::blrm()` hands
   its own `...` to the Stan optimizer. `x`, `y`, `x.arg`, `y.arg`, and `offset`
-  are rejected (the design matrix and response are always kept). `type`,
+  are rejected (the design matrix and response are always kept). `xij` and
+  `form2` (directly or inside `control`) are refused for `"vglm"` by
+  `mostm_check_vglm_xij()`: they give a predictor a different value in each
+  linear predictor, which the SOP recursion, the delta method and `plot_lp()`
+  cannot represent, since they build only the ordinary design matrix (#45).
+  `form2` stays in `mostm_engine_args()` so that it reaches this refusal. `type`,
   `cadjust`, and `weights` are rejected for `"blrm"`. The other engines'
   argument lists are looked up only when a name is not accepted, because the
   blrm list loads rmsb and rstan, which would slow every orm or vglm fit and
@@ -812,7 +817,16 @@ into results keep the user's types. vglm designs are built by
 `vglm_prediction_design()`, with `na.action = na.pass` and an error for a
 missing value in the design, because `stats::model.matrix()` on a data frame
 drops such rows and the remaining probabilities would be matched to the
-wrong profiles.
+wrong profiles. Before the model frame is built, every column the fit used as
+a factor (named in `model@xlevels`) becomes a factor with the fitted levels
+(`normalize_vglm_prediction_data()`), as `normalize_orm_prediction_data()`
+does for orm through `orm_model_matrix()`; both share
+`factors_with_fitted_levels()`, which refuses values outside the fitted
+levels, naming the column. `stats::model.frame()` leaves a numeric column
+numeric, and `model.matrix()` then stopped with "contrasts apply only to
+factors" (#44). `get_time_info()` takes the fitted time levels whenever the
+model has factor time, whatever the type of the time column in the prediction
+rows, so requested `times` are checked against those levels.
 
 ### Crossed thresholds
 

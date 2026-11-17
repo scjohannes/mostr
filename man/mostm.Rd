@@ -50,7 +50,11 @@ engine is an error that names the engine it belongs to.
 \item \code{"vglm"}: arguments of \code{\link[VGAM:vglm]{VGAM::vglm()}}, such as \code{family}, \code{constraints},
 \code{coefstart}, or \code{control}, and of \code{\link[VGAM:vglm.control]{VGAM::vglm.control()}}, such as
 \code{maxit} or \code{trace}. \code{family} defaults to
-\code{VGAM::cumulative(reverse = TRUE, parallel = TRUE)}.
+\code{VGAM::cumulative(reverse = TRUE, parallel = TRUE)}. \code{xij} and \code{form2}
+are not accepted, neither directly nor inside \code{control}: VGAM uses them
+to give a predictor a different value at each threshold between states,
+but the state occupancy probabilities use one value of each predictor
+at every threshold.
 \item \code{"blrm"}: arguments of \code{\link[rmsb:blrm]{rmsb::blrm()}}, such as \code{ppo}, \code{cppo}, \code{iter},
 \code{warmup}, \code{chains}, the prior settings \code{conc} and \code{psigma}, or
 \code{backend}, which chooses between rstan and cmdstan. Settings of the

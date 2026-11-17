@@ -143,7 +143,7 @@ test_that("the vglm engine accepts family names and requires a data frame", {
   expect_equal(as.vector(weighted@prior.weights), data$w)
 })
 
-test_that("the vglm engine rejects invalid families, weights, and form2 subsets", {
+test_that("the vglm engine rejects invalid families and weights", {
   skip_if_not_installed("VGAM")
 
   data <- data.frame(
@@ -178,19 +178,6 @@ test_that("the vglm engine rejects invalid families, weights, and form2 subsets"
       )
     ),
     "is not a VGAM family function",
-    fixed = TRUE
-  )
-  expect_error(
-    suppressWarnings(mostm(
-      y ~ x,
-      family = VGAM::binomialff,
-      data = data,
-      id_var = "id",
-      form2 = ~x,
-      subset = data$x == 1,
-      engine = "vglm"
-    )),
-    "subset",
     fixed = TRUE
   )
 })
@@ -288,77 +275,5 @@ test_that("the vglm engine aligns etastart with the rows it fits", {
     stats::coef(incomplete_fit),
     stats::coef(complete_fit),
     tolerance = 1e-8
-  )
-})
-
-test_that("the vglm engine stores form2 design slots", {
-  skip_if_not_installed("VGAM")
-
-  data <- data.frame(
-    id = rep(1:4, each = 2),
-    time = rep(1:2, 4),
-    y = c(0, 1, 0, 1, 0, 1, 0, 1),
-    yprev = 0,
-    x = c(0, 0, 1, 1, 2, 2, 3, 3),
-    z = c(1, 2, 1, 2, 1, 2, 1, 2)
-  )
-
-  fit <- suppressWarnings(
-    mostm(
-      y ~ x,
-      family = VGAM::binomialff,
-      data = data,
-      id_var = "id",
-      form2 = y ~ z,
-      qr.arg = TRUE,
-      engine = "vglm"
-    )
-  )$vglm_fit
-
-  expect_s4_class(fit, "vglm")
-  expect_true(length(fit@Xm2) > 0)
-  expect_true(length(fit@Ym2) > 0)
-  expect_equal(deparse(fit@misc$form2), deparse(y ~ z))
-  expect_true(length(fit@callXm2) > 0)
-})
-
-test_that("the vglm engine validates form2 row alignment", {
-  skip_if_not_installed("VGAM")
-
-  data <- data.frame(
-    id = rep(1:4, each = 2),
-    time = rep(1:2, 4),
-    y = c(0, 1, 0, 1, 0, 1, 0, 1),
-    yprev = 0,
-    x = c(0, 0, 1, 1, 2, 2, 3, 3)
-  )
-  env <- list2env(
-    list(z = 1:3, z_y = c(0, 1, 0)),
-    parent = baseenv()
-  )
-
-  expect_error(
-    suppressWarnings(mostm(
-      y ~ x,
-      family = VGAM::binomialff,
-      data = data,
-      id_var = "id",
-      form2 = stats::as.formula("z_y ~ z", env = env),
-      engine = "vglm"
-    )),
-    "number of rows of 'y' and 'Ym2' are unequal",
-    fixed = TRUE
-  )
-  expect_error(
-    suppressWarnings(mostm(
-      y ~ x,
-      family = VGAM::binomialff,
-      data = data,
-      id_var = "id",
-      form2 = stats::as.formula("~ z", env = env),
-      engine = "vglm"
-    )),
-    "number of rows of 'x' and 'Xm2' are unequal",
-    fixed = TRUE
   )
 })

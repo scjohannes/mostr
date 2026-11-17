@@ -15,6 +15,11 @@
 #
 # `setup` holds the arguments that mostm() has already resolved; the other
 # formals are the VGAM::vglm() arguments a user may pass through mostm().
+# `form2` and `xij` are refused by mostm() before this function runs (see
+# mostm_check_vglm_xij()), so the fit never has the extra `Xm2` design.
+# `na.action` stays a formal although `setup$dots` supplies it to the model
+# frame: as a formal it is kept out of `...`, which goes on to
+# VGAM::vglm.control() and VGAM::vglm.fit().
 mostm_fit_vglm <- function(
   setup,
   family = VGAM::cumulative(reverse = TRUE, parallel = TRUE),
@@ -27,7 +32,6 @@ mostm_fit_vglm <- function(
   contrasts = NULL,
   constraints = NULL,
   extra = list(),
-  form2 = NULL,
   qr.arg = TRUE,
   smart = TRUE,
   ...
@@ -37,9 +41,6 @@ mostm_fit_vglm <- function(
   function.name <- "vglm"
 
   formula <- add_rms_formula_helpers(setup$formula)
-  if (!is.null(form2)) {
-    form2 <- add_rms_formula_helpers(form2)
-  }
 
   setup_smart <- utils::getFromNamespace("setup.smart", "VGAM")
   get_smart_prediction <- utils::getFromNamespace(
@@ -47,7 +48,6 @@ mostm_fit_vglm <- function(
     "VGAM"
   )
   wrapup_smart <- utils::getFromNamespace("wrapup.smart", "VGAM")
-  shadowvglm <- utils::getFromNamespace("shadowvglm", "VGAM")
   eval_vcontrol <- make_vgam_vcontrol_eval()
   get_xlevels <- utils::getFromNamespace(".getXlevels", "stats")
 
@@ -125,39 +125,6 @@ mostm_fit_vglm <- function(
   }
   attr(x, "orig.assign.lm") <- split_assign$orig_assign
 
-  if (!is.null(form2)) {
-    if (!is.null(subset_rows)) {
-      mostr_abort(
-        "argument 'subset' cannot be used when argument 'form2' is used"
-      )
-    }
-    retlist <- shadowvglm(
-      formula = form2,
-      family = family,
-      data = data,
-      na.action = na.action,
-      control = VGAM::vglm.control(...),
-      method = "vglm.fit",
-      model = model,
-      x.arg = TRUE,
-      y.arg = TRUE,
-      contrasts = contrasts,
-      constraints = constraints,
-      extra = extra,
-      qr.arg = qr.arg
-    )
-    Ym2 <- retlist$Ym2
-    Xm2 <- retlist$Xm2
-    if (length(Ym2) && NROW(Ym2) != NROW(y)) {
-      mostr_abort("number of rows of 'y' and 'Ym2' are unequal")
-    }
-    if (length(Xm2) && NROW(Xm2) != NROW(x)) {
-      mostr_abort("number of rows of 'x' and 'Xm2' are unequal")
-    }
-  } else {
-    Xm2 <- Ym2 <- NULL
-  }
-
   offset <- 0
 
   w <- stats::model.weights(mf)
@@ -193,8 +160,6 @@ mostm_fit_vglm <- function(
     y = y,
     w = w,
     offset = offset,
-    Xm2 = Xm2,
-    Ym2 = Ym2,
     etastart = etastart,
     mustart = mustart,
     coefstart = coefstart,
@@ -271,18 +236,7 @@ mostm_fit_vglm <- function(
     methods::slot(answer, "weights") <- as.matrix(fit$weights)
   }
   methods::slot(answer, "x") <- fit$x
-  if (length(Xm2)) {
-    methods::slot(answer, "Xm2") <- Xm2
-  }
-  if (length(Ym2)) {
-    methods::slot(answer, "Ym2") <- as.matrix(Ym2)
-  }
-  if (!is.null(form2)) {
-    methods::slot(answer, "callXm2") <- retlist$call
-    answer@misc$Terms2 <- retlist$Terms2
-  }
   answer@misc$formula <- formula
-  answer@misc$form2 <- form2
   if (length(xlev)) {
     methods::slot(answer, "xlevels") <- xlev
   }
