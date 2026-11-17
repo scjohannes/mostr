@@ -64,7 +64,13 @@
 #'   including time, must be factor or character columns of `data` rather
 #'   than converted with `factor()` inside the formula; for factor time, also
 #'   set `first_followup_time`. Random-effect terms are available only for the
-#'   `"blrm"` engine; see "Random effects" below.
+#'   `"blrm"` engine; see "Random effects" below. Stratification terms,
+#'   `strat(g)` or `rms::strat(g)`, are errors for every engine: they give
+#'   each stratum its own baseline hazard in a Cox model fitted with
+#'   [rms::cph()] and have no meaning for an ordinal model. Enter `g` as an
+#'   ordinary covariate instead; to let its effect differ between the
+#'   thresholds between states, use partial proportional odds with
+#'   `engine = "vglm"` or `"blrm"`.
 #'
 #'   Time terms are written inline, for example `rms::rcs(time, 4)`,
 #'   `log(time)` or `rms::pol(time, 2)`; the prediction functions evaluate
@@ -476,6 +482,7 @@ mostm <- function(
     )
   }
   mostm_check_random_effects(formula, engine)
+  mostm_check_strata(formula, engine)
 
   if (missing(id_var) || is.null(id_var)) {
     stop_missing_mostm_id_var()
@@ -1112,6 +1119,78 @@ mostm_check_random_effects <- function(formula, engine) {
     "`id_var` already gives standard errors that allow for correlation ",
     "between the transitions of one patient. For a random intercept for each ",
     "patient, use `engine = \"blrm\"` with `cluster(id)` in the formula."
+  )
+}
+
+# `strat()` gives each stratum of a Cox model (`rms::cph()`) its own baseline
+# hazard; it has no meaning for the ordinal models mostm() fits, and none of
+# the engines refuses it (issue #59). Measured on 91facf9: `rms::orm()` and
+# `rmsb::blrm()` fit `strat(g)` with `g` left out of the model and no warning,
+# and their `sops()` then fails for `rms::strat(g)`; `VGAM::vglm()` fits `g`
+# as an ordinary predictor named `strat(g)b`. mostm() therefore rejects these
+# terms before fitting, for every engine. Only calls count, so a column named
+# `strat` is still an ordinary predictor.
+mostm_check_strata <- function(formula, engine) {
+  calls <- formula_rhs_calls(formula, "strat")
+  if (!length(calls)) {
+    return(invisible(NULL))
+  }
+  labels <- unique(vapply(calls, deparse1, character(1)))
+  several <- length(labels) > 1L
+  first <- calls[[1L]]
+  variable <- if (length(first) >= 2L && is.name(first[[2L]])) {
+    as.character(first[[2L]])
+  } else {
+    "x"
+  }
+  fitter <- switch(
+    engine,
+    orm = "`rms::orm()`",
+    vglm = "`VGAM::vglm()`",
+    blrm = "`rmsb::blrm()`"
+  )
+  consequence <- if (engine == "vglm" && several) {
+    " would fit these variables as ordinary predictors, not a stratified model. "
+  } else if (engine == "vglm") {
+    " would fit the variable as an ordinary predictor, not a stratified model. "
+  } else if (several) {
+    " would leave these variables out of the model without a warning. "
+  } else {
+    " would leave the variable out of the model without a warning. "
+  }
+  ppo_engines <- switch(
+    engine,
+    orm = paste0(
+      "use `engine = \"vglm\"` with `family = VGAM::cumulative(reverse = ",
+      "TRUE, parallel = FALSE ~ ", variable, ")` or `engine = \"blrm\"` with ",
+      "`ppo = ~", variable, "`."
+    ),
+    vglm = paste0(
+      "use `family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ ",
+      variable, ")`."
+    ),
+    blrm = paste0("use `ppo = ~", variable, "`.")
+  )
+  mostr_abort(
+    format_sop_visit_list(paste0("`", labels, "`")),
+    if (several) " have" else " has",
+    " no meaning in the ordinal models that `mostm()` fits. `strat()` is for ",
+    "Cox models fitted with `rms::cph()`, which give each stratum its own ",
+    "baseline hazard. ",
+    fitter,
+    consequence,
+    if (several) {
+      "To adjust for a variable, write it as an ordinary covariate, "
+    } else {
+      "To adjust for it, write it as an ordinary covariate, "
+    },
+    "for example `+ ",
+    variable,
+    "`. To let the effect of `",
+    variable,
+    "` differ between the thresholds between states (partial proportional ",
+    "odds), ",
+    ppo_engines
   )
 }
 

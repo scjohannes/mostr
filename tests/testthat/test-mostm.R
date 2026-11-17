@@ -739,6 +739,97 @@ test_that("mostm() refuses random-effect terms that its engine cannot fit", {
   expect_equal(fit$Nc, length(unique(data$id)))
 })
 
+test_that("mostm() refuses strat() terms for every engine", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+
+  data <- make_test_data(n_patients = 40, times = 1:6, seed = 6310)
+  data$g <- factor(ifelse(data$id %% 2 == 0, "a", "b"))
+  data$h <- factor(ifelse(data$id %% 3 == 0, "a", "b"))
+  # Measured on 91facf9 (#59): rms::orm() and rmsb::blrm() fit `strat(g)`
+  # without `g` and without a warning, and their `sops()` fails for
+  # `rms::strat(g)`; VGAM::vglm() fits `g` as an ordinary predictor named
+  # `strat(g)b`. The refusal comes before fitting, so `strat()` need not exist.
+  cases <- list(
+    list(
+      label = "orm, strat()",
+      engine = "orm",
+      formula = ordered(y) ~ time + tx + yprev + strat(g),
+      must = c(
+        "`strat(g)`",
+        "no meaning",
+        "`rms::orm()`",
+        "ordinary covariate",
+        "`engine = \"vglm\"`",
+        "`engine = \"blrm\"`"
+      )
+    ),
+    list(
+      label = "orm, rms::strat()",
+      engine = "orm",
+      formula = ordered(y) ~ time + tx + yprev + rms::strat(g),
+      must = "`rms::strat(g)`"
+    ),
+    list(
+      label = "orm, two terms",
+      engine = "orm",
+      formula = ordered(y) ~ time + tx + yprev + strat(g) + strat(h),
+      must = "`strat(g)` and `strat(h)`"
+    ),
+    list(
+      label = "orm, strat() in an interaction",
+      engine = "orm",
+      formula = ordered(y) ~ time * strat(g) + yprev,
+      must = "`strat(g)`"
+    ),
+    list(
+      label = "vglm, strat()",
+      engine = "vglm",
+      formula = ordered(y) ~ time + tx + yprev + strat(g),
+      must = c("`strat(g)`", "no meaning", "`VGAM::vglm()`", "ordinary covariate")
+    ),
+    list(
+      label = "vglm, rms::strat()",
+      engine = "vglm",
+      formula = ordered(y) ~ time + tx + yprev + rms::strat(g),
+      must = "`rms::strat(g)`"
+    ),
+    list(
+      label = "blrm, strat()",
+      engine = "blrm",
+      formula = ordered(y) ~ time + tx + yprev + strat(g),
+      must = c("`strat(g)`", "no meaning", "`rmsb::blrm()`", "ordinary covariate")
+    ),
+    list(
+      label = "blrm, rms::strat()",
+      engine = "blrm",
+      formula = ordered(y) ~ time + tx + yprev + rms::strat(g),
+      must = "`rms::strat(g)`"
+    )
+  )
+  expect_formula_refusals(cases, data)
+  expect_error(
+    mostm(
+      ordered(y) ~ time + tx + yprev + rms::strat(g),
+      data = data,
+      id_var = "id",
+      absorb = 6
+    ),
+    class = "mostr_error"
+  )
+
+  # Only calls count: a column named `strat` is an ordinary predictor.
+  with_column <- data
+  with_column$strat <- with_column$g
+  fit <- mostm(
+    ordered(y) ~ time + tx + strat + yprev,
+    data = with_column,
+    id_var = "id",
+    absorb = 6
+  )
+  expect_true(any(grepl("^strat", names(stats::coef(fit)))))
+})
+
 test_that("model-based functions reject orm fits that hold random effects", {
   skip_if_not_installed("rms")
 

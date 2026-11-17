@@ -249,6 +249,15 @@ flowchart TD
   variable inside it need not be the patient ID (see `include_re` below). The
   check reads only the formula, so it behaves the same for every rms version;
   `cluster()` itself comes from rms from version 8.2 on and from rmsb before.
+- For every engine, `mostm_check_strata()` stops before fitting when the
+  right-hand side calls `strat()`, with or without the `rms::` prefix (found
+  by `formula_rhs_calls()`). Stratification is a Cox-model idea
+  (`rms::cph()`); `rms::orm()` and `rmsb::blrm()` drop the term from the
+  model without a warning, and `VGAM::vglm()` fits it as an ordinary
+  predictor (#59). The `strat` special that `orm_model_matrix()` in
+  `R/sops-backends.R` removes from the design therefore no longer occurs in
+  new fits made by `mostm()`; that code stays for fits saved before the
+  check existed.
 - Engine arguments go through `...`. `mostm_check_engine_args()` compares
   their names with `mostm_engine_args()`: the formals of `rms::orm()` and
   `rms::orm.fit()`; of `mostm_fit_vglm()`, `VGAM::vglm.control()`, and VGAM's
