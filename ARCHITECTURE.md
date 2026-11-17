@@ -322,6 +322,15 @@ flowchart TD
   `eps^(1/3) * max(|beta_j|, 1 / max|X_vlm[, j]|)` for each coefficient,
   which follows the coefficient's units, and measures the asymmetry of the
   score Jacobian against `sqrt(|J_ii J_jj|)`.
+- For a penalized orm fit, `robcov_orm()` subtracts each sandwich unit's
+  equal share of the penalty gradient `P beta` (`fit$penalty.matrix` applied
+  to the non-intercept coefficients) from that unit's score sum before
+  forming the meat: `1/G` per patient with a cluster, `1/n` per
+  positive-weight row without one. `compute_scores_orm()` returns
+  log-likelihood scores, which sum to `P beta` rather than zero at a penalized
+  estimate; left in, they add `(P beta)(P beta)' / G` to the meat (#49). The
+  bread is already the inverse of the penalized information
+  (`orm_model_bread()`). Unpenalized fits skip the step and are unchanged.
 - Downstream code reads the patient column with `markov_require_id_var()` in
   `R/markov-model-data.R`, which returns an explicit `id_var` argument or the
   one stored by `mostm()` and otherwise stops; no column name is guessed. The

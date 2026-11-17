@@ -311,7 +311,10 @@
 #'   inference functions attached. The returned object's `call` is the
 #'   `mostm()` call. Its class depends on `engine`:
 #'   * `"orm"`: an `orm` object whose covariance matrix (`vcov(fit)`) holds
-#'     the patient-clustered variance.
+#'     the patient-clustered variance. For a fit with `penalty`, this is the
+#'     sampling variance of the penalized estimates around the values they
+#'     estimate; it does not include the bias that the penalty introduces by
+#'     shrinking the coefficients.
 #'   * `"vglm"`: a `robcov_vglm` object that holds the patient-clustered
 #'     variance and the fitted `vglm` object in `$vglm_fit` (see
 #'     [robcov_vglm()]).

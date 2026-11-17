@@ -542,6 +542,19 @@
   `sops()`; `inferences(avg_state_time(time_map = , by = ))` with these
   methods works too (#56). Their draws gave `state` as a factor while the
   result gave it as a number.
+* The robust variance of penalized `orm` fits (`mostm(..., penalty = )`) is
+  no longer too large (#49). A penalized fit balances the log-likelihood
+  against the penalty, so at its estimate the patients' log-likelihood scores
+  add up to the gradient of the penalty instead of zero. The sandwich used
+  them as they were, which added a term that reflects the penalty's pull, not
+  sampling variability. Each patient's equal share of the penalty gradient is
+  now subtracted first. In simulated trials with 250 patients, coefficient
+  standard errors had been up to 1.6 times too large with `penalty = 10` and
+  2 times too large with `penalty = 100`, and are now within 10% of their
+  simulated sampling SD. Standard errors of state occupancy probabilities
+  changed less: by at most about 20%, and usually by under 3%. `vcov(fit)`,
+  `inferences(method = "delta")` and `inferences(method = "mvn")` all use this
+  covariance. Unpenalized fits are unchanged.
 
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`

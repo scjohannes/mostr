@@ -151,7 +151,10 @@ inference functions attached. The returned object's \code{call} is the
 \code{mostm()} call. Its class depends on \code{engine}:
 \itemize{
 \item \code{"orm"}: an \code{orm} object whose covariance matrix (\code{vcov(fit)}) holds
-the patient-clustered variance.
+the patient-clustered variance. For a fit with \code{penalty}, this is the
+sampling variance of the penalized estimates around the values they
+estimate; it does not include the bias that the penalty introduces by
+shrinking the coefficients.
 \item \code{"vglm"}: a \code{robcov_vglm} object that holds the patient-clustered
 variance and the fitted \code{vglm} object in \verb{$vglm_fit} (see
 \code{\link[=robcov_vglm]{robcov_vglm()}}).
