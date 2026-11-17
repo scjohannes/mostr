@@ -51,7 +51,9 @@ elapsed time of each visit.}
 \item{state_sets}{States to summarize. \code{NULL} returns every state separately.
 A vector pools its states into one total; a named list returns one total
 per named state set, for example
-\code{list(home = "1", hospital = c("2", "3"))}. Names must be unique.}
+\code{list(home = "1", hospital = c("2", "3"))}. Names must be unique. With
+\code{time_map} and \code{baseline_time}, the states also include any starting
+state that never occurs as an outcome; see Details.}
 
 \item{by}{How to average, as in the marginaleffects package. \code{TRUE} (the
 default) averages over all profiles, and a character vector of column
@@ -146,6 +148,19 @@ the total is the area under that curve. By default the curve starts at
 \code{baseline_time}, where each patient is in their observed starting state, so
 the interval before the first visit is included. For example, with visits
 on days 3, 7, 14, and 28 and \code{baseline_time = 0}, totals cover days 0 to 28.
+
+Some patients may start in a state that never occurs as an outcome, for
+example a screening state that exists only at admission. The model does not
+predict such a state, so it has no occupancy probabilities at the visits,
+but patients spend the time from \code{baseline_time} to the first visit
+partly in it. With \code{time_map} and \code{baseline_time}, such a state therefore
+gets its own total: its probability is the share of patients who start in
+it at \code{baseline_time} and 0 at every visit. For example, if a quarter of
+the patients start in it and the first visit is on day 3, its total is
+0.25 times 3 / 2 = 0.375 days. \code{state_sets} may name it, and the totals of
+all states add up to the whole period. Without \code{time_map}, or with
+\code{baseline_time = NULL}, the totals cover the visits only and such a state
+is not part of the results.
 
 The average gives every profile the same weight. Case weights given to
 \code{\link[=mostm]{mostm()}} with \code{weights} are used only to fit the model, not in this

@@ -305,6 +305,20 @@
 
 ## Bug fixes
 
+* Real-time results now count a starting state that never occurs as an
+  outcome, such as an admission-only screening state (#50). The fitted states
+  are the outcome states, so such a state was left out of the starting
+  distribution at `baseline_time`. `interpolate_sops()` then divided the other
+  states by the share that remained, which inflated their probabilities before
+  the first visit (by 1 / 0.75 when a quarter of patients started in that
+  state). `avg_state_time()`, `state_time()`, `time_in_state()` and
+  `avg_comparisons(estimand = "time_in_state")` with `time_map` gave the time
+  spent in that state to the other states, and `inferences(method = "delta")`
+  stopped with "did not reproduce the stored point estimates". These results
+  now include the state, with its share of starting states at
+  `baseline_time` and probability 0 at every visit, and `state_sets` may name
+  it. Visit-scale `sops()` and `avg_sops()` are unchanged.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,

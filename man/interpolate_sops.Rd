@@ -57,6 +57,19 @@ shared across treatment counterfactual groups. When \code{variables} in
 patient starts in the set state, so the anchor for that scenario gives
 probability 1 to that state and 0 to the others.
 
+A starting state that never occurs as an outcome, for example a screening
+state that exists only at admission, is not one of the model's states, so
+\code{\link[=sops]{sops()}} and \code{\link[=avg_sops]{avg_sops()}} have no rows for it. With \code{baseline_time},
+\code{interpolate_sops()} adds a row for such a state: at \code{baseline_time} its
+probability is the share of patients who start in it (for one profile, 1
+if the profile starts there and 0 otherwise), and at every mapped visit it
+is 0, because the model never predicts it after the first transition.
+Between \code{baseline_time} and the first visit its probability falls along a
+straight line. The state probabilities then sum to one at every time.
+The state is placed among the other states by the order of the factor
+levels of the starting-state column when they contain it, and after the
+model's states otherwise. With \code{baseline_time = NULL}, no such row is added.
+
 If \code{x} contains stored simulation, bootstrap, or posterior draws, the draws
 are interpolated too. Interval columns are then recomputed from the
 interpolated draws. Coefficient-only draws treat the empirical baseline anchor

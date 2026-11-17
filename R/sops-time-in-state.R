@@ -434,7 +434,11 @@ time_in_state_delta <- function(
 #'   calculation; their time is added up into one total. Can be integer
 #'   indices or character names (e.g., \code{1} or \code{c("Home", "Rehab")}).
 #'   Unlike `state_sets` in [state_time()], this is one set of states, not a
-#'   list of sets.
+#'   list of sets. With `time_map` and `baseline_time`, it may also name a
+#'   starting state that never occurs as an outcome: [interpolate_sops()]
+#'   gives that state its starting share at `baseline_time` and probability 0
+#'   at every visit, so its time is the time spent in it before the first
+#'   visit.
 #' @param time_map Optional named numeric vector or data frame mapping visit
 #'   labels to real elapsed times. Supplying this switches tidy SOP and array
 #'   inputs to trapezoidal real-time AUC.

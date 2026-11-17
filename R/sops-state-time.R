@@ -49,7 +49,10 @@
 #' on the elapsed-time scale, starting at `baseline_time` from the profile's
 #' starting state, or from the state set in `variables` when it sets the
 #' previous state. The mean of the totals over the profiles equals the
-#' [avg_state_time()] estimate.
+#' [avg_state_time()] estimate. A profile that starts in a state that never
+#' occurs as an outcome spends the time from `baseline_time` to the first
+#' visit partly in that state, which then has a total of its own, as
+#' described in [avg_state_time()].
 #'
 #' For frequentist models, pass the result to [inferences()]. Because each
 #' profile's starting state and covariates are held as given, every method
@@ -239,7 +242,7 @@ state_time <- function(
   setup <- copy_sops_attrs_to_setup(setup, ind)
   state_sets <- normalize_comparison_state_sets(
     state_sets,
-    markov_result_settings(ind)$y_levels
+    summary_state_labels(ind, time_map, baseline_time)
   )
 
   reducer <- profile_array_reducer(

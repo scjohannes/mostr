@@ -134,9 +134,16 @@ delta_comparison_operator <- function(object, avg, args, avg_args) {
     )
   }
 
+  # A real-time total may name a starting state that is not fitted. It has no
+  # SOP rows, so only its share at `baseline_time` enters the total, through
+  # the anchor term below.
   state_sets <- normalize_comparison_state_sets(
     args$state_sets,
-    markov_result_settings(avg)$y_levels
+    summary_state_labels(
+      avg,
+      if (identical(args$estimand, "time_in_state")) args$time_map,
+      args$baseline_time
+    )
   )
   if (anyDuplicated(names(state_sets))) {
     mostr_abort("Analytical comparison state-set names must be unique.")

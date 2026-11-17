@@ -31,7 +31,10 @@
 #'   `"time_benefit"`.
 #' @param state_sets State selection for `"sop"` and `"time_in_state"`. `NULL`
 #'   returns one result per state. An atomic vector is treated as one lumped
-#'   state set. A named list returns one result per named state set.
+#'   state set. A named list returns one result per named state set. For
+#'   `"time_in_state"` with `time_map` and `baseline_time`, the states also
+#'   include any starting state that never occurs as an outcome, as in
+#'   [avg_state_time()].
 #' @param comparison Character scalar. `"difference"` computes comparison level
 #'   minus reference level. `"ratio"` computes comparison level divided by
 #'   reference level. `"time_benefit"` only supports `"difference"`.
@@ -293,9 +296,14 @@ avg_comparisons <- function(
       return_draws = inherits(model, "blrm") || isTRUE(return_draws),
       extra_args = extra_args
     )
+    # `time_map` applies to time totals only; SOP contrasts stay at visits.
     state_sets <- normalize_comparison_state_sets(
       state_sets,
-      markov_result_settings(avg)$y_levels
+      summary_state_labels(
+        avg,
+        if (identical(estimand, "time_in_state")) time_map,
+        baseline_time
+      )
     )
     result <- avg_comparison_from_avg_sops(
       avg,

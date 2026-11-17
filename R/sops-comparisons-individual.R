@@ -271,7 +271,11 @@ comparisons <- function(
   if (estimand != "time_benefit") {
     state_sets <- normalize_comparison_state_sets(
       state_sets,
-      markov_result_settings(ind)$y_levels
+      summary_state_labels(
+        ind,
+        if (identical(estimand, "time_in_state")) time_map,
+        baseline_time
+      )
     )
   }
 
@@ -444,10 +448,17 @@ profile_tidy_reducer <- function(
     )
   }
   reduce_setup <- setup
+  # The array has one slice per state of `x`: with real time anchored at
+  # `baseline_time`, these include the starting states that are not fitted,
+  # which `interpolate_sops()` adds.
+  reduce_setup$settings$y_levels <- if (real_time) {
+    summary_state_labels(x, time_map, baseline_time)
+  } else {
+    markov_result_settings(x)$y_levels
+  }
   if (real_time) {
     reduce_setup$times <- sort(unique(x$time))
   }
-  reduce_setup$settings$y_levels <- markov_result_settings(x)$y_levels
 
   reduce <- function(data, value_col) {
     reducer$reduce_array(

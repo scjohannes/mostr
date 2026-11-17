@@ -56,7 +56,10 @@ each visit from \code{times}.}
 
 \item{state_sets}{State selection for \code{"sop"} and \code{"time_in_state"}. \code{NULL}
 returns one result per state. An atomic vector is treated as one lumped
-state set. A named list returns one result per named state set.}
+state set. A named list returns one result per named state set. For
+\code{"time_in_state"} with \code{time_map} and \code{baseline_time}, the states also
+include any starting state that never occurs as an outcome, as in
+\code{\link[=avg_state_time]{avg_state_time()}}.}
 
 \item{comparison}{Character scalar. \code{"difference"} computes comparison level
 minus reference level. \code{"ratio"} computes comparison level divided by

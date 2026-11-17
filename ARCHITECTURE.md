@@ -980,6 +980,22 @@ In `R/sops-interpolate.R`, `empirical_baseline_anchor()` anchors per-profile
 SOPs at each row's `p_var` value and errors if that column is missing, while
 `empirical_baseline_anchor_from_data()` and `baseline_rows_for_anchor()` serve
 averaged results, reading their scenarios and groups from `avg_args`.
+The fitted states (`y_levels`) are the outcome levels, so a starting state
+that never occurs as an outcome is not among them (#50). With
+`baseline_time`, `real_time_anchor_states()` builds the anchor's states from
+the fitted states plus every starting state of `x`'s `p_var` column, of the
+stored baseline rows and of a resample's baseline. It places each extra state
+by the `p_var` factor levels, or after the fitted states.
+`add_zero_state_rows()` gives such a state probability 0 at every visit of
+every series, for the estimates and for the draws in
+`interpolate_sop_draws()`, so interpolated probabilities sum to one and
+`normalize_interpolated_sops()` does not rescale them. A bootstrap resample
+without such a starter still gets its anchor row with share 0, because the
+default states include the full-sample starting states.
+`summary_state_labels()` is the set that `state_sets` may name: the fitted
+states for visit summaries, `estimand = "sop"` and `baseline_time = NULL`,
+and the anchor states for real-time totals. The analytical operators need no
+change: their baseline terms already use `starting_state %in% states`.
 
 `interpolate_sops()` and tidy-SOP `time_in_state()` group by every column
 other than `time`, `state`, the measures (`sop_measure_cols()`), the null-test

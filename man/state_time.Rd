@@ -44,7 +44,9 @@ elapsed time of each visit.}
 \item{state_sets}{States to summarize. \code{NULL} returns every state separately.
 A vector pools its states into one total; a named list returns one total
 per named state set, for example
-\code{list(home = "1", hospital = c("2", "3"))}. Names must be unique.}
+\code{list(home = "1", hospital = c("2", "3"))}. Names must be unique. With
+\code{time_map} and \code{baseline_time}, the states also include any starting
+state that never occurs as an outcome; see Details.}
 
 \item{by}{\code{FALSE} (the default) or \code{NULL} returns one total per profile.
 \code{TRUE} averages over all profiles, and a character vector of column names
@@ -135,7 +137,10 @@ the requested visits; with \code{time_map}, the area under those probabilities
 on the elapsed-time scale, starting at \code{baseline_time} from the profile's
 starting state, or from the state set in \code{variables} when it sets the
 previous state. The mean of the totals over the profiles equals the
-\code{\link[=avg_state_time]{avg_state_time()}} estimate.
+\code{\link[=avg_state_time]{avg_state_time()}} estimate. A profile that starts in a state that never
+occurs as an outcome spends the time from \code{baseline_time} to the first
+visit partly in that state, which then has a total of its own, as
+described in \code{\link[=avg_state_time]{avg_state_time()}}.
 
 For frequentist models, pass the result to \code{\link[=inferences]{inferences()}}. Because each
 profile's starting state and covariates are held as given, every method
