@@ -342,6 +342,23 @@
 * `plot_time(scale = "proportion")` divides each average time by the length
   of follow-up, instead of by the sum of the plotted averages (#40). The two
   differ only for posterior medians, whose sum need not equal the follow-up.
+* `sim_markov()` reads a factor `yprev` in `baseline_data` by its labels
+  (#41). It used the factor's internal codes, so a factor with levels 4 to 7,
+  as `droplevels()` or one-day data from `prepare_markov_data()` give, started
+  patients in states 1 to 4 without any message. Numeric and character
+  `yprev` were read correctly and give the same trajectories as before.
+  `sim_markov()` also now:
+
+  * refuses missing, fractional and out-of-range starting states, and labels
+    that are not state numbers, instead of stopping later with an unrelated
+    message or simulating from them;
+  * refuses `covariate_names` that are not columns of `baseline_data`. It
+    warned only when none of them was present; when some were, they were not
+    passed to `lp_function`, which then failed or silently used a default;
+  * sets state probabilities that are negative only by rounding (above
+    `-1e-12`) to zero. A partial proportional-odds `lp_function` whose
+    cumulative probabilities were equal up to rounding stopped with
+    "Categorical probabilities must be finite and non-negative."
 
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
