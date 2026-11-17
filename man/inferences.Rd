@@ -262,14 +262,27 @@ where no patient visits it. The refit also has no estimate for moving out
 of the state, so it cannot predict for a profile that starts there. With
 \code{newdata}, each draw predicts the same supplied profiles, so
 before refitting \code{inferences()} checks that every resample holds every
-state that a profile starts in (\code{yprev}, and for second-order models also
-the state two visits back). If one does not, it stops, naming the state
-and the number of resamples that lack it. Use \code{method = "fwb"} then, or
-remove those profiles from \code{newdata}. Without \code{newdata}, each draw
-predicts its own resampled patients, so their starting states are always
-present. Each of these patients starts from their row at the
-\code{first_followup_time} of \code{\link[=mostm]{mostm()}}, as in the point estimate, whether time
-is numeric, a factor or character.
+state that a profile starts in as a previous state (\code{yprev}, and for
+second-order models also the state two visits back). If one does not, it
+stops, naming the state and the number of resamples that lack it. Use
+\code{method = "fwb"} then, or remove those profiles from \code{newdata}. Without
+\code{newdata}, each draw predicts its own resampled patients, so their starting
+states are always present. Each of these patients starts from their row at the \code{first_followup_time} of \code{\link[=mostm]{mostm()}}, as in the point estimate, whether time is numeric, a factor or character.
+
+A resample can also hold patients who start in a state while nobody in it
+moves into that state. The refit's outcome states are those that occur as
+outcomes in the resample, so the refit still predicts the patients who
+start in the state, and the state's occupancy probability is 0 in that
+draw. This is the estimate from that resample, and keeping such draws
+matters: leaving them out would remove exactly the draws in which the
+probability is 0 and move the lower confidence bound up. Second-order
+models can't yet predict from a starting state that never occurs as an
+outcome, so for them \code{inferences()} checks the resamples before refitting
+and stops, naming the state and the number of such resamples; use
+\code{method = "fwb"} then. It also stops before refitting when a model fitted
+with explicit \code{constraints} (\code{engine = "vglm"}) meets a resample that lacks
+an outcome state, because the constraint matrices have one row per
+cut-point of the full model and do not fit a refit with fewer cut-points.
 
 A draw whose refit or prediction fails, for example because the model
 cannot be fitted to that resample, is left out with a warning that says

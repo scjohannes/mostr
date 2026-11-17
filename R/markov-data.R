@@ -129,100 +129,136 @@ prepare_markov_data <- function(
 
 #' Drop States Absent From a Bootstrap Resample
 #'
-#' A bootstrap resample can lack a state. Its refit then has no outcome
-#' category, and no previous-state level, for that state. This function finds
-#' the states absent from `data` and removes them from the factor levels of the
-#' state columns. The states keep their original labels; they are never
-#' renumbered.
+#' A bootstrap resample can lack a state as an outcome, as a previous state,
+#' or both. Its refit then has no outcome category, or no previous-state
+#' level, for that state. This function finds the outcome states absent from
+#' the response of `data` and removes, from each factor state column, the
+#' levels that column does not hold. The states keep their original labels;
+#' they are never renumbered.
 #'
 #' @param data A data frame containing the data to refit.
 #' @param factor_cols Character vector of the column names holding states: the
 #'   response and the previous-state columns. These may be factor, character
 #'   or numeric state columns.
+#' @param response_col The name of the response column, whose states are the
+#'   refit's outcome states. It is treated as a state column even when it is
+#'   not in `factor_cols`.
 #' @param original_data Optional data frame containing the original data before
-#'   subsetting. Used to determine which states exist in the full data.
-#' @param y_levels Optional vector of original state labels in state order
-#'   (e.g., 1:6 or `c("home", "ward", "dead")`). If provided, the labels of the
-#'   states present are returned.
+#'   subsetting. Used to determine which outcome states exist in the full data.
+#' @param y_levels Optional vector of the original outcome state labels in
+#'   state order (e.g., 1:6 or `c("home", "ward", "dead")`). If provided, the
+#'   labels of the outcome states present are returned.
 #' @param absorb Optional label(s) of the absorbing state(s). If provided, the
-#'   labels of those present are returned.
+#'   labels of those present as outcomes are returned.
 #'
 #' @return A list with components:
-#'   - data: The data frame, with absent states removed from factor levels
-#'   - ylevels: The labels of the states present, in state order (if
+#'   - data: The data frame, each factor state column without the levels it
+#'     does not hold
+#'   - ylevels: The labels of the outcome states present, in state order (if
 #'     `y_levels` was provided), or NULL
 #'   - absorb: The labels of the absorbing states present (if `absorb` was
 #'     provided), or NULL
-#'   - missing_levels: Character vector of the absent state labels
+#'   - missing_levels: Character vector of the absent outcome state labels
+#'   - levels_dropped: TRUE when some factor state column lost a level that
+#'     it holds in `original_data` (or any level, without `original_data`),
+#'     so that the refit has fewer coefficients than the original fit
 #'
 #' @details
 #' States are matched by their labels (`as.character()` of the values), never
 #' by converting labels to numbers, so letter labels such as `"a"`, `"b"`,
-#' `"c"` work as numbers do. The state order is that of `y_levels`, followed
-#' by any further labels of the original data in their own order (factor
-#' level order; sorted values for numeric and character columns). A state is
-#' present when any state column of `data` holds it.
+#' `"c"` work as numbers do. The outcome states of the original fit are
+#' `y_levels`, followed by any further labels that the response of the
+#' original data holds, in their own order (factor level order; sorted values
+#' for numeric and character columns). An outcome state is present when the
+#' response of `data` holds it. A state that only the previous-state columns
+#' hold is a starting state, not an outcome state of the refit, just as in a
+#' fit to the full data. The refit still predicts from it as a previous state
+#' and gives it probability 0 as an outcome, its maximum-likelihood value in
+#' that resample.
 #'
-#' When a state is absent, each factor state column keeps only the levels it
-#' holds in `data`, in their original order; an ordered factor stays ordered.
-#' The refit needs no empty levels, and `rms::orm()` cannot fit with one.
-#' Numeric and character columns are left unchanged, so a numeric previous
-#' state keeps its numbers and a term such as `rcs(yprev, 3)` sees the same
-#' scale as in the original fit. Because the labels are kept, the refit's
-#' states, previous-state levels and coefficient names match the original
-#' fit's, and supplied prediction profiles need no translation.
+#' Each factor state column keeps only the levels it holds in `data`, in their
+#' original order; an ordered factor stays ordered. The response loses the
+#' absent outcome states, and each previous-state column loses its own empty
+#' levels. The refit needs no empty levels, and `rms::orm()` cannot fit with
+#' one. Numeric and character columns are left unchanged, so a numeric
+#' previous state keeps its numbers and a term such as `rcs(yprev, 3)` sees
+#' the same scale as in the original fit. Because the labels are kept, the
+#' refit's states, previous-state levels and coefficient names match the
+#' original fit's, and supplied prediction profiles need no translation.
 #'
-#' When no state is absent, `data` is returned unchanged.
+#' When no factor state column has an empty level, `data` is returned
+#' unchanged.
 #'
 #' @noRd
 drop_absent_states <- function(
   data,
   factor_cols = c("y", "yprev"),
+  response_col = "y",
   original_data = NULL,
   y_levels = NULL,
   absorb = NULL
 ) {
-  # All state labels in state order: `y_levels` first, then any other labels
-  # of the original data (or, without either, of `data` itself).
+  if (!response_col %in% names(data)) {
+    mostr_abort(
+      "The bootstrap data do not contain the response column `",
+      response_col,
+      "`."
+    )
+  }
+
+  # The outcome states of the original fit in state order: `y_levels` first,
+  # then any other labels that the response of the original data (or, without
+  # either, of `data` itself) holds. Labels held only by a previous-state
+  # column are starting states, not outcome states, as in a fit to the full
+  # data.
   label_source <- original_data %||% (if (is.null(y_levels)) data)
   original_levels <- union(
     as_state_labels(y_levels),
-    state_column_labels(label_source, factor_cols)
+    observed_state_labels(label_source, response_col)
   )
 
-  # Labels present in current data, kept in state order. A label unknown to
-  # the original data is kept after the known ones.
-  present <- unique(unlist(lapply(
-    intersect(factor_cols, names(data)),
-    function(col) {
-      values <- data[[col]]
-      as_state_labels(unique(values[!is.na(values)]))
-    }
-  )))
+  # Outcome labels present in the resample, kept in state order. A label
+  # unknown to the original data is kept after the known ones.
+  present <- observed_state_labels(data, response_col)
   states_present <- c(
     original_levels[original_levels %in% present],
     setdiff(present, original_levels)
   )
-
   missing_levels <- setdiff(original_levels, states_present)
 
-  # If no levels are missing, return data as-is
+  # Each factor state column loses the levels it does not hold: the response
+  # its absent outcome states, a previous-state column the states that no
+  # patient of the resample is observed after. `droplevels()` keeps the level
+  # order and whether the factor is ordered. Other columns keep their values:
+  # a numeric previous state must keep its scale.
+  # `levels_dropped` records whether a column lost a level that the original
+  # data hold, so that the refit has fewer coefficients than the original fit
+  # (and the original coefficients can't start it). A level that was empty
+  # in the original data as well changes nothing.
+  levels_dropped <- FALSE
+  for (col in intersect(union(response_col, factor_cols), names(data))) {
+    values <- data[[col]]
+    if (!is.factor(values)) {
+      next
+    }
+    lost <- setdiff(levels(values), as_state_labels(unique(values)))
+    if (length(lost) > 0L) {
+      data[[col]] <- droplevels(values)
+      if (is.null(original_data) ||
+        any(lost %in% observed_state_labels(original_data, col))) {
+        levels_dropped <- TRUE
+      }
+    }
+  }
+
   if (length(missing_levels) == 0) {
     return(list(
       data = data,
       ylevels = y_levels,
       absorb = absorb,
-      missing_levels = character(0)
+      missing_levels = character(0),
+      levels_dropped = levels_dropped
     ))
-  }
-
-  # Factor state columns lose their empty levels. `droplevels()` keeps the
-  # level order and whether the factor is ordered. Other columns keep their
-  # values: a numeric previous state must keep its scale.
-  for (col in intersect(factor_cols, names(data))) {
-    if (is.factor(data[[col]])) {
-      data[[col]] <- droplevels(data[[col]])
-    }
   }
 
   new_ylevels <- if (!is.null(y_levels)) states_present else NULL
@@ -257,8 +293,22 @@ drop_absent_states <- function(
     data = data,
     ylevels = new_ylevels,
     absorb = new_absorb,
-    missing_levels = as.character(missing_levels)
+    missing_levels = as.character(missing_levels),
+    levels_dropped = levels_dropped
   ))
+}
+
+# The state labels that column `col` of `data` holds, in state order (factor
+# level order; sorted values for numeric and character columns). Unlike
+# `state_column_labels()`, it leaves out factor levels that no row holds.
+observed_state_labels <- function(data, col) {
+  if (is.null(data) || !col %in% names(data)) {
+    return(character(0))
+  }
+  values <- data[[col]]
+  held <- as_state_labels(unique(values[!is.na(values)]))
+  ordered_labels <- state_column_labels(data, col)
+  ordered_labels[ordered_labels %in% held]
 }
 
 # A factor of state labels whose levels keep the given state order; plain

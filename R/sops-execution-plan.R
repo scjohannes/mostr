@@ -1,8 +1,15 @@
 # Internal serializable execution plans for frequentist SOPs.
 
 validate_sop_threshold_count <- function(Gamma, y_levels) {
+  validate_sop_state_count(nrow(Gamma), y_levels)
+}
+
+# `y_levels` must name one state more than the fit has cut-points
+# (`n_thresholds`). Otherwise the probabilities of a visit would be recycled
+# over the wrong number of states without an error.
+validate_sop_state_count <- function(n_thresholds, y_levels) {
   expected <- length(y_levels) - 1L
-  actual <- nrow(Gamma)
+  actual <- as.integer(n_thresholds)
   if (!identical(actual, expected)) {
     mostr_abort(
       "`y_levels` defines ",
