@@ -441,6 +441,58 @@ test_that("penalized sandwich orm uses its dedicated inverse-sensitivity bread",
   )
 })
 
+test_that("penalized orm sandwich subtracts each patient's share of the penalty gradient", {
+  case <- local_robcov_orm_case()
+  penalized <- suppressWarnings(rms::orm(
+    ordered(y) ~ time + tx + yprev,
+    data = case$data,
+    penalty = 2,
+    x = TRUE,
+    y = TRUE
+  ))
+  cluster <- case$data$id
+  beta <- stats::coef(penalized)
+  penalty_matrix <- penalized$penalty.matrix
+  # rms penalizes the non-intercept coefficients, which come last.
+  penalized_index <- length(beta) - nrow(penalty_matrix) + seq_len(nrow(penalty_matrix))
+  penalty_gradient <- stats::setNames(numeric(length(beta)), names(beta))
+  penalty_gradient[penalized_index] <- penalty_matrix %*% beta[penalized_index]
+
+  # A penalized fit maximizes loglik - 0.5 * beta' P beta, so at its estimate
+  # the log-likelihood scores sum to the penalty gradient P beta, not to zero.
+  scores <- compute_scores_orm(penalized)
+  expect_gt(max(abs(penalty_gradient)), 1)
+  expect_equal(colSums(scores), penalty_gradient, tolerance = 1e-6)
+
+  # Each patient's contribution to the penalized estimating equations is the
+  # patient's score sum minus an equal share of P beta; the contributions sum
+  # to zero. Leaving P beta in the scores adds (P beta)(P beta)' / G to the
+  # meat, which inflated coefficient SEs by up to 2 times at penalty 100 (#49).
+  patient_scores <- rowsum(scores, cluster, reorder = FALSE)
+  contributions <- sweep(
+    patient_scores,
+    2,
+    penalty_gradient / nrow(patient_scores)
+  )
+  bread <- orm_model_bread(penalized)$bread
+  expected <- bread %*% crossprod(contributions) %*% bread
+  expected <- (expected + t(expected)) / 2
+  robust <- robcov_orm(
+    penalized,
+    cluster = cluster,
+    type = "HC0",
+    cadjust = FALSE
+  )
+  expect_equal(unname(robust$var), unname(expected), tolerance = 1e-10)
+
+  # Without a cluster each row is its own unit and carries 1 / n of P beta.
+  row_contributions <- sweep(scores, 2, penalty_gradient / nrow(scores))
+  expected_rows <- bread %*% crossprod(row_contributions) %*% bread
+  expected_rows <- (expected_rows + t(expected_rows)) / 2
+  robust_rows <- robcov_orm(penalized, type = "HC0", cadjust = FALSE)
+  expect_equal(unname(robust_rows$var), unname(expected_rows), tolerance = 1e-10)
+})
+
 test_that("get_vcov_robust inherits and explicitly overrides stored orm corrections", {
   case <- local_robcov_orm_case()
   stored <- robcov_orm(
