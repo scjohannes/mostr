@@ -21,7 +21,7 @@ The template selects MathJax so the TeX emitted for reference-page equations is
 rendered, along with equations in vignette articles. The website workflow checks
 that every reference page containing equations loads the renderer.
 
-`.github/workflows/pkgdown.yaml` builds the site with R 4.6.1 on pull requests,
+`.github/workflows/pkgdown.yaml` builds the site with R 4.6.2 on pull requests,
 pushes to `main`, and manual runs. Only pushes and manual runs publish, using the
 GitHub Pages artifact and deployment actions. In repository Settings > Pages,
 the source must be set to GitHub Actions. pkgdown publishes every top-level `.md`
