@@ -1,10 +1,17 @@
 # Fit the vglm engine of mostm(). The model is built as in VGAM::vglm(), with
-# two differences that the SOP prediction code relies on. Inline registered
-# rms basis terms such as `rcs(time, 4)` or `lsp(time, 5)` get one VGAM
-# assignment per generated column, so each basis column can have its own
-# constraint matrix in a partial proportional odds model. The rms helpers
-# `rcs()`, `lsp()`, and `%ia%` are available to the formula without
-# `library(rms)`, so `time %ia% yprev` works as in rms.
+# two differences. A `constraints` list may name single columns of an inline
+# registered rms basis term such as `rcs(time, 4)` or `lsp(time, 5)`
+# (`"rcs(time, 4)time'"`), so each basis column can have its own constraint
+# matrix in a partial proportional odds model; the fit then gives VGAM one
+# assignment per basis column. Otherwise the fit uses VGAM's usual per-term
+# assignment, because VGAM matches `parallel` formulas and `constraints` names
+# against the assignment names, and a per-column assignment would silently
+# ignore `parallel = FALSE ~ rcs(time, 4)` (#42). For the same reason a
+# `parallel` formula naming a basis term whose single columns `constraints`
+# names is refused rather than ignored. The returned fit always
+# carries the per-column assignment, so prediction code sees the same object
+# either way. The rms helpers `rcs()`, `lsp()`, and `%ia%` are available to
+# the formula without `library(rms)`, so `time %ia% yprev` works as in rms.
 #
 # `setup` holds the arguments that mostm() has already resolved; the other
 # formals are the VGAM::vglm() arguments a user may pass through mostm().
@@ -97,8 +104,25 @@ mostm_fit_vglm <- function(
     matrix(, NROW(y), 0)
   }
 
+  # VGAM's cm.VGAM() and process.constraints() match the term labels of a
+  # `parallel` formula and the names of a `constraints` list against
+  # names(attr(x, "assign")). With one entry per basis column,
+  # `parallel = FALSE ~ rcs(time, 4)` matches nothing and silently fits a
+  # proportional odds spline, and a `constraints` list naming the whole term
+  # fails with "'constraints' is half-pie" (#42). So the fit uses VGAM's usual
+  # per-term assignment unless `constraints` names a single basis column, which
+  # only the split assignment can express.
   split_assign <- split_rms_basis_assign(x, mt)
-  attr(x, "assign") <- split_assign$assign
+  constraints_name_basis_columns <- is.list(constraints) &&
+    any(names(constraints) %in% split_assign$basis_columns)
+  # With the split assignment a `parallel` formula naming a whole basis term
+  # matches no column; mostm() refuses that combination once the family is
+  # resolved below (see stop_parallel_formula_on_split_basis()).
+  attr(x, "assign") <- if (constraints_name_basis_columns) {
+    split_assign$assign
+  } else {
+    split_assign$term_assign
+  }
   attr(x, "orig.assign.lm") <- split_assign$orig_assign
 
   if (!is.null(form2)) {
@@ -152,6 +176,12 @@ mostm_fit_vglm <- function(
   if (!inherits(family, "vglmff")) {
     mostr_abort("'family = ", family, "' is not a VGAM family function")
   }
+  # VGAM's cm.VGAM() would match such a formula's basis term against the
+  # per-column names, find nothing, and silently replace or keep the user's
+  # column matrices against the formula's intent (#42).
+  if (constraints_name_basis_columns) {
+    stop_parallel_formula_on_split_basis(family, split_assign$basis_terms)
+  }
 
   control <- eval_vcontrol(control, family, function.name, ...)
   if (length(methods::slot(family, "first"))) {
@@ -178,6 +208,14 @@ mostm_fit_vglm <- function(
     ...
   )
 
+  # The returned fit carries the split assignment whichever one the fit used,
+  # so `@assign`, `@x`, `@misc$orig.assign` and
+  # VGAM::constraints(type = "term") list one entry per basis column. This is
+  # safe because `fit$constraints` already holds one matrix per column of `x`,
+  # and SOP prediction rebuilds the linear predictor from those matrices.
+  attr(fit$x, "assign") <- split_assign$assign
+  fit$misc$orig.assign <- split_assign$assign
+
   fit$misc$dataname <- setup$data_name
   if (smart) {
     fit$smart.prediction <- get_smart_prediction()
@@ -188,7 +226,7 @@ mostm_fit_vglm <- function(
   # mostm() replaces this call with its own.
   answer <- methods::new(
     Class = "vglm",
-    assign = attr(x, "assign"),
+    assign = split_assign$assign,
     call = match.call(),
     coefficients = fit$coefficients,
     constraints = fit$constraints,
@@ -314,10 +352,17 @@ add_rms_formula_helpers <- function(formula) {
   formula
 }
 
+# Returns two VGAM assignments of the columns of `x`: `term_assign`, one entry
+# per model term as VGAM::vglm() builds it, and `assign`, where each inline rms
+# basis term is replaced by one entry per generated column, named by the column
+# (`"rms::rcs(time, 4)time'"`). `basis_columns` lists the names that only the
+# split assignment has, which is how mostm_fit_vglm() recognises a
+# `constraints` list that names single basis columns.
 split_rms_basis_assign <- function(x, terms) {
   attrassigndefault <- utils::getFromNamespace("attrassigndefault", "VGAM")
   orig_assign <- attr(x, "assign")
-  assign <- attrassigndefault(x, terms)
+  term_assign <- attrassigndefault(x, terms)
+  assign <- term_assign
 
   basis_terms <- names(assign)[vapply(
     names(assign),
@@ -335,8 +380,54 @@ split_rms_basis_assign <- function(x, terms) {
 
   list(
     assign = assign,
+    term_assign = term_assign,
+    basis_terms = basis_terms,
+    basis_columns = setdiff(names(assign), names(term_assign)),
     orig_assign = orig_assign,
     has_basis = length(basis_terms) > 0L
+  )
+}
+
+# Term labels of the `parallel` formulas in a VGAM family. Families such as
+# VGAM::cumulative() substitute their `parallel` argument into the
+# `cm.VGAM(..., bool = <parallel>)` calls of the family's `constraints` slot,
+# either as a formula object or as an unevaluated `~` call. The walk collects
+# the labels of every formula it finds there; a logical `parallel` adds none.
+vglm_family_parallel_term_labels <- function(family) {
+  walk <- function(node) {
+    if (inherits(node, "formula")) {
+      return(attr(stats::terms(node), "term.labels"))
+    }
+    if (is.call(node) && identical(node[[1]], as.name("~"))) {
+      return(attr(stats::terms(stats::as.formula(node)), "term.labels"))
+    }
+    if (is.call(node) || is.expression(node) || is.list(node)) {
+      return(unlist(lapply(as.list(node), walk), use.names = FALSE))
+    }
+    character()
+  }
+  unique(walk(methods::slot(family, "constraints")))
+}
+
+stop_parallel_formula_on_split_basis <- function(family, basis_terms) {
+  named <- intersect(vglm_family_parallel_term_labels(family), basis_terms)
+  if (!length(named)) {
+    return(invisible())
+  }
+  terms_text <- paste0("`", named, "`", collapse = ", ")
+  mostr_abort(
+    "`constraints` names single columns of the basis ",
+    if (length(named) == 1L) "term " else "terms ",
+    terms_text,
+    ", and the family's `parallel` formula also names ",
+    if (length(named) == 1L) "this term" else "these terms",
+    ". A `parallel` formula treats a basis term as a whole, so it cannot be ",
+    "combined with constraint matrices for its single columns. Give every ",
+    "column of ",
+    terms_text,
+    " its constraint matrix in `constraints`, and use `parallel = FALSE` or a ",
+    "`parallel` formula that does not name ",
+    if (length(named) == 1L) "the term." else "these terms."
   )
 }
 

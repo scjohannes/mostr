@@ -12,6 +12,28 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: vglm fits use VGAM's per-term assignment unless constraints name spline columns
+
+`mostm(engine = "vglm")` gives `VGAM::vglm.fit()` VGAM's usual one assignment
+per term, unless `constraints` names single columns of an inline `rms` basis
+such as `"rms::rcs(time, 4)time'"`; only then does the fit use one assignment
+per basis column. Reason: VGAM's `cm.VGAM()` matches `parallel` formulas and
+`constraints` names against the assignment names, and with one name per
+column `parallel = FALSE ~ rms::rcs(time, 4)` silently fitted a proportional
+odds spline (#42). With the VIOLET preset (400 patients, seed 1),
+`parallel = FALSE ~ rms::lsp(day, 7)` gave 10 coefficients and log-likelihood
+-1785.041 through `mostm()`, against 14 and -1781.755 through `VGAM::vglm()`.
+The returned fit keeps the per-column assignment, as before, so prediction
+and `VGAM::constraints(type = "term")` are unchanged.
+
+A `constraints` list naming spline columns together with a `parallel` formula
+naming that spline is refused (user's choice). Rejected: translating the
+formula so the term name covers all its columns. It would work, but relies on
+how VGAM evaluates the family's constraint expression, and everything the
+combination can say is also expressible in `constraints` with
+`parallel = FALSE`. Rejected: always fitting with the per-term assignment,
+which would remove the existing per-column constraints feature.
+
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 
 The tests may take at most 90 seconds in CRAN mode on the development machine

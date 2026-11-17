@@ -305,6 +305,22 @@
 
 ## Bug fixes
 
+* `mostm(engine = "vglm")` now honours a `parallel` formula that names an
+  inline spline such as `rms::rcs(time, 4)` or `lsp(day, 2)` (#42). Before,
+  `family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ rms::rcs(time, 4))`
+  fitted the spline with one coefficient common to all thresholds (a
+  proportional odds spline), without any warning, and
+  `parallel = TRUE ~ rms::rcs(time, 4)` gave the spline a separate
+  coefficient at each threshold. Such fits now agree with [VGAM::vglm()].
+  A `constraints` list that names the whole spline term, such as
+  `"rms::rcs(time, 4)"`, is now accepted as in [VGAM::vglm()]; before, the
+  fit stopped with "'constraints' is half-pie". A `constraints` list can
+  still give single spline columns, such as `"rms::rcs(time, 4)time'"`, their
+  own matrix. Such a list cannot be combined with a `parallel` formula that
+  names the same spline, which VGAM would apply to none of its columns, so
+  `mostm()` now refuses the combination; give every column of the spline its
+  matrix in `constraints` and use `parallel = FALSE` instead.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,
