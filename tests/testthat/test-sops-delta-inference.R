@@ -279,6 +279,174 @@ test_that("low-rank analytical accessors select rows without dense storage", {
   expect_identical(attr(result, "conf_type"), "logit")
 })
 
+# Base R `[` keeps the stored derivatives of every original row when a user
+# filters or sorts a delta result, as the help pages suggest. The accessors
+# must follow the rows the object has now (issue #43).
+delta_row_alignment_fixture <- function(representation) {
+  object <- expand.grid(
+    time = 1:3,
+    state = c("1", "2"),
+    KEEP.OUT.ATTRS = FALSE
+  )
+  object$estimate <- seq(0.1, 0.6, length.out = nrow(object))
+  class(object) <- c("markov_avg_sops", "data.frame")
+  m <- nrow(object)
+  jacobian <- cbind(beta_1 = seq_len(m), beta_2 = (seq_len(m) - 3)^2)
+  if (identical(representation, "coefficient")) {
+    covariance <- matrix(
+      c(0.04, 0.01, 0.01, 0.09),
+      nrow = 2,
+      dimnames = list(colnames(jacobian), colnames(jacobian))
+    )
+    analytical <- list(
+      representation = "coefficient",
+      jacobian = jacobian,
+      coefficient_vcov = covariance,
+      coefficient_names = colnames(jacobian),
+      covariance_metadata = list(source = "test")
+    )
+    variance <- delta_jacobian_variance(jacobian, covariance)
+  } else {
+    # Five patients whose influence values differ between all cells.
+    influence <- outer(1:5, seq_len(m), function(i, j) sin(i * j) + i / j)
+    n <- nrow(influence)
+    analytical <- list(
+      representation = "influence",
+      average_jacobian = jacobian,
+      influence = influence,
+      covariance_metadata = list(source = "test")
+    )
+    variance <- diag(stats::cov(influence)) / n
+  }
+  delta_finalize_result(
+    object,
+    standard_error = sqrt(variance),
+    conf_level = 0.95,
+    conf_type = "wald",
+    target = "empirical",
+    analytical = analytical
+  )
+}
+
+for (representation in c("coefficient", "influence")) {
+  test_that(
+    paste(
+      "analytical accessors follow filtered and sorted rows:",
+      representation
+    ),
+    {
+      result <- delta_row_alignment_fixture(representation)
+      full_vcov <- unname(stats::vcov(result))
+      full_jacobian <- unname(get_jacobian(result))
+
+      sorted <- result[order(result$state, -result$time), ]
+      order_index <- order(result$state, -result$time)
+      expect_equal(
+        sqrt(diag(stats::vcov(sorted))),
+        sorted$std.error,
+        ignore_attr = TRUE
+      )
+      expect_equal(
+        unname(stats::vcov(sorted)),
+        full_vcov[order_index, order_index]
+      )
+      expect_equal(
+        unname(get_jacobian(sorted, rows = 1)),
+        full_jacobian[order_index[1], , drop = FALSE]
+      )
+
+      last_time <- result[result$time == 3, ]
+      keep <- which(result$time == 3)
+      expect_equal(dim(stats::vcov(last_time)), c(2L, 2L))
+      expect_equal(
+        sqrt(diag(stats::vcov(last_time))),
+        last_time$std.error,
+        ignore_attr = TRUE
+      )
+      expect_equal(
+        unname(stats::vcov(last_time, rows = 2)),
+        full_vcov[keep[2], keep[2], drop = FALSE]
+      )
+      expect_equal(
+        unname(stats::vcov(last_time, rows = c(FALSE, TRUE))),
+        full_vcov[keep[2], keep[2], drop = FALSE]
+      )
+      expect_equal(nrow(get_jacobian(last_time)), nrow(last_time))
+      expect_equal(
+        unname(get_jacobian(last_time, rows = 2)),
+        full_jacobian[keep[2], , drop = FALSE]
+      )
+      expect_identical(
+        rownames(stats::vcov(last_time)),
+        delta_row_key(delta_row_key_frame(last_time))
+      )
+      # Row 3 is outside the two rows left.
+      expect_error(
+        stats::vcov(last_time, rows = 3),
+        class = "mostr_error"
+      )
+      # A stored row the object no longer has cannot be selected by key.
+      dropped_key <- attr(result, "analytical")$row_key[1]
+      expect_error(
+        stats::vcov(last_time, rows = dropped_key),
+        class = "mostr_error"
+      )
+
+      # Two copies of one row refer to the same stored cell.
+      repeated <- result[c(2, 2), ]
+      expect_equal(
+        unname(stats::vcov(repeated)),
+        full_vcov[c(2, 2), c(2, 2)]
+      )
+
+      # Rows whose identifying values no longer match a stored row have no
+      # stored derivatives, so the accessors refuse them.
+      edited <- result
+      edited$time <- edited$time + 10L
+      expect_error(stats::vcov(edited), class = "mostr_error")
+      expect_error(get_jacobian(edited), class = "mostr_error")
+
+      # Added or reordered columns do not change which rows are stored.
+      # Base `[` with a column index drops the stored state, so put it back
+      # as a column-reordering tool that keeps attributes would.
+      relabelled <- result[, rev(names(result))]
+      attr(relabelled, "analytical") <- attr(result, "analytical")
+      relabelled$note <- "extra"
+      expect_equal(unname(stats::vcov(relabelled)), full_vcov)
+    }
+  )
+}
+
+test_that("vcov() of filtered public ORM delta SOPs matches their errors", {
+  case <- delta_public_orm_case()
+  inferred <- inferences(
+    avg_sops(
+      case$model,
+      newdata = case$baseline,
+      variables = list(tx = c(0, 1)),
+      times = 1:3
+    ),
+    method = "delta",
+    vcov = case$covariance
+  )
+  last_time <- inferred[inferred$time == 3, ]
+  last_time <- last_time[rev(seq_len(nrow(last_time))), ]
+  covariance <- stats::vcov(last_time)
+  expect_equal(nrow(covariance), nrow(last_time))
+  expect_equal(
+    sqrt(diag(covariance)),
+    last_time$std.error,
+    ignore_attr = TRUE,
+    tolerance = 1e-12
+  )
+  expect_equal(
+    sqrt(diag(stats::vcov(last_time, rows = 1:2))),
+    last_time$std.error[1:2],
+    ignore_attr = TRUE,
+    tolerance = 1e-12
+  )
+})
+
 test_that("delta replay rejects stale estimates even when cell keys align", {
   skip_on_cran()
   case <- delta_public_vglm_case()

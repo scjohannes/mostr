@@ -91,21 +91,62 @@ delta_analytical <- function(x) {
   analytical
 }
 
-delta_resolve_rows <- function(analytical, rows = NULL) {
-  n <- length(analytical$row_key)
+# Map each current row of `object` to the stored row that holds its
+# derivatives. Base R `[` keeps the "analytical" attribute when a user filters
+# or sorts a delta result, so the stored rows can differ from the rows the
+# object has now; without this map, vcov() returned covariances of rows the
+# object no longer has, in the stored order (issue #43). Keys are rebuilt from
+# the stored key column names, so added or reordered columns still match.
+delta_current_rows <- function(object, analytical) {
+  mismatch <- function() {
+    mostr_abort(
+      "The rows of this result no longer match the values stored by ",
+      "`inferences(method = \"delta\")`. Filtering, sorting, or repeating ",
+      "rows is supported, but editing the columns that identify a row is ",
+      "not. Rerun `inferences()` on the edited result."
+    )
+  }
+  key_cols <- names(analytical$row_keys)
+  stored_key <- analytical$row_key
+  if (length(key_cols) == 0L) {
+    # Without identifying columns the stored keys are row positions, so a
+    # subset cannot be matched. Only the unchanged row count is accepted.
+    if (nrow(object) != length(stored_key)) {
+      mismatch()
+    }
+    return(list(key = stored_key, stored = seq_along(stored_key)))
+  }
+  if (!all(key_cols %in% names(object))) {
+    mismatch()
+  }
+  current_key <- delta_row_key(
+    as.data.frame(object)[, key_cols, drop = FALSE]
+  )
+  stored <- match(current_key, stored_key)
+  if (anyNA(stored)) {
+    mismatch()
+  }
+  list(key = current_key, stored = stored)
+}
+
+# Resolve `rows` against the current rows of the object and return positions
+# among those current rows.
+delta_resolve_rows <- function(current, rows = NULL) {
+  n <- length(current$key)
   if (is.null(rows)) {
     return(seq_len(n))
   }
   if (is.logical(rows)) {
     if (length(rows) != n || anyNA(rows)) {
       mostr_abort(
-        "Logical `rows` must be non-missing and match the result length."
+        "Logical `rows` must be non-missing and match the number of rows ",
+        "of the result."
       )
     }
     return(which(rows))
   }
   if (is.character(rows)) {
-    index <- match(rows, analytical$row_key)
+    index <- match(rows, current$key)
     if (anyNA(index)) {
       mostr_abort("Some requested analytical row keys were not found.")
     }
@@ -130,7 +171,9 @@ delta_resolve_rows <- function(analytical, rows = NULL) {
 # coefficient derivative, not the complete patient influence representation.
 get_jacobian <- function(x, rows = NULL) {
   analytical <- delta_analytical(x)
-  index <- delta_resolve_rows(analytical, rows)
+  current <- delta_current_rows(x, analytical)
+  selected <- delta_resolve_rows(current, rows)
+  index <- current$stored[selected]
   jacobian <- analytical$jacobian %||% analytical$average_jacobian
   if (is.null(jacobian)) {
     mostr_abort("The analytical result does not contain an average Jacobian.")
@@ -138,13 +181,15 @@ get_jacobian <- function(x, rows = NULL) {
   required <- as.double(length(index)) * as.double(ncol(jacobian)) * 8
   delta_assert_bytes(required, "The requested Jacobian block")
   out <- jacobian[index, , drop = FALSE]
-  rownames(out) <- analytical$row_key[index]
+  rownames(out) <- current$key[selected]
   out
 }
 
 delta_vcov <- function(object, rows = NULL) {
   analytical <- delta_analytical(object)
-  index <- delta_resolve_rows(analytical, rows)
+  current <- delta_current_rows(object, analytical)
+  selected <- delta_resolve_rows(current, rows)
+  index <- current$stored[selected]
   m <- length(index)
 
   if (identical(analytical$representation, "influence")) {
@@ -173,8 +218,8 @@ delta_vcov <- function(object, rows = NULL) {
   }
 
   dimnames(out) <- list(
-    analytical$row_key[index],
-    analytical$row_key[index]
+    current$key[selected],
+    current$key[selected]
   )
   out
 }
@@ -192,12 +237,19 @@ delta_vcov <- function(object, rows = NULL) {
 #' storage grows quadratically with the number of result cells. Use `rows` to
 #' extract smaller blocks within the analytical memory limit. Standard errors
 #' are computed without materializing the full covariance matrix.
+#' You may filter or sort the result before calling `vcov()`: the matrix
+#' follows the rows of `object` as you pass it, so the square roots of its
+#' diagonal entries equal the `std.error` column.
 #'
 #' @param object A `markov_sops`, `markov_avg_sops`, `markov_state_time`,
 #'   `markov_avg_state_time`, `markov_comparisons`, or `markov_avg_comparisons`
-#'   object returned by `inferences(method = "delta")`.
-#' @param rows Optional numeric or logical row selection, or analytical row-key
-#'   values. `NULL` returns every result row.
+#'   object returned by `inferences(method = "delta")`, possibly with rows
+#'   filtered, sorted, or repeated.
+#' @param rows Optional selection of rows of `object` as passed: row numbers,
+#'   a logical vector with one value per row of `object`, or the row names of
+#'   a matrix returned by an earlier `vcov()` call. `NULL` returns every row.
+#'   Rows whose identifying columns (such as `time` or `state`) were changed
+#'   after `inferences()` raise an error; rerun `inferences()` instead.
 #' @param ... Reserved for the `stats::vcov()` generic.
 #'
 #' @return A symmetric covariance matrix for the selected result cells.

@@ -24,10 +24,14 @@
 \arguments{
 \item{object}{A \code{markov_sops}, \code{markov_avg_sops}, \code{markov_state_time},
 \code{markov_avg_state_time}, \code{markov_comparisons}, or \code{markov_avg_comparisons}
-object returned by \code{inferences(method = "delta")}.}
+object returned by \code{inferences(method = "delta")}, possibly with rows
+filtered, sorted, or repeated.}
 
-\item{rows}{Optional numeric or logical row selection, or analytical row-key
-values. \code{NULL} returns every result row.}
+\item{rows}{Optional selection of rows of \code{object} as passed: row numbers,
+a logical vector with one value per row of \code{object}, or the row names of
+a matrix returned by an earlier \code{vcov()} call. \code{NULL} returns every row.
+Rows whose identifying columns (such as \code{time} or \code{state}) were changed
+after \code{inferences()} raise an error; rerun \code{inferences()} instead.}
 
 \item{...}{Reserved for the \code{stats::vcov()} generic.}
 }
@@ -46,4 +50,7 @@ With \code{rows = NULL}, the full dense covariance matrix is requested and its
 storage grows quadratically with the number of result cells. Use \code{rows} to
 extract smaller blocks within the analytical memory limit. Standard errors
 are computed without materializing the full covariance matrix.
+You may filter or sort the result before calling \code{vcov()}: the matrix
+follows the rows of \code{object} as you pass it, so the square roots of its
+diagonal entries equal the \code{std.error} column.
 }
