@@ -20,8 +20,19 @@
 #'   `constraints`. Without `family`, this engine fits the same proportional
 #'   odds model as `"orm"`, so changing `engine` is enough to compare the two.
 #' * `"blrm"` fits a Bayesian model with [rmsb::blrm()], which samples from the
-#'   posterior distribution with Stan. Partial proportional odds effects are
-#'   set with `ppo` and `cppo`. This engine needs the rmsb package.
+#'   posterior distribution with Stan. This engine needs the rmsb package.
+#'   For a partial proportional odds model, name the predictors whose effect
+#'   differs between thresholds in a `ppo` formula, such as `ppo = ~time`,
+#'   and give `cppo`, a function that sets how that effect changes from one
+#'   threshold to the next: the effect at the threshold above state \eqn{j}
+#'   is the `ppo` coefficient times `cppo`'s value for state \eqn{j + 1}.
+#'   `ppo` needs `cppo`: without it, [rmsb::blrm()] fits a separate effect
+#'   at every threshold, which [sops()] and the other functions that use the
+#'   fit can't use, so `mostm()` stops. [rmsb::blrm()] calls `cppo` once,
+#'   with the labels of all states, and it must return one number for each
+#'   state. For a factor response, such as `ordered(y)`, the labels are
+#'   character strings, so convert them: `cppo = function(y) as.numeric(y)`
+#'   makes the effect grow linearly with the state number.
 #'
 #' In a partial proportional odds model the thresholds (cut-points) between
 #' states move with the predictors that have a separate effect at each
@@ -51,7 +62,8 @@
 #'   `rms::rcs()` and `rms::pol()` rather than `splines::ns()`,
 #'   `splines::bs()` or `stats::poly()`, for time and for any other variable:
 #'   rms evaluates the latter again on the prediction rows, which gives a
-#'   different basis, so `mostm()` refuses them.
+#'   different basis, so `mostm()` refuses them. For `"blrm"`, both rules
+#'   apply to the `ppo` formula as well.
 #' @param data A data frame with one row per patient and visit.
 #' @param ... Arguments for the engine, given by name. Each must be an
 #'   argument of the chosen engine; an argument that belongs to a different
@@ -62,7 +74,8 @@
 #'     `coefstart`, or `control`, and of [VGAM::vglm.control()], such as
 #'     `maxit` or `trace`. `family` defaults to
 #'     `VGAM::cumulative(reverse = TRUE, parallel = TRUE)`.
-#'   * `"blrm"`: arguments of [rmsb::blrm()], such as `ppo`, `cppo`, `iter`,
+#'   * `"blrm"`: arguments of [rmsb::blrm()], such as `ppo` and `cppo` (which
+#'     must be given together; see the description above), `iter`,
 #'     `warmup`, `chains`, the prior settings `conc` and `psigma`, or
 #'     `backend`, which chooses between rstan and cmdstan. Settings of the
 #'     Stan sampler that [rmsb::blrm()] has no argument for go in
@@ -328,10 +341,13 @@
 #'
 #' \donttest{
 #' if (requireNamespace("rmsb", quietly = TRUE)) {
-#'   # A Bayesian model with a separate time effect at each state threshold
-#'   # (partial proportional odds), the kind of model that the VIOLET preset
-#'   # simulates. Its states are 1 (home), 2 (hospital), 3 (ventilator or
-#'   # ARDS) and 4 (dead). Stan's sampling takes about a minute.
+#'   # A Bayesian model in which the effect of time differs between the state
+#'   # thresholds (partial proportional odds), the kind of model that the
+#'   # VIOLET preset simulates. Its states are 1 (home), 2 (hospital), 3
+#'   # (ventilator or ARDS) and 4 (dead). `ppo = ~time` lets the time effect
+#'   # differ between thresholds, and `cppo` sets how: here it grows linearly
+#'   # with the state number of the threshold. Stan's sampling takes about a
+#'   # minute.
 #'   violet <- sim_markov("violet", n_patients = 60, times = 1:10, seed = 1)
 #'   violet_data <- prepare_markov_data(violet, absorb = 4)
 #'   fit_blrm <- mostm(
@@ -341,6 +357,7 @@
 #'     absorb = "4",
 #'     engine = "blrm",
 #'     ppo = ~time,
+#'     cppo = function(y) as.numeric(y),
 #'     iter = 1000,
 #'     chains = 2,
 #'     loo = FALSE,
@@ -403,6 +420,12 @@ mostm <- function(
         "Package 'rmsb' is required for `engine = \"blrm\"`."
       )
     }
+    # `refit_args` holds the evaluated engine arguments, so a `ppo` given as
+    # the name of a formula in the caller's frame is already that formula.
+    ppo_formula <- refit_args[["ppo"]]
+    if (!is.null(ppo_formula) && is.null(refit_args[["cppo"]])) {
+      stop_blrm_ppo_without_cppo()
+    }
   }
   type <- match.arg(type)
   if (missing(data) || !is.data.frame(data)) {
@@ -414,6 +437,23 @@ mostm <- function(
   if (engine %in% c("orm", "blrm")) {
     mostm_check_inline_factors(formula, engine, time_var)
     mostm_check_data_dependent_bases(formula, engine)
+  }
+  # The `ppo` design goes through the same `rms::predictrms()` call
+  # (`second = TRUE`) as the main formula, so it has the same problems: with
+  # `ppo = ~splines::ns(time, 2)`, the `ppo` design matrix of two days' rows
+  # differed from the fitted one by up to 0.99.
+  if (engine == "blrm" && inherits(ppo_formula, "formula")) {
+    mostm_check_inline_factors(
+      ppo_formula,
+      engine,
+      time_var,
+      where = "the `ppo` formula"
+    )
+    mostm_check_data_dependent_bases(
+      ppo_formula,
+      engine,
+      where = "the `ppo` formula"
+    )
   }
   mostm_check_random_effects(formula, engine)
 
@@ -809,11 +849,32 @@ mostm_check_engine_args <- function(engine, dots, values) {
   invisible(NULL)
 }
 
+# Without `cppo`, rmsb::blrm() fits a separate `ppo` effect at every cut-point
+# (unconstrained partial proportional odds). The prediction code of mostr
+# scales one effect by the `cppo` scores, so it cannot use such a fit; refusing
+# here saves the user the Stan sampling.
+stop_blrm_ppo_without_cppo <- function() {
+  mostr_abort(
+    "For `engine = \"blrm\"`, give `cppo` with `ppo`. mostr predicts only from ",
+    "constrained partial proportional-odds `blrm` fits, in which the `ppo` ",
+    "effects change across the cut-points between states as `cppo` says. ",
+    "For example, `cppo = function(y) as.numeric(y)` makes them change ",
+    "linearly across the cut-points. Without `cppo`, `rmsb::blrm()` fits a ",
+    "separate effect at every cut-point, which `sops()` and the other state ",
+    "occupancy functions can't use."
+  )
+}
+
 # rms::orm() and rmsb::blrm() name the design matrix columns of a factor after
 # the variable (`x=2`), but stats::model.matrix() names those of a variable
 # converted inside the formula after the call (`factor(x)2`). rms then fails
 # with "subscript out of bounds", so mostm() rejects such terms before fitting.
-mostm_check_inline_factors <- function(formula, engine, time_var) {
+mostm_check_inline_factors <- function(
+  formula,
+  engine,
+  time_var,
+  where = "the formula"
+) {
   calls <- formula_inline_factor_calls(formula)
   if (!length(calls)) {
     return(invisible(NULL))
@@ -843,11 +904,15 @@ mostm_check_inline_factors <- function(formula, engine, time_var) {
     } else {
       "a variable that is converted to a factor"
     },
-    " inside the formula: ",
+    " inside ",
+    where,
+    ": ",
     format_sop_visit_list(paste0("`", labels, "`")),
     ". Create ",
     if (several) "each factor" else "the factor",
-    " as a column of `data` and use that column in the formula instead",
+    " as a column of `data` and use that column in ",
+    where,
+    " instead",
     if (!is.null(example)) paste0(", for example `", example, "`"),
     ".",
     if (converts_time) {
@@ -887,7 +952,7 @@ mostm_subset_row_index <- function(subset_rows, n) {
 # store their knots or powers and agreed exactly. VGAM keeps the fitted basis,
 # so `engine = "vglm"` is not checked. `poly(raw = TRUE)` has no data-dependent
 # part and is allowed.
-mostm_check_data_dependent_bases <- function(formula, engine) {
+mostm_check_data_dependent_bases <- function(formula, engine, where = NULL) {
   calls <- formula_rhs_calls(formula, c("ns", "bs", "poly"))
   calls <- Filter(
     function(call) {
@@ -920,6 +985,7 @@ mostm_check_data_dependent_bases <- function(formula, engine) {
     fitter,
     ", ",
     format_sop_visit_list(paste0("`", labels, "`")),
+    if (!is.null(where)) paste0(" in ", where),
     if (length(labels) == 1L) " would be" else " would each be",
     " evaluated again on the prediction rows, which gives a different basis ",
     "without any error, so the state occupancy probabilities would be ",

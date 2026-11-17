@@ -464,6 +464,39 @@ resolve_blrm_cppo <- function(cppo, envir = parent.frame()) {
   )
 }
 
+# Scores that scale the partial proportional-odds effects at the cut-points
+# "y >= state j", j = 2..k, of a constrained blrm fit. rmsb::blrm() computes
+# `pposcore <- cppo(ylevels)` once on all states, and its Stan model uses
+# `pposcore[j]` for cut-point j, so the scores are `cppo(ylevels)[-1]`.
+# Calling `cppo` on one state at a time gives other scores whenever a state's
+# score depends on the other states: on a real 10-state fit with `cppo = rank`
+# these reproduced Stan's stored log-likelihood to 5e-14, while per-state calls
+# missed it by 2.7 (issue #46). rmsb::predict.blrm() itself uses
+# `cppo(ylevels[-1])`, which missed its own fit by 0.35 for such functions, so
+# it is not followed here.
+blrm_cppo_scores <- function(cppo, ylevels) {
+  scores <- cppo(ylevels)
+  n_states <- length(ylevels)
+  valid <- (is.numeric(scores) || is.logical(scores)) &&
+    length(scores) == n_states
+  if (valid) {
+    scores <- as.double(scores)
+    # The first state's score is never used: it belongs to no cut-point.
+    valid <- all(is.finite(scores[-1L]))
+  }
+  if (!valid) {
+    mostr_abort(
+      "`cppo` must return one finite number for each state when it is given ",
+      "the labels of all ",
+      n_states,
+      " states at once, as `rmsb::blrm()` calls it. For a factor response ",
+      "the labels are character strings, so convert them, for example with ",
+      "`cppo = function(y) as.numeric(y)`."
+    )
+  }
+  scores[-1L]
+}
+
 predict_blrm_response_markov <- function(
   object,
   newdata,
@@ -540,7 +573,7 @@ predict_blrm_response_markov <- function(
     }
     tau_draws <- draws[, tau_names, drop = FALSE]
     zt <- tau_draws %*% t(Z)
-    cppos <- vapply(object$ylevels[-1], cppo, numeric(1))
+    cppos <- blrm_cppo_scores(cppo, object$ylevels)
   }
 
   u_draws <- matrix(0, nrow = ndraws, ncol = nrow(newdata))

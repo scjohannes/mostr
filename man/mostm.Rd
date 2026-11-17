@@ -37,7 +37,8 @@ them at each requested time. For the \code{"orm"} and \code{"blrm"} engines, use
 \code{rms::rcs()} and \code{rms::pol()} rather than \code{splines::ns()},
 \code{splines::bs()} or \code{stats::poly()}, for time and for any other variable:
 rms evaluates the latter again on the prediction rows, which gives a
-different basis, so \code{mostm()} refuses them.}
+different basis, so \code{mostm()} refuses them. For \code{"blrm"}, both rules
+apply to the \code{ppo} formula as well.}
 
 \item{data}{A data frame with one row per patient and visit.}
 
@@ -51,7 +52,8 @@ engine is an error that names the engine it belongs to.
 \code{coefstart}, or \code{control}, and of \code{\link[VGAM:vglm.control]{VGAM::vglm.control()}}, such as
 \code{maxit} or \code{trace}. \code{family} defaults to
 \code{VGAM::cumulative(reverse = TRUE, parallel = TRUE)}.
-\item \code{"blrm"}: arguments of \code{\link[rmsb:blrm]{rmsb::blrm()}}, such as \code{ppo}, \code{cppo}, \code{iter},
+\item \code{"blrm"}: arguments of \code{\link[rmsb:blrm]{rmsb::blrm()}}, such as \code{ppo} and \code{cppo} (which
+must be given together; see the description above), \code{iter},
 \code{warmup}, \code{chains}, the prior settings \code{conc} and \code{psigma}, or
 \code{backend}, which chooses between rstan and cmdstan. Settings of the
 Stan sampler that \code{\link[rmsb:blrm]{rmsb::blrm()}} has no argument for go in
@@ -172,8 +174,19 @@ effect at each threshold between states: supply
 \code{constraints}. Without \code{family}, this engine fits the same proportional
 odds model as \code{"orm"}, so changing \code{engine} is enough to compare the two.
 \item \code{"blrm"} fits a Bayesian model with \code{\link[rmsb:blrm]{rmsb::blrm()}}, which samples from the
-posterior distribution with Stan. Partial proportional odds effects are
-set with \code{ppo} and \code{cppo}. This engine needs the rmsb package.
+posterior distribution with Stan. This engine needs the rmsb package.
+For a partial proportional odds model, name the predictors whose effect
+differs between thresholds in a \code{ppo} formula, such as \code{ppo = ~time},
+and give \code{cppo}, a function that sets how that effect changes from one
+threshold to the next: the effect at the threshold above state \eqn{j}
+is the \code{ppo} coefficient times \code{cppo}'s value for state \eqn{j + 1}.
+\code{ppo} needs \code{cppo}: without it, \code{\link[rmsb:blrm]{rmsb::blrm()}} fits a separate effect
+at every threshold, which \code{\link[=sops]{sops()}} and the other functions that use the
+fit can't use, so \code{mostm()} stops. \code{\link[rmsb:blrm]{rmsb::blrm()}} calls \code{cppo} once,
+with the labels of all states, and it must return one number for each
+state. For a factor response, such as \code{ordered(y)}, the labels are
+character strings, so convert them: \code{cppo = function(y) as.numeric(y)}
+makes the effect grow linearly with the state number.
 }
 
 In a partial proportional odds model the thresholds (cut-points) between
@@ -378,10 +391,13 @@ sops_by_arm[sops_by_arm$time == 10, ]
 
 \donttest{
 if (requireNamespace("rmsb", quietly = TRUE)) {
-  # A Bayesian model with a separate time effect at each state threshold
-  # (partial proportional odds), the kind of model that the VIOLET preset
-  # simulates. Its states are 1 (home), 2 (hospital), 3 (ventilator or
-  # ARDS) and 4 (dead). Stan's sampling takes about a minute.
+  # A Bayesian model in which the effect of time differs between the state
+  # thresholds (partial proportional odds), the kind of model that the
+  # VIOLET preset simulates. Its states are 1 (home), 2 (hospital), 3
+  # (ventilator or ARDS) and 4 (dead). `ppo = ~time` lets the time effect
+  # differ between thresholds, and `cppo` sets how: here it grows linearly
+  # with the state number of the threshold. Stan's sampling takes about a
+  # minute.
   violet <- sim_markov("violet", n_patients = 60, times = 1:10, seed = 1)
   violet_data <- prepare_markov_data(violet, absorb = 4)
   fit_blrm <- mostm(
@@ -391,6 +407,7 @@ if (requireNamespace("rmsb", quietly = TRUE)) {
     absorb = "4",
     engine = "blrm",
     ppo = ~time,
+    cppo = function(y) as.numeric(y),
     iter = 1000,
     chains = 2,
     loo = FALSE,

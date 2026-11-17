@@ -305,6 +305,21 @@
 
 ## Bug fixes
 
+* State occupancy probabilities from `mostm(engine = "blrm")` fits with
+  `ppo` and `cppo` now use the same `cppo` scores as the fitted model (#46).
+  `rmsb::blrm()` calls `cppo` once with all state labels, but mostr called it
+  on one state at a time, which gives other scores whenever a state's score
+  depends on the other states, as with `cppo = rank`. Functions that score
+  each state on its own, such as `function(y) as.numeric(y)`, gave correct
+  results before. A `cppo` that does not return one finite number for each
+  state is now an error. `mostm()` also refuses before sampling:
+
+  * `ppo` without `cppo`, because `rmsb::blrm()` then fits a separate effect
+    at every threshold, which the state occupancy functions can't use;
+  * `factor()` and the other factor conversions, and `splines::ns()`,
+    `splines::bs()` and `stats::poly()`, inside the `ppo` formula, as it
+    already did in the main formula.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,
