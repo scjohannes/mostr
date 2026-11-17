@@ -787,6 +787,8 @@ interpolated_ci_from_draws <- function(draws, result, conf_level, conf_type) {
 #' interpolated draws. Coefficient-only draws treat the empirical baseline anchor
 #' as fixed; empirical FWB and refit-bootstrap draws use the
 #' corresponding draw-specific patient weights or resampled cohort.
+#' Call [inferences()] before `interpolate_sops()`, not after: inference is
+#' computed at the visits, so `inferences()` refuses interpolated SOPs.
 #' If interval columns are present but stored draws are unavailable,
 #' `interpolate_sops()` warns and falls back to interpolating interval endpoints.
 #' Each numeric series is interpolated only within its own finite source-time

@@ -62,6 +62,8 @@ are interpolated too. Interval columns are then recomputed from the
 interpolated draws. Coefficient-only draws treat the empirical baseline anchor
 as fixed; empirical FWB and refit-bootstrap draws use the
 corresponding draw-specific patient weights or resampled cohort.
+Call \code{\link[=inferences]{inferences()}} before \code{interpolate_sops()}, not after: inference is
+computed at the visits, so \code{inferences()} refuses interpolated SOPs.
 If interval columns are present but stored draws are unavailable,
 \code{interpolate_sops()} warns and falls back to interpolating interval endpoints.
 Each numeric series is interpolated only within its own finite source-time

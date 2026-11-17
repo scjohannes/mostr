@@ -305,6 +305,14 @@
 
 ## Bug fixes
 
+* `inferences()` refuses SOPs already passed through `interpolate_sops()`
+  (#58). Inference is computed at the visits and matched to the rows by
+  `time`, which interpolation had moved to the real-time scale. The
+  bootstrap and FWB then returned no interval for most rows and another
+  visit's interval for the rest, without a warning, and MVN and delta
+  stopped with unclear errors. Run `inferences()` first and interpolate its
+  result: `interpolate_sops(inferences(x), time_map = )`.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,

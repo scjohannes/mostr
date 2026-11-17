@@ -12,6 +12,29 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: `inferences()` refuses interpolated SOPs
+
+`inferences()` stops on a result of `interpolate_sops()`, for all four
+methods, and names the supported order,
+`interpolate_sops(inferences(x), time_map = )` (#58). Before, it accepted
+them because they keep the `markov_avg_sops` or `markov_sops` class, but
+inference replays the visit SOPs and matches them to the rows by `time`,
+which is then on the real-time scale. On `actt2` with 200 patients and
+visits 1 to 6 mapped to days 3 to 28, the bootstrap and FWB of `avg_sops()`
+left 48 of 56 rows without an interval, and 4 (bootstrap) and 5 (FWB) of the
+other 8 did not contain the estimate (day 3, state 1: estimate 0.0012,
+interval 0.038 to 0.080). FWB of `sops()` for 3 profiles left 144 of 168
+rows without an interval, and none of the other 24 contained the estimate.
+MVN and delta stopped with messages about misaligned cells. The user chose
+refusing when asked.
+
+Rejected: supporting the reverse order by replaying the visit SOPs, running
+inference on them and interpolating again with the stored `time_map`,
+`baseline_time` and target times. It would be a second route to results the
+documented order already gives, it would need `normalize` stored on the
+result, and it would need its own tests; delta would still interpolate only
+the interval endpoints, as it does in the documented order.
+
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 
 The tests may take at most 90 seconds in CRAN mode on the development machine

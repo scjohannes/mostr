@@ -1277,6 +1277,53 @@ inference_refusals <- list(
       inferences(average, method = "bootstrap", n_draws = 2)
     },
     "The ordinary bootstrap left out every patient who was ever in state 2"
+  ),
+  # Inference on SOPs that were already interpolated (#58). The interpolated
+  # rows are on the real-time scale, but inference recomputes the visit SOPs
+  # and matches their draws by `time`: the bootstrap and FWB then returned no
+  # interval for most rows and another visit's interval for the rest, and MVN
+  # and delta stopped with messages about misaligned cells.
+  refusal(
+    "I54", "MVN inference on averaged SOPs already interpolated",
+    function() {
+      interpolated <- interpolate_sops(refusal_average(), time_map = grid_time_map(refusal_orm))
+      inferences(interpolated, method = "mvn", n_draws = 2, seed = 1)
+    },
+    "interpolate_sops(inferences(x), time_map = )"
+  ),
+  refusal(
+    "I55", "delta inference on averaged SOPs already interpolated",
+    function() {
+      interpolated <- interpolate_sops(refusal_average(), time_map = grid_time_map(refusal_orm))
+      inferences(interpolated, method = "delta")
+    },
+    "interpolate_sops(inferences(x), time_map = )"
+  ),
+  refusal(
+    "I56", "the ordinary bootstrap of averaged SOPs already interpolated",
+    function() {
+      interpolated <- interpolate_sops(refusal_average(), time_map = grid_time_map(refusal_orm))
+      inferences(interpolated, method = "bootstrap", n_draws = 2, seed = 1)
+    },
+    "interpolate_sops(inferences(x), time_map = )"
+  ),
+  refusal(
+    "I57", "FWB inference on SOPs for each profile already interpolated",
+    function() {
+      each <- refusal_call(sops, newdata = refusal_profiles())
+      interpolated <- interpolate_sops(each, time_map = grid_time_map(refusal_orm))
+      inferences(interpolated, method = "fwb", n_draws = 2, seed = 1)
+    },
+    "interpolate_sops(inferences(x), time_map = )"
+  ),
+  refusal(
+    "I58", "inference again on SOPs interpolated after inference",
+    function() {
+      with_intervals <- inferences(refusal_average(), method = "mvn", n_draws = 2, seed = 1)
+      interpolated <- interpolate_sops(with_intervals, time_map = grid_time_map(refusal_orm))
+      inferences(interpolated, method = "fwb", n_draws = 2, seed = 1)
+    },
+    "interpolate_sops(inferences(x), time_map = )"
   )
 )
 test_that("inferences() refuses what it cannot compute", {

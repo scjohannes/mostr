@@ -1013,6 +1013,13 @@ Rows are matched to the stored derivatives by row key, and the weights must
 reproduce the reported totals. Delta SOPs already passed through
 `interpolate_sops()` are refused.
 
+`inferences_impl()` refuses any `markov_interpolated_sops` input, for every
+method. Interpolation keeps the `markov_sops` or `markov_avg_sops` class, but
+inference replays the visit SOPs and matches their draws or derivatives to
+the rows by `time`, which interpolation has moved to the real-time scale.
+Inference therefore runs on visit SOPs only, and `interpolate_sops()`
+interpolates its draws afterwards (#58).
+
 Other tidy SOPs get the limits of their totals from stored draws
 (`time_in_state_tidy_inference()` reduces each draw and calls
 `compute_ci_from_draws()`). SOPs with `conf.low`, `conf.high`, or `std.error`
