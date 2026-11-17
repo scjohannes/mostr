@@ -441,15 +441,21 @@ tis_po <- do.call(avg_comparisons, c(list(fit_po), tis_args)) |>
 tis_ppo <- do.call(avg_comparisons, c(list(fit_ppo), tis_args)) |>
   inferences(method = "mvn", n_draws = 100, seed = SEED)
 
+# The delta result also has a test of 0 (`p.value`); the percentile interval
+# from `method = "mvn"` comes without one, so keep the columns both share.
+tis_cols <- c("state_set", "estimate", "conf.low", "conf.high")
 tis_comparison <- rbind(
-  data.frame(model = "Proportional odds", as.data.frame(tis_po)),
-  data.frame(model = "Partial proportional odds", as.data.frame(tis_ppo))
+  data.frame(model = "Proportional odds", as.data.frame(tis_po)[tis_cols]),
+  data.frame(
+    model = "Partial proportional odds",
+    as.data.frame(tis_ppo)[tis_cols]
+  )
 )
 tis_comparison$model <- factor(
   tis_comparison$model,
   levels = c("Proportional odds", "Partial proportional odds")
 )
-tis_comparison[, c("model", "state_set", "estimate", "conf.low", "conf.high")]
+tis_comparison
 ```
 
 ```{r time-in-state-plot, fig.height = 3.5}
