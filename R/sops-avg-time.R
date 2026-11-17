@@ -32,7 +32,9 @@
 #' @param state_sets States to summarize. `NULL` returns every state separately.
 #'   A vector pools its states into one total; a named list returns one total
 #'   per named state set, for example
-#'   `list(home = "1", hospital = c("2", "3"))`. Names must be unique.
+#'   `list(home = "1", hospital = c("2", "3"))`. Names must be unique. With
+#'   `time_map` and `baseline_time`, the states also include any starting
+#'   state that never occurs as an outcome; see Details.
 #' @param times Required. The consecutive visits to include, in increasing
 #'   order and each listed once, for example `times = 1:30`. Each value is one
 #'   transition, so leaving out visits does not skip time; see the section
@@ -81,6 +83,19 @@
 #' `baseline_time`, where each patient is in their observed starting state, so
 #' the interval before the first visit is included. For example, with visits
 #' on days 3, 7, 14, and 28 and `baseline_time = 0`, totals cover days 0 to 28.
+#'
+#' Some patients may start in a state that never occurs as an outcome, for
+#' example a screening state that exists only at admission. The model does not
+#' predict such a state, so it has no occupancy probabilities at the visits,
+#' but patients spend the time from `baseline_time` to the first visit
+#' partly in it. With `time_map` and `baseline_time`, such a state therefore
+#' gets its own total: its probability is the share of patients who start in
+#' it at `baseline_time` and 0 at every visit. For example, if a quarter of
+#' the patients start in it and the first visit is on day 3, its total is
+#' 0.25 times 3 / 2 = 0.375 days. `state_sets` may name it, and the totals of
+#' all states add up to the whole period. Without `time_map`, or with
+#' `baseline_time = NULL`, the totals cover the visits only and such a state
+#' is not part of the results.
 #'
 #' The average gives every profile the same weight. Case weights given to
 #' [mostm()] with `weights` are used only to fit the model, not in this
@@ -264,7 +279,7 @@ avg_state_time <- function(
   )
   state_sets <- normalize_comparison_state_sets(
     state_sets,
-    markov_result_settings(avg)$y_levels
+    summary_state_labels(avg, time_map, baseline_time)
   )
   args <- list(
     state_sets = state_sets,

@@ -228,7 +228,9 @@ delta_comparison_block <- function(
     states <- as_state_labels(state_sets[[set]])
     probability <- matrix(0, nrow = n_each, ncol = n_times)
     derivative <- array(0, dim = c(n_each, n_times, n_coef))
-    for (state in match(states, state_labels)) {
+    # A starting state that is not fitted has no SOPs; in a real-time total it
+    # enters only through the starting-state term below.
+    for (state in which(state_labels %in% states)) {
       probability <- probability +
         matrix(result$probabilities[, , state], nrow = n_each, ncol = n_times)
       derivative <- derivative +

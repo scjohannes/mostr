@@ -168,6 +168,122 @@ baseline_rows_for_anchor <- function(x) {
   newdata_orig
 }
 
+# The states of real-time summaries that start at `baseline_time`: the fitted
+# states and every starting state that is not one of them. A starting state
+# that never occurs as an outcome, such as an admission-only screening state,
+# is not a fitted state, yet its patients occupy it at `baseline_time`.
+# Without it the anchor sums to less than one there, and normalising the
+# interpolated SOPs inflates every other state before the first visit
+# (issue #50). Such a state is placed by the levels of the starting-state
+# factor when they contain it, and otherwise after the fitted states.
+# The starting states come from the previous-state column of `x` (one row per
+# profile, or scenarios that set it), from the baseline rows stored with
+# averaged SOPs, and from `baseline`, the baseline rows of a resample.
+real_time_anchor_states <- function(x, baseline = NULL) {
+  p_var <- markov_result_settings(x)$p_var
+  fitted <- fitted_state_labels(x)
+  sources <- list()
+  if (!is.null(p_var) && p_var %in% names(x)) {
+    sources <- c(sources, list(x[[p_var]]))
+  }
+  if (inherits(x, "markov_avg_sops") && !is.null(attr(x, "newdata_orig"))) {
+    stored <- baseline_rows_for_anchor(x)
+    if (!is.null(p_var) && p_var %in% names(stored)) {
+      sources <- c(sources, list(stored[[p_var]]))
+    }
+  }
+  if (!is.null(baseline) && !is.null(p_var) && p_var %in% names(baseline)) {
+    sources <- c(sources, list(baseline[[p_var]]))
+  }
+  starts <- unique(unlist(
+    lapply(sources, function(column) as_state_labels(column[!is.na(column)])),
+    use.names = FALSE
+  ))
+  extra <- setdiff(starts, fitted)
+  if (length(extra) == 0L) {
+    return(fitted)
+  }
+  factor_source <- Filter(is.factor, sources)
+  ordering <- if (length(factor_source)) levels(factor_source[[1L]]) else NULL
+  insert_states_by_levels(fitted, extra, ordering)
+}
+
+fitted_state_labels <- function(x) {
+  as_state_labels(markov_result_settings(x)$y_levels %||% unique(x$state))
+}
+
+# The states that `state_sets` may name in a summary of the SOPs `x`: the
+# fitted states, and with real time that starts at `baseline_time` also the
+# starting states that are not fitted (`real_time_anchor_states()`). Visit
+# summaries, and real time without `baseline_time`, never contain those.
+summary_state_labels <- function(x, time_map, baseline_time) {
+  if (is.null(time_map) || is.null(baseline_time)) {
+    return(fitted_state_labels(x))
+  }
+  real_time_anchor_states(x)
+}
+
+# `states` with each of `extra` inserted before the first state that follows
+# it in `ordering`; states not in `ordering` go last.
+insert_states_by_levels <- function(states, extra, ordering) {
+  ranked <- extra[extra %in% ordering]
+  ranked <- ranked[order(match(ranked, ordering))]
+  for (state in ranked) {
+    position <- match(state, ordering)
+    later <- which(match(states, ordering) > position)
+    states <- if (length(later)) {
+      append(states, state, after = later[1L] - 1L)
+    } else {
+      c(states, state)
+    }
+  }
+  c(states, extra[!extra %in% ordering])
+}
+
+# `column` able to hold every label of `states`: a factor gets the missing
+# labels as levels, in the order of `states`, because `coerce_state_like()`
+# would turn a label that is not a level into NA.
+extend_state_column <- function(column, states) {
+  if (!is.factor(column) || all(states %in% levels(column))) {
+    return(column)
+  }
+  factor(
+    as.character(column),
+    levels = union(states, levels(column)),
+    ordered = is.ordered(column)
+  )
+}
+
+# `x` with rows of probability 0 for `extra` at every time of every series,
+# and a `state` column that holds `states`, all states in order. The model
+# never predicts a starting state that is not a fitted state, so nobody
+# occupies it at a visit. The series are the combinations of the columns
+# other than `state` and `value_cols`. The attributes of `x` are kept.
+add_zero_state_rows <- function(x, extra, states, value_cols) {
+  if (length(extra) == 0L || nrow(x) == 0L) {
+    return(x)
+  }
+  kept <- attributes(x)
+  work <- as.data.frame(x)
+  work$state <- extend_state_column(work$state, states)
+  id_cols <- setdiff(names(work), c("state", value_cols))
+  first <- !duplicated(split_key(work, id_cols, keep_na = TRUE))
+  template <- work[first, , drop = FALSE]
+  for (column in value_cols) {
+    template[[column]] <- 0
+  }
+  pieces <- lapply(extra, function(state) {
+    rows <- template
+    rows$state <- coerce_state_like(rep(state, nrow(rows)), work$state)
+    rows
+  })
+  out <- bind_rows_fill(c(list(work), pieces))
+  for (a in setdiff(names(kept), c("names", "row.names"))) {
+    attr(out, a) <- kept[[a]]
+  }
+  out
+}
+
 state_distribution_anchor <- function(
   x,
   combos,
@@ -182,6 +298,7 @@ state_distribution_anchor <- function(
   weights <- validate_sops_weights(weights, nrow(baseline))
   n_out <- max(1L, nrow(combos)) * length(states)
   anchor <- x[rep(NA_integer_, n_out), , drop = FALSE]
+  anchor$state <- extend_state_column(anchor$state, states)
   row <- 1L
 
   for (combo_i in seq_len(max(1L, nrow(combos)))) {
@@ -232,7 +349,7 @@ state_distribution_anchor <- function(
     for (nm in group_cols) {
       anchor[[nm]][rows] <- combo[[nm]][1]
     }
-    anchor$state[rows] <- coerce_state_like(states, x$state)
+    anchor$state[rows] <- coerce_state_like(states, anchor$state)
     anchor$estimate[rows] <- probs
     if ("conf.low" %in% names(anchor)) {
       anchor$conf.low[rows] <- probs
@@ -255,11 +372,16 @@ state_distribution_anchor <- function(
 
 # The starting-state distribution of averaged SOPs (`markov_avg_sops`): one
 # per scenario of `variables`, taken from the baseline rows of each `by` group.
+# `states` are the anchor's states (`real_time_anchor_states()`). By default
+# they include the starting states of the stored baseline rows, so that the
+# anchor of a resample whose `baseline` lacks a starting state that is not
+# fitted still has that state's row, with share 0, as every other draw does.
 empirical_baseline_anchor_from_data <- function(
   x,
   baseline,
   baseline_time,
-  weights = NULL
+  weights = NULL,
+  states = NULL
 ) {
   p_var <- markov_result_settings(x)$p_var
   if (!p_var %in% names(baseline)) {
@@ -270,9 +392,7 @@ empirical_baseline_anchor_from_data <- function(
     )
   }
 
-  states <- as_state_labels(
-    markov_result_settings(x)$y_levels %||% unique(x$state)
-  )
+  states <- states %||% real_time_anchor_states(x, baseline)
   avg_args <- attr(x, "avg_args")
   variables <- names(avg_args$variables %||% list())
   by <- avg_args$by %||% character()
@@ -299,7 +419,10 @@ empirical_baseline_anchor_from_data <- function(
   )
 }
 
-empirical_baseline_anchor <- function(x, baseline_time) {
+# The anchor at `baseline_time` over `states`. For SOPs of one row per profile,
+# the anchor has one row for each state already in `x`, so `x` must hold rows
+# for every state in `states` (`add_zero_state_rows()`).
+empirical_baseline_anchor <- function(x, baseline_time, states = NULL) {
   p_var <- markov_result_settings(x)$p_var
   if (!"state" %in% names(x)) {
     mostr_abort("SOP output must contain a `state` column.")
@@ -320,7 +443,8 @@ empirical_baseline_anchor <- function(x, baseline_time) {
     return(empirical_baseline_anchor_from_data(
       x = x,
       baseline = baseline,
-      baseline_time = baseline_time
+      baseline_time = baseline_time,
+      states = states
     ))
   }
 
@@ -635,7 +759,9 @@ interpolate_sop_draws <- function(
   target_times,
   anchor,
   normalize,
-  baseline_anchor_draws = NULL
+  baseline_anchor_draws = NULL,
+  extra_states = character(),
+  anchor_states = NULL
 ) {
   if (
     !is.data.frame(draws) ||
@@ -650,6 +776,9 @@ interpolate_sop_draws <- function(
 
   work <- as.data.frame(draws)
   work$.sop_real_time <- map_sop_time_values(work$time, time_map)
+  # Each draw needs the same zero rows as the point estimate, or the series of
+  # a starting state that is not fitted would end at `baseline_time`.
+  work <- add_zero_state_rows(work, extra_states, anchor_states, value_col)
   draw_anchor <- repeat_anchor_for_draws(
     anchor,
     work,
@@ -830,6 +959,19 @@ interpolated_ci_from_draws <- function(
 #' patient starts in the set state, so the anchor for that scenario gives
 #' probability 1 to that state and 0 to the others.
 #'
+#' A starting state that never occurs as an outcome, for example a screening
+#' state that exists only at admission, is not one of the model's states, so
+#' [sops()] and [avg_sops()] have no rows for it. With `baseline_time`,
+#' `interpolate_sops()` adds a row for such a state: at `baseline_time` its
+#' probability is the share of patients who start in it (for one profile, 1
+#' if the profile starts there and 0 otherwise), and at every mapped visit it
+#' is 0, because the model never predicts it after the first transition.
+#' Between `baseline_time` and the first visit its probability falls along a
+#' straight line. The state probabilities then sum to one at every time.
+#' The state is placed among the other states by the order of the factor
+#' levels of the starting-state column when they contain it, and after the
+#' model's states otherwise. With `baseline_time = NULL`, no such row is added.
+#'
 #' If `x` contains stored simulation, bootstrap, or posterior draws, the draws
 #' are interpolated too. Interval columns are then recomputed from the
 #' interpolated draws. For posterior draws of a `blrm` fit, `estimate` is
@@ -948,8 +1090,21 @@ interpolate_sops <- function(
   }
 
   anchor <- NULL
+  anchor_states <- NULL
+  extra_states <- character()
   if (use_baseline) {
-    anchor <- empirical_baseline_anchor(work, baseline_time)
+    # A starting state that is not a fitted state gets its share at
+    # `baseline_time` and probability 0 at every visit, so that the
+    # probabilities sum to one at every time (`real_time_anchor_states()`).
+    anchor_states <- real_time_anchor_states(work)
+    extra_states <- setdiff(anchor_states, fitted_state_labels(work))
+    work <- add_zero_state_rows(
+      work,
+      extra_states,
+      anchor_states,
+      sop_measure_cols(work)
+    )
+    anchor <- empirical_baseline_anchor(work, baseline_time, anchor_states)
     work <- bind_rows_fill(list(anchor, work))
   } else {
     work <- as.data.frame(work)
@@ -1017,7 +1172,9 @@ interpolate_sops <- function(
       target_times = target_times,
       anchor = anchor,
       normalize = normalize,
-      baseline_anchor_draws = attr(x, "baseline_anchor_draws")
+      baseline_anchor_draws = attr(x, "baseline_anchor_draws"),
+      extra_states = extra_states,
+      anchor_states = anchor_states
     )
   } else {
     NULL

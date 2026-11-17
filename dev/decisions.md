@@ -66,6 +66,31 @@ maintainer's choice.
 Rejected, for now: refusing non-finite covariate values in `newdata`, as
 missing values are refused; and having the delta kernel report non-finite
 derivatives with a clear error.
+## 2026-11-17: Real-time results show starting states that never occur as outcomes
+
+A starting state that occurs only as `yprev` at the first visit, such as an
+admission-only screening state, is not a fitted state (#50). Real-time
+results that start at `baseline_time` now give it its own row. That row holds
+its share of starting states at `baseline_time` and probability 0 at every
+mapped visit. This applies to `interpolate_sops()`, `time_in_state()`,
+`state_time()`, `avg_state_time()` and `avg_comparisons(estimand =
+"time_in_state")`, and `state_sets` may name the state. Visit-scale `sops()`
+and `avg_sops()` are unchanged. The user chose this. With it, probabilities
+sum to one at every time, totals cover the whole period, and the delta
+operators, whose baseline term already used the observed starting states,
+rebuild the stored estimates. Before the fix, in a 300-patient example where
+25% of patients started in such a state, normalisation inflated the
+probabilities at day 0 by 1 / 0.75. `avg_state_time()` then gave state 5
+10.41 days instead of 10.19, and its delta inference failed.
+
+Rejected:
+- Leaving the state out and not rescaling before the first visit. Totals
+  would add up to less than the follow-up, with nothing in the output to
+  explain the gap.
+- Adding the state to visit-scale `sops()` and `avg_sops()` as well. That
+  touches the prediction backends and the bootstrap's handling of absent
+  states for rows that are always 0.
+- Refusing such data in `mostm()`. A screening state is a legitimate design.
 
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 

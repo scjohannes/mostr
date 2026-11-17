@@ -84,7 +84,11 @@ inferences_avg_comparisons_linear <- function(
 
   state_sets <- normalize_comparison_state_sets(
     args$state_sets,
-    markov_result_settings(avg)$y_levels
+    summary_state_labels(
+      avg,
+      if (identical(args$estimand, "time_in_state")) args$time_map,
+      args$baseline_time
+    )
   )
   result <- avg_comparison_from_avg_sops(
     avg,
