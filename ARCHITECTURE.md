@@ -287,6 +287,14 @@ flowchart TD
   `robcov_orm()`, a non-logistic orm family stops with
   `stop_unsupported_markov_link()`, the classed error `validate_markov_model()`
   raises, so such fits fail at fit time rather than in the sandwich code.
+- `compute_scores_orm()` gives the per-row scores used by `robcov_orm()` and by
+  the unconditional variance. It writes each row's derivative with respect to
+  its linear predictors without `1 - plogis(eta)` or a difference of
+  cumulative probabilities in a denominator: `-plogis(eta_1)` for the lowest
+  state, `plogis(-eta_M)` for the highest, and for a middle state the
+  probability `plogis(a) plogis(-b) (-expm1(b - a))`. The older form rounded
+  to 0 when the observed state's fitted probability fell below about 1e-16, a
+  gross outlier for example (#48).
 - Every matrix that robust covariance or unconditional variance inverts is
   accepted or refused by one rule, `markov_correlation_positive_definite()` in
   `R/robcov_orm.R`, which checks the correlation matrix so that covariate
