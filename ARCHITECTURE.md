@@ -367,11 +367,25 @@ each copy of a patient drawn more than once its own character `new_id`
 character, and integer IDs give the same resamples; refits and the averaged
 cohort use `new_id` as the patient ID.
 
-A resample can lack a state. `drop_absent_states()` (in `R/markov-data.R`)
-then removes the empty levels from each factor state column (`droplevels()`,
-which keeps the level order and ordered factors) and leaves numeric and
-character state columns unchanged. It returns the labels of the states and
-absorbing states present (`ylevels`, `absorb`) and the missing labels. The
+A resample can lack a state as an outcome, as a previous state, or both.
+`drop_absent_states()` (in `R/markov-data.R`) treats the two roles
+separately (#54). The refit's outcome states are the states that the
+response column (`response_col`) of the resample holds; each factor state
+column, the response and each previous-state column, loses only the levels
+it does not hold itself (`droplevels()`, which keeps the level order and
+ordered factors), and numeric and character state columns stay unchanged.
+It returns the labels of the outcome states and absorbing states present
+(`ylevels`, `absorb`), the missing outcome labels, and `levels_dropped`, which
+says whether a column lost a level that the original data hold (the original
+coefficients then cannot start the refit). A state that only a
+previous-state column holds, for example a state some patients start in
+but nobody in the resample moves into, is a starting state of the refit and
+not an outcome state, as in `mostm()` on the full data: first-order
+prediction starts those patients from it and the zero-padding below gives it
+probability 0. Pooling the columns instead kept such a state among the
+refit's states while the refit had one outcome state fewer, so the draw
+failed, and the bootstrap lost exactly the draws in which the probability of
+entering the state is 0. The
 states are never renumbered: the refit's response categories, previous-state
 levels, intercepts, and coefficient names keep the original labels, so
 supplied prediction profiles and `variables` values need no translation, and
@@ -381,16 +395,21 @@ an empty response category or an empty previous-state level (VGAM drops the
 latter itself); when no state is missing the data are left exactly as they
 are. States are matched by label (`as_state_labels()`), never converted to
 numbers, so text labels on factor columns work as numbers do. The state order
-is `y_levels`, then any other labels of the original data
-(`state_column_labels()`: factor level order, or sorted values; numeric
-columns are sorted together), and a state counts as present when any state
-column of the resample holds it. The state columns come from
+is `y_levels`, then any other labels of the original response
+(`observed_state_labels()`, which follows `state_column_labels()`: factor
+level order, or sorted values). The state columns come from
 `bootstrap_state_columns()` in `R/bootstrap_helpers.R`: the response column
 read from the model formula (`bootstrap_response_column()`, so
 `ordered(state) ~ ...` handles `state`), plus `p_var` and `p2_var` in the SOP,
-comparison, and time-benefit bootstrap paths, or `yprev` in
-`bootstrap_model_coefs()`, which has no `p_var`. Factor covariates are never
-treated as states. The SOP paths pass the present labels to
+comparison, and time-benefit bootstrap paths and in
+`bootstrap_model_coefs()`. Factor covariates are never treated as states.
+In `bootstrap_model_coefs()`, a resample whose previous-state column lacks
+its reference (first observed) level refits the contrasts against another
+level, so that row's intercepts and the coefficients of every term involving
+the column are set to `NA` (positions from the fit's term information,
+`bootstrap_coef_positions()`: rms `$assign` after the `non.slopes`
+intercepts, vglm `@assign` through the constraint-matrix widths), and one
+warning counts the rows. The SOP paths pass the present labels to
 `predict_markov_sops()` in the refit's settings
 (`markov_settings_update(settings, y_levels = state_factor(ylevels))`), a
 factor that keeps the state order (`factor()` would sort text labels), and pad the missing states with
@@ -408,9 +427,22 @@ A refit without a state cannot predict for a profile that starts in it. With
 supplied `newdata`, the same profiles are predicted in every draw, so
 `check_bootstrap_starting_states()` in `R/sops-bootstrap-inference.R`
 compares each resample's sampled IDs (`fast_group_bootstrap()`) with the
-patients holding each starting state in any state column of the refit data,
-before any refit, and stops with the states, their resample counts, and a
-pointer to FWB, in the style of `check_bootstrap_by_groups()`. The starting
+patients holding each starting state in a previous-state column of the refit
+data (a profile needs the state as a previous state, to estimate leaving
+it), before any refit, and stops with the states, their resample counts, and
+a pointer to FWB, in the style of `check_bootstrap_by_groups()`. The
+presence of each state in each resample comes from
+`bootstrap_state_presence()` in `R/bootstrap_helpers.R`. Two more checks run
+in the same places. `check_bootstrap_second_order_outcomes()` refuses a
+second-order fit when a resample holds a state in a previous-state column
+but never as the response, because the second-order recursion looks up
+every starting state among the outcome states and cannot predict from one
+that is not (#55). `check_bootstrap_constraint_outcomes()`
+(`R/bootstrap_helpers.R`) refuses a `vglm` fit with explicit `constraints`
+(`bootstrap_has_explicit_constraints()`) when a resample lacks an outcome
+state: the constraint matrices have one row per cut-point of the full fit.
+`bootstrap_model_coefs()` runs this check too, with advice that does not
+mention FWB. The starting
 states come from `bootstrap_starting_states()`: the `p_var` and `p2_var`
 values of the stored prediction rows when `newdata` was supplied, plus any
 values that `variables` sets for those columns (which `sets_starting_state()`
@@ -806,6 +838,14 @@ Where the check lives:
   trace in `R/diagnostic-trace.R`. Prediction rows stack the profiles once per
   previous state (or pair), so row r is profile (r - 1) %% n + 1; posterior
   arrays also give the number of draws.
+- The number of states in `y_levels` must be one more than the fit's
+  cut-points. `validate_sop_state_count()` in `R/sops-execution-plan.R`
+  checks this on the compiled path (through
+  `validate_sop_threshold_count()`) and at the start of
+  `soprob_markov_r_engine()`, whose cut-point count comes from
+  `fitted_threshold_count()` (vglm constraint-matrix rows, `non.slopes` for
+  orm and blrm). Without it the R engine recycled the first visit's
+  probabilities over the wrong number of states (#54).
 - The update kernels that never return probabilities
   (`cpp_markov_update_logits()`, `cpp_markov_update_po()`,
   `cpp_markov_update_second_order_po()`) check every row, including previous

@@ -493,29 +493,34 @@ keep_successful_draws <- function(results) {
 #' @param factor_cols Character vector of the state columns (e.g.,
 #'   c("y", "yprev"))
 #' @param original_data Original data frame before bootstrap sampling
-#' @param y_levels Original state labels (e.g., 1:6)
+#' @param y_levels Original outcome state labels (e.g., 1:6)
 #' @param absorb Absorbing state label(s)
 #' @param use_coefstart Logical indicating whether to use starting coefficients
 #'   from the original model when refitting (only for vglm models). Starting
 #'   values (these or a `coefstart` stored with the fit) are used only when
-#'   no state is missing from the sample; a failed refit with starting values
-#'   is retried once without them.
+#'   no state column of the sample lost a level; a failed refit with starting
+#'   values is retried once without them.
 #' @param fit_weights Optional non-negative row weights for the bootstrap fit.
+#' @param response_col The response column, whose states are the refit's
+#'   outcome states; by default the response of the model formula.
 #'
 #' @return A list with components:
 #'   \itemize{
 #'     \item model: Refitted model on bootstrap data (or NULL if fitting failed)
-#'     \item data: Bootstrap data, absent states removed from factor levels
-#'     \item ylevels: The original labels of the states present (or NULL if
-#'       `y_levels` was not provided)
+#'     \item data: Bootstrap data, each factor state column without the levels
+#'       it does not hold
+#'     \item ylevels: The original labels of the outcome states present (or
+#'       NULL if `y_levels` was not provided)
 #'     \item absorb: The labels of the absorbing states present (or NULL)
-#'     \item missing_states: Character vector of missing state labels
+#'     \item missing_states: Character vector of the labels of the outcome
+#'       states that the sample's response lacks
 #'   }
 #'
 #' @details
 #' This function wraps common bootstrap operations:
-#' 1. Drop the states absent from the sample from the factor levels of the
-#'    state columns, keeping the original labels (`drop_absent_states()`)
+#' 1. Drop from each factor state column the levels it does not hold in the
+#'    sample, keeping the original labels (`drop_absent_states()`). The
+#'    refit's outcome states are those of the response column.
 #' 2. Refit the model on the bootstrap data, with the rms `datadist` option
 #'    unset (see `use_coefstart` for starting values)
 #'
@@ -531,7 +536,8 @@ bootstrap_analysis_wrapper <- function(
   y_levels = NULL,
   absorb = NULL,
   use_coefstart = FALSE,
-  fit_weights = NULL
+  fit_weights = NULL,
+  response_col = bootstrap_response_column(model)
 ) {
   fit_model <- bootstrap_refit_model(model)
 
@@ -555,11 +561,13 @@ bootstrap_analysis_wrapper <- function(
     boot_data$.mostr_fit_weight <- original_weights * fit_weights
   }
 
-  # A sample can lack a state; its refit then knows only the other states,
-  # under their original labels.
+  # A sample can lack a state as an outcome or as a previous state. Its
+  # refit's outcome states are those of the response, and each previous-state
+  # column keeps the states it holds, all under their original labels.
   present <- drop_absent_states(
     data = boot_data,
     factor_cols = factor_cols,
+    response_col = response_col,
     original_data = original_data,
     y_levels = y_levels,
     absorb = absorb
@@ -577,15 +585,17 @@ bootstrap_analysis_wrapper <- function(
   on.exit(options(old_options), add = TRUE)
 
   # Starting coefficients, whether the original fit's (`use_coefstart`) or a
-  # `coefstart` stored with the fit, only match a sample with every state:
-  # a missing state removes an intercept. Such samples are refitted without
-  # any starting values. Other refits with starting values are retried once
+  # `coefstart` stored with the fit, only match a sample whose state columns
+  # keep every level: a missing outcome state removes an intercept, a missing
+  # previous-state level a slope. Such samples are refitted without any
+  # starting values. Other refits with starting values are retried once
   # without them if they fail, e.g. when a covariate level is absent.
   coefstart <- NULL
   if (use_coefstart && inherits(fit_model, "vglm")) {
     coefstart <- stats::coef(fit_model)
   }
   uses_coefstart <- length(missing_states) == 0 &&
+    !isTRUE(present$levels_dropped) &&
     (!is.null(coefstart) ||
       !is.null(bootstrap_model_call(fit_model)$coefstart))
   refit <- function(with_coefstart) {
@@ -701,6 +711,114 @@ bootstrap_state_columns <- function(model, refit_data, p_var, p2_var = NULL) {
   intersect(
     c(bootstrap_response_column(model), p_var, p2_var),
     names(refit_data)
+  )
+}
+
+# Which of `states` each resample of `boot_ids` holds in the columns `cols` of
+# `refit_data`: a logical matrix with one row per resample and one column per
+# state. Patients are matched through `id_var` and the resamples'
+# `original_id`, so the check runs on the sampled IDs before any refit.
+bootstrap_state_presence <- function(boot_ids, refit_data, id_var, cols, states) {
+  states <- as_state_labels(states)
+  cols <- intersect(cols, names(refit_data))
+  ids <- as.character(refit_data[[id_var]])
+  patients <- unique(ids)
+  # One row per patient: does the patient hold the state in any of `cols`?
+  holds <- matrix(FALSE, nrow = length(patients), ncol = length(states))
+  row_patient <- match(ids, patients)
+  for (col in cols) {
+    state_idx <- match(as_state_labels(refit_data[[col]]), states)
+    keep <- !is.na(state_idx)
+    holds[cbind(row_patient[keep], state_idx[keep])] <- TRUE
+  }
+  out <- matrix(
+    FALSE,
+    nrow = length(boot_ids),
+    ncol = length(states),
+    dimnames = list(NULL, states)
+  )
+  for (b in seq_along(boot_ids)) {
+    sampled <- match(unique(as.character(boot_ids[[b]]$original_id)), patients)
+    sampled <- sampled[!is.na(sampled)]
+    out[b, ] <- colSums(holds[sampled, , drop = FALSE]) > 0
+  }
+  out
+}
+
+# "state 2 in 1 of the 2 resamples; state 3 in ..." for the named counts of
+# resamples `counts` out of `n_boot`.
+bootstrap_count_text <- function(counts, n_boot) {
+  paste0(
+    "state ",
+    names(counts),
+    " in ",
+    counts,
+    " of the ",
+    n_boot,
+    " resamples",
+    collapse = "; "
+  )
+}
+
+# Whether the model was fitted with an explicit `constraints` argument
+# (`engine = "vglm"`), as recorded in the stored `mostm()` arguments or call.
+bootstrap_has_explicit_constraints <- function(model) {
+  fit_model <- bootstrap_refit_model(model)
+  !is.null(markov_model_refit_args(model)[["constraints"]]) ||
+    !is.null(markov_model_refit_args(fit_model)[["constraints"]]) ||
+    "constraints" %in% names(bootstrap_model_call(fit_model))
+}
+
+# Constraint matrices passed to `vglm()` have one row per cut-point of the
+# full fit. The refit of an ordinary bootstrap resample that lacks an outcome
+# state has fewer cut-points, so the matrices no longer fit it and the refit
+# fails, leaving out exactly the draws without that state. Such resamples are
+# refused before any refit. Without explicit `constraints` (for example with
+# `parallel = FALSE ~ tx` in the family) VGAM builds the matrices for each
+# refit, and nothing is refused. `fwb = TRUE` names `method = "fwb"` as the
+# way out, for `inferences()`; `bootstrap_model_coefs()` has no FWB.
+check_bootstrap_constraint_outcomes <- function(
+  boot_ids,
+  refit_data,
+  id_var,
+  response_col,
+  model,
+  fwb = TRUE
+) {
+  if (!bootstrap_has_explicit_constraints(model)) {
+    return(invisible(NULL))
+  }
+  states <- observed_state_labels(refit_data, response_col)
+  present <- bootstrap_state_presence(
+    boot_ids,
+    refit_data = refit_data,
+    id_var = id_var,
+    cols = response_col,
+    states = states
+  )
+  counts <- colSums(!present)
+  names(counts) <- states
+  counts <- counts[counts > 0L]
+  if (length(counts) == 0L) {
+    return(invisible(NULL))
+  }
+  mostr_abort(
+    "The model was fitted with explicit `constraints`, and the ordinary ",
+    "bootstrap drew resamples in which no patient moves into an outcome ",
+    "state: ",
+    bootstrap_count_text(counts, length(boot_ids)),
+    ". The constraint matrices have one row per cut-point of the full model, ",
+    "so they don't fit the refit of such a resample, which has fewer ",
+    "cut-points. ",
+    if (fwb) {
+      "Use `method = \"fwb\"`, which keeps every patient in every refit."
+    } else {
+      paste0(
+        "Merge rarely observed states, or fit the model without explicit ",
+        "`constraints` (for example with `parallel = FALSE ~ tx` in the ",
+        "family), so that VGAM builds the constraint matrices for each refit."
+      )
+    }
   )
 }
 

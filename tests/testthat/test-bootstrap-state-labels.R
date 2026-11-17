@@ -160,9 +160,15 @@ test_that("bootstrap_model_coefs() drops absent states from a renamed previous-s
       )
     }
   )
-  with_yprev <- bootstrap_model_coefs(fit_yprev, n_draws = 1)
-  expect_no_warning(
-    with_renamed <- bootstrap_model_coefs(fit_renamed, n_draws = 1)
+  # The resamples also lack the reference level 1 of the previous state, so
+  # both calls warn that the intercepts and previous-state coefficients are NA.
+  expect_warning(
+    with_yprev <- bootstrap_model_coefs(fit_yprev, n_draws = 1),
+    "1 of the 1"
+  )
+  expect_warning(
+    with_renamed <- bootstrap_model_coefs(fit_renamed, n_draws = 1),
+    "`prev_state`"
   )
   expect_equal(
     unname(unlist(with_renamed)),

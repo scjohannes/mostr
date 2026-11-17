@@ -65,6 +65,25 @@ a \code{"vglm"} fit are numbered (\code{(Intercept):1}, \code{(Intercept):2},
 ...) in order of the states present, so in that row they belong to other
 cut-points than in the rows with every state.
 
+The coefficients of a factor previous state compare each state with the
+first one, the reference level: \code{yprev=3} is the effect of having been
+in state 3 rather than state 1 at the previous visit, and the intercepts
+belong to a patient whose previous state is state 1. A resample can hold no
+row whose previous state is the reference level. Its refit would then
+compare with the next level instead, so \code{yprev=3} would mean state 3
+rather than state 2, under the same name. In such a row the intercepts and
+the previous-state coefficients are therefore \code{NA}, the other
+coefficients (for example those of time and treatment) are kept, and a
+warning gives the number of rows affected.
+
+A model fitted with explicit \code{constraints} (\code{engine = "vglm"})
+is refused before any refit when some resample lacks an outcome state: its
+constraint matrices have one row per cut-point of the full model and do
+not fit a refit with fewer cut-points. Merge rarely observed states, or
+give partial proportional odds through \code{family}, for example
+\code{VGAM::cumulative(parallel = FALSE ~ tx)}, which builds the matrices
+for each refit.
+
 The refits do not use an rms \code{datadist}: a \code{datadist} you have set with
 \code{options(datadist = ...)} is ignored during the refits and left as it is.
 

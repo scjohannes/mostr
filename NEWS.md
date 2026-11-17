@@ -305,6 +305,51 @@
 
 ## Bug fixes
 
+* The ordinary bootstrap (`inferences(method = "bootstrap")`) keeps
+  resamples in which patients start in a state but nobody moves into it
+  (#54). Such a draw used to fail and was left out with a warning, so the
+  bootstrap lost exactly the resamples in which the probability of entering
+  the state is 0, and the lower confidence bound for that state was too
+  high. In one example with two entries into a state, 59 of 400 draws failed
+  and the lower bound for that state was 0.0021 instead of 0. The refit now
+  gives the state probability 0 as an outcome while still predicting
+  patients who start there. Refits treat the response and the
+  previous-state columns separately: the states of the refit are those that
+  occur as outcomes in the resample.
+
+* The ordinary bootstrap of a second-order model (`p2_var`) is refused
+  before any refit when a resample holds a starting state that it never
+  enters, and the message points to `method = "fwb"` (#54). Second-order
+  models can't yet predict from a starting state that is not an outcome
+  state (#55).
+
+* Models fitted with explicit `constraints` (`engine = "vglm"`) are refused
+  by the ordinary bootstrap and by `bootstrap_model_coefs()` before any refit
+  when a resample lacks an outcome state (#54). The constraint matrices have
+  one row per cut-point of the full fit, so every such refit failed with
+  "constraint matrix has too many columns". `inferences()` points to
+  `method = "fwb"`, which keeps every patient in every refit.
+
+* `bootstrap_model_coefs()` gives `NA` for the intercepts and the
+  previous-state coefficients in a row whose resample has no row in the
+  first (reference) level of a factor previous-state column, and warns with
+  the number of such rows (#54). The refit compared the other levels with the
+  next level instead, so for example `yprev3` meant "state 3 versus state 2"
+  in that row and "state 3 versus state 1" elsewhere, under the same name.
+  `engine = "orm"` refits of such resamples used to fail and now keep their
+  other coefficients.
+
+* A supplied prediction profile that starts in a state is refused by the
+  ordinary bootstrap also when a resample holds that state only as an
+  outcome, never as a previous state (#54). Such a refit has no estimate for
+  leaving the state, and its draws failed.
+
+* The R implementation of the state occupancy probabilities, used for
+  `blrm` fits and for designs too large for the compiled code, checks that
+  the model's states match `y_levels`, as the compiled code does (#54). A
+  mismatch stopped with an unclear error, or, at a single visit, gave
+  probabilities that summed to 2.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,

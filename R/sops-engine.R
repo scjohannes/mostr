@@ -115,6 +115,15 @@ soprob_markov_r_engine <- function(
     "vglm"
   }
 
+  # The fit's cut-points must match `y_levels`, as on the compiled path
+  # (`markov_msm_build()`): with fewer fitted states than `y_levels`, the
+  # probabilities of the first visit would be recycled across the states and
+  # sum to more than 1, with no error.
+  threshold_count <- fitted_threshold_count(object)
+  if (!is.null(threshold_count)) {
+    validate_sop_state_count(threshold_count, y_levels)
+  }
+
   if (!p_var %in% names(data)) {
     mostr_abort("Previous-state variable `", p_var, "` not found in `data`.")
   }
@@ -320,6 +329,34 @@ soprob_markov_r_engine <- function(
   }
 
   return(P)
+}
+
+# The number of cut-points (threshold coefficients) of a fitted model, or NULL
+# when the object does not record it. A `vglm` fit has one row per cut-point
+# in each constraint matrix (as in `get_effective_coefs()`); `orm` and `blrm`
+# fits store their number of intercepts, one per cut-point, in `non.slopes`.
+# A `blrm` partial proportional odds fit adds `tau` coefficients, not
+# intercepts, so `non.slopes` still counts its cut-points.
+fitted_threshold_count <- function(model) {
+  if (inherits(model, "robcov_vglm")) {
+    model <- model$vglm_fit
+  }
+  if (inherits(model, "vglm")) {
+    constraint_list <- tryCatch(VGAM::constraints(model), error = function(e) {
+      NULL
+    })
+    if (length(constraint_list) == 0L) {
+      return(NULL)
+    }
+    return(nrow(constraint_list[[1L]]))
+  }
+  if (inherits(model, c("orm", "blrm"))) {
+    count <- model$non.slopes
+    if (length(count) == 1L && is.numeric(count) && !is.na(count)) {
+      return(as.integer(count))
+    }
+  }
+  NULL
 }
 
 match_state_indices <- function(values, ylevel_names, varname) {

@@ -351,16 +351,32 @@ inferences_avg_comparisons_time_benefit_bootstrap <- function(
       n_boot = n_boot
     )
     # Supplied profiles keep their starting states in every refit, so each
-    # resample must hold those states.
+    # resample must hold those states as previous states.
+    previous_cols <- c(setup$settings$p_var, setup$settings$p2_var)
     check_bootstrap_starting_states(
       boot_ids,
       refit_data = refit_data,
       id_var = setup$settings$id_var,
-      state_cols = factor_cols,
+      state_cols = previous_cols,
       starting_states = bootstrap_starting_states(
         profiles = if (newdata_supplied) setup$newdata_pred,
-        state_vars = c(setup$settings$p_var, setup$settings$p2_var)
+        state_vars = previous_cols
       )
+    )
+    check_bootstrap_second_order_outcomes(
+      boot_ids,
+      refit_data = refit_data,
+      id_var = setup$settings$id_var,
+      response_col = bootstrap_response_column(model),
+      previous_cols = previous_cols,
+      p2_var = setup$settings$p2_var
+    )
+    check_bootstrap_constraint_outcomes(
+      boot_ids,
+      refit_data = refit_data,
+      id_var = setup$settings$id_var,
+      response_col = bootstrap_response_column(model),
+      model = model
     )
     # Supplied profiles are fixed and always contain every group.
     if (!newdata_supplied) {

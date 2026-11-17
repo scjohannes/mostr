@@ -293,16 +293,32 @@ inferences_bootstrap <- function(
       n_boot = n_boot
     )
     # Supplied profiles keep their starting states in every refit, so each
-    # resample must hold those states.
+    # resample must hold those states as previous states.
+    previous_cols <- c(settings$p_var, settings$p2_var)
     check_bootstrap_starting_states(
       boot_ids,
       refit_data = refit_data,
       id_var = id_var,
-      state_cols = factor_cols,
+      state_cols = previous_cols,
       starting_states = bootstrap_starting_states(
         profiles = if (newdata_supplied) prediction_data,
-        state_vars = c(settings$p_var, settings$p2_var)
+        state_vars = previous_cols
       )
+    )
+    check_bootstrap_second_order_outcomes(
+      boot_ids,
+      refit_data = refit_data,
+      id_var = id_var,
+      response_col = bootstrap_response_column(model),
+      previous_cols = previous_cols,
+      p2_var = settings$p2_var
+    )
+    check_bootstrap_constraint_outcomes(
+      boot_ids,
+      refit_data = refit_data,
+      id_var = id_var,
+      response_col = bootstrap_response_column(model),
+      model = model
     )
     # Supplied profiles are fixed and always contain every group. Otherwise
     # each resample's profiles come from its own rows, as in `analysis_fn`.
@@ -670,15 +686,18 @@ check_bootstrap_by_groups <- function(boot_ids, baseline_data, id_var, by) {
   )
 }
 
-# The ordinary bootstrap can also leave out every patient who was ever in a
-# rare state. That resample's refit knows no transitions from the state, so it
-# can't predict for a prediction profile that starts there; with supplied
-# `newdata`, such a profile is in every resample's predictions. The sampled
-# IDs are checked against the refit data before any refit, as in
-# `check_bootstrap_by_groups()`. A state counts as present when a sampled
-# patient holds it in any state column (`state_cols`: the response and the
-# previous-state columns), as in `drop_absent_states()`. A state that no
-# profile starts from may be missing: it gets probability 0 in that draw.
+# The ordinary bootstrap can also leave out every patient who was ever
+# observed after being in a rare state. That resample's refit has no estimate
+# for leaving the state, so it can't predict for a prediction profile that
+# starts there; with supplied `newdata`, such a profile is in every resample's
+# predictions. The sampled IDs are checked against the refit data before any
+# refit, as in `check_bootstrap_by_groups()`. A state counts as present when a
+# sampled patient holds it in a previous-state column (`state_cols`: `p_var`,
+# and `p2_var` for a second-order fit). The response does not count: a
+# patient who only enters the state at the last visit shows nothing about
+# leaving it, and the refit's previous-state column lacks that level. A state
+# that no profile starts from may be missing: it gets probability 0 in that
+# draw.
 #
 # `starting_states` is a named list from `bootstrap_starting_states()`: for
 # each previous-state column, the state labels that prediction starts from.
@@ -697,27 +716,14 @@ check_bootstrap_starting_states <- function(
   if (length(starting) == 0L) {
     return(invisible(NULL))
   }
-  ids <- as.character(refit_data[[id_var]])
-  state_cols <- intersect(state_cols, names(refit_data))
-  missing_counts <- vapply(
-    starting,
-    function(state) {
-      hit <- Reduce(
-        `|`,
-        lapply(state_cols, function(col) {
-          as_state_labels(refit_data[[col]]) %in% state
-        }),
-        FALSE
-      )
-      holders <- unique(ids[hit])
-      sum(vapply(
-        boot_ids,
-        function(sample) !any(as.character(sample$original_id) %in% holders),
-        logical(1)
-      ))
-    },
-    integer(1)
+  present <- bootstrap_state_presence(
+    boot_ids,
+    refit_data = refit_data,
+    id_var = id_var,
+    cols = state_cols,
+    states = starting
   )
+  missing_counts <- colSums(!present)
   names(missing_counts) <- starting
   missing_counts <- missing_counts[missing_counts > 0L]
   if (length(missing_counts) == 0L) {
@@ -739,24 +745,78 @@ check_bootstrap_starting_states <- function(
   one <- length(states) == 1L
   mostr_abort(
     "The ordinary bootstrap left out every patient who was ever in ",
-    paste0(
-      "state ",
-      states,
-      " in ",
-      missing_counts,
-      " of the ",
-      length(boot_ids),
-      " resamples",
-      collapse = "; "
-    ),
-    ", but some prediction profiles start from ",
+    bootstrap_count_text(missing_counts, length(boot_ids)),
+    " (counting a visit in a state only when the patient's next visit is ",
+    "observed), but some prediction profiles start from ",
     if (one) "that state" else "those states",
     " (",
     paste(columns, collapse = "; "),
-    "). The refit of a resample without a state has no estimate for leaving ",
-    "it, so it can't predict for those profiles. Use `method = \"fwb\"`, ",
+    "). The refit of such a resample has no estimate for leaving the ",
+    "state, so it can't predict for those profiles. Use `method = \"fwb\"`, ",
     "which keeps every patient in every refit, or remove those profiles ",
     "from `newdata`."
+  )
+}
+
+# A second-order model predicts each later visit from pairs of previous
+# states that are outcome states of the fit, so it can't predict from a
+# starting state that is not an outcome state (issue #55; this holds for the
+# original fit too). An ordinary bootstrap resample can hold patients who
+# start in a state (their previous state at the first visit) while no patient
+# of the resample moves into it: its refit's outcome states then lack that
+# state, and every prediction for those patients would fail. Rather than lose
+# exactly those draws, which would bias the intervals, such resamples are
+# refused before any refit. A first-order refit predicts these patients and
+# gives the state probability 0, so the check applies only with `p2_var`.
+check_bootstrap_second_order_outcomes <- function(
+  boot_ids,
+  refit_data,
+  id_var,
+  response_col,
+  previous_cols,
+  p2_var
+) {
+  if (is.null(p2_var)) {
+    return(invisible(NULL))
+  }
+  previous_cols <- intersect(previous_cols, names(refit_data))
+  states <- unique(unlist(
+    lapply(previous_cols, function(col) observed_state_labels(refit_data, col)),
+    use.names = FALSE
+  ))
+  if (length(states) == 0L) {
+    return(invisible(NULL))
+  }
+  as_previous <- bootstrap_state_presence(
+    boot_ids,
+    refit_data = refit_data,
+    id_var = id_var,
+    cols = previous_cols,
+    states = states
+  )
+  as_outcome <- bootstrap_state_presence(
+    boot_ids,
+    refit_data = refit_data,
+    id_var = id_var,
+    cols = response_col,
+    states = states
+  )
+  counts <- colSums(as_previous & !as_outcome)
+  names(counts) <- states
+  counts <- counts[counts > 0L]
+  if (length(counts) == 0L) {
+    return(invisible(NULL))
+  }
+  one <- length(counts) == 1L
+  mostr_abort(
+    "The ordinary bootstrap drew resamples with patients who start in a ",
+    "state that no patient of the resample moves into: ",
+    bootstrap_count_text(counts, length(boot_ids)),
+    ". The refit of such a resample has ",
+    if (one) "that state" else "those states",
+    " only as starting states, not as outcomes, and a second-order model ",
+    "can't predict from a starting state that is not an outcome. Use ",
+    "`method = \"fwb\"`, which keeps every patient in every refit."
   )
 }
 

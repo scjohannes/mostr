@@ -55,6 +55,25 @@
 #' ...) in order of the states present, so in that row they belong to other
 #' cut-points than in the rows with every state.
 #'
+#' The coefficients of a factor previous state compare each state with the
+#' first one, the reference level: \code{yprev=3} is the effect of having been
+#' in state 3 rather than state 1 at the previous visit, and the intercepts
+#' belong to a patient whose previous state is state 1. A resample can hold no
+#' row whose previous state is the reference level. Its refit would then
+#' compare with the next level instead, so \code{yprev=3} would mean state 3
+#' rather than state 2, under the same name. In such a row the intercepts and
+#' the previous-state coefficients are therefore \code{NA}, the other
+#' coefficients (for example those of time and treatment) are kept, and a
+#' warning gives the number of rows affected.
+#'
+#' A model fitted with explicit \code{constraints} (\code{engine = "vglm"})
+#' is refused before any refit when some resample lacks an outcome state: its
+#' constraint matrices have one row per cut-point of the full model and do
+#' not fit a refit with fewer cut-points. Merge rarely observed states, or
+#' give partial proportional odds through \code{family}, for example
+#' \code{VGAM::cumulative(parallel = FALSE ~ tx)}, which builds the matrices
+#' for each refit.
+#'
 #' The refits do not use an rms `datadist`: a `datadist` you have set with
 #' `options(datadist = ...)` is ignored during the refits and left as it is.
 #'
@@ -132,11 +151,34 @@ bootstrap_model_coefs <- function(
     settings$p2_var
   )
 
+  response_col <- bootstrap_response_column(model)
+  # The factor previous-state columns and their reference levels: the first
+  # level that the stored data hold, which the full fit compares with.
+  previous_cols <- intersect(c(settings$p_var, settings$p2_var), names(data))
+  previous_cols <- previous_cols[vapply(
+    previous_cols,
+    function(col) is.factor(data[[col]]),
+    logical(1)
+  )]
+  reference_levels <- vapply(
+    previous_cols,
+    function(col) observed_state_labels(data, col)[1L],
+    character(1)
+  )
+
   # Generate bootstrap ID samples using fast helper (memory-efficient JIT approach)
   boot_ids <- fast_group_bootstrap(
     data = data,
     id_var = id_var,
     n_boot = n_draws
+  )
+  check_bootstrap_constraint_outcomes(
+    boot_ids,
+    refit_data = data,
+    id_var = id_var,
+    response_col = response_col,
+    model = model,
+    fwb = FALSE
   )
 
   # Define analysis function
@@ -152,18 +194,41 @@ bootstrap_model_coefs <- function(
       model = model,
       factor_cols = factor_cols,
       original_data = data,
-      use_coefstart = use_coefstart
+      use_coefstart = use_coefstart,
+      response_col = response_col
     )
 
     m_boot <- boot_result$model
 
-    # Extract coefficients
-    if (!is.null(m_boot)) {
-      coefs <- coef(m_boot)
-      return(as.list(coefs))
-    } else {
+    if (is.null(m_boot)) {
       return(NULL)
     }
+    coefs <- coef(m_boot)
+
+    # A resample without the reference level of a factor previous-state
+    # column refits that column against another level. Its coefficients,
+    # and the intercepts (which belong to a patient in the reference level),
+    # then estimate other quantities than the same-named coefficients of the
+    # full fit, so they are set to NA. Coefficients of other terms keep their
+    # meaning and are kept. Only a column present in the refit data can lack
+    # a level; a refit result without data has nothing to check.
+    lacks_reference <- previous_cols[vapply(
+      previous_cols,
+      function(col) {
+        col %in% names(boot_result$data) &&
+          !reference_levels[[col]] %in% as_state_labels(boot_result$data[[col]])
+      },
+      logical(1)
+    )]
+    if (length(lacks_reference) > 0L) {
+      na_positions <- unique(unlist(lapply(
+        lacks_reference,
+        function(col) bootstrap_coef_positions(m_boot, col)
+      )))
+      coefs[na_positions] <- NA_real_
+      return(structure(as.list(coefs), lacks_reference = TRUE))
+    }
+    as.list(coefs)
   }
 
   # Apply analysis function to bootstrap samples with JIT materialization
@@ -181,8 +246,77 @@ bootstrap_model_coefs <- function(
     )
   )
 
+  n_lacking <- sum(vapply(
+    bs_coefs_list,
+    function(x) isTRUE(attr(x, "lacks_reference")),
+    logical(1)
+  ))
+  if (n_lacking > 0L) {
+    warning(
+      "In ",
+      n_lacking,
+      " of the ",
+      n_draws,
+      " resamples, no patient was observed after being in the reference ",
+      "(first) level of the previous state (",
+      paste0(
+        "`",
+        previous_cols,
+        "` = ",
+        reference_levels,
+        collapse = " or "
+      ),
+      "). The refits of those resamples compare the previous states with ",
+      "another level, so their intercepts and previous-state coefficients ",
+      "would mean something different from those in the other rows; they ",
+      "are NA. The ",
+      "other coefficients of those rows are kept.",
+      call. = FALSE
+    )
+  }
+
   # Convert to a data frame with boot_id and one column per coefficient.
   result <- named_list_to_wide(bs_coefs_list, id = seq_len(n_draws))
 
   return(result)
+}
+
+# The positions in `coef(fit)` of the intercepts and of the coefficients of
+# every term that involves the column `column` (its main effect and its
+# interactions), read from the fit's own term information rather than from
+# coefficient names. `rms` fits list each term's coefficient positions in
+# `$assign`, after the `non.slopes` intercepts. `vglm` fits map each term to
+# model matrix columns in `@assign`, and each column to as many coefficients
+# as its constraint matrix has columns.
+bootstrap_coef_positions <- function(fit, column) {
+  fit <- bootstrap_refit_model(fit)
+  term_factors <- attr(stats::terms(fit), "factors")
+  involves <- vapply(
+    rownames(term_factors),
+    function(variable) column %in% all.vars(str2lang(variable)),
+    logical(1)
+  )
+  terms_with_column <- colnames(term_factors)[
+    colSums(term_factors[involves, , drop = FALSE]) > 0
+  ]
+
+  if (inherits(fit, "vglm")) {
+    constraint_list <- VGAM::constraints(fit)
+    widths <- vapply(constraint_list, ncol, integer(1))
+    ends <- cumsum(widths)
+    positions <- lapply(seq_along(widths), function(j) {
+      seq.int(ends[j] - widths[j] + 1L, length.out = widths[j])
+    })
+    names(positions) <- names(constraint_list)
+    model_columns <- unlist(fit@assign[terms_with_column], use.names = FALSE)
+    return(c(
+      positions[["(Intercept)"]],
+      unlist(positions[model_columns], use.names = FALSE)
+    ))
+  }
+
+  c(
+    seq_len(fit$non.slopes),
+    unlist(fit$assign[terms_with_column], use.names = FALSE)
+  )
 }
