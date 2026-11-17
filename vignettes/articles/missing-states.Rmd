@@ -69,11 +69,11 @@ ABSORB <- "8"
 complete <- sim_markov(
   "actt2",
   n_patients = N_PATIENTS,
-  follow_up_time = FOLLOW_UP,
+  times = seq_len(FOLLOW_UP),
   treatment_effect = log(0.8),
   seed = SEED
 )
-complete <- prepare_markov_data(complete, absorbing_state = as.integer(ABSORB))
+complete <- prepare_markov_data(complete, absorb = as.integer(ABSORB))
 complete <- complete[order(complete$id, complete$time), ]
 ```
 
