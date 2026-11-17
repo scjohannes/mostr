@@ -1009,7 +1009,9 @@ the weights to how each SOP changes with each coefficient (conditional
 variance) and to the patient influence values (unconditional variance), and the
 starting-state term adds each patient's influence as in
 `inferences_delta_avg_time()`. No covariance for every pair of SOPs is formed.
-Rows are matched to the stored derivatives by row key, and the weights must
+Rows are matched to the stored derivatives by row key (`delta_row_key()`, one
+string per row from the result's columns other than the inference columns; a
+matrix column contributes its columns pasted together), and the weights must
 reproduce the reported totals. Delta SOPs already passed through
 `interpolate_sops()` are refused.
 

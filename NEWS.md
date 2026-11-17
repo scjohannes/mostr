@@ -305,6 +305,12 @@
 
 ## Bug fixes
 
+* `vcov()` of a delta-method `sops()` or `comparisons()` result no longer
+  stops with "subscript out of bounds" when `newdata` has a matrix column,
+  such as one made with `I(cbind(a, b))`, even one the model doesn't use
+  (#56). The key that identifies each result row turned a matrix column into
+  one string per matrix cell instead of one per row.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,
