@@ -325,7 +325,7 @@ fit_refusals <- list(
     "`rms::orm()` could not fit the model"
   ),
   refusal(
-    "F21", "vglm with both `form2` and `subset`",
+    "F21", "vglm with `form2`, which builds predictor values for `xij`",
     function() {
       mostm(
         refusal_formula_vglm,
@@ -333,11 +333,10 @@ fit_refusals <- list(
         id_var = "id",
         absorb = grid_n_states,
         engine = "vglm",
-        form2 = ~ time + tx + age + yprev,
-        subset = time > 0
+        form2 = ~ time + tx + age + yprev
       )
     },
-    "argument 'subset' cannot be used when argument 'form2' is used"
+    "`form2` cannot be used with `engine = \"vglm\"`"
   ),
   refusal(
     "F22", "no `id_var`",

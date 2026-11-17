@@ -33,7 +33,9 @@ value in every row, except the time and \code{gap_var} columns, which are set
 at each visit, and columns that \code{variables} sets; other columns may have
 missing values.
 The previous-state column holds states of the fitted model, as a factor
-(with any levels), numbers, or text.}
+(with any levels), numbers, or text. Any other column that the model
+used as a factor may also hold numbers or text, as long as they are
+among the fitted levels.}
 
 \item{variables}{Optional covariates to set before averaging: a named list
 of values, such as \code{list(tx = c(0, 1))} for probabilities if every patient

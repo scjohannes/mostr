@@ -26,7 +26,9 @@
 #'   row, except the time and `gap_var` columns, which are set at each visit,
 #'   and columns that `variables` sets; other columns may have missing values.
 #'   The previous-state column holds states of the fitted model, as a factor
-#'   (with any levels), numbers, or text.
+#'   (with any levels), numbers, or text. Any other column that the model
+#'   used as a factor may also hold numbers or text, as long as they are
+#'   among the fitted levels.
 #' @param times Required. The consecutive visits at which to calculate SOPs,
 #'   in increasing order, for example `times = 1:30` for daily visits up to day
 #'   30. Each value is one transition, so leaving out visits does not skip
@@ -664,7 +666,9 @@ sops_draw_matrix_to_df <- function(draw_values, result, draw_indices) {
 #'   at each visit, and columns that `variables` sets; other columns may have
 #'   missing values.
 #'   The previous-state column holds states of the fitted model, as a factor
-#'   (with any levels), numbers, or text.
+#'   (with any levels), numbers, or text. Any other column that the model
+#'   used as a factor may also hold numbers or text, as long as they are
+#'   among the fitted levels.
 #' @param variables Optional covariates to set before averaging: a named list
 #'   of values, such as `list(tx = c(0, 1))` for probabilities if every patient
 #'   received control or treatment, or bare names, such as `"tx"`. As in

@@ -305,6 +305,23 @@
 
 ## Bug fixes
 
+* `mostm(engine = "vglm")` refuses the VGAM arguments `xij` and `form2`
+  (#45). With `xij`, a predictor takes a different value in each linear
+  predictor, but the state occupancy probabilities, their intervals and the
+  plots used one value in all of them, so they were wrong without a warning.
+  A predictor whose effect differs between thresholds can still be fitted as
+  a partial proportional odds model with
+  `family = VGAM::cumulative(reverse = TRUE, parallel = FALSE ~ x)`.
+
+* Predictions from `mostm(engine = "vglm")` fits accept numbers or text for a
+  predictor that was a factor in the fit, as `"orm"` fits already did (#44).
+  They stopped with "contrasts apply only to factors", for example in
+  `plot_transitions(fit, variables = list(yprev = c(1, 2)))` or with factor
+  `time` given as numbers in `newdata`. Values that are not among the fitted
+  levels are refused, naming the column. For a fit with factor time, the
+  requested `times` are now checked against the fitted levels whatever the
+  type of the time column in `newdata`.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,
