@@ -29,6 +29,39 @@ three times slower.
 
 Rejected: skipping more tests on CRAN to get back under 60 seconds. It would
 take checks away from CRAN for a margin CRAN does not require.
+## 2026-11-17: blrm random intercepts are matched by cluster value, never by Stan's index
+
+**Decided** (issue #39). `get_blrm_gamma_draws()` names every column of the
+random-intercept draws once by the cluster value it belongs to:
+`rmsb::blrm()` numbers clusters as `as.integer(as.factor(cluster))` and Stan
+names the draws `gamma[1]`, ..., `gamma[Nc]`, so `gamma[k]` becomes
+`levels(as.factor(model$clusterInfo$cluster))[k]`, using the number in the
+brackets. `blrm_random_effect_matrix()` then matches prediction rows to
+columns by name only. A row is never matched against Stan's index or a
+`gamma[...]` name with the brackets removed, and draws whose numbers are not
+exactly 1 to the largest cluster number of the fit are an error.
+
+For `cluster()` on a variable other than the patient, such as
+`cluster(site)`, the random intercept of a prediction row is looked up by
+that variable, which rmsb records as `clusterInfo$name`, not by `id_var`.
+`id_var` is used only when the fit does not record the name. The package
+owner chose this.
+
+**Why.** The old code removed the brackets from `gamma[k]` and matched
+patient IDs against `k` whenever every ID in `newdata` was among those
+numbers, so patients got the draws of other patients without any message. On
+real rmsb 1.1-2 fits, 29 of 30 patients with character IDs `"1"` to `"30"`
+got wrong intercepts, and per-patient `sops(include_re = TRUE)` probabilities
+differed by up to 0.735. Naming the draws once, where they are read, leaves
+one place that knows Stan's numbering; the per-call cache
+(`cache_blrm_gamma_draws()`) and the test stand-ins (`model$gamma_draws`) go
+through the same function. For `cluster()` on a non-patient variable, the
+owner's reason for choosing the look-up by `clusterInfo$name` was not
+recorded.
+
+**Rejected.** Refusing fits with `cluster()` on a non-patient variable in
+`mostm()`, and refusing only `include_re = TRUE` for such fits. Reason not
+recorded.
 
 ## 2026-11-16: `violet_baseline` becomes internal data
 

@@ -305,6 +305,28 @@
 
 ## Bug fixes
 
+* With `include_re = TRUE`, `blrm` fits whose patient IDs look like whole
+  numbers could use other patients' random intercepts without any message
+  (#39). This happened when every ID in the prediction rows was a whole
+  number between 1 and the number of fitted patients, and the fitted IDs
+  either were text whose order differs from their numeric order (`"1"` to
+  `"10"` sort as `"1"`, `"10"`, `"2"`, ...) or did not start at 1 (for
+  example IDs 2 to 11). The patient with ID `k` then got the intercept of
+  the `k`-th patient in sorted order, and an ID that was not in the fit
+  could get an intercept instead of an error. Recompute results of `sops()`,
+  `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`,
+  `avg_comparisons()` and `soprob_markov()` that used `include_re = TRUE`
+  with such IDs. IDs that are not whole numbers, such as `"P01"`, and
+  results with `include_re = FALSE` were not affected. Random intercepts are
+  now always matched to patients by ID.
+
+* With `include_re = TRUE`, a `blrm` fit with `cluster()` on a variable other
+  than the patient ID, such as `cluster(site)`, now gives each prediction row
+  the random intercept of its value of that variable (#39). Previously the
+  patient ID was looked up among the sites. `newdata` must contain the
+  variable, and a missing value in it is no longer reported as a missing
+  predictor when `include_re = FALSE`, where it is not used.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,

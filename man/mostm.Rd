@@ -312,6 +312,9 @@ straight-line effect of the ID number, so \code{mostm()} stops with an error. To
 include each patient's estimated random effect in predictions, use
 \code{include_re = TRUE} in \code{\link[=sops]{sops()}} or \code{\link[=avg_sops]{avg_sops()}}; see
 \href{https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html}{the Bayesian article}.
+With \code{cluster()} on another variable, such as \code{cluster(site)}, each value of
+that variable has one random effect, and \code{include_re = TRUE} gives each
+prediction row the random effect of its value of that variable.
 
 With \code{engine = "orm"} or \code{"vglm"}, \code{cluster()} and \code{mix_re()} terms are
 errors, although \code{\link[rms:orm]{rms::orm()}} can fit them from rms version 8.2 on. State

@@ -23,11 +23,12 @@
 #'   `p2_var`, the column with the state two visits back (`NULL` uses
 #'   first-order recursion, otherwise second-order recursion with histories
 #'   `(p2_var, p_var)`); `gap_var`, the column with the time since the previous
-#'   visit; and `id_var`, the ID column used when `include_re = TRUE`.
+#'   visit; and `id_var`, the patient ID column.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
 #'   fitted random-effect draws in posterior predictions. This does not
-#'   integrate over the random-effects distribution; it uses the fitted effects
-#'   for known IDs.
+#'   integrate over the random-effects distribution; it uses the fitted effect
+#'   of each row's value of the variable inside `cluster()`
+#'   (`blrm_cluster_var()`), which must be a value that was in the fitted data.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible `blrm` draw sampling.

@@ -225,7 +225,8 @@ flowchart TD
   nothing about them. `VGAM::vglm()` and `rmsb::blrm()` do not recognize the
   other forms and would fit them as ordinary predictors, such as a straight-line
   effect of the patient ID number. The one form allowed is an unprefixed
-  `cluster(id)` with `"blrm"`, the random intercept behind `include_re`. The
+  `cluster(id)` with `"blrm"`, the random intercept behind `include_re`; the
+  variable inside it need not be the patient ID (see `include_re` below). The
   check reads only the formula, so it behaves the same for every rms version;
   `cluster()` itself comes from rms from version 8.2 on and from rmsb before.
 - Engine arguments go through `...`. `mostm_check_engine_args()` compares
@@ -549,6 +550,34 @@ called first in every public function with the argument (`sops()`,
 `avg_comparisons()`, and `soprob_markov()`) and stops for any other fit,
 instead of letting the frequentist paths ignore it.
 
+Which random intercept a prediction row gets is decided by name, in two steps
+(`R/sops-backends.R`):
+
+- `get_blrm_gamma_draws()` reads the posterior draws of the random intercepts
+  and names every column by its cluster value (`name_blrm_gamma_draws()`).
+  rmsb numbers clusters as `as.integer(as.factor(cluster))` and Stan names the
+  draws `gamma[1]`, ..., `gamma[Nc]`, so `gamma[k]` is renamed to
+  `levels(as.factor(model$clusterInfo$cluster))[k]`, using the number in the
+  brackets. Columns without names are taken to be in the order of those
+  levels, and columns with other names are taken to be named by cluster value
+  already. Draws whose numbers are not exactly 1 to the largest cluster number
+  of the fit are an error. `cache_blrm_gamma_draws()` reads the draws once per
+  call through the same function, so the matrix that the chunked prediction
+  loops pass down as `.gamma_draws` carries these names.
+- `blrm_random_effect_matrix()` matches each prediction row to a column by
+  name: the row's value of the variable inside `cluster()`, which rmsb records
+  as `clusterInfo$name` (`blrm_cluster_var()`; `id_var` only when the fit does
+  not record it). For `cluster(id)` that is the patient ID; for a fit with,
+  say, `cluster(site)` it is the site, so the prediction rows must contain
+  that column. A value that was not among the fitted clusters is an error. A
+  row is never matched against Stan's cluster number: doing so gave patients
+  whose IDs look like whole numbers the intercepts of other patients (#39).
+
+The prediction rows keep every column of `newdata` or of the stored starting
+profiles on the way to `predict_blrm_response_markov()`, including through the
+stacked copies that `variables` makes, so a cluster column other than the
+patient ID arrives there without further handling.
+
 ### Settings
 
 The column names and model settings that the prediction, comparison,
@@ -751,9 +780,11 @@ missing in `newdata`. It does two things:
 
 - `stop_missing_predictors()` refuses missing values in the columns the
   fitted formula uses (`markov_model_variables()`), naming each column and
-  counting its prediction rows. The time, gap and ID columns are left out:
-  the recursion sets the first two at every visit, and the ID only looks up
-  blrm random effects. Columns the model does not use are not checked, and
+  counting its prediction rows. The time, gap and ID columns and the variable
+  in a blrm `cluster()` are left out: the recursion sets the first two at
+  every visit, and the other two only look up blrm random effects, where a
+  missing value is an error when `include_re = TRUE`. Columns the model does
+  not use are not checked, and
   nor is a model whose columns cannot be read. `plot_lp_difference()` runs
   the same check on its `profile`, leaving out the columns its grid sets.
 - `normalize_prediction_states()` puts `p_var` and `p2_var` in the form the

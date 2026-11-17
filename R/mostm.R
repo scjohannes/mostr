@@ -254,6 +254,9 @@
 #' include each patient's estimated random effect in predictions, use
 #' `include_re = TRUE` in [sops()] or [avg_sops()]; see
 #' [the Bayesian article](https://scjohannes.github.io/mostr/articles/bayesian-rmsb-sops.html).
+#' With `cluster()` on another variable, such as `cluster(site)`, each value of
+#' that variable has one random effect, and `include_re = TRUE` gives each
+#' prediction row the random effect of its value of that variable.
 #'
 #' With `engine = "orm"` or `"vglm"`, `cluster()` and `mix_re()` terms are
 #' errors, although [rms::orm()] can fit them from rms version 8.2 on. State
@@ -936,7 +939,9 @@ mostm_check_data_dependent_bases <- function(formula, engine) {
 # state occupancy probabilities from such a fit would be wrong without any
 # message. VGAM::vglm() and rmsb::blrm() would fit these terms as ordinary
 # predictors, except that rmsb::blrm() recognizes a bare `cluster(id)` as a
-# random intercept. mostm() therefore rejects them before fitting.
+# random intercept. mostm() therefore rejects them before fitting. The variable
+# in a bare `cluster()` need not be the patient ID: predictions look up random
+# intercepts by that variable (`blrm_cluster_var()`).
 mostm_check_random_effects <- function(formula, engine) {
   calls <- formula_rhs_calls(formula, c("cluster", "mix_re"))
   if (engine == "blrm") {

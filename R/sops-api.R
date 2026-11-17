@@ -47,10 +47,14 @@
 #'   column must have no missing values among the averaged profiles; drop or
 #'   impute those patients first.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs. Only
-#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
-#'   `newdata` must then contain the patient ID column (`id_var` of [mostm()]),
-#'   so that each row gets its patient's estimated random effect.
+#'   the estimated random effects in posterior predictions. Only `blrm` fits
+#'   have random effects, so `TRUE` gives an error for other fits. `newdata`
+#'   must then contain the variable inside `cluster()` of the model formula,
+#'   usually the patient ID column (`id_var` of [mostm()]). Each row gets the
+#'   estimated random effect of its value of that variable, so with
+#'   `cluster(id)` each patient gets their own, and with `cluster(site)` each
+#'   row gets that of its site. Values that were not in the fitted data have
+#'   no estimated random effect and give an error.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.
 #' @param seed Optional random seed for reproducible random draw sampling.

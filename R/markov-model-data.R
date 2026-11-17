@@ -242,7 +242,8 @@ markov_model_variables <- function(model) {
     return(NULL)
   }
   # rmsb::blrm() keeps `cluster(id)` out of its stored formula. The random
-  # effect of each patient is looked up by that column.
+  # effect of each prediction row is looked up by that column, which need not
+  # be the patient ID (`blrm_cluster_var()`).
   cluster <- if (inherits(model_chk, "blrm")) model_chk$clusterInfo$name
   unique(c(variables, if (is.character(cluster)) cluster))
 }

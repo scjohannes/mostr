@@ -77,8 +77,12 @@
 #'   only.
 #' @param time_unit Optional label stored in output.
 #' @param include_re Logical. For `rmsb::blrm()` fits with `cluster()`, include
-#'   fitted random-effect draws in posterior predictions for known IDs. Only
-#'   `blrm` fits have random effects, so `TRUE` gives an error for other fits.
+#'   the estimated random effects in posterior predictions. Only `blrm` fits
+#'   have random effects, so `TRUE` gives an error for other fits. Each
+#'   profile gets the estimated random effect of its value of the variable
+#'   inside `cluster()` of the model formula, usually the patient ID, so
+#'   `newdata` must contain that column, with values that were in the fitted
+#'   data.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws.
 #' @param seed Optional random seed for reproducible posterior draw sampling.

@@ -13,10 +13,12 @@
 #'   recursion takes one transition per value, so leaving out visits does not
 #'   skip time; see [sops()]. Unlike [sops()], this function does not warn
 #'   when `times` leaves out fitted visits.
-#' @param include_re For `blrm` fits, include fitted random-effect draws for
-#'   known IDs, which `newdata` gives in the patient ID column (`id_var` of
-#'   [mostm()]). Only `blrm` fits have random effects, so `TRUE` gives an
-#'   error for other fits.
+#' @param include_re For `blrm` fits with `cluster()`, include the estimated
+#'   random effects. Each row of `newdata` gets the estimated random effect of
+#'   its value of the variable inside `cluster()` of the model formula,
+#'   usually the patient ID column (`id_var` of [mostm()]); the value must be
+#'   one that was in the fitted data. Only `blrm` fits have random effects, so
+#'   `TRUE` gives an error for other fits.
 #' @param n_draws Number of `blrm` posterior draws, or `NULL` for all draws.
 #' @param seed Optional seed used when selecting posterior draws.
 #' @param ... Reserved for internal posterior draw batching.
@@ -275,8 +277,10 @@ stop_absorbing_start <- function(
 # (`markov_model_variables()`); a model whose columns can't be read is not
 # checked, and columns the model doesn't use may hold missing values. The visit
 # time and the gap since the last visit are set at every step of the recursion
-# (`assign_sop_visit()`), and the patient ID only looks up blrm random
-# effects, so missing values there never reach a prediction. `set_columns`
+# (`assign_sop_visit()`), and the patient ID and the variable in a blrm
+# `cluster()` only look up random effects (a missing value there is reported
+# by that look-up when `include_re = TRUE`), so missing values in these
+# columns never reach a prediction. `set_columns`
 # names further columns the caller replaces before predicting, and `data_arg`
 # the argument the rows came from, for the advice.
 stop_missing_predictors <- function(
@@ -292,7 +296,13 @@ stop_missing_predictors <- function(
   }
   columns <- setdiff(
     intersect(used, names(data)),
-    c(settings$time_var, settings$gap_var, settings$id_var, set_columns)
+    c(
+      settings$time_var,
+      settings$gap_var,
+      settings$id_var,
+      if (inherits(model, "blrm")) blrm_cluster_var(model),
+      set_columns
+    )
   )
   counts <- vapply(
     columns,
