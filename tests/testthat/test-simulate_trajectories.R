@@ -449,25 +449,63 @@ test_that("sim_markov simulates one transition at each listed time", {
   }
 })
 
-test_that("sim_markov warns about absent covariates and still simulates", {
-  baseline <- data.frame(id = 1:2, yprev = c(1, 1))
-  lp <- function(yprev, t, treatment_effect, extra_params) 0
+test_that("sim_markov reads factor starting states by their labels", {
+  # Every ACTT patient starts in a hospital state, 4 to 7. A factor with only
+  # these levels, as `droplevels()` or one-day data from
+  # `prepare_markov_data()` give, has codes 1 to 4; reading the codes would
+  # start a ventilated patient (state 7) in state 4 (#41).
+  numeric_start <- data.frame(id = 1:8, yprev = rep(4:7, 2), tx = rep(0:1, 4))
+  factor_start <- numeric_start
+  factor_start$yprev <- factor(factor_start$yprev)
+  expect_identical(levels(factor_start$yprev), c("4", "5", "6", "7"))
 
-  expect_warning(
-    result <- sim_markov(
-      NULL,
-      baseline_data = baseline,
-      times = 1:2,
-      intercepts = 0,
-      lp_function = lp,
-      covariate_names = "missing",
-      seed = 1
-    ),
-    "None of the specified covariate_names found"
+  from_factor <- sim_markov(
+    "actt2",
+    baseline_data = factor_start,
+    times = 1:3,
+    seed = 1
+  )
+  expect_equal(from_factor$yprev[from_factor$time == 1], numeric_start$yprev)
+  expect_identical(
+    from_factor,
+    sim_markov("actt2", baseline_data = numeric_start, times = 1:3, seed = 1)
   )
 
-  expect_equal(nrow(result), 4)
-  expect_equal(names(result), c("id", "time", "y", "yprev"))
+  # A user model, with levels that skip state 1.
+  lp <- function(yprev, t, treatment_effect, extra_params) 0
+  user_start <- data.frame(id = 1:4, yprev = factor(c(3, 2, 3, 2)))
+  user_result <- sim_markov(
+    NULL,
+    baseline_data = user_start,
+    times = 1,
+    intercepts = c(-1, 1),
+    lp_function = lp,
+    absorb = integer(),
+    seed = 1
+  )
+  expect_equal(user_result$yprev, c(3, 2, 3, 2))
+})
+
+test_that("sim_markov sets rounding-sized negative state probabilities to zero", {
+  # The second threshold's cumulative probability falls 7.9e-13 below the
+  # first's: within the 1e-12 that sim_markov() accepts as rounding, but a
+  # negative probability for state 2 that the sampler refuses.
+  lp <- function(yprev, t, treatment_effect, extra_params) c(0, -2 - 4e-12)
+  cumulative <- stats::plogis(c(-1, 1) + c(0, -2 - 4e-12))
+  expect_lt(diff(cumulative), 0)
+  expect_gt(diff(cumulative), -1e-12)
+
+  result <- sim_markov(
+    NULL,
+    baseline_data = data.frame(id = 1:200, yprev = 1),
+    times = 1,
+    intercepts = c(-1, 1),
+    lp_function = lp,
+    absorb = integer(),
+    seed = 1
+  )
+  # State 2 has probability zero, so no patient can enter it.
+  expect_setequal(unique(result$y), c(1, 3))
 })
 
 test_that("sim_markov carries forward once all patients are absorbing", {

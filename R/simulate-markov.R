@@ -50,9 +50,14 @@
 #'   patients that a preset would sample. It must contain `id`, `yprev` (the
 #'   state on the day before the first simulated day), and every covariate
 #'   that the model uses: `tx` for `"actt1"` and `"actt2"`, and `age`, `sofa`,
-#'   and `tx` for `"violet"`. It must not contain a `time` or a `y` column,
-#'   because `sim_markov()` creates these itself. Required when
-#'   `preset = NULL`.
+#'   and `tx` for `"violet"`. `yprev` holds state numbers from 1 to `K`, the
+#'   number of states. It may be numeric, character, or a factor; a factor is
+#'   read by its labels, not its level positions, so a factor with levels 4
+#'   to 7 starts patients in states 4 to 7. Missing, fractional, and
+#'   out-of-range starting states are refused. Patients may start in an
+#'   absorbing state; they then stay there. `baseline_data` must not contain
+#'   a `time` or a `y` column, because `sim_markov()` creates these itself.
+#'   Required when `preset = NULL`.
 #' @param intercepts Numeric vector of thresholds, one fewer than the number of
 #'   states, in increasing order. With `K` states numbered from 1 (best) to `K`
 #'   (worst), `intercepts[j]` plus the linear predictor is the log odds of
@@ -82,9 +87,12 @@
 #'   `length(intercepts) + 1`, which is death in every preset. Use `integer()`
 #'   when no state is absorbing.
 #' @param covariate_names Character vector of `baseline_data` columns passed to
-#'   `lp_function` as arguments with the same names. A `tx` column is always
-#'   passed. `NULL` (the default) uses the preset's covariates, or, with
-#'   `preset = NULL`, every column except `id` and `yprev`.
+#'   `lp_function` as arguments with the same names. Each named column must be
+#'   in `baseline_data`; a missing one is an error rather than leaving
+#'   `lp_function` to use a default for that argument. A `tx` column is
+#'   always passed, even when it is not named. `NULL` (the default) uses the
+#'   preset's covariates, or, with `preset = NULL`, every column except `id`
+#'   and `yprev`.
 #' @param seed Integer. Random seed for reproducibility (default: `NULL`, no
 #'   seed set). The seed is set once, before patients and treatment are
 #'   sampled, and the trajectories continue from the same random-number
@@ -603,20 +611,28 @@ simulate_markov_trajectories <- function(
   N <- nrow(baseline_data)
   n_states <- length(intercepts) + 1
 
+  start_states <- read_markov_start_states(baseline_data$yprev, n_states)
+
+  # A covariate missing from `baseline_data` would not be passed to
+  # `lp_function`, which would then silently use its default for that argument
+  # or fail with an unrelated message (#41).
+  missing_covariates <- setdiff(covariate_names, names(baseline_data))
+  if (length(missing_covariates) > 0) {
+    mostr_abort(
+      "`baseline_data` has no column for these `covariate_names`: ",
+      paste0("`", missing_covariates, "`", collapse = ", "),
+      ". Add the columns, or leave them out of `covariate_names`."
+    )
+  }
+
   # Initialize state matrix
   # Rows = patients, Columns = time points (the baseline, then each of `times`)
   state_matrix <- matrix(
-    as.numeric(baseline_data$yprev),
+    start_states,
     nrow = N,
     ncol = length(times) + 1,
     dimnames = list(baseline_data$id, c(0, times))
   )
-
-  # Detect which covariates from baseline_data need to be passed to lp_function
-  available_covariates <- intersect(covariate_names, names(baseline_data))
-  if (length(covariate_names) > 0 && length(available_covariates) == 0) {
-    warning("None of the specified covariate_names found in baseline_data")
-  }
 
   # Main simulation loop
   for (k in seq_along(times)) {
@@ -655,7 +671,7 @@ simulate_markov_trajectories <- function(
     )
 
     # Add covariates dynamically
-    for (cov_name in available_covariates) {
+    for (cov_name in covariate_names) {
       lp_args[[cov_name]] <- X_active[[cov_name]]
     }
 
@@ -727,6 +743,10 @@ simulate_markov_trajectories <- function(
 
     # Convert cumulative probabilities to individual state probabilities
     prob_matrix <- cbind(cum_probs, 1) - cbind(0, cum_probs)
+    # Entries in [-1e-12, 0) are rounding that the check above accepts, but the
+    # sampler refuses any negative probability. Setting them to zero needs no
+    # renormalisation, because the sampler divides each row by its total.
+    prob_matrix[prob_matrix < 0] <- 0
 
     # Probability columns run from the highest to the lowest state.
     y_new_active <- n_states + 1L - sample_categorical_rows(prob_matrix)
@@ -1114,6 +1134,37 @@ normalize_vectorized_markov_lp <- function(lp, n_active, n_thresholds) {
   }
 
   lp
+}
+
+# Reads the starting states in `yprev` as numbers from 1 to `n_states`, and
+# refuses anything else.
+read_markov_start_states <- function(yprev, n_states) {
+  # A factor is read by its labels: `as.numeric()` on a factor gives its level
+  # codes, so `factor(4:7)` would start patients in states 1 to 4 (#41). Other
+  # types go straight to `as.numeric()`, so numeric starting states are used
+  # exactly as given.
+  states <- if (is.factor(yprev)) as.character(yprev) else yprev
+  # Labels that are not numbers become NA here and are refused below, so the
+  # coercion warning would only repeat that message.
+  states <- suppressWarnings(as.numeric(states))
+
+  # `%in%` refuses NA, fractions and values outside the states in one test.
+  # Starting in an absorbing state is allowed.
+  invalid <- !states %in% seq_len(n_states)
+  if (any(invalid)) {
+    found <- unique(as.character(yprev[invalid]))
+    found[is.na(found)] <- "NA"
+    if (length(found) > 5L) {
+      found <- c(found[1:5], "...")
+    }
+    mostr_abort(
+      "`yprev` in `baseline_data` must hold the starting states, whole ",
+      "numbers from 1 to ", n_states, "; found: ",
+      paste(found, collapse = ", "),
+      "."
+    )
+  }
+  states
 }
 
 sample_categorical_rows <- function(probabilities) {

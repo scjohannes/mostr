@@ -1236,6 +1236,19 @@ so decay works for user models as well as presets and the preset linear
 predictors only multiply that value by `tx`. The worst state is absorbing by
 default (`absorb = NULL`).
 
+Before the first transition the engine checks its inputs. Starting states in
+`baseline_data$yprev` are read by label (`as.character()` before the number),
+never by factor code, so a factor whose levels are a subset of the states keeps
+its state numbers, as `drop_absent_states()` keeps labels for bootstrap refits.
+Each must be a whole number from 1 to `length(intercepts) + 1`; the engine
+numbers states that way and cannot learn the order of other labels. Every
+name in `covariate_names` must be a column of `baseline_data`, because a
+missing one would reach `lp_function` as a missing argument or its default.
+State probabilities are differences of neighbouring cumulative probabilities;
+decreases smaller than `1e-12` pass the threshold-order check as rounding, and
+the engine sets the resulting tiny negative probabilities to zero before
+`cpp_sample_categorical_rows()`, which refuses any negative value.
+
 The package linear predictors, `actt2_markov_lp()` (used by `"actt1"` and
 `"actt2"`) and `violet_markov_lp()`, carry the internal attribute
 `mostr_vectorized_lp`. The engine then calls them once per day with all active

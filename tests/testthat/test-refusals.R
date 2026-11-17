@@ -1638,6 +1638,76 @@ simulation_refusals <- list(
     "S16", "threshold-specific linear predictors that give negative state probabilities",
     function() refusal_sim_threshold_lp(c(0, 1), c(5, -5)),
     "create decreasing cumulative probabilities"
+  ),
+  refusal(
+    "S17", "a factor starting state whose label is not a state number",
+    function() {
+      sim_markov(
+        NULL,
+        baseline_data = data.frame(id = 1:2, yprev = factor(c("ward", "icu"))),
+        intercepts = 0,
+        lp_function = refusal_sim_lp
+      )
+    },
+    "must hold the starting states, whole numbers from 1 to 2"
+  ),
+  refusal(
+    "S18", "a starting state above the worst state",
+    function() {
+      sim_markov(
+        "actt2",
+        baseline_data = data.frame(id = 1, yprev = 9, tx = 0),
+        times = 1
+      )
+    },
+    "must hold the starting states, whole numbers from 1 to 8"
+  ),
+  refusal(
+    "S19", "a starting state that is not a whole number",
+    function() {
+      sim_markov(
+        "actt2",
+        baseline_data = data.frame(id = 1, yprev = 2.5, tx = 0),
+        times = 1
+      )
+    },
+    "must hold the starting states, whole numbers from 1 to 8"
+  ),
+  refusal(
+    "S20", "a missing starting state",
+    function() {
+      sim_markov(
+        "actt2",
+        baseline_data = data.frame(id = 1:2, yprev = c(4, NA), tx = 0),
+        times = 1
+      )
+    },
+    "must hold the starting states, whole numbers from 1 to 8"
+  ),
+  refusal(
+    "S21", "a preset covariate missing from `baseline_data`",
+    function() {
+      sim_markov(
+        "violet",
+        baseline_data = data.frame(id = 1, yprev = 2, age = 60, tx = 0),
+        times = 1
+      )
+    },
+    "`baseline_data` has no column for these `covariate_names`: `sofa`"
+  ),
+  refusal(
+    "S22", "a named covariate that `lp_function` would take from its default",
+    function() {
+      sim_markov(
+        NULL,
+        baseline_data = refusal_sim_patients,
+        intercepts = 0,
+        lp_function = function(yprev, t, tx, age = 60, treatment_effect,
+                               extra_params) 0.01 * age,
+        covariate_names = c("tx", "age")
+      )
+    },
+    "`baseline_data` has no column for these `covariate_names`: `age`"
   )
 )
 

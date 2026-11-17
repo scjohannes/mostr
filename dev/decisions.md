@@ -12,6 +12,26 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: `sim_markov()` reads starting states by label and refuses missing covariates
+
+`sim_markov()` reads `baseline_data$yprev` by its labels, so a factor with
+levels 4 to 7 starts patients in states 4 to 7 (#41). Before, the factor's
+codes were used: with levels 4 to 7, all 200 day-1 ACTT-2 patients of a
+one-day `prepare_markov_data()` set started three states too low.
+Starting states that are missing, fractional, outside 1 to K, or labels that
+are not state numbers are refused. Every name in `covariate_names` must be a
+column of `baseline_data`; a missing one is an error, where before only "none
+present" gave a warning. Both choices were the user's.
+
+Rejected: refusing factor `yprev` altogether. Factors are what
+`prepare_markov_data()` returns, and reading by label is how the package
+treats states elsewhere (`drop_absent_states()` never renumbers). Rejected:
+matching non-numeric labels such as `"ward"` to states by level order;
+`sim_markov()` numbers states 1 to K and has no other source for their order.
+Rejected: a warning per missing covariate. The help page already said the
+columns are required, and an `lp_function` with a default argument would run
+on that default for every patient.
+
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 
 The tests may take at most 90 seconds in CRAN mode on the development machine

@@ -54,9 +54,14 @@ simulates three transitions, not two weeks.}
 patients that a preset would sample. It must contain \code{id}, \code{yprev} (the
 state on the day before the first simulated day), and every covariate
 that the model uses: \code{tx} for \code{"actt1"} and \code{"actt2"}, and \code{age}, \code{sofa},
-and \code{tx} for \code{"violet"}. It must not contain a \code{time} or a \code{y} column,
-because \code{sim_markov()} creates these itself. Required when
-\code{preset = NULL}.}
+and \code{tx} for \code{"violet"}. \code{yprev} holds state numbers from 1 to \code{K}, the
+number of states. It may be numeric, character, or a factor; a factor is
+read by its labels, not its level positions, so a factor with levels 4
+to 7 starts patients in states 4 to 7. Missing, fractional, and
+out-of-range starting states are refused. Patients may start in an
+absorbing state; they then stay there. \code{baseline_data} must not contain
+a \code{time} or a \code{y} column, because \code{sim_markov()} creates these itself.
+Required when \code{preset = NULL}.}
 
 \item{intercepts}{Numeric vector of thresholds, one fewer than the number of
 states, in increasing order. With \code{K} states numbered from 1 (best) to \code{K}
@@ -93,9 +98,12 @@ once they enter them. \code{NULL} (the default) means the worst state,
 when no state is absorbing.}
 
 \item{covariate_names}{Character vector of \code{baseline_data} columns passed to
-\code{lp_function} as arguments with the same names. A \code{tx} column is always
-passed. \code{NULL} (the default) uses the preset's covariates, or, with
-\code{preset = NULL}, every column except \code{id} and \code{yprev}.}
+\code{lp_function} as arguments with the same names. Each named column must be
+in \code{baseline_data}; a missing one is an error rather than leaving
+\code{lp_function} to use a default for that argument. A \code{tx} column is
+always passed, even when it is not named. \code{NULL} (the default) uses the
+preset's covariates, or, with \code{preset = NULL}, every column except \code{id}
+and \code{yprev}.}
 
 \item{seed}{Integer. Random seed for reproducibility (default: \code{NULL}, no
 seed set). The seed is set once, before patients and treatment are
