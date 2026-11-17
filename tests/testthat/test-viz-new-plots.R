@@ -79,6 +79,8 @@ test_that("plot_transitions orders time facets chronologically", {
 
 test_that("model transition diagnostics evaluate full sparse numeric grids for both Markov orders", {
   model <- structure(list(), class = "vglm", markov_id_var = "id")
+  # The visits are filled in from the fit's own visits, here daily ones.
+  attr(model, "markov_refit_data") <- data.frame(id = 1, time = 1:14)
   orders <- list(
     first = list(
       newdata = data.frame(id = 1, time = 0, yprev = factor(1, levels = 1:2)),
@@ -140,7 +142,19 @@ test_that("model diagnostics expand sparse factor visit grids", {
     ordered = TRUE
   )
 
-  out <- complete_plot_recursion_times(requested, time_info)
+  # Stored starting profiles start at the first follow-up visit.
+  model <- structure(
+    list(),
+    markov_starting_profile_metadata = list(first_followup_time = "visit1")
+  )
+
+  out <- complete_plot_recursion_times(
+    requested,
+    time_info,
+    model = model,
+    time_var = "time",
+    newdata_supplied = FALSE
+  )
 
   expect_equal(as.character(out), paste0("visit", 1:4))
   expect_equal(levels(out), time_info$levels)

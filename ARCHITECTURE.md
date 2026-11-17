@@ -772,9 +772,32 @@ run inside
 `muffle_skipped_sop_visits()`. The per-profile intervals
 (`inferences_profile_results()`, `inferences_delta_profile_results()`) call
 `soprob_markov()` or the native recursion without going through `sops()`, so
-`inferences()` never repeats the warning. `soprob_markov()` does not check. The model-based diagnostic plots expand
-sparse plot times to the full recursion grid (`complete_plot_recursion_times()`
-in `R/markov-plot-helpers.R`) and never call `sops()`.
+`inferences()` never repeats the warning. `soprob_markov()` does not check.
+
+The model-based diagnostic plots never call `sops()` and never warn. They
+fill in the visits that sparse plot times leave out:
+`plot_transition_model_setup()` in `R/diagnostic-data.R` calls
+`complete_plot_recursion_times()` in `R/markov-plot-helpers.R`, which builds
+the recursion schedule from the fit's own visits, the same ones the check
+above reads:
+
+- Factor time (`complete_plot_factor_times()`): fill the levels from the
+  start to the last requested level.
+- Numeric time without `gap_var` (`complete_plot_numeric_times()`): take the
+  fitted visits from `numeric_sop_visit_schedule()` and fill them from the
+  start to the last requested time. Keep requested times outside the fitted
+  range as given.
+- Numeric time with `gap_var`: use the sorted requested times.
+- Character time: use the requested times in the order given.
+- A fit without stored numeric visits: use the requested times, unfilled.
+
+The start is the first follow-up visit for stored profiles
+(`stored_sop_start_position()`) and the first requested time for supplied
+`newdata`. A numeric time between two fitted visits is refused, because it
+would add a transition. For stored profiles, a time before the first
+follow-up visit is also refused (`stop_plot_times_before_first_followup()`).
+The plots then show only the requested times (`plot_indices`). Issue #51
+records the old rule, which filled in every whole number from 1.
 
 ### Starting states
 

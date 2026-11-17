@@ -20,6 +20,34 @@
 #' `comparison = "difference"` and `variables = list(var = c(reference,
 #' comparison))`.
 #'
+#' @section Visits of a model-based plot:
+#' For a fitted model, the plot computes the probabilities one visit at a
+#' time from each patient's starting state, as [sops()] does. So it needs
+#' every visit from the start to the last value of `times`. Visits that
+#' `times` leaves out are filled in from the visits in the data the model
+#' was fitted to, and only the requested times are shown. With daily visits,
+#' `times = c(1, 7, 14)` runs all 14 daily transitions and shows days 1, 7
+#' and 14. With weekly visits on days 7, 14, 21 and 28, `times = c(7, 28)`
+#' runs the four weekly transitions. Factor time works the same way, with
+#' its levels as the visits, in level order.
+#'
+#' When `newdata` is omitted, the stored starting profiles start at the
+#' first follow-up visit (`first_followup_time` of [mostm()]). A supplied
+#' `newdata` starts at the first requested time, so its rows must hold each
+#' patient's state before that visit. Some requests are refused:
+#'
+#' * A time between two fitted visits, such as 3.5 with daily visits. It
+#'   would add a transition that the model was not fitted for.
+#' * A time before the first follow-up visit when `newdata` is omitted.
+#'
+#' Times after the last fitted visit are run as requested.
+#'
+#' A model fitted with `gap_var` takes each requested time as a visit and
+#' the time since the previous one as its gap, as in [sops()], so nothing is
+#' filled in. Character time labels such as `"day 2"` say nothing about
+#' their order, so the requested times are run in the order given: list
+#' every visit, in order.
+#'
 #' @param x A trajectory data frame or a fitted Markov model.
 #' @param newdata Optional data frame of prediction profiles for model-based
 #'   plots. If `NULL`, models fitted with [mostm()] use their stored data and
@@ -33,7 +61,8 @@
 #'   have no effect. Choose the visits with `times` instead. The previous-state
 #'   column is allowed; its values set the state each patient starts from.
 #' @param times Optional current-time values to plot. Required for model-based
-#'   plots.
+#'   plots, where visits that `times` leaves out are filled in from the
+#'   fit's visits; see "Visits of a model-based plot".
 #' @param y_levels The states in order. For a fitted model, `NULL` (the
 #'   default) uses the states of the model; a supplied vector must hold the
 #'   same states in the same order, otherwise it is an error. For trajectory

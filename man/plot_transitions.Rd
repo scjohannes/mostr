@@ -41,7 +41,8 @@ have no effect. Choose the visits with \code{times} instead. The previous-state
 column is allowed; its values set the state each patient starts from.}
 
 \item{times}{Optional current-time values to plot. Required for model-based
-plots.}
+plots, where visits that \code{times} leaves out are filled in from the
+fit's visits; see "Visits of a model-based plot".}
 
 \item{y_levels}{The states in order. For a fitted model, \code{NULL} (the
 default) uses the states of the model; a supplied vector must hold the
@@ -112,6 +113,37 @@ column names and states default to those of the fit, and the absorbing
 states are those given to \code{\link[=mostm]{mostm()}}. Difference plots also require
 \code{comparison = "difference"} and \code{variables = list(var = c(reference, comparison))}.
 }
+\section{Visits of a model-based plot}{
+
+For a fitted model, the plot computes the probabilities one visit at a
+time from each patient's starting state, as \code{\link[=sops]{sops()}} does. So it needs
+every visit from the start to the last value of \code{times}. Visits that
+\code{times} leaves out are filled in from the visits in the data the model
+was fitted to, and only the requested times are shown. With daily visits,
+\code{times = c(1, 7, 14)} runs all 14 daily transitions and shows days 1, 7
+and 14. With weekly visits on days 7, 14, 21 and 28, \code{times = c(7, 28)}
+runs the four weekly transitions. Factor time works the same way, with
+its levels as the visits, in level order.
+
+When \code{newdata} is omitted, the stored starting profiles start at the
+first follow-up visit (\code{first_followup_time} of \code{\link[=mostm]{mostm()}}). A supplied
+\code{newdata} starts at the first requested time, so its rows must hold each
+patient's state before that visit. Some requests are refused:
+\itemize{
+\item A time between two fitted visits, such as 3.5 with daily visits. It
+would add a transition that the model was not fitted for.
+\item A time before the first follow-up visit when \code{newdata} is omitted.
+}
+
+Times after the last fitted visit are run as requested.
+
+A model fitted with \code{gap_var} takes each requested time as a visit and
+the time since the previous one as its gap, as in \code{\link[=sops]{sops()}}, so nothing is
+filled in. Character time labels such as \code{"day 2"} say nothing about
+their order, so the requested times are run in the order given: list
+every visit, in order.
+}
+
 \examples{
 # 200 simulated patients followed for 14 days. States 1 and 2 are outside
 # hospital, states 3 to 7 in hospital, and state 8, death, is absorbing.
