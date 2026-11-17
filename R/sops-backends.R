@@ -994,13 +994,26 @@ get_time_info <- function(model, data, time_var) {
   } else {
     NULL
   }
+  fitted_time <- if (!is.null(model) && !is.null(time_var)) {
+    markov_model_refit_data(model)[[time_var]]
+  }
 
-  # The fitted levels decide, whatever the type of the prediction rows' time
-  # column: a vglm fit with factor time given numeric or character times
-  # otherwise treated time as numeric, so requested `times` were neither
-  # checked against the fitted levels nor turned into factors (issue #44).
-  levels <- model_levels %||% (if (is.factor(values)) levels(values))
-  ordered <- is.ordered(values)
+  # When the fit's time column is a factor, the fitted levels decide, whatever
+  # the type of the prediction rows' time column: a vglm fit with factor time
+  # given numeric or character times otherwise treated time as numeric, so
+  # requested `times` were neither checked against the fitted levels nor
+  # turned into factors (issue #44). Only then: the engines record levels for
+  # character time in the formula as well, sorted alphabetically, and taking
+  # them would run character visits in that order instead of the requested
+  # one (issue #51). So with any other fitted time, or a fit without its
+  # stored data, the rows' time column decides: a factor, or no column, takes
+  # the fitted levels; numbers and characters stay as they are.
+  levels <- NULL
+  ordered <- FALSE
+  if (is.factor(fitted_time) || is.factor(values) || is.null(values)) {
+    levels <- model_levels %||% (if (is.factor(values)) levels(values))
+    ordered <- is.ordered(values)
+  }
 
   list(
     is_factor = !is.null(levels),
