@@ -12,6 +12,21 @@ the conclusions and the numbers they rest on belong here. Commit hashes refer
 to the branch where the work was done; issue and PR numbers refer to the
 project's GitHub repository.
 
+## 2026-11-17: Infinite covariate values in `newdata` left as they are
+
+With an infinite covariate value in `newdata` (for example `tx = Inf`),
+`sops()` returns the limiting state probabilities. `inferences(method =
+"delta")` stops with the base-R error "missing value where TRUE/FALSE needed",
+because the analytical kernel in `src/sops.cpp` passes on `0 * Inf = NaN`
+derivatives without reporting a failure. This was found while checking an
+outside review report (#48). The behaviour stays: no result is wrong, only the
+error is unclear. Reason for not changing it: not recorded beyond the
+maintainer's choice.
+
+Rejected, for now: refusing non-finite covariate values in `newdata`, as
+missing values are refused; and having the delta kernel report non-finite
+derivatives with a clear error.
+
 ## 2026-11-17: CRAN-mode test budget raised from 60 to 90 seconds
 
 The tests may take at most 90 seconds in CRAN mode on the development machine
