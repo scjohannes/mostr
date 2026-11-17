@@ -11,13 +11,29 @@ delta_row_key <- function(keys) {
   if (ncol(keys) == 0L) {
     return(as.character(seq_len(nrow(keys))))
   }
+  key_text <- function(value) {
+    value <- as.character(value)
+    value[is.na(value)] <- "<NA>"
+    value
+  }
   do.call(
     paste,
     c(
       lapply(keys, function(value) {
-        value <- as.character(value)
-        value[is.na(value)] <- "<NA>"
-        value
+        # A matrix column, such as I(cbind(a, b)) copied from newdata, gives
+        # nrow * ncol strings under as.character(); paste() then recycled
+        # them into a key k times too long and vcov() failed with "subscript
+        # out of bounds". Paste its columns so each row gets one string.
+        if (length(dim(value)) == 2L) {
+          return(do.call(
+            paste,
+            c(
+              lapply(seq_len(ncol(value)), function(j) key_text(value[, j])),
+              sep = "\r"
+            )
+          ))
+        }
+        key_text(value)
       }),
       sep = "\r"
     )

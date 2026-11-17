@@ -73,3 +73,33 @@ test_that("analytical averaging checks scenario and starting-profile order", {
     )
   }
 })
+
+# `sops()` and `comparisons()` copy the profile columns into their result, and
+# each result row's key is built from those columns. A matrix column, such as
+# one made with `I(cbind(a, b))`, must give one key per row: `as.character()`
+# of a two-column matrix gave two, so `vcov()` asked for rows that don't exist.
+test_that("vcov() of delta results whose profiles have a matrix column has one row per result row", {
+  skip_if_not_installed("VGAM")
+  skip_if_not_installed("rms")
+  data <- make_test_data(n_patients = 48, times = 1:6, seed = 2711)
+  model <- make_test_model(data)
+  profiles <- data[!duplicated(data$id), , drop = FALSE][1:4, , drop = FALSE]
+  profiles$metadata <- I(cbind(first = 1:4, second = 4:1))
+
+  individual <- inferences(
+    sops(model, newdata = profiles, times = 1:3),
+    method = "delta"
+  )
+  covariance <- vcov(individual)
+  expect_identical(dim(covariance), c(nrow(individual), nrow(individual)))
+  expect_equal(sqrt(diag(covariance)), individual$std.error, ignore_attr = TRUE)
+  expect_false(anyDuplicated(rownames(covariance)) > 0)
+
+  contrast <- inferences(
+    comparisons(model, newdata = profiles, variables = "tx", times = 1:3),
+    method = "delta"
+  )
+  covariance <- vcov(contrast)
+  expect_identical(dim(covariance), c(nrow(contrast), nrow(contrast)))
+  expect_equal(sqrt(diag(covariance)), contrast$std.error, ignore_attr = TRUE)
+})

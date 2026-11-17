@@ -530,6 +530,18 @@
   the model's states match `y_levels`, as the compiled code does (#54). A
   mismatch stopped with an unclear error, or, at a single visit, gave
   probabilities that summed to 2.
+* `vcov()` of a delta-method `sops()` or `comparisons()` result no longer
+  stops with "subscript out of bounds" when `newdata` has a matrix column,
+  such as one made with `I(cbind(a, b))`, even one the model doesn't use
+  (#56). The key that identifies each result row turned a matrix column into
+  one string per matrix cell instead of one per row.
+
+* With a numeric response (for example integer `y` in `mostm(y ~ ...)`),
+  `interpolate_sops()` no longer stops with "Incompatible join types" on
+  refit-bootstrap or FWB results of `avg_sops(by = )`, or on FWB results of
+  `sops()`; `inferences(avg_state_time(time_map = , by = ))` with these
+  methods works too (#56). Their draws gave `state` as a factor while the
+  result gave it as a number.
 
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`

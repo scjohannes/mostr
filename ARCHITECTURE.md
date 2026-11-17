@@ -471,7 +471,12 @@ factor that keeps the state order (`factor()` would sort text labels), and pad t
 probability 0 by label: positionally into the full state matrix in
 `inferences_bootstrap()`, by merging on `state` in
 `complete_bootstrap_sop_states()` for `by` groups, and by name in
-`complete_comparison_sops_array_states()` for time benefit. The native and
+`complete_comparison_sops_array_states()` for time benefit. The draws of `by`
+groups and of individual SOPs therefore carry `state` as a factor;
+`summarize_refit_draws()` gives them the type of the result's `state` (a
+number for a numeric response, through `coerce_state_like()`) before they are
+stored, because `interpolate_sops()` joins draws to the result with
+`data.table`, which refuses to join a factor to a number. The native and
 reference recursions index states through `y_levels`, so a state set with a
 gap such as `1, 3, 4` needs nothing else. Earlier versions renumbered the
 present states to `1, 2, ...`; supplied profiles then kept the original
@@ -1207,7 +1212,9 @@ the weights to how each SOP changes with each coefficient (conditional
 variance) and to the patient influence values (unconditional variance), and the
 starting-state term adds each patient's influence as in
 `inferences_delta_avg_time()`. No covariance for every pair of SOPs is formed.
-Rows are matched to the stored derivatives by row key, and the weights must
+Rows are matched to the stored derivatives by row key (`delta_row_key()`, one
+string per row from the result's columns other than the inference columns; a
+matrix column contributes its columns pasted together), and the weights must
 reproduce the reported totals. Delta SOPs already passed through
 `interpolate_sops()` are refused.
 
