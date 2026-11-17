@@ -27,10 +27,12 @@ recursion takes one transition per value, so leaving out visits does not
 skip time; see \code{\link[=sops]{sops()}}. Unlike \code{\link[=sops]{sops()}}, this function does not warn
 when \code{times} leaves out fitted visits.}
 
-\item{include_re}{For \code{blrm} fits, include fitted random-effect draws for
-known IDs, which \code{newdata} gives in the patient ID column (\code{id_var} of
-\code{\link[=mostm]{mostm()}}). Only \code{blrm} fits have random effects, so \code{TRUE} gives an
-error for other fits.}
+\item{include_re}{For \code{blrm} fits with \code{cluster()}, include the estimated
+random effects. Each row of \code{newdata} gets the estimated random effect of
+its value of the variable inside \code{cluster()} of the model formula,
+usually the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}); the value must be
+one that was in the fitted data. Only \code{blrm} fits have random effects, so
+\code{TRUE} gives an error for other fits.}
 
 \item{n_draws}{Number of \code{blrm} posterior draws, or \code{NULL} for all draws.}
 

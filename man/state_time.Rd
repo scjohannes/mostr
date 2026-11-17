@@ -84,10 +84,14 @@ example, \code{target_times = 7:28} to total only days 7 to 28.}
 \item{time_unit}{Optional label stored in output.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs. Only
-\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.
-\code{newdata} must then contain the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}),
-so that each row gets its patient's estimated random effect.}
+the estimated random effects in posterior predictions. Only \code{blrm} fits
+have random effects, so \code{TRUE} gives an error for other fits. \code{newdata}
+must then contain the variable inside \code{cluster()} of the model formula,
+usually the patient ID column (\code{id_var} of \code{\link[=mostm]{mostm()}}). Each row gets the
+estimated random effect of its value of that variable, so with
+\code{cluster(id)} each patient gets their own, and with \code{cluster(site)} each
+row gets that of its site. Values that were not in the fitted data have
+no estimated random effect and give an error.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws. Defaults to 100.}

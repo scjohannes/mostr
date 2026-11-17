@@ -110,8 +110,12 @@ only.}
 \item{time_unit}{Optional label stored in output.}
 
 \item{include_re}{Logical. For \code{rmsb::blrm()} fits with \code{cluster()}, include
-fitted random-effect draws in posterior predictions for known IDs. Only
-\code{blrm} fits have random effects, so \code{TRUE} gives an error for other fits.}
+the estimated random effects in posterior predictions. Only \code{blrm} fits
+have random effects, so \code{TRUE} gives an error for other fits. Each
+profile gets the estimated random effect of its value of the variable
+inside \code{cluster()} of the model formula, usually the patient ID, so
+\code{newdata} must contain that column, with values that were in the fitted
+data.}
 
 \item{n_draws}{Integer number of posterior draws to sample for \code{blrm}, or
 \code{NULL} to use all stored draws.}
