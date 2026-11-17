@@ -286,6 +286,81 @@ test_that("weighted orm scores equal numerical weighted row likelihood derivativ
   expect_true(all(inferred$std.error >= 0))
 })
 
+test_that("orm scores stay exact when the observed state has probability below 1e-16", {
+  # Issue #48: for an observed state with fitted probability below
+  # .Machine$double.eps, 1 - plogis(eta) cancels to 0 and the old score
+  # formula returned 0 instead of about -1 (lowest state) or +1 (highest
+  # state). Gross outliers in a strong covariate produce such rows, and they
+  # are the rows a robust variance should weigh most.
+  skip_if_not_installed("rms")
+  n <- 1000L
+  x <- seq(-2, 2, length.out = n)
+  # Deterministic logistic noise, so that the fit does not depend on a seed.
+  noise <- stats::qlogis(stats::ppoints(n))[(seq_len(n) * 7919L) %% n + 1L]
+  y <- cut(6 * x + noise, c(-Inf, -1, 1, Inf), labels = FALSE)
+  # One outlier in each state, each in the state its covariate makes least
+  # likely: lowest state at large x, highest state at very negative x, middle
+  # state at large x (where both cut-point probabilities round to 1).
+  outliers <- n + 1:3
+  x <- c(x, 15, -15, 15)
+  y <- c(y, 1L, 3L, 2L)
+  fit <- rms::orm(y ~ x, x = TRUE, y = TRUE)
+  coefficient <- stats::coef(fit)
+
+  # Row log-likelihoods written without cancellation, as a reference that does
+  # not share the package's probability code.
+  row_loglik <- function(beta, row) {
+    eta <- beta[1:2] + beta[[3]] * x[row]
+    switch(
+      y[row],
+      stats::plogis(eta[1], lower.tail = FALSE, log.p = TRUE),
+      stats::plogis(eta[1], log.p = TRUE) +
+        stats::plogis(eta[2], lower.tail = FALSE, log.p = TRUE) +
+        log(-expm1(eta[2] - eta[1])),
+      stats::plogis(eta[2], log.p = TRUE)
+    )
+  }
+  reference <- central_difference_jacobian(
+    function(beta) {
+      vapply(seq_along(y), function(row) row_loglik(beta, row), numeric(1))
+    },
+    coefficient
+  )
+
+  # The premise: each outlier's observed state has probability below 1e-16.
+  observed_log_probability <- vapply(
+    outliers,
+    function(row) row_loglik(coefficient, row),
+    numeric(1)
+  )
+  expect_true(all(observed_log_probability < log(1e-16)))
+
+  scores <- compute_scores_orm(fit)
+  expect_equal(
+    unname(scores[outliers, ]),
+    unname(reference[outliers, ]),
+    tolerance = 1e-6
+  )
+  expect_equal(unname(scores), unname(reference), tolerance = 1e-6)
+
+  # The robust covariance uses the exact scores.
+  robust <- robcov_orm(fit, type = "HC0")
+  bread <- orm_model_bread(fit)$bread
+  expected <- bread %*% crossprod(reference) %*% bread
+  expect_equal(unname(robust$var), unname(expected), tolerance = 1e-6)
+})
+
+test_that("orm scores refuse cut-points that cross for an observed middle state", {
+  # A fitted orm model has ordered intercepts; reversed ones give a middle
+  # state a probability of zero or less, where its score is undefined. The
+  # old code returned a huge finite score instead.
+  case <- local_robcov_orm_case()
+  fit <- case$fit
+  intercepts <- seq_len(length(fit$yunique) - 1L)
+  fit$coefficients[intercepts] <- rev(fit$coefficients[intercepts])
+  expect_error(compute_scores_orm(fit), "cut-points cross", class = "mostr_error")
+})
+
 test_that("orm robust covariance rejects invalid fits and inputs", {
   case <- local_robcov_orm_case()
   fit <- case$fit

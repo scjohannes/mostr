@@ -403,9 +403,6 @@ compute_scores_orm <- function(model) {
   X <- X[, colnames(Gamma), drop = FALSE]
 
   eta <- X %*% t(Gamma)
-  cum_probs <- stats::plogis(eta)
-  probs <- lp_to_probs(eta, nrow(Gamma))
-  probs <- pmax(probs, .Machine$double.eps)
 
   y_levels <- as_state_labels(model$yunique)
   y_idx <- match(as_state_labels(model$y), y_levels)
@@ -417,20 +414,57 @@ compute_scores_orm <- function(model) {
   M <- nrow(Gamma)
   d_eta <- matrix(0, nrow = n, ncol = M)
 
-  for (i in seq_len(n)) {
-    k <- y_idx[i]
-    if (k == 1L) {
-      d_eta[i, 1L] <- -cum_probs[i, 1L] * (1 - cum_probs[i, 1L]) / probs[i, 1L]
-    } else if (k == M + 1L) {
-      d_eta[i, M] <- cum_probs[i, M] * (1 - cum_probs[i, M]) / probs[i, M + 1L]
-    } else {
-      d_eta[i, k - 1L] <- cum_probs[i, k - 1L] *
-        (1 - cum_probs[i, k - 1L]) /
-        probs[i, k]
-      d_eta[i, k] <- -cum_probs[i, k] *
-        (1 - cum_probs[i, k]) /
-        probs[i, k]
+  # Derivatives of each row's log-likelihood with respect to eta, where
+  # F = plogis and F(eta_k) = P(Y > state k). The textbook form
+  # F(eta)(1 - F(eta)) / P(Y = observed state) is not used: when the observed
+  # state's probability is below .Machine$double.eps, `1 - plogis(eta)` or
+  # `plogis(eta_{k-1}) - plogis(eta_k)` cancels to 0, and the old floor on the
+  # probability turned the score of exactly these outlying rows into 0
+  # (issue #48). The forms below cancel the common factor algebraically, use
+  # upper tails (`lower.tail = FALSE`) instead of `1 - plogis()`, and take
+  # ratios of tail probabilities on the log scale so that they stay exact even
+  # when both tails underflow.
+  lowest <- y_idx == 1L
+  d_eta[lowest, 1L] <- -stats::plogis(eta[lowest, 1L])
+  highest <- y_idx == M + 1L
+  d_eta[highest, M] <- stats::plogis(eta[highest, M], lower.tail = FALSE)
+
+  middle <- which(y_idx > 1L & y_idx <= M)
+  if (length(middle) > 0L) {
+    k <- y_idx[middle]
+    upper <- cbind(middle, k - 1L)
+    lower <- cbind(middle, k)
+    a <- eta[upper]
+    b <- eta[lower]
+    # eta_{k-1} - eta_k from the coefficient differences rather than a - b,
+    # which would lose precision when |eta| is large. With
+    # P(Y = k) = F(a) F(-b) (1 - exp(b - a)), the scores are
+    # F(-a) / (F(-b) (1 - exp(b - a))) and -F(b) / (F(a) (1 - exp(b - a))).
+    gap <- rowSums(
+      X[middle, , drop = FALSE] *
+        (Gamma[k - 1L, , drop = FALSE] - Gamma[k, , drop = FALSE])
+    )
+    # Crossed cut-points give the observed state a probability of zero or
+    # less; its log-likelihood and score are then undefined.
+    crossed <- !is.na(gap) & gap <= 0
+    if (any(crossed)) {
+      mostr_abort(
+        "Cannot compute orm scores: the fitted cut-points cross for ",
+        sum(crossed),
+        " row(s), so their observed states have a fitted probability of ",
+        "zero or less."
+      )
     }
+    one_minus_ratio <- -expm1(-gap)
+    d_eta[upper] <- exp(
+      stats::plogis(a, lower.tail = FALSE, log.p = TRUE) -
+        stats::plogis(b, lower.tail = FALSE, log.p = TRUE)
+    ) /
+      one_minus_ratio
+    d_eta[lower] <- -exp(
+      stats::plogis(b, log.p = TRUE) - stats::plogis(a, log.p = TRUE)
+    ) /
+      one_minus_ratio
   }
 
   intercept_scores <- d_eta

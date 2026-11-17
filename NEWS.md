@@ -305,6 +305,17 @@
 
 ## Bug fixes
 
+* The patient-clustered variance of `mostm(engine = "orm")` fits and the
+  unconditional variance of their delta-method intervals no longer leave out
+  rows whose observed state the model makes almost impossible (#48). For a
+  row whose observed state had a fitted probability below about 1e-16, the
+  row's contribution to the variance was computed as 0, because
+  `1 - plogis(eta)` rounds to 0 for a linear predictor above about 36. Such
+  rows arise when a covariate with a strong effect has a gross outlier, and
+  the standard errors could then be too small by half or more. The
+  contribution is now computed without that subtraction. For other fits the
+  standard errors change by about 1e-13 relative.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,
