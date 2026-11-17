@@ -493,8 +493,47 @@ fit_refusals_blrm <- list(
       refusal_mostm(formula = y ~ time + tx + yprev + rms::cluster(id), engine = "blrm")
     },
     "`rmsb::blrm()` would fit"
+  ),
+  # These rows must stop before sampling, so the sampler is replaced by a stub
+  # that fails with another message: reaching it fails the row.
+  refusal(
+    "F39", "blrm `ppo` without `cppo` (unconstrained partial proportional odds)",
+    function() {
+      local_mocked_bindings(mostm_fit_blrm = refusal_blrm_sampler_reached)
+      refusal_mostm(engine = "blrm", ppo = ~time)
+    },
+    "give `cppo` with `ppo`"
+  ),
+  refusal(
+    "F40", "blrm with factor() written inside the `ppo` formula",
+    function() {
+      local_mocked_bindings(mostm_fit_blrm = refusal_blrm_sampler_reached)
+      refusal_mostm(
+        engine = "blrm",
+        ppo = ~ factor(tx),
+        cppo = function(y) as.numeric(y)
+      )
+    },
+    "converted to a factor inside the `ppo` formula"
+  ),
+  refusal(
+    "F41", "blrm with a spline basis in the `ppo` formula",
+    function() {
+      local_mocked_bindings(mostm_fit_blrm = refusal_blrm_sampler_reached)
+      ppo_formula <- ~ splines::ns(time, 2)
+      refusal_mostm(
+        engine = "blrm",
+        ppo = ppo_formula,
+        cppo = function(y) as.numeric(y)
+      )
+    },
+    "evaluated again on the prediction rows"
   )
 )
+
+refusal_blrm_sampler_reached <- function(...) {
+  stop("mostm() started sampling instead of refusing the call.")
+}
 
 test_that("mostm() refuses blrm formulas it cannot fit", {
   skip_on_cran()
