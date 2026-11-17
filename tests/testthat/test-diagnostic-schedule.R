@@ -184,3 +184,45 @@ test_that("diagnostic plots of character time keep the requested order (#51)", {
   expect_equal(plotted$schedule, labels)
   expect_plot_sops_match(plotted, fit, labels)
 })
+
+# A character time column that is in the formula is still character time: the
+# recursion runs the visits in the requested order, as for character time
+# outside the formula. The fit's levels of such a column are in alphabetical
+# order, so treating it as factor time ran "six" fourth, refused "one" as
+# coming after the first follow-up visit "five", and warned that `times` was
+# not in increasing order (the #44 change to get_time_info() undid #51 here).
+test_that("character time in the formula keeps the requested order (#44, #51)", {
+  skip_if_not_installed("rms")
+  skip_if_not_installed("VGAM")
+  labels <- c("one", "two", "three", "four", "five", "six")
+  data <- grid_data()
+  data$time <- labels[data$time]
+  factor_data <- data
+  factor_data$time <- factor(factor_data$time, levels = labels)
+
+  for (engine in c("orm", "vglm")) {
+    fit_args <- list(
+      formula = y ~ tx + yprev + time,
+      id_var = "id",
+      absorb = 4,
+      first_followup_time = "one",
+      engine = engine
+    )
+    fit <- do.call(mostm, c(list(data = data), fit_args))
+    factor_fit <- do.call(mostm, c(list(data = factor_data), fit_args))
+
+    # The same model as with factor time in visit order, so the same SOPs,
+    # and no warning about the order of `times`.
+    expect_no_warning(sops_chr <- diagnostic_avg_sops(fit, labels))
+    expect_equal(
+      sops_chr,
+      diagnostic_avg_sops(factor_fit, labels),
+      tolerance = 1e-6,
+      label = paste(engine, "character-time SOPs")
+    )
+
+    plotted <- diagnostic_plot_sops(fit, labels)
+    expect_equal(plotted$schedule, labels, label = paste(engine, "schedule"))
+    expect_plot_sops_match(plotted, fit, labels)
+  }
+})
