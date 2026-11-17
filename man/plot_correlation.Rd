@@ -64,7 +64,8 @@ an error, so to plot a second-order model, give \code{p2_var} to \code{\link[=mo
 Supplying it for trajectory data is an error.}
 
 \item{facet_var}{Optional grouping variable. Correlations are computed
-separately within each observed stratum.}
+separately within each observed stratum; rows with a missing value form
+their own stratum.}
 
 \item{seed}{Optional random seed for \code{blrm} posterior draw selection.}
 

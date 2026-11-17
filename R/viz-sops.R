@@ -37,7 +37,8 @@
 #' across states changes over time.
 #'
 #' For empirical trajectory data, probabilities are computed from observed
-#' counts at each time point. For model-derived SOP summaries, the function
+#' counts at each time point. In line plots, a state observed somewhere in the
+#' data but held by no patient at a time is drawn at 0 there. For model-derived SOP summaries, the function
 #' uses the supplied probability column, usually `estimate`.
 #'
 #' When `geom = "line"` (default), separate lines show the state occupancy
@@ -402,6 +403,31 @@ plot_sops_empirical_summary <- function(
   )
   names(data_summary)[ncol(data_summary)] <- "n"
   denom_vars <- setdiff(group_vars, y_var)
+
+  # Give every state observed anywhere in the data a count of 0 where no
+  # patient is in it. Without these rows a state's line joins the times on
+  # either side of the gap and passes through a share it never had.
+  cells <- unique(data[, denom_vars, drop = FALSE])
+  # `aggregate()` drops rows with a missing grouping value, so its cells do too.
+  cells <- cells[stats::complete.cases(cells), , drop = FALSE]
+  states <- unique(data[[y_var]])
+  states <- sort(states[!is.na(states)])
+  states <- stats::setNames(data.frame(states), y_var)
+  data_summary <- merge(
+    merge(cells, states, by = NULL),
+    data_summary,
+    by = group_vars,
+    all.x = TRUE,
+    sort = FALSE
+  )
+  data_summary$n[is.na(data_summary$n)] <- 0L
+  data_summary <- data_summary[
+    do.call(order, unname(as.list(data_summary[group_vars]))),
+    c(group_vars, "n"),
+    drop = FALSE
+  ]
+  rownames(data_summary) <- NULL
+
   denom <- stats::aggregate(
     data_summary$n,
     data_summary[, denom_vars, drop = FALSE],

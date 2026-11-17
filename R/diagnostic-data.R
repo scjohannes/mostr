@@ -169,7 +169,17 @@ plot_group_subset <- function(data, group, facet_var) {
   }
   keep <- rep(TRUE, nrow(data))
   for (var in facet_var) {
-    keep <- keep & as.character(data[[var]]) == as.character(group[[var]][1])
+    values <- as.character(data[[var]])
+    value <- as.character(group[[var]][1])
+    # A missing value is its own stratum. Comparing with `==` gives NA for
+    # those rows, and indexing with NA added an all-missing row to every other
+    # stratum, so `keep` must be TRUE or FALSE.
+    same <- if (is.na(value)) {
+      is.na(values)
+    } else {
+      !is.na(values) & values == value
+    }
+    keep <- keep & same
   }
   data[keep, , drop = FALSE]
 }

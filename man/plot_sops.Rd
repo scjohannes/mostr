@@ -69,7 +69,8 @@ This function creates a visualization of how the distribution of patients
 across states changes over time.
 
 For empirical trajectory data, probabilities are computed from observed
-counts at each time point. For model-derived SOP summaries, the function
+counts at each time point. In line plots, a state observed somewhere in the
+data but held by no patient at a time is drawn at 0 there. For model-derived SOP summaries, the function
 uses the supplied probability column, usually \code{estimate}.
 
 When \code{geom = "line"} (default), separate lines show the state occupancy

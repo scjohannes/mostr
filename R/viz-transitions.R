@@ -60,7 +60,8 @@
 #'   uses the `id_var` given to [mostm()]; a different name is an error. Not
 #'   used for trajectory data.
 #' @param facet_var Optional observed grouping variable. The plot always facets
-#'   by time; `facet_var` adds grouping to the time panels.
+#'   by time; `facet_var` adds grouping to the time panels. In model-based
+#'   plots, profiles with a missing value form their own group.
 #' @param seed Optional random seed for `blrm` posterior draw selection.
 #' @param n_draws Integer number of posterior draws to sample for `blrm`, or
 #'   `NULL` to use all stored draws. Defaults to 100.

@@ -76,7 +76,8 @@ uses the \code{id_var} given to \code{\link[=mostm]{mostm()}}; a different name 
 used for trajectory data.}
 
 \item{facet_var}{Optional observed grouping variable. The plot always facets
-by time; \code{facet_var} adds grouping to the time panels.}
+by time; \code{facet_var} adds grouping to the time panels. In model-based
+plots, profiles with a missing value form their own group.}
 
 \item{seed}{Optional random seed for \code{blrm} posterior draw selection.}
 

@@ -582,6 +582,24 @@
   factor `tx`, together with the states, which gave wrong labels or failed
   refits when a resample lacked a state.
 
+* Three fixes to the data behind diagnostic plots (#52):
+
+  * `plot_correlation()` and `plot_variogram()` on trajectory data keep
+    integer states as their scores when some states are missing. One
+    missing state made the states be sorted as text, so state 10 was
+    scored 2 and correlations involving it were wrong: 0.50 instead of 0.80
+    in a four-patient example.
+  * A missing value in `facet_var` now forms its own stratum in
+    `plot_transitions()`, `plot_correlation()` and `plot_variogram()`.
+    Previously it added an empty row to every stratum, which made every
+    model-based transition proportion and Spearman correlation missing, and
+    made `plot_correlation()` on trajectory data stop with an error about
+    duplicated `id` and `time` rows.
+  * `plot_sops()` lines for trajectory data drop to 0 at a time where no
+    patient is in a state. Previously the line skipped that time and went
+    straight from the neighbouring times, so the states at that time could
+    sum to more than 1. Bar plots were not affected.
+
 # mostr 0.2.0
 
 ## Breaking changes

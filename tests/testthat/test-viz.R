@@ -68,9 +68,17 @@ test_that("plot_sops plots empirical state proportions within each group", {
     site = rep(c("a", "b"), times = 6)
   )
   # Share of the rows in each group and time that are in each observed state,
-  # counted directly from `data`.
-  proportions <- function(by) {
+  # counted directly from `data`. Lines also show a 0 for a state observed
+  # elsewhere in the data but not in that group and time.
+  proportions <- function(by, zeros) {
     cells <- unique(data[c(by, "time", "y")])
+    if (zeros) {
+      cells <- merge(
+        unique(data[c(by, "time")]),
+        data.frame(y = sort(unique(data$y))),
+        by = NULL
+      )
+    }
     cells$prob <- vapply(
       seq_len(nrow(cells)),
       function(i) {
@@ -147,12 +155,29 @@ test_that("plot_sops plots empirical state proportions within each group", {
     expect_true(plot$scales$has_scale("fill"), info = label)
     expect_plotted_values(
       plotted,
-      proportions(case$by),
+      proportions(case$by, zeros = case$geom == "GeomLine"),
       case$keys,
       stats::setNames("prob", case$value),
       info = label
     )
   }
+})
+
+test_that("empirical plot_sops lines drop to 0 where a state has no patients", {
+  # No patient is in state 2 at visit 2. Without a row for it, the state-2 line
+  # went straight from visit 1 to visit 3 and passed through 0.625.
+  data <- data.frame(
+    id = rep(1:4, times = 3),
+    time = rep(1:3, each = 4),
+    y = c(1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 2, 2)
+  )
+  plot <- plot_sops(data, facet_var = NULL)
+  plotted <- plot_layer_values(plot, 1L, c(x = "time", colour = "state"))
+  plotted <- plotted[order(plotted$state, plotted$time), ]
+
+  expect_equal(plotted$state, rep(c("1", "2"), each = 3))
+  expect_equal(plotted$y, c(0.5, 1, 0.25, 0.5, 0, 0.75))
+  expect_equal(as.numeric(tapply(plotted$y, plotted$time, sum)), c(1, 1, 1))
 })
 
 make_avg_sops_plot_data <- function(with_draws = TRUE) {
