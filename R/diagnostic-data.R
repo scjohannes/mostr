@@ -63,7 +63,14 @@ plot_transition_model_setup <- function(
   )
   plot_times <- time_res$times
   time_info <- time_res$time_info
-  recursion_times <- complete_plot_recursion_times(plot_times, time_info)
+  recursion_times <- complete_plot_recursion_times(
+    plot_times,
+    time_info,
+    model = model,
+    time_var = time_var,
+    gap_var = settings$gap_var,
+    newdata_supplied = newdata_supplied
+  )
 
   y_levels <- markov_model_ylevels(model, settings$y_levels)
   ylevel_names <- as_state_labels(y_levels)

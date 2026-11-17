@@ -305,6 +305,22 @@
 
 ## Bug fixes
 
+* For a fitted model, `plot_transitions()`, `plot_correlation()` and
+  `plot_variogram()` now follow the fit's visits (#51). They fill in visits
+  that `times` leaves out, but they used to fill in every whole number from
+  1 whatever the fit's visits were. A `gap_var` fit with visits at 1, 2, 4
+  and 7 was plotted from 7 daily transitions with a gap of 1. Weekly visits
+  at 7 to 28 were plotted from 28 daily transitions starting at 1. Landmark
+  `newdata` at day 8 was plotted from day 1. Character time was run in
+  alphabetical order, so `"day 10"` came second. The plotted probabilities
+  were off by up to 0.48 in these cases.
+  The plots now fill in only fitted visits. They start at the first
+  follow-up visit, or at the first requested time for supplied `newdata`.
+  With `gap_var` they use the requested times as the visits, and with
+  character time they keep the requested order. A requested time between
+  fitted visits is an error, and so is a time before the first follow-up
+  visit when `newdata` is omitted.
+
 * `sops()`, `avg_sops()`, `state_time()`, `avg_state_time()`, `comparisons()`
   and `avg_comparisons()` refuse the model's time column and its `gap_var`
   column in `variables` (#29). The probabilities are computed visit by visit,
