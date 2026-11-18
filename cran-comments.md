@@ -4,14 +4,19 @@
 
 * This is a new submission.
 
-Checked locally on Windows 11 with R 4.6.1
-(`R CMD check --as-cran --run-donttest` on the built tarball). Update these
-results after the win-builder and R-hub checks for the release.
+## Test environments
+
+* Local: Windows 11, R 4.6.2 (`R CMD check --as-cran --run-donttest` on the
+  built tarball).
+* win-builder: R-devel and R-release.
+* GitHub Actions: Ubuntu (R-release and R-devel), Windows (R-release) and
+  macOS (R-release), with `--as-cran`; the compiled code's tests under the
+  address and undefined-behaviour sanitizers and under Valgrind on Ubuntu.
 
 ## Examples
 
 All examples run. The `\donttest{}` part of `?mostm` fits a Bayesian model
-with 'rmsb', whose Stan sampling takes about 50 seconds; it is guarded by
+with 'rmsb', whose Stan sampling takes about 60 seconds; it is guarded by
 `requireNamespace("rmsb", quietly = TRUE)`. The other `\donttest{}` parts
 refit the model to bootstrap resamples and take a few seconds each.
 
