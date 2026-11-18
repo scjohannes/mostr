@@ -12,6 +12,7 @@
 ^AGENTS\.md$
 ^CLAUDE\.md$
 ^ARCHITECTURE\.md$
+^Architecture_details\.md$
 ^archive$
 ^design$
 ^cran-comments\.md$

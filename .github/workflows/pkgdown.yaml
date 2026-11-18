@@ -43,14 +43,14 @@ jobs:
       # one. These are developer notes, so remove them from the CI checkout
       # before building; they stay at the top level of the repository.
       - name: Keep developer notes off the website
-        run: rm AGENTS.md ARCHITECTURE.md
+        run: rm AGENTS.md ARCHITECTURE.md Architecture_details.md
       - name: Build website
         shell: Rscript {0}
         run: |
           source(".github/check-vignette-output.R")
           pkgdown::check_pkgdown()
           pkgdown::build_site_github_pages(new_process = FALSE, install = FALSE)
-          stopifnot(!file.exists(c("docs/AGENTS.html", "docs/ARCHITECTURE.html")))
+          stopifnot(!file.exists(c("docs/AGENTS.html", "docs/ARCHITECTURE.html", "docs/Architecture_details.html")))
           for (rd in list.files("man", pattern = "[.]Rd$", full.names = TRUE)) {
             if (!any(grepl("\\\\(eqn|deqn)\\{", readLines(rd)))) next
             page <- file.path("docs/reference", sub("[.]Rd$", ".html", basename(rd)))
