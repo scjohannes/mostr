@@ -192,6 +192,7 @@ test_that("diagnostic plots of character time keep the requested order (#51)", {
 # coming after the first follow-up visit "five", and warned that `times` was
 # not in increasing order (the #44 change to get_time_info() undid #51 here).
 test_that("character time in the formula keeps the requested order (#44, #51)", {
+  skip_on_cran() # Slow; the test above checks character time on CRAN.
   skip_if_not_installed("rms")
   skip_if_not_installed("VGAM")
   labels <- c("one", "two", "three", "four", "five", "six")

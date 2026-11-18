@@ -76,6 +76,7 @@ for (summary in c("median", "mean")) {
     "time_in_state(time_map = ) of posterior SOPs agrees with ",
     "avg_state_time(time_map = ) (posterior_summary = \"", summary, "\")"
   ), {
+    skip_on_cran() # Slow; the test without time_map checks #40 on CRAN.
     local_mocked_bindings(
       blrm_design_matrix = fake_blrm_design(c("tx", "time"))
     )
@@ -201,6 +202,7 @@ test_that("a posterior-median total lies inside its own interval", {
 })
 
 test_that("plot_time(scale = \"proportion\") divides by the follow-up length", {
+  skip_on_cran() # Slow; the other #40 tests run on CRAN.
   # With posterior medians, the state totals need not add up to the
   # follow-up, so their sum is the wrong denominator for a share of it.
   local_mocked_bindings(

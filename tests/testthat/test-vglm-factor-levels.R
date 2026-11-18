@@ -50,6 +50,7 @@ vglm_factor_fits <- function(factor_time = FALSE) {
 }
 
 test_that("vglm predictions accept numeric values of factor predictors", {
+  skip_on_cran() # Slow; the plot_transitions() test checks #44 on CRAN.
   skip_if_not_installed("VGAM")
   fits <- vglm_factor_fits()
   newdata <- data.frame(
@@ -105,6 +106,7 @@ test_that("plot_transitions() takes numeric previous states for a vglm fit", {
 })
 
 test_that("vglm predictions accept numeric or character values of factor time", {
+  skip_on_cran() # Slow; the plot_transitions() test checks #44 on CRAN.
   skip_if_not_installed("VGAM")
   fits <- vglm_factor_fits(factor_time = TRUE)
   rows <- function(time) {

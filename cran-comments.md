@@ -3,12 +3,14 @@
 0 errors | 0 warnings | 1 note
 
 * This is a new submission.
+* "Possibly misspelled words in DESCRIPTION: Rohde, et, al" are the author
+  name and "et al." of the cited paper, Rohde et al. (2024).
 
 ## Test environments
 
 * Local: Windows 11, R 4.6.2 (`R CMD check --as-cran --run-donttest` on the
   built tarball).
-* win-builder: R-devel and R-release.
+* win-builder: R-devel (2026-11-17 r90926) and R-release (4.6.2).
 * GitHub Actions: Ubuntu (R-release and R-devel), Windows (R-release) and
   macOS (R-release), with `--as-cran`; the compiled code's tests under the
   address and undefined-behaviour sanitizers and under Valgrind on Ubuntu.

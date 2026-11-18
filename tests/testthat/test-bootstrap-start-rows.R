@@ -92,6 +92,7 @@ start_row_intervals <- function(case, method, estimand) {
 }
 
 test_that("bootstrap draws start from first_followup_time for character time", {
+  skip_on_cran() # Slow: bootstrap refits. CI still checks #47.
   cases <- start_row_cases()
   expect_equal(
     start_row_intervals(cases$character, "bootstrap", "sops"),

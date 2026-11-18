@@ -100,10 +100,11 @@ runs with `devtools::test()` and in CI, which set `NOT_CRAN=true`.
   set-up: testthat skips a snapshot on CRAN only when it reaches it, after the
   set-up has run.
 - Budget: the tests take at most 90 seconds in CRAN mode on the development
-  machine (AMD Ryzen AI 9 HX 370, 12 cores, 24 threads; 69 seconds on R 4.6.2
-  on 16 November 2026, against 5.7 minutes before this rule). This is the
-  project's own limit, not CRAN's: CRAN asks for about 10 minutes for the
-  whole check, and its machines are slower than this one. Measure after
+  machine (AMD Ryzen AI 9 HX 370, 12 cores, 24 threads; 88 and 91 seconds in
+  two runs on R 4.6.2 on 18 November 2026, against 5.7 minutes before this
+  rule). This is the project's own limit, not CRAN's: CRAN asks for about 10
+  minutes for the whole check, and win-builder ran the tests in 45 to 47
+  seconds on 18 November 2026, before nine more were skipped. Measure after
   adding tests:
 
   ```powershell

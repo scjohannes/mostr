@@ -1040,6 +1040,7 @@ test_that("observed correlations keep integer state scores when a state is missi
 })
 
 test_that("a missing facet_var value forms its own stratum in diagnostic plots", {
+  skip_on_cran() # Slow; the other #52 tests run on CRAN.
   model <- structure(list(), class = "vglm", markov_id_var = "id")
   newdata <- data.frame(
     id = 1:5,

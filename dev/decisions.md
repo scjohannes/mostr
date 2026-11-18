@@ -252,6 +252,15 @@ three times slower.
 
 Rejected: skipping more tests on CRAN to get back under 60 seconds. It would
 take checks away from CRAN for a margin CRAN does not require.
+On 2026-11-18 the bug fixes #39 to #59 had added 74 tests that run on CRAN
+(22 s), and the tests took 94 seconds. Nine of the new tests, each slow and
+repeating a check that a faster CRAN test of the same fix makes (or, for the
+bootstrap test of #47, left to CI), now skip on CRAN: 88 and 91 seconds in
+two runs. The skips saved about 11 s in their own files, but runs vary by a
+second or two per file and fits the skipped tests made are now paid by the
+next test. About 24 of the 90 seconds are spent outside the tests (helpers,
+fixtures built at file level, testthat itself). win-builder ran the tests in
+45 to 47 seconds on R-release and R-devel before these skips.
 
 ## 2026-11-17: blrm random intercepts are matched by cluster value, never by Stan's index
 

@@ -69,6 +69,7 @@ test_that("mostm() fits a starting state that never occurs as an outcome", {
 })
 
 test_that("interpolated SOPs start from every starting state's share", {
+  skip_on_cran() # Slow; the tests below check #50 on CRAN.
   case <- baseline_only_case()
   avg <- avg_sops(case$fit, times = factor(1:4))
   out <- interpolate_sops(
@@ -147,6 +148,7 @@ test_that("average time in states counts the time in a starting state that is no
 })
 
 test_that("delta inference works for real-time totals with a starting state that is not fitted", {
+  skip_on_cran() # Slow; the tests above check #50 on CRAN.
   case <- baseline_only_case()
   totals <- avg_state_time(case$fit, times = factor(1:4), time_map = case$time_map)
   delta <- inferences(totals, method = "delta")
