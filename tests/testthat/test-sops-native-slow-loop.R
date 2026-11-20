@@ -221,3 +221,71 @@ test_that("analytical derivatives match numerical differences of public results"
     )
   }
 })
+
+test_that("sops() and avg_sops() match between compiled fast path and R-engine fallback", {
+  skip_on_cran()
+  cells <- c(
+    grid_consistency_cells(),
+    list(
+      grid_inner_absorbing(grid_cell("orm")),
+      grid_inner_absorbing(grid_cell("vglm", order = 2L, odds = "partial"))
+    )
+  )
+
+  for (cell in cells) {
+    fit <- grid_fit(cell)
+    profiles <- grid_profiles(cell)
+    profiles$marker <- rep_len(c(1L, 0L, 1L), nrow(profiles))
+    args <- grid_public_args(cell)
+    label <- grid_label(cell)
+
+    expect_no_message(
+      fast_sops <- suppressWarnings(do.call(
+        sops,
+        c(list(fit, newdata = profiles), args)
+      ))
+    )
+    expect_message(
+      fallback_sops <- withr::with_options(
+        list(mostr.execution_plan_max_bytes = 1),
+        suppressWarnings(do.call(
+          sops,
+          c(list(fit, newdata = profiles), args)
+        ))
+      ),
+      "Compiled C\\+\\+ SOP calculations were not used"
+    )
+    expect_equal(
+      fallback_sops,
+      fast_sops,
+      tolerance = 1e-11,
+      info = paste(label, "sops")
+    )
+
+    avg_args <- c(
+      list(
+        fit,
+        newdata = profiles,
+        variables = list(tx = c(0, 1)),
+        by = "marker"
+      ),
+      args
+    )
+    expect_no_message(
+      fast_avg <- suppressWarnings(do.call(avg_sops, avg_args))
+    )
+    expect_message(
+      fallback_avg <- withr::with_options(
+        list(mostr.execution_plan_max_bytes = 1),
+        suppressWarnings(do.call(avg_sops, avg_args))
+      ),
+      "Compiled C\\+\\+ SOP calculations were not used"
+    )
+    expect_equal(
+      fallback_avg,
+      fast_avg,
+      tolerance = 1e-11,
+      info = paste(label, "avg_sops")
+    )
+  }
+})
