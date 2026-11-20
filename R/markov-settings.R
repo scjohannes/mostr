@@ -271,6 +271,10 @@ markov_removed_fit_arguments <- function() {
 # model fitted without it would silently predict with the first-order
 # recursion, and one that passes `absorb` would let patients leave a state
 # that the fit does not record as absorbing.
+#! I think this doesn't make a whole lot of sense because the user could pass all kinds of
+#! inexisting arguments and we can protect against all of these and it's sort of arbitrary
+#! to protect against some of them. So I would either A consider removing this function or
+#! B find a better solution for the issue.
 stop_removed_fit_arguments <- function(...) {
   supplied <- intersect(...names(), markov_removed_fit_arguments())
   if (!length(supplied)) {

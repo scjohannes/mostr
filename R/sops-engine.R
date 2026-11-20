@@ -91,10 +91,12 @@ soprob_markov_r_engine <- function(
   p_var <- settings$p_var
   p2_var <- settings$p2_var
   # --- 1. Initial Checks & Setup ---
+  # the dots originally come from helper which have extracted draws etc from bayesian fits
+  # called in sops() and avg_sops()
   dots <- list(...)
   unknown_dots <- setdiff(
     names(dots),
-    c(".draw_indices", ".gamma_draws", ".prediction_cache", ".n_draws_total")
+    c(".draw_indices", ".gamma_draws", ".prediction_cache", ".n_draws_total") # this is the white-list
   )
   if (length(unknown_dots) > 0) {
     mostr_abort("Unused arguments: ", paste(unknown_dots, collapse = ", "))
@@ -104,6 +106,13 @@ soprob_markov_r_engine <- function(
   # A caller that predicts posterior draws in chunks passes the call's number
   # of draws, which the crossed cut-point error reports.
   n_draws_total <- dots$.n_draws_total
+
+  # Johannes: The prediction cache stores design matrices across batches of Bayesian posterior draws because
+  # different chunks process the same patient rows and visit schedules. This allows the engine to
+  # reuse previously built matrices rather than building them repeatedly.
+  #* where does it come from? Initialized in sops and avg_sops() through sops_impl which calls sops_blrm() for example
+  #* sops() -> sops_impl() -> sops_blrm() -> predict_markov_sops() -> soprob_markov_engine()
+
   prediction_cache_arg <- if (is.null(p2_var)) dots$.prediction_cache else NULL
 
   ftype <- if (inherits(object, "blrm")) {
@@ -122,7 +131,7 @@ soprob_markov_r_engine <- function(
   # sum to more than 1, with no error.
   threshold_count <- fitted_threshold_count(object)
   if (!is.null(threshold_count)) {
-    validate_sop_state_count(threshold_count, y_levels)
+    validate_sop_state_count(threshold_count, y_levels) #* checks that number of categories is intercepts + 1
   }
 
   if (!p_var %in% names(data)) {
@@ -142,12 +151,12 @@ soprob_markov_r_engine <- function(
     settings$time_var,
     default = "unique"
   )
-  times <- time_res$times
-  time_info <- time_res$time_info
+  times <- time_res$times # vector to iterate over
+  time_info <- time_res$time_info # three element list (is_factor, levels, ordered)
 
   draw_indices <- NULL
   if (ftype == "rmsb") {
-    draw_indices <- draw_indices_arg %||%
+    draw_indices <- draw_indices_arg %||% # with no specific draws supplied sample posterior draws on the fly.
       select_posterior_draws(object, n_draws, seed)
   }
 
@@ -202,17 +211,21 @@ soprob_markov_r_engine <- function(
 
   # --- 2. Time 1 Initialization (Start) ---
   # Update time variables for T1
+  # Johannes: sets every row to times[index]
+  # if is_factor --> wraps that values as a factor with the models exact levels and ordered flag,
+  # otherwise assigns times[index] directly
+  #* one row per patient with times and gap set to the baseline value
   data <- assign_sop_visit(
     data,
-    settings = settings,
+    settings = settings, # contains time_var
     times = times,
     index = 1L,
-    time_info = time_info
+    time_info = time_info # info about factor
   )
 
   # Predict probabilities at T1
   p_t1 <- prd(object, data) # Returns [n_pat x n_states] or [nd x n_pat x n_states]
-  check_transition_probabilities(p_t1, "the first SOP time point")
+  check_transition_probabilities(p_t1, "the first SOP time point") # just checks for NAs
   check_crossed_thresholds(p_t1, n_pat, times[1L], n_draws = n_draws_total)
 
   if (nd == 0) {
@@ -245,7 +258,7 @@ soprob_markov_r_engine <- function(
   # We create a long dataframe where every patient is repeated for every possible PREVIOUS state.
   # Order: Patient 1 (State A), Patient 2 (State A)... Patient 1 (State B)...
   # This ordering is crucial for the vectorized update logic later.
-
+  #* stacks patients n times, where n is the number of levels of our y
   edata_base <- data[rep(1:n_pat, times = n_yna), , drop = FALSE]
 
   # Assign the previous state variable
@@ -347,6 +360,7 @@ fitted_threshold_count <- function(model) {
       NULL
     })
     if (length(constraint_list) == 0L) {
+      #* empty constraint list --> can't verify how many intercepts. Genuine vglm fit always hast at least one matrix there
       return(NULL)
     }
     return(nrow(constraint_list[[1L]]))

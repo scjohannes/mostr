@@ -614,9 +614,7 @@ predict_blrm_response_markov <- function(
     prediction_cache$cursor <- prediction_cache$cursor + 1L
     cache_index <- prediction_cache$cursor
   }
-  X <- if (
-    !is.null(cache_index) && length(prediction_cache$X) >= cache_index
-  ) {
+  X <- if (!is.null(cache_index) && length(prediction_cache$X) >= cache_index) {
     prediction_cache$X[[cache_index]]
   } else {
     value <- blrm_design_matrix(object, newdata = newdata, second = FALSE)
@@ -873,6 +871,9 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
   labels
 }
 
+# The function takes the previous-state column a user supplied for prediction
+# and converts it to the type and levels the fitted model expects, refusing any value
+# that is not a fitted state.
 # `values` of the previous-state column `column` (`p_var`, or `p2_var` for the
 # state two visits back) in the form the model reads them, whatever their own
 # type or factor levels. The recursion builds the previous states of later
@@ -887,6 +888,7 @@ coerce_previous_state_values <- function(values, prototype, p_var) {
 # vglm would otherwise stop in stats::model.frame() ("factor yprev has new
 # levels 9") and blrm would predict from a state the model never saw.
 # Missing values are left for stop_missing_predictors().
+
 fitted_state_values <- function(model, values, column, states) {
   labels <- as_state_labels(values)
   fitted <- markov_model_refit_data(model)[[column]]
@@ -1063,7 +1065,7 @@ resolve_sop_times <- function(
   data,
   times,
   time_var,
-  default = c("unique", "fast")
+  default = c("unique", "fast") #* needed only for testing
 ) {
   default <- match.arg(default)
   time_info <- get_time_info(model, data, time_var)

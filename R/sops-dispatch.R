@@ -59,13 +59,13 @@ soprob_markov <- function(
   seed = NULL,
   ...
 ) {
-  stop_removed_fit_arguments(...)
+  stop_removed_fit_arguments(...) #! I would remove this function as its only legacy code and not relevant as we only plan the first release.
   stop_include_re_without_blrm(model, include_re)
   settings <- resolve_markov_settings(model)
   if (is.null(settings$y_levels)) {
     stop_no_fitted_states()
   }
-  validate_markov_model(model)
+  validate_markov_model(model) #! Quite convoluted but works
   predict_markov_sops(
     model,
     newdata,
@@ -131,11 +131,14 @@ predict_markov_sops <- function(
       }
       notify_sop_r_engine_fallback(reason)
     }
+    # Johannes: blrm always run using run_r_engine() --> passess the execution env into soprob_markov_r_engine()
     return(run_r_engine())
   }
 
   validate_fast_previous_state_support(model_fast, settings)
   fallback_condition <- NULL
+
+  # If execution plan determines that memory limit is exceeded, plan is set to null plus fallback message
   plan <- tryCatch(
     compile_sop_execution_plan(
       model = model_fast,
@@ -189,7 +192,7 @@ stop_absorbing_start <- function(
   if (length(absorb) == 0L || !is.data.frame(data) || nrow(data) == 0L) {
     return(invisible(NULL))
   }
-  absorb_labels <- as_state_labels(absorb)
+  absorb_labels <- as_state_labels(absorb) #! This function is just as.character, Could consider removing, but having function name makes it searchable.
   for (column in c(p_var, settings$p2_var)) {
     if (!column %in% names(data)) {
       next
@@ -313,7 +316,7 @@ stop_missing_predictors <- function(
       }
       sum(missing)
     },
-    numeric(1)
+    integer(1)
   )
   counts <- counts[counts > 0]
   if (length(counts) == 0L) {
